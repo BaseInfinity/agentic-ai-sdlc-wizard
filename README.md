@@ -18,9 +18,13 @@ The wizard provides generic principles. Claude Code adapts them to your stack, y
 
 ### KISS (Keep It Simple, Stupid)
 
-- Less is more
-- If it's hard, question WHY it's hard
-- Simplify another layer instead of powering through complexity
+A core SDLC principle for all development work:
+
+- **If something feels complex** - simplify another layer
+- **If it's hard** - question WHY it's hard
+- **Don't power through complexity** - step back and simplify
+
+Applies to code, architecture, tests, and the SDLC process itself.
 
 ## Using the Wizard
 
@@ -65,6 +69,3 @@ When you find something valuable - a gotcha, a pattern, a simplification - contr
 3. Submit a PR explaining the "why"
 4. Community discusses, best ideas get merged
 
----
-
-*"The best SDLC is one that fits YOU perfectly."*

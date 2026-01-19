@@ -24,14 +24,22 @@ You set it up, Claude follows it. The magic is that structured human engineering
 
 ## KISS: Keep It Simple, Stupid
 
-**If something feels complex, simplify another layer.**
+**A core principle of this SDLC - not just for coding, but for the entire development process.**
 
-When confused or stuck, ask:
-- Is this the right approach?
-- Is there a better way?
-- Maybe it's hard for the wrong reasons?
+When implementing features, fixing bugs, or designing systems:
+- **If something feels complex** - simplify another layer
+- **If you're confused** - is this the right approach? Is there a better way?
+- **If it's hard** - question WHY it's hard. Maybe it's hard for the wrong reasons.
 
-**If it's hard, question WHY it's hard.** Don't just power through complexity - step back and simplify.
+**Don't power through complexity.** Step back and simplify. The simplest solution that works is usually the best one.
+
+This applies to:
+- Code you write
+- Architecture decisions
+- Test strategies
+- The SDLC process itself
+
+**When in doubt, simplify.**
 
 ---
 
@@ -1644,17 +1652,18 @@ When something doesn't work:
 
 **Don't fear mistakes.** They're how this system learns YOUR project.
 
-### Why Lightweight Matters
+### Why Generic Principles Matter
 
-**Less is more. Generic is key.**
+**Less is more. Principles over prescriptions.**
 
-1. **Principles over prescriptions** - "Plan before coding" not "use exactly this planning template"
-2. **Claude adapts** - Give Claude the philosophy, it figures out YOUR tech stack
-3. **Token efficiency** - Every token of context is a token not available for actual work
-4. **Anti-bloat** - Complexity compounds; simplicity scales
+1. **"Plan before coding"** not "use exactly this planning template"
+2. **"Test your work"** not "use Jest with this exact config"
+3. **"Ask when uncertain"** not "if confidence < 60% then ask"
 
-**The temptation:** Add more rules, more checks, more specifics.
-**The discipline:** Keep it generic. Trust Claude to adapt. Question everything.
+**Claude adapts the principles to YOUR stack.** Give Claude the philosophy, it figures out your tech details - your commands, your patterns, your workflow.
+
+**The temptation:** Add more rules, more specifics, more enforcement.
+**The discipline:** Keep it generic. Trust Claude to adapt. KISS.
 
 ### How Tailoring Happens
 
