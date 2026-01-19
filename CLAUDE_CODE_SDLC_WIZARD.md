@@ -1689,6 +1689,25 @@ The wizard provides generic starting principles, then:
 
 **This is a partnership, not a rulebook.**
 
+### Evolving with Claude Code
+
+**Claude Code's agentic capabilities keep improving. This SDLC should evolve with them.**
+
+Claude should periodically:
+1. **Check latest Claude Code docs** - New features? Better patterns? Built-in capabilities?
+2. **Research current best practices** - WebSearch for 2026 patterns, compare with what we're doing
+3. **Propose SDLC updates** - "Claude Code now has X, should we use it instead of our custom Y?"
+
+**The goal:** Keep the SDLC pipeline adapting to Claude's latest capabilities. Don't get stuck on old patterns when better ones exist.
+
+**When Claude discovers something better:**
+1. Propose the change with reasoning
+2. Human approves
+3. Update the SDLC docs
+4. The pipeline gets better
+
+**This SDLC is not static.** It grows with your project AND with Claude Code's evolution.
+
 ### Stay Lightweight (When Claude Code Improves)
 
 Claude Code is actively improving. When they add built-in features that overlap with this SDLC:
