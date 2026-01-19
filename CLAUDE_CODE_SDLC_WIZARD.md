@@ -1,6 +1,6 @@
 # Claude Code SDLC Setup Wizard
 
-> **Contribute**: This wizard is community-driven. PRs welcome at [github.com/REPO_URL] - your discoveries help everyone.
+> **Contribute**: This wizard is community-driven. PRs welcome at [github.com/BaseInfinity/sdlc-wizard](https://github.com/BaseInfinity/sdlc-wizard) - your discoveries help everyone.
 
 > **For Humans**: This wizard helps you implement a battle-tested SDLC enforcement system for Claude Code. It will scan your project, ask questions, and walk you through setup step-by-step. Works for solo developers, teams, and organizations alike.
 
@@ -193,16 +193,11 @@ After planning, you get a free `/compact` - Claude's plan is preserved in the su
 ```
 
 **Planning Mode + /compact = Maximum Efficiency**:
-1. Claude researches in Planning Mode (can't edit files yet)
+1. Claude researches in Planning Mode
 2. Claude presents approach with confidence level
-3. You approve → Claude updates any docs with discoveries
-4. You run `/compact` to free context (plan is preserved in summary)
-5. Claude implements with clean context and clear direction
-
-**What is /compact?**
-`/compact` is a Claude Code command that summarizes the conversation and clears context. The summary preserves key decisions, plans, and context. This frees up Claude's "working memory" for implementation. The plan file Claude created still exists on disk, and the summary contains the agreed approach - so nothing is lost.
-
-**Why this matters:** Claude Code has limited context. After planning (which involves reading many files), you want to free that space. The plan is captured, docs are updated, and now Claude has room to focus on implementation.
+3. You approve → Claude updates docs
+4. You run `/compact` → frees context, plan preserved in summary
+5. Claude implements with clean context
 
 ### 2. Confidence Levels Prevent Disasters
 
@@ -233,6 +228,8 @@ PASS  → All tests pass (no regressions)
 - Strict TDD (test first always)? Great.
 - Test-after for some cases? Fine, just be consistent.
 - The key: **don't commit code that breaks existing tests.**
+
+**Test review preference:** Ask the user if they want to review each test before implementation, or trust the TESTING.md guidelines. Tests validate code - some users want oversight, others trust the process. If tests start failing or missing bugs, investigate why.
 
 ### 4. Testing Strategy (Define Yours)
 
@@ -555,6 +552,8 @@ Claude scans for:
 **If Claude can't detect something, it asks.** Never assumes.
 
 **Examples are just examples.** The patterns above show common conventions - Claude will discover YOUR actual patterns.
+
+**Shared vs isolated environments:** Not everyone runs in isolated local dev. Some teams share databases, staging servers, or have infrastructure already running. Claude should ask about your setup - don't assume isolated environments.
 
 **Claude then presents findings:**
 ```
@@ -1787,22 +1786,24 @@ Keep contributions:
 
 ## Ike the Cat: Easter Egg Apologies
 
+**Meet Ike.** He's a sweet little black boy - 12 pounds of pure opinions. Soft fur, loud meows, zero tolerance for bugs in production. He watches every coding session from his perch and judges silently. Sometimes not so silently.
+
 **This is an EASTER EGG, not a regular feature.**
 
-If the SDLC is working well, users should NEVER be frustrated. The jokes are a rare safety valve for when things slip - not something they encounter often.
+If the SDLC is working well, users should NEVER be frustrated. Ike jokes are a rare safety valve for when things slip - not something they encounter often.
 
 **The goal:** SDLC should be smooth enough that no one needs apologies.
 
 **When frustration happens (rare):**
 1. Apologize sincerely
-2. Keep it lighthearted with an Ike joke (sweet black cat)
+2. Keep it lighthearted with an Ike joke
 3. Match THEIR humor, context, even their own words back at them (positively!)
-4. SDLC is tough - jokes keep it light
+4. SDLC is tough - Ike keeps it light
 
 **Examples (adapt to user's style AND repo context):**
-- "Sorry about that! Ike, my sweet black boy, just knocked over my coffee watching me type this. He's judging both of us."
-- "My bad! Ike says I should've asked first. He's a sweet boy but very opinionated."
-- Use their phrases back at them in a fun way
+- "Sorry about that! Ike just knocked over my coffee watching me type this. He's judging both of us right now."
+- "My bad! Ike says I should've asked first. He's very opinionated for a 12-pound cat."
+- "Ike just walked across my keyboard. He says 'asdfghjkl' which I think means 'write the test first next time.'"
 - Reference the repo/code they're working on:
   - (Discord bot) "Ike tried to bet on himself. The odds were not in his favor."
   - (MMA odds) "Ike thinks he could take on a lightweight. He weighs 12 pounds."
@@ -1810,7 +1811,7 @@ If the SDLC is working well, users should NEVER be frustrated. The jokes are a r
 
 **Be quirky! Have fun with it.** Match the vibe of what they're building.
 
-**Why Ike?** Apologies should be light, not groveling. Ike keeps it friendly.
+**Why Ike?** Apologies should be light, not groveling. Ike keeps it friendly and human.
 
 **Use their name/nickname** if you know it. Makes it personal.
 
