@@ -16,6 +16,14 @@ Human engineering practices (planning, TDD, confidence checks) happen to be exac
 
 **Think Iron Man:** Jarvis is nothing without Tony Stark. Tony Stark is still Tony Stark. But together? They make Iron Man. This SDLC is your suit - you build it over time, improve it for your needs, and it makes you both better.
 
+## Tests Are The Building Blocks
+
+Tests aren't just validation - they're the foundation everything else builds on.
+
+- **Tests > App Code** - Critique tests harder than implementation
+- **Tests prove correctness** - Without them, you're just hoping it works
+- **Tests enable fearless change** - Refactor confidently because tests catch regressions
+
 ## Using It
 
 **Copy-paste:** Download `CLAUDE_CODE_SDLC_WIZARD.md` to your project and follow setup instructions inside.

@@ -297,6 +297,15 @@ Here's the "Testing Diamond" approach (recommended for AI agents):
 **Test Code = First-Class Citizen**
 Treat test code like app code - code review, quality standards, not throwaway. Tests are production-critical infrastructure.
 
+### Tests As Building Blocks
+
+Existing test patterns are building blocks - leverage them:
+- **Similar tests exist and are good?** - Copy the pattern, adapt for your case
+- **Similar tests exist but are bad?** - Propose improvement, worth the scrutiny
+- **No similar tests?** - More scrutiny needed, may need human input on approach
+
+**Existing patterns aren't sacred.** Don't blindly copy bad patterns just because they exist. Improving a stale pattern is worth the effort.
+
 **Before fixing a failing test, ask:**
 1. Do we even need this test? (Is it for deleted/legacy code?)
 2. Is this tested better elsewhere? (DRY applies to tests too)
@@ -933,6 +942,7 @@ TodoWrite([
   { content: "DRY scan: What patterns exist to reuse?", status: "pending", activeForm: "Scanning for reusable patterns" },
   { content: "Blast radius: What depends on code I'm changing?", status: "pending", activeForm: "Checking dependencies" },
   { content: "Restate task in own words - verify understanding", status: "pending", activeForm: "Verifying understanding" },
+  { content: "Scrutinize test design - right things tested? Follow TESTING.md?", status: "pending", activeForm: "Reviewing test approach" },
   { content: "Present approach + STATE CONFIDENCE LEVEL", status: "pending", activeForm: "Presenting approach" },
   { content: "Signal ready - user exits plan mode", status: "pending", activeForm: "Awaiting plan approval" },
   // TRANSITION PHASE (After plan mode, before compact)
@@ -951,6 +961,19 @@ TodoWrite([
   { content: "Present summary: changes, DRY, concerns", status: "pending", activeForm: "Presenting code summary" }
 ])
 ```
+
+## New Pattern & Test Design Scrutiny (PLANNING)
+
+**New design patterns require human approval:**
+1. Search first - do similar patterns exist in codebase?
+2. If YES and they're good - use as building block
+3. If YES but they're bad - propose improvement, get approval
+4. If NO (new pattern) - explain why needed, get explicit approval
+
+**Test design scrutiny during planning:**
+- Are we testing the right things?
+- Does test approach follow TESTING.md philosophies?
+- If introducing new test patterns, same scrutiny as code patterns
 
 ## Plan Mode Integration
 
@@ -998,6 +1021,18 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 3. Ask it to review for quality, DRY, consistency, and domain-specific patterns
 4. If low confidence on a pattern, search for 2026 best practices and weigh against your repo
 5. Address issues by going back through the proper SDLC loop
+
+## Test Review (Harder Than Implementation)
+
+During self-review, critique tests HARDER than app code:
+1. **Testing the right things?** - Not just that tests pass
+2. **Tests prove correctness?** - Or just verify current behavior?
+3. **Follow our philosophies (TESTING.md)?**
+   - Testing Diamond (integration-heavy)?
+   - Minimal mocking (real DB, mock external APIs only)?
+   - Real fixtures from captured data?
+
+**Tests are the foundation.** Bad tests = false confidence = production bugs.
 
 ## Scope Guard (Stay in Your Lane)
 
