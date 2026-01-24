@@ -142,8 +142,53 @@ This frames the wizard as a partnership, not a constraint.
 
 | Requirement | Why |
 |-------------|-----|
-| **Claude Code** | This system uses Claude Code hooks and skills |
+| **Claude Code v2.1.16+** | Required for Tasks system (persistent TodoWrite with dependency tracking) |
 | **Git repository** | Files should be committed for team sharing |
+
+---
+
+## Claude Code Feature Updates
+
+> **Keep your SDLC current**: Claude Code evolves. This section documents features that enhance the SDLC workflow. Check [Claude Code releases](https://github.com/anthropics/claude-code/releases) periodically.
+
+### Tasks System (v2.1.16+)
+
+**What changed**: TodoWrite is now backed by a persistent Tasks system with dependency tracking.
+
+**Benefits for SDLC**:
+- Tasks persist across sessions (crash recovery)
+- Sub-agents can see task state
+- Dependencies tracked automatically (RED → GREEN → PASS)
+
+**No changes needed**: Your existing TodoWrite calls in skills work automatically with the new system.
+
+**Rollback if issues**: Set `CLAUDE_CODE_ENABLE_TASKS=false` environment variable.
+
+### Skill Arguments with $ARGUMENTS (v2.1.19+)
+
+**What changed**: Skills can now accept parameters via `$ARGUMENTS` placeholder.
+
+**How to use**: Add `argument-hint` to frontmatter and `$ARGUMENTS` in skill content:
+
+```yaml
+---
+name: sdlc
+description: Full SDLC workflow for implementing features, fixing bugs, refactoring code
+argument-hint: [task description]
+---
+
+## Task
+$ARGUMENTS
+
+## Phases
+...rest of skill...
+```
+
+**Usage examples**:
+- `/sdlc fix the login validation bug` → `$ARGUMENTS` = "fix the login validation bug"
+- `/testing unit UserService` → `$ARGUMENTS` = "unit UserService"
+
+**Note**: Skills still auto-invoke via hooks. This is optional polish for manual invocation.
 
 ---
 
@@ -927,8 +972,12 @@ Create `.claude/skills/sdlc/SKILL.md`:
 ---
 name: sdlc
 description: Full SDLC workflow for implementing features, fixing bugs, refactoring code, and creating new functionality. Use this skill when implementing, fixing, refactoring, adding features, or building new code.
+argument-hint: [task description]
 ---
 # SDLC Skill - Full Development Workflow
+
+## Task
+$ARGUMENTS
 
 ## Full SDLC Checklist
 
@@ -1097,8 +1146,12 @@ Create `.claude/skills/testing/SKILL.md`:
 ---
 name: testing
 description: TDD and testing philosophy for writing tests, test-driven development, integration tests, and unit tests. Use this skill when writing tests, doing TDD, or debugging test issues.
+argument-hint: [test type] [target]
 ---
 # Testing Skill - TDD & Testing Philosophy
+
+## Task
+$ARGUMENTS
 
 ## Testing Diamond (CRITICAL)
 
