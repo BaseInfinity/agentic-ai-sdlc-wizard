@@ -2,6 +2,8 @@
 
 All notable changes to the SDLC Wizard.
 
+> **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
+
 ## [1.3.0] - 2026-01-24
 
 ### Added

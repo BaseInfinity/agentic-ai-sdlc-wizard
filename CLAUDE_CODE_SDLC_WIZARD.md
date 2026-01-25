@@ -1917,6 +1917,15 @@ Like `apt-get install`:
 | `SDLC.md`, `TESTING.md` | Wizard doc templates | Offer update if differs |
 | `CLAUDE.md` | NOT compared | Never touch (fully custom) |
 
+### CHANGELOG is for Humans, Not Claude
+
+**Always run the wizard for updates.** Don't try to manually apply changes from CHANGELOG.
+
+- **CHANGELOG** = Human-readable summary of what's new (for you to read)
+- **Wizard** = The actual instructions Claude follows to detect and apply updates
+
+The wizard contains the step registry, file templates, and idempotent logic. CHANGELOG just helps explain what changed in plain English.
+
 ### Why This Approach?
 
 - Uses Claude Code's built-in WebFetch - zero infrastructure
