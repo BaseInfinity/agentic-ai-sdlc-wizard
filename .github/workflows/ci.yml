@@ -50,3 +50,12 @@ jobs:
           test -f .github/last-checked-version.txt || (echo "Missing last-checked-version.txt" && exit 1)
           test -f .github/last-community-scan.txt || (echo "Missing last-community-scan.txt" && exit 1)
           echo "All state files present"
+
+      - name: Run version logic tests
+        run: ./tests/test-version-logic.sh
+
+      - name: Run analysis schema tests
+        run: ./tests/test-analysis-schema.sh
+
+      - name: Validate E2E fixtures and scenarios
+        run: ./tests/e2e/run-simulation.sh

@@ -1,0 +1,84 @@
+name: PR Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        run: |
+          # Get list of changed files in this PR
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | head -50)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: AI Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          direct_prompt: true
+          model: claude-sonnet-4-20250514
+          prompt: |
+            You are reviewing a pull request for the SDLC Wizard repository.
+
+            ## Review Focus Areas
+
+            ### 1. SDLC Compliance
+            - Does the change follow SDLC principles?
+            - Is there evidence of planning (for complex changes)?
+            - Are tests included or updated?
+
+            ### 2. Security
+            - Check for injection vulnerabilities (shell, YAML)
+            - Verify secrets are not exposed
+            - Check for unsafe variable interpolation
+
+            ### 3. Code Quality
+            - Is the code simple and readable?
+            - Is it over-engineered?
+            - Does it follow existing patterns?
+
+            ### 4. Testing
+            - Are new features tested?
+            - Are tests meaningful (not just for coverage)?
+            - Do tests follow the testing diamond (integration > unit with mocks)?
+
+            ## Changed Files
+            ${{ steps.changed-files.outputs.files }}
+
+            ## Response Format
+
+            Provide a structured review:
+
+            ### Summary
+            1-2 sentences about the overall change.
+
+            ### Findings
+            List any issues found, categorized by severity:
+            - **Critical**: Must fix before merge
+            - **Warning**: Should consider fixing
+            - **Note**: Minor suggestions
+
+            ### SDLC Compliance
+            - [ ] Planning evident (if complex change)
+            - [ ] Tests included/updated
+            - [ ] No over-engineering
+            - [ ] Follows existing patterns
+
+            ### Recommendation
+            One of: APPROVE, REQUEST_CHANGES, or COMMENT (with reason)

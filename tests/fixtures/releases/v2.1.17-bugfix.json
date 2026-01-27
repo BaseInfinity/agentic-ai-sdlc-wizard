@@ -1,0 +1,11 @@
+{
+  "version": "v2.1.17",
+  "relevance": "LOW",
+  "summary": "Fixed crash when processing very large files in VS Code extension",
+  "wizard_impact": [],
+  "plugin_check": {
+    "new_official_plugins": [],
+    "replaces_custom": []
+  },
+  "reasoning": "This is an IDE-specific bug fix for the VS Code extension. Does not affect CLI usage or any SDLC enforcement features. No action needed."
+}

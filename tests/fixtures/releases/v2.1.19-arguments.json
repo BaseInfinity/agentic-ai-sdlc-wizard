@@ -1,0 +1,24 @@
+{
+  "version": "v2.1.19",
+  "relevance": "MEDIUM",
+  "summary": "Added $ARGUMENTS variable for skills and improved hook context passing",
+  "wizard_impact": [
+    {
+      "area": "skills",
+      "description": "$ARGUMENTS allows skills to receive parameters from user invocation",
+      "suggested_action": "Consider updating skills to use $ARGUMENTS for more flexible invocation",
+      "files_affected": [".claude/skills/sdlc/SKILL.md", ".claude/skills/testing/SKILL.md"]
+    },
+    {
+      "area": "hooks",
+      "description": "Hooks now receive richer context about the operation being performed",
+      "suggested_action": "Review hook implementations to see if richer context could improve checks",
+      "files_affected": [".claude/hooks/sdlc-prompt-check.sh", ".claude/hooks/tdd-pretool-check.sh"]
+    }
+  ],
+  "plugin_check": {
+    "new_official_plugins": [],
+    "replaces_custom": []
+  },
+  "reasoning": "The $ARGUMENTS feature and hook context improvements could enhance our SDLC skills and hooks. Not critical changes but worth reviewing. MEDIUM relevance as it offers improvement opportunities."
+}

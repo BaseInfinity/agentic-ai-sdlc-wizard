@@ -1,0 +1,11 @@
+{
+  "version": "v2.1.20",
+  "relevance": "LOW",
+  "summary": "Added shimmer loading animation and improved dark mode colors",
+  "wizard_impact": [],
+  "plugin_check": {
+    "new_official_plugins": [],
+    "replaces_custom": []
+  },
+  "reasoning": "Pure UI/visual polish changes. Does not affect SDLC enforcement, hooks, skills, or any wizard functionality. No action needed."
+}

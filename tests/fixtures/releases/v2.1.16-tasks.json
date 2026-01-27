@@ -1,0 +1,18 @@
+{
+  "version": "v2.1.16",
+  "relevance": "HIGH",
+  "summary": "Added new Tasks documentation and improved TodoWrite reliability with better state persistence",
+  "wizard_impact": [
+    {
+      "area": "tasks",
+      "description": "TodoWrite now persists state across sessions, making task tracking more reliable",
+      "suggested_action": "Update SDLC.md to reference new persistence behavior, verify hooks still work",
+      "files_affected": ["SDLC.md", ".claude/skills/sdlc/SKILL.md"]
+    }
+  ],
+  "plugin_check": {
+    "new_official_plugins": [],
+    "replaces_custom": []
+  },
+  "reasoning": "This release directly improves TodoWrite which is core to our SDLC enforcement. The persistence changes mean our task tracking will be more reliable. HIGH relevance because it touches core wizard functionality."
+}
