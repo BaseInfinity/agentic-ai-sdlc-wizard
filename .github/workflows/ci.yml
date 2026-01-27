@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate YAML workflows
+        run: |
+          echo "Validating workflow YAML files..."
+          for file in .github/workflows/*.yml; do
+            echo "Checking $file"
+            python3 -c "import yaml; yaml.safe_load(open('$file'))" || exit 1
+          done
+          echo "All workflow files are valid YAML"
+
+      - name: Shellcheck scripts in workflows
+        run: |
+          echo "Checking for shell script issues in workflows..."
+          # Extract and check run blocks from workflows
+          # This is a basic check - shellcheck would be better but requires install
+          for file in .github/workflows/*.yml; do
+            echo "Scanning $file for common issues..."
+            # Check for unsafe variable interpolation (the bug we fixed)
+            if grep -E "='\\$\\{\\{.*\\}\\}'" "$file"; then
+              echo "WARNING: Found potentially unsafe variable interpolation in $file"
+              echo "Use env: block + file writes instead"
+              exit 1
+            fi
+          done
+          echo "No obvious shell issues found"
+
+      - name: Validate prompt files exist
+        run: |
+          echo "Checking required prompt files..."
+          test -f .github/prompts/analyze-release.md || (echo "Missing analyze-release.md" && exit 1)
+          test -f .github/prompts/analyze-community.md || (echo "Missing analyze-community.md" && exit 1)
+          echo "All prompt files present"
+
+      - name: Validate state files
+        run: |
+          echo "Checking state files..."
+          test -f .github/last-checked-version.txt || (echo "Missing last-checked-version.txt" && exit 1)
+          test -f .github/last-community-scan.txt || (echo "Missing last-community-scan.txt" && exit 1)
+          echo "All state files present"
