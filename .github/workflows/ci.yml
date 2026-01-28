@@ -169,7 +169,9 @@ jobs:
               # Strip newlines from jq output to prevent accumulation bugs
               SCORE=$(echo "$RESULT" | jq -r '.score // 0' | tr -d '\n')
             else
-              echo "  Evaluation script failed, using score 0"
+              EXIT_CODE=$?
+              echo "  Evaluation script failed (exit $EXIT_CODE), output:"
+              echo "$RESULT" | head -20
               RESULT='{"score":0,"pass":false,"summary":"Evaluation failed"}'
               SCORE="0"
             fi
