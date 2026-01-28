@@ -647,6 +647,13 @@ Feature branches still recommended for solo devs (keeps main clean, easy rollbac
 
 **Recommendation:** Solo devs = yes (keeps PR tidy). Teams = ask (some want audit trail).
 
+> "Run AI code review only after tests pass? (y/n)"
+
+- **Yes** → PR review workflow waits for CI to pass first (saves API costs on broken code)
+- **No** → Review runs immediately in parallel with tests (faster feedback)
+
+**Recommendation:** Yes for most teams. No point reviewing code that doesn't build/pass tests. Saves Claude API costs and reviewer time.
+
 **Check for new plugins periodically:**
 ```
 /plugin > Discover
