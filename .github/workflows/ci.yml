@@ -164,15 +164,18 @@ jobs:
 
           for i in 1 2 3; do
             echo "Evaluation run $i/3..."
-            # Capture output and check exit code separately to avoid corrupted concatenation
-            if RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1); then
-              # Strip newlines from jq output to prevent accumulation bugs
+            # Capture output - evaluate.sh exits 1 for low scores (valid), so check JSON validity instead
+            RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
+
+            # Check if we got valid JSON with a score field
+            if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
+              # Valid JSON - extract score (strip newlines)
               SCORE=$(echo "$RESULT" | jq -r '.score // 0' | tr -d '\n')
             else
-              EXIT_CODE=$?
-              echo "  Evaluation script failed (exit $EXIT_CODE), output:"
-              echo "$RESULT" | head -20
-              RESULT='{"score":0,"pass":false,"summary":"Evaluation failed"}'
+              # Invalid output - show error for debugging
+              echo "  Evaluation returned invalid JSON:"
+              echo "$RESULT" | head -10
+              RESULT='{"score":0,"pass":false,"summary":"Evaluation returned invalid JSON"}'
               SCORE="0"
             fi
             SCORES="$SCORES $SCORE"
