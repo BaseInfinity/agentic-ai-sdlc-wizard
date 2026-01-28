@@ -144,13 +144,23 @@ jobs:
             elif [ "$DENIALS" -lt 3 ]; then
               SCORE="7.5"
               SUMMARY="Claude executed with $DENIALS permission denials (minor)"
+            elif [ "$DENIALS" -lt 6 ]; then
+              SCORE="7.0"
+              SUMMARY="Claude executed with $DENIALS permission denials"
             else
               SCORE="6.0"
-              SUMMARY="Claude executed but had $DENIALS permission denials"
+              SUMMARY="Claude executed but had $DENIALS permission denials (many)"
+            fi
+
+            # Pass if score >= 7.0
+            if [ "$(echo "$SCORE >= 7.0" | bc)" -eq 1 ]; then
+              PASS="true"
+            else
+              PASS="false"
             fi
 
             echo "score=$SCORE" >> $GITHUB_OUTPUT
-            echo "pass=true" >> $GITHUB_OUTPUT
+            echo "pass=$PASS" >> $GITHUB_OUTPUT
             echo "summary=$SUMMARY (${NUM_TURNS} turns, \$${COST})" >> $GITHUB_OUTPUT
           else
             echo "score=0" >> $GITHUB_OUTPUT
