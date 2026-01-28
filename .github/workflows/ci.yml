@@ -118,19 +118,12 @@ jobs:
             exit 0
           fi
 
-          # Debug: Show file structure
-          echo "=== Debug: First 500 chars of output file ==="
-          head -c 500 "$OUTPUT_FILE" || echo "Could not read file"
-          echo ""
-          echo "=== Debug: Looking for result type ==="
-
           # Check if execution was successful
-          # The output file contains newline-delimited JSON objects
-          IS_ERROR=$(grep '"type":"result"' "$OUTPUT_FILE" | jq -r '.is_error // false' | tail -1 || echo "true")
-          NUM_TURNS=$(grep '"type":"result"' "$OUTPUT_FILE" | jq -r '.num_turns // 0' | tail -1 || echo "0")
+          # The output file is a JSON array, find the result object
+          IS_ERROR=$(jq -r '[.[] | select(.type == "result")] | last | .is_error // false' "$OUTPUT_FILE" 2>/dev/null || echo "true")
+          NUM_TURNS=$(jq -r '[.[] | select(.type == "result")] | last | .num_turns // 0' "$OUTPUT_FILE" 2>/dev/null || echo "0")
 
-          echo "IS_ERROR=$IS_ERROR"
-          echo "NUM_TURNS=$NUM_TURNS"
+          echo "IS_ERROR=$IS_ERROR NUM_TURNS=$NUM_TURNS"
 
           if [ "$IS_ERROR" = "true" ]; then
             echo "Claude execution had errors"
@@ -139,9 +132,9 @@ jobs:
             echo "summary=Claude execution failed" >> $GITHUB_OUTPUT
           elif [ "$NUM_TURNS" -gt 0 ]; then
             # Claude ran successfully - check for permission denials as quality signal
-            DENIALS=$(grep '"type":"result"' "$OUTPUT_FILE" | jq -r '.permission_denials | length // 0' | tail -1 || echo "0")
-            COST=$(grep '"type":"result"' "$OUTPUT_FILE" | jq -r '.total_cost_usd // 0' | tail -1 || echo "0")
-            echo "DENIALS=$DENIALS COST=$COST"
+            DENIALS=$(jq -r '[.[] | select(.type == "result")] | last | .permission_denials | length // 0' "$OUTPUT_FILE" 2>/dev/null || echo "0")
+            COST=$(jq -r '[.[] | select(.type == "result")] | last | .total_cost_usd // 0' "$OUTPUT_FILE" 2>/dev/null || echo "0")
+            echo "DENIALS=$DENIALS COST=\$$COST"
 
             # Score based on execution quality
             # Base score of 7 if Claude ran, adjust based on denials
@@ -181,9 +174,13 @@ jobs:
 
             const body = `## E2E SDLC Evaluation ${emoji}
 
-            **Status:** ${status}
-            **Score:** ${score} / 10 (threshold: 7.0)
+            | Metric | Value |
+            |--------|-------|
+            | **Status** | ${status} |
+            | **Score** | ${score} / 10 |
+            | **Threshold** | 7.0 |
 
+            ### Summary
             ${summary}
 
             ---
