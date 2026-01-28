@@ -1,0 +1,201 @@
+name: Monthly Research Deep Dive
+
+on:
+  schedule:
+    - cron: '0 9 1 * *'  # 1st of month at 9 AM UTC
+  workflow_dispatch:  # Manual trigger for testing
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  deep-research:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get current month
+        id: current-month
+        run: |
+          CURRENT_MONTH=$(date +%Y-%m)
+          echo "current_month=$CURRENT_MONTH" >> $GITHUB_OUTPUT
+          echo "Current month: $CURRENT_MONTH"
+
+      - name: Run deep research with Claude
+        id: research
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            # Monthly Deep Research: AI-Assisted Development Trends
+
+            **Month:** ${{ steps.current-month.outputs.current_month }}
+
+            ## Research Goals
+
+            Perform deep research on AI-assisted software development trends that could
+            improve the SDLC Wizard. Focus on actionable insights, not general news.
+
+            ## Research Areas
+
+            ### 1. Academic Papers & Research
+            Search for recent papers on:
+            - AI code generation quality and reliability
+            - Human-AI collaboration in software development
+            - Test-driven development with AI assistance
+            - Confidence calibration in AI systems
+
+            ### 2. Major Announcements
+            Check for significant releases from:
+            - Anthropic (Claude updates, new features)
+            - OpenAI (competitive landscape)
+            - GitHub (Copilot features, Actions updates)
+            - Major IDE vendors (VS Code, JetBrains)
+
+            ### 3. Community Deep Dive
+            Go deeper than weekly scans:
+            - Reddit: r/ClaudeAI, r/programming, r/ExperiencedDevs
+            - Hacker News: Top discussions about AI coding
+            - Dev.to, Medium: Practitioner experiences
+            - YouTube: Conference talks, tutorials
+
+            ### 4. Emerging Patterns
+            Look for patterns in how teams are using AI coding assistants:
+            - Workflow improvements
+            - Common pitfalls
+            - Best practices emerging
+            - Tool combinations that work well
+
+            ## Output Format
+
+            Return JSON:
+            ```json
+            {
+              "month": "YYYY-MM",
+              "research_summary": "Brief overview of findings",
+              "papers": [
+                {
+                  "title": "Paper title",
+                  "source": "arxiv/conference/journal",
+                  "url": "link if available",
+                  "relevance": "Why this matters for SDLC Wizard",
+                  "actionable_insight": "What we could implement"
+                }
+              ],
+              "announcements": [
+                {
+                  "source": "Company/Project",
+                  "what": "Description",
+                  "impact": "How this affects us",
+                  "action_needed": true/false
+                }
+              ],
+              "community_trends": [
+                {
+                  "trend": "Description",
+                  "evidence": ["link1", "link2"],
+                  "relevance": "HIGH/MEDIUM/LOW",
+                  "suggested_response": "What we should do"
+                }
+              ],
+              "recommended_wizard_updates": [
+                {
+                  "area": "hooks/skills/docs/philosophy",
+                  "change": "What to change",
+                  "rationale": "Why",
+                  "priority": "HIGH/MEDIUM/LOW"
+                }
+              ],
+              "nothing_notable": false
+            }
+            ```
+
+            ## Guidelines
+
+            - Quality over quantity - only include genuinely useful findings
+            - Be skeptical of hype - focus on proven patterns
+            - Align with SDLC Wizard philosophy: KISS, TDD, confidence levels
+            - If nothing notable found, set nothing_notable: true
+            - Prioritize actionable insights over interesting-but-not-useful
+          direct_prompt: true
+          model: claude-sonnet-4-20250514
+          allowed_tools: "WebSearch,WebFetch"
+
+      - name: Save research result to file
+        env:
+          RESEARCH_RESPONSE: ${{ steps.research.outputs.response }}
+        run: |
+          printf '%s' "$RESEARCH_RESPONSE" > /tmp/research_result.json
+
+      - name: Parse research result
+        id: parse
+        run: |
+          NOTHING_NOTABLE=$(jq -r '.nothing_notable // false' /tmp/research_result.json 2>/dev/null || echo "false")
+          PAPERS_COUNT=$(jq -r '.papers | length // 0' /tmp/research_result.json 2>/dev/null || echo "0")
+          ANNOUNCEMENTS_COUNT=$(jq -r '.announcements | length // 0' /tmp/research_result.json 2>/dev/null || echo "0")
+          TRENDS_COUNT=$(jq -r '.community_trends | length // 0' /tmp/research_result.json 2>/dev/null || echo "0")
+          UPDATES_COUNT=$(jq -r '.recommended_wizard_updates | length // 0' /tmp/research_result.json 2>/dev/null || echo "0")
+
+          echo "nothing_notable=$NOTHING_NOTABLE" >> $GITHUB_OUTPUT
+          echo "papers_count=$PAPERS_COUNT" >> $GITHUB_OUTPUT
+          echo "announcements_count=$ANNOUNCEMENTS_COUNT" >> $GITHUB_OUTPUT
+          echo "trends_count=$TRENDS_COUNT" >> $GITHUB_OUTPUT
+          echo "updates_count=$UPDATES_COUNT" >> $GITHUB_OUTPUT
+
+          echo "Nothing notable: $NOTHING_NOTABLE"
+          echo "Papers: $PAPERS_COUNT, Announcements: $ANNOUNCEMENTS_COUNT"
+          echo "Trends: $TRENDS_COUNT, Updates: $UPDATES_COUNT"
+
+      - name: Build issue body
+        if: steps.parse.outputs.nothing_notable != 'true'
+        run: |
+          cat > /tmp/issue_body.md << 'ISSUEEOF'
+          ## Monthly Research Report
+
+          **Month:** ${{ steps.current-month.outputs.current_month }}
+
+          | Category | Count |
+          |----------|-------|
+          | Papers | ${{ steps.parse.outputs.papers_count }} |
+          | Announcements | ${{ steps.parse.outputs.announcements_count }} |
+          | Community Trends | ${{ steps.parse.outputs.trends_count }} |
+          | Recommended Updates | ${{ steps.parse.outputs.updates_count }} |
+
+          ### Full Research Report
+          ```json
+          ISSUEEOF
+
+          cat /tmp/research_result.json >> /tmp/issue_body.md
+
+          cat >> /tmp/issue_body.md << 'ISSUEEOF'
+          ```
+
+          ### Review Guidelines
+          - Papers: Consider if findings align with SDLC philosophy
+          - Announcements: Check if action is needed
+          - Trends: Validate against our experience
+          - Updates: Evaluate each against KISS principle
+
+          ---
+          *Generated by monthly-research workflow*
+          ISSUEEOF
+
+      - name: Create research issue
+        if: steps.parse.outputs.nothing_notable != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Monthly Research: ${{ steps.current-month.outputs.current_month }}" \
+            --label "monthly-research" \
+            --label "auto-generated" \
+            --body-file /tmp/issue_body.md
+
+      - name: Log if nothing notable
+        if: steps.parse.outputs.nothing_notable == 'true'
+        run: |
+          echo "No notable research findings this month."
+          echo "This can happen - not every month has relevant developments."

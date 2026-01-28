@@ -51,9 +51,11 @@ jobs:
             - Are tests meaningful (not just for coverage)?
             - Do tests follow the testing diamond (integration > unit with mocks)?
 
-            Use `gh pr comment` for top-level feedback.
-            Use `mcp__github_inline_comment__create_inline_comment` to highlight specific code issues.
-            Only post GitHub comments - don't submit review text as messages.
+            Use the GitHub MCP tools to create a proper pull request review:
+            1. Get the diff with mcp__github__get_pull_request_diff
+            2. Create a pending review with mcp__github__create_pending_pull_request_review
+            3. Add inline comments with mcp__github__add_comment_to_pending_review
+            4. Submit the review with mcp__github__submit_pending_pull_request_review
 
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
+            --allowedTools "mcp__github__create_pending_pull_request_review,mcp__github__add_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__get_pull_request_diff,Read,Grep,Glob"

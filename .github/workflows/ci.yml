@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -59,3 +63,104 @@ jobs:
 
       - name: Validate E2E fixtures and scenarios
         run: ./tests/e2e/run-simulation.sh
+
+  # E2E Evaluation - only runs for bot/owner PRs
+  e2e-evaluation:
+    runs-on: ubuntu-latest
+    # Only run for bot-generated PRs or repo owner
+    if: |
+      github.event_name == 'pull_request' && (
+        github.event.pull_request.user.login == 'github-actions[bot]' ||
+        github.event.pull_request.user.login == github.repository_owner ||
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      )
+    needs: validate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check E2E conditions
+        id: check
+        run: |
+          echo "PR Author: ${{ github.event.pull_request.user.login }}"
+          echo "Repo Owner: ${{ github.repository_owner }}"
+          echo "Running E2E evaluation..."
+
+      - name: Run E2E simulation with Claude
+        id: simulate
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Run an E2E SDLC simulation on the test fixtures.
+
+            1. Pick a scenario from tests/e2e/scenarios/
+            2. Set up a test fixture from tests/e2e/fixtures/
+            3. Execute the scenario task following SDLC principles
+            4. Return results as JSON with score
+
+            Output format:
+            ```json
+            {
+              "scenario": "add-feature",
+              "fixture": "test-repo",
+              "score": 8.5,
+              "pass": true,
+              "summary": "SDLC followed correctly"
+            }
+            ```
+          direct_prompt: true
+          model: claude-sonnet-4-20250514
+
+      - name: Parse E2E result
+        id: parse
+        env:
+          E2E_RESULT: ${{ steps.simulate.outputs.response }}
+        run: |
+          printf '%s' "$E2E_RESULT" > /tmp/e2e_result.json
+          SCORE=$(jq -r '.score // 0' /tmp/e2e_result.json 2>/dev/null || echo "0")
+          PASS=$(jq -r '.pass // false' /tmp/e2e_result.json 2>/dev/null || echo "false")
+          SUMMARY=$(jq -r '.summary // "No summary"' /tmp/e2e_result.json 2>/dev/null || echo "No summary")
+
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "pass=$PASS" >> $GITHUB_OUTPUT
+          echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
+
+          echo "E2E Score: $SCORE"
+          echo "Pass: $PASS"
+
+      - name: Comment E2E results on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const score = '${{ steps.parse.outputs.score }}';
+            const pass = '${{ steps.parse.outputs.pass }}' === 'true';
+            const summary = '${{ steps.parse.outputs.summary }}';
+
+            const emoji = pass ? ':white_check_mark:' : ':x:';
+            const status = pass ? 'PASSED' : 'FAILED';
+
+            const body = `## E2E SDLC Evaluation ${emoji}
+
+            **Status:** ${status}
+            **Score:** ${score} / 10 (threshold: 7.0)
+
+            ${summary}
+
+            ---
+            *Automated E2E evaluation by CI*`;
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Fail if score below threshold
+        if: steps.parse.outputs.pass != 'true'
+        run: |
+          echo "E2E evaluation failed with score ${{ steps.parse.outputs.score }}"
+          echo "Minimum required: 7.0"
+          exit 1

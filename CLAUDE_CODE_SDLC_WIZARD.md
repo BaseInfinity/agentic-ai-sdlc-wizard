@@ -806,9 +806,27 @@ Examples: <1 minute, 1-5 minutes, 5+ minutes
 Your answer: _______________
 ```
 
+### Output Preferences
+
+**Q12: How much detail in Claude's responses?**
+```
+Options:
+- Small   - Minimal output, just essentials (experienced users)
+- Medium  - Balanced detail (default, recommended)
+- Large   - Verbose output, full explanations (learning/debugging)
+Your answer: _______________
+```
+
+This setting affects:
+- TodoWrite verbosity (brief vs detailed task descriptions)
+- Planning output (summary vs comprehensive breakdown)
+- Self-review comments (concise vs thorough)
+
+Stored in `.claude/settings.json` as `"verbosity": "small|medium|large"`.
+
 ### Testing Philosophy
 
-**Q12: What's your testing approach?**
+**Q13: What's your testing approach?**
 ```
 Options:
 - Strict TDD (test first always)
@@ -819,7 +837,7 @@ Options:
 Your answer: _______________
 ```
 
-**Q13: What types of tests do you want?**
+**Q14: What types of tests do you want?**
 ```
 (Check all that apply)
 [ ] Unit tests (pure logic, isolated)
@@ -829,7 +847,7 @@ Your answer: _______________
 [ ] Other: _______________
 ```
 
-**Q14: Your mocking philosophy?**
+**Q15: Your mocking philosophy?**
 ```
 Options:
 - Minimal mocking (real DB, mock external APIs only)
@@ -895,6 +913,7 @@ Create `.claude/settings.json`:
 
 ```json
 {
+  "verbosity": "medium",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -920,6 +939,14 @@ Create `.claude/settings.json`:
   }
 }
 ```
+
+### Verbosity Levels
+
+| Level | Output Style |
+|-------|--------------|
+| `small` | Brief, minimal output. Task names are short. Less explanation. |
+| `medium` | Balanced (default). Clear explanations without excessive detail. |
+| `large` | Verbose. Full reasoning, detailed breakdowns. Good for learning. |
 
 ### Why These Hooks?
 

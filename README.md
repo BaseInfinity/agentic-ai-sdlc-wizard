@@ -80,14 +80,36 @@ https://raw.githubusercontent.com/BaseInfinity/sdlc-wizard/main/CLAUDE_CODE_SDLC
 
 **Check for updates:** Ask Claude "Check if the SDLC wizard has updates" - Claude reads [CHANGELOG.md](CHANGELOG.md), shows what's new, and offers to apply changes (opt-in each)
 
-## Auto-Update System
+## Self-Evolving System
 
-The wizard monitors Claude Code releases and community discussions automatically:
+The wizard actively improves itself through automated research and human-approved updates:
 
-- **Daily:** Checks official releases, creates PRs for relevant updates
-- **Weekly:** Scans community (Reddit, HN, blogs) for actionable insights
+| Cadence | Source | Action |
+|---------|--------|--------|
+| Daily | Claude Code releases | PR with analysis |
+| Weekly | Community (Reddit, HN) | Issue digest |
+| Monthly | Deep research, papers | Trend report |
 
-All updates require human review before merging. See `.github/workflows/` for details.
+Every update goes through:
+1. **Regression tests** - Does new Claude version still follow SDLC?
+2. **AI code review** - Quality check like a senior engineer
+3. **Human approval** - You always decide what merges
+
+### Why This Matters
+
+AI tools evolve fast. Yesterday's best practice is today's anti-pattern.
+The wizard watches official releases AND community sentiment so you don't have to.
+But it never auto-merges - you stay in control.
+
+### What Gets Checked
+
+| Trigger | Tests | Review | E2E Eval |
+|---------|-------|--------|----------|
+| Bot PRs | Yes | Yes | Yes |
+| Owner PRs | Yes | Yes | Yes |
+| External PRs | Yes | Yes | No |
+
+See `.github/workflows/` for implementation details.
 
 ## Official Plugin Integration
 

@@ -1,0 +1,17 @@
+{
+  "name": "legacy-messy",
+  "version": "0.1.0",
+  "description": "Intentionally messy code for refactoring tests",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "supertest": "^6.0.0"
+  }
+}
