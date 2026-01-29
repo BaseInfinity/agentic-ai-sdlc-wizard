@@ -123,12 +123,15 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          working_directory: pr-branch/tests/e2e/fixtures/test-repo
           claude_args: |
             --max-turns 30
             --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+            --add-dir pr-branch/tests/e2e
           prompt: |
-            Run an E2E SDLC simulation using scenario: ../../scenarios/medium-add-feature.md
+            Run an E2E SDLC simulation.
+
+            Working directory: pr-branch/tests/e2e/fixtures/test-repo
+            Scenario file: pr-branch/tests/e2e/scenarios/medium-add-feature.md
 
             1. Read the scenario file to understand the task
             2. Execute the scenario task following SDLC principles
@@ -193,12 +196,15 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          working_directory: pr-branch/tests/e2e/fixtures/test-repo
           claude_args: |
             --max-turns 30
             --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+            --add-dir pr-branch/tests/e2e
           prompt: |
-            Run an E2E SDLC simulation using scenario: ../../scenarios/medium-add-feature.md
+            Run an E2E SDLC simulation.
+
+            Working directory: pr-branch/tests/e2e/fixtures/test-repo
+            Scenario file: pr-branch/tests/e2e/scenarios/medium-add-feature.md
 
             1. Read the scenario file to understand the task
             2. Execute the scenario task following SDLC principles
@@ -371,12 +377,15 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          working_directory: pr-branch/tests/e2e/fixtures/test-repo
           claude_args: |
             --max-turns 30
             --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+            --add-dir pr-branch/tests/e2e
           prompt: |
-            Run an E2E SDLC simulation using scenario: ../../scenarios/medium-add-feature.md
+            Run an E2E SDLC simulation.
+
+            Working directory: pr-branch/tests/e2e/fixtures/test-repo
+            Scenario file: pr-branch/tests/e2e/scenarios/medium-add-feature.md
 
             1. Read the scenario file to understand the task
             2. Execute the scenario task following SDLC principles
@@ -448,12 +457,15 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          working_directory: pr-branch/tests/e2e/fixtures/test-repo
           claude_args: |
             --max-turns 30
             --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+            --add-dir pr-branch/tests/e2e
           prompt: |
-            Run an E2E SDLC simulation using scenario: ../../scenarios/medium-add-feature.md
+            Run an E2E SDLC simulation.
+
+            Working directory: pr-branch/tests/e2e/fixtures/test-repo
+            Scenario file: pr-branch/tests/e2e/scenarios/medium-add-feature.md
 
             1. Read the scenario file to understand the task
             2. Execute the scenario task following SDLC principles
