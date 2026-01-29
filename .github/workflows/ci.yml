@@ -114,6 +114,7 @@ jobs:
           claude_args: |
             --max-turns 30
           # Allow Claude to do TDD: read/write files, run tests, git operations
+          # Paths must be relative to repo root
           additional_permissions: |
             Bash(npm *)
             Bash(node *)
@@ -121,8 +122,11 @@ jobs:
             Bash(cat *)
             Bash(ls *)
             Bash(mkdir *)
-            Write
-            Edit
+            Bash(chmod *)
+            Write(tests/**)
+            Write(src/**)
+            Edit(tests/**)
+            Edit(src/**)
             Read
           prompt: |
             Run an E2E SDLC simulation using scenario: tests/e2e/scenarios/medium-add-feature.md
