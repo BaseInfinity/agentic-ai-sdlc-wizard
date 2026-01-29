@@ -1,5 +1,29 @@
 # Testing Strategy
 
+## The Absolute Rule
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ALL TESTS MUST PASS. NO EXCEPTIONS.                                │
+│                                                                     │
+│  This is not negotiable. This is not flexible. This is absolute.   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Not acceptable excuses:**
+- "Those tests were already failing" → Then fix them first
+- "That's not related to my changes" → Doesn't matter, fix it
+- "It's flaky, just ignore it" → Flaky = bug, investigate it
+- "It passes locally" → CI is the source of truth
+
+**The process:**
+1. Tests fail → STOP
+2. Investigate → Find root cause
+3. Fix → Whatever is actually broken
+4. All tests pass → THEN commit
+
+---
+
 ## Meta-Testing Challenge
 
 This is a **meta-project** - it's a wizard that sets up other projects. Traditional testing doesn't directly apply.
@@ -15,17 +39,21 @@ This is a **meta-project** - it's a wizard that sets up other projects. Traditio
 
 ### Layer 1: Script Logic Tests
 
-**Location**: `tests/test-version-logic.sh`, `tests/test-analysis-schema.sh`
+**Location**: `tests/test-version-logic.sh`, `tests/test-analysis-schema.sh`, `tests/test-workflow-triggers.sh`
 
 **What they test**:
 - Version comparison logic
 - JSON schema validation
 - Relevance filtering logic
+- Workflow trigger configurations (workflow_dispatch, schedule)
+- State file read/write round-trips
+- Error handling patterns
 
 **How to run**:
 ```bash
 ./tests/test-version-logic.sh
 ./tests/test-analysis-schema.sh
+./tests/test-workflow-triggers.sh
 ```
 
 ### Layer 2: Fixture Validation
@@ -82,7 +110,8 @@ CI runs:
 1. YAML validation
 2. Script logic tests
 3. Schema validation
-4. E2E fixture validation
+4. Workflow trigger tests
+5. E2E fixture validation
 
 ## Manual Testing
 

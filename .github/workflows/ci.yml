@@ -62,6 +62,9 @@ jobs:
       - name: Run analysis schema tests
         run: ./tests/test-analysis-schema.sh
 
+      - name: Run workflow trigger tests
+        run: ./tests/test-workflow-triggers.sh
+
       - name: Validate E2E fixtures and scenarios
         run: ./tests/e2e/run-simulation.sh
 
@@ -78,211 +81,242 @@ jobs:
           authors: 'github-actions[bot]'
           starts-with: |
             ## E2E SDLC Evaluation
+            ## E2E Before/After Comparison
             ## PR Code Review
             **Claude finished
 
-  # E2E Evaluation - only runs for bot/owner PRs
-  e2e-evaluation:
+  # TIER 1: Quick E2E Check - Runs on every PR commit
+  # Single comparison: baseline vs candidate (1x each)
+  # Purpose: Fast quality gate to catch regressions early
+  e2e-quick-check:
     runs-on: ubuntu-latest
-    # Only run for bot-generated PRs or repo owner
-    if: |
-      github.event_name == 'pull_request' && (
-        github.event.pull_request.user.login == 'github-actions[bot]' ||
-        github.event.pull_request.user.login == github.repository_owner ||
-        contains(github.event.pull_request.labels.*.name, 'run-e2e')
-      )
+    if: github.event_name == 'pull_request'
     needs: [validate, cleanup-old-comments]
 
     steps:
-      - name: Checkout
+      - name: Checkout PR branch
         uses: actions/checkout@v4
+        with:
+          path: pr-branch
 
-      - name: Check E2E conditions
-        id: check
+      - name: Checkout main branch for baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-branch
+
+      - name: Install BASELINE wizard (main branch) into test fixture
         run: |
-          echo "PR Author: ${{ github.event.pull_request.user.login }}"
-          echo "Repo Owner: ${{ github.repository_owner }}"
-          echo "Running E2E evaluation..."
+          echo "Installing main branch wizard into test fixture..."
+          # Create .claude directory in test fixture
+          mkdir -p pr-branch/tests/e2e/fixtures/test-repo/.claude
+          # Copy main branch wizard files
+          cp -r main-branch/.claude/hooks pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp -r main-branch/.claude/skills pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp main-branch/.claude/settings.json pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          echo "Baseline wizard installed:"
+          ls -la pr-branch/tests/e2e/fixtures/test-repo/.claude/ || echo "No .claude directory"
 
-      - name: Run E2E simulation with Claude
-        id: simulate
+      - name: Run BASELINE simulation with Claude
+        id: baseline
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Give Claude enough turns to complete full SDLC cycle
-          # NOTE: additional_permissions is for GitHub API (like 'actions: read'), NOT file tools
-          # File tool permissions must be passed via --allowedTools in claude_args
+          working_directory: pr-branch/tests/e2e/fixtures/test-repo
           claude_args: |
             --max-turns 30
             --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
           prompt: |
-            Run an E2E SDLC simulation using scenario: tests/e2e/scenarios/medium-add-feature.md
+            Run an E2E SDLC simulation using scenario: ../../scenarios/medium-add-feature.md
 
             1. Read the scenario file to understand the task
-            2. Set up the test fixture from tests/e2e/fixtures/test-repo/
-            3. Execute the scenario task following SDLC principles
-            4. Return results as JSON with score
+            2. Execute the scenario task following SDLC principles
+            3. Return results as JSON with score
 
             After execution, output a summary of what you did and whether SDLC was followed.
 
-      - name: Evaluate SDLC Compliance
-        id: evaluate
+      - name: Evaluate BASELINE
+        id: eval-baseline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        working-directory: pr-branch
         run: |
           OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
           SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
-            echo "Error: Claude output file not found"
-            echo "score=0" >> $GITHUB_OUTPUT
-            echo "pass=false" >> $GITHUB_OUTPUT
-            echo "summary=Claude execution output not found" >> $GITHUB_OUTPUT
-            echo "criteria=N/A" >> $GITHUB_OUTPUT
-            echo "variance=0" >> $GITHUB_OUTPUT
+            echo "baseline_score=0" >> $GITHUB_OUTPUT
             echo "baseline_status=fail" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Check if Claude execution was successful
-          IS_ERROR=$(jq -r '[.[] | select(.type == "result")] | last | .is_error // false' "$OUTPUT_FILE" 2>/dev/null || echo "true")
-          NUM_TURNS=$(jq -r '[.[] | select(.type == "result")] | last | .num_turns // 0' "$OUTPUT_FILE" 2>/dev/null || echo "0")
-          COST=$(jq -r '[.[] | select(.type == "result")] | last | .total_cost_usd // 0' "$OUTPUT_FILE" 2>/dev/null || echo "0")
+          # Run evaluation
+          RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
 
-          echo "IS_ERROR=$IS_ERROR NUM_TURNS=$NUM_TURNS COST=\$$COST"
+          if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
+            SCORE=$(echo "$RESULT" | jq -r '.score // 0')
+          else
+            SCORE="0"
+          fi
 
-          if [ "$IS_ERROR" = "true" ] || [ "$NUM_TURNS" -eq 0 ]; then
-            echo "Claude execution failed or did not run"
-            echo "score=0" >> $GITHUB_OUTPUT
-            echo "pass=false" >> $GITHUB_OUTPUT
-            echo "summary=Claude execution failed" >> $GITHUB_OUTPUT
-            echo "criteria=N/A" >> $GITHUB_OUTPUT
-            echo "variance=0" >> $GITHUB_OUTPUT
-            echo "baseline_status=fail" >> $GITHUB_OUTPUT
+          echo "Baseline score: $SCORE"
+          echo "baseline_score=$SCORE" >> $GITHUB_OUTPUT
+
+          # Save output for comparison
+          cp "$OUTPUT_FILE" "/tmp/baseline-output.json" 2>/dev/null || true
+
+      - name: Reset test fixture for CANDIDATE
+        run: |
+          echo "Resetting test fixture..."
+          cd pr-branch/tests/e2e/fixtures/test-repo
+          # Remove any changes Claude made
+          git checkout -- . 2>/dev/null || true
+          git clean -fd 2>/dev/null || true
+          # Remove old wizard
+          rm -rf .claude
+
+      - name: Install CANDIDATE wizard (PR branch) into test fixture
+        run: |
+          echo "Installing PR branch wizard into test fixture..."
+          mkdir -p pr-branch/tests/e2e/fixtures/test-repo/.claude
+          # Copy PR branch wizard files
+          cp -r pr-branch/.claude/hooks pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp -r pr-branch/.claude/skills pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp pr-branch/.claude/settings.json pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          echo "Candidate wizard installed:"
+          ls -la pr-branch/tests/e2e/fixtures/test-repo/.claude/ || echo "No .claude directory"
+
+      - name: Run CANDIDATE simulation with Claude
+        id: candidate
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: pr-branch/tests/e2e/fixtures/test-repo
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+          prompt: |
+            Run an E2E SDLC simulation using scenario: ../../scenarios/medium-add-feature.md
+
+            1. Read the scenario file to understand the task
+            2. Execute the scenario task following SDLC principles
+            3. Return results as JSON with score
+
+            After execution, output a summary of what you did and whether SDLC was followed.
+
+      - name: Evaluate CANDIDATE
+        id: eval-candidate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        working-directory: pr-branch
+        run: |
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "candidate_score=0" >> $GITHUB_OUTPUT
+            echo "candidate_status=fail" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Run evaluation 3x for variance reduction (LLM-as-Judge is non-deterministic)
-          echo "Running SDLC evaluation 3 times for variance reduction..."
-          SCORES=""
-          LAST_RESULT=""
+          # Run evaluation
+          RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
 
-          for i in 1 2 3; do
-            echo "Evaluation run $i/3..."
-            # Capture output - evaluate.sh exits 1 for low scores (valid), so check JSON validity instead
-            RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
+          if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
+            SCORE=$(echo "$RESULT" | jq -r '.score // 0')
+          else
+            SCORE="0"
+          fi
 
-            # Check if we got valid JSON with a score field
-            if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
-              # Valid JSON - extract score (strip newlines)
-              SCORE=$(echo "$RESULT" | jq -r '.score // 0' | tr -d '\n')
+          echo "Candidate score: $SCORE"
+          echo "candidate_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Compare scores
+        id: compare
+        run: |
+          BASELINE="${{ steps.eval-baseline.outputs.baseline_score }}"
+          CANDIDATE="${{ steps.eval-candidate.outputs.candidate_score }}"
+
+          # Default to 0 if empty
+          BASELINE=${BASELINE:-0}
+          CANDIDATE=${CANDIDATE:-0}
+
+          # Calculate delta using bc for float math
+          DELTA=$(echo "$CANDIDATE - $BASELINE" | bc -l)
+          DELTA_FORMATTED=$(printf "%.1f" "$DELTA")
+
+          echo "Baseline: $BASELINE"
+          echo "Candidate: $CANDIDATE"
+          echo "Delta: $DELTA_FORMATTED"
+
+          # Determine status
+          if [ "$(echo "$DELTA >= 0" | bc -l)" -eq 1 ]; then
+            if [ "$(echo "$DELTA > 0" | bc -l)" -eq 1 ]; then
+              STATUS="IMPROVED"
+              EMOJI=":arrow_up:"
             else
-              # Invalid output - show error for debugging
-              echo "  Evaluation returned invalid JSON:"
-              echo "$RESULT" | head -10
-              RESULT='{"score":0,"pass":false,"summary":"Evaluation returned invalid JSON"}'
-              SCORE="0"
+              STATUS="UNCHANGED"
+              EMOJI=":white_check_mark:"
             fi
-            SCORES="$SCORES $SCORE"
-            LAST_RESULT="$RESULT"
-            echo "  Run $i score: $SCORE"
-            sleep 1  # Small delay between API calls
-          done
+            PASS="true"
+          else
+            # Check if regression is significant (> 0.5 points)
+            if [ "$(echo "$DELTA < -0.5" | bc -l)" -eq 1 ]; then
+              STATUS="REGRESSION"
+              EMOJI=":x:"
+              PASS="false"
+            else
+              STATUS="MINOR_DIP"
+              EMOJI=":warning:"
+              PASS="true"  # Minor dips within variance are acceptable
+            fi
+          fi
 
-          # Calculate average and standard deviation
-          AVG_SCORE=$(echo "$SCORES" | awk '{sum=0; for(i=1;i<=NF;i++) sum+=$i; printf "%.1f", sum/NF}')
-          STD_DEV=$(echo "$SCORES" | awk -v avg="$AVG_SCORE" '{sum=0; for(i=1;i<=NF;i++) sum+=($i-avg)^2; printf "%.1f", sqrt(sum/NF)}')
-          # Trim leading space from SCORES for display
-          SCORES_DISPLAY=$(echo "$SCORES" | sed 's/^ //')
-
-          echo "Scores:$SCORES -> Average: $AVG_SCORE (+/- $STD_DEV)"
-
-          # Extract results from last evaluation (has criteria breakdown)
-          # Strip newlines from all jq outputs to prevent GITHUB_OUTPUT corruption
-          PASS=$(echo "$LAST_RESULT" | jq -r '.pass // false' | tr -d '\n')
-          SUMMARY=$(echo "$LAST_RESULT" | jq -r '.summary // "No summary"' | tr -d '\n')
-          BASELINE_STATUS=$(echo "$LAST_RESULT" | jq -r '.baseline_comparison.status // "unknown"' | tr -d '\n')
-          BASELINE=$(echo "$LAST_RESULT" | jq -r '.baseline_comparison.baseline // 5.0' | tr -d '\n')
-
-          # Format criteria for display
-          CRITERIA=$(echo "$LAST_RESULT" | jq -r '.criteria | to_entries | map("- **\(.key)**: \(.value.points)/\(.value.max) - \(.value.evidence // "N/A")") | join("\n")' 2>/dev/null || echo "Could not parse criteria")
-
-          # Write to GITHUB_OUTPUT - all values already have newlines stripped
-          echo "score=$AVG_SCORE" >> $GITHUB_OUTPUT
-          echo "pass=$PASS" >> $GITHUB_OUTPUT
-          echo "std_dev=$STD_DEV" >> $GITHUB_OUTPUT
-          echo "scores=$SCORES_DISPLAY" >> $GITHUB_OUTPUT
           echo "baseline=$BASELINE" >> $GITHUB_OUTPUT
-          echo "baseline_status=$BASELINE_STATUS" >> $GITHUB_OUTPUT
-          echo "cost=$(echo "$COST" | tr -d '\n')" >> $GITHUB_OUTPUT
-          echo "turns=$(echo "$NUM_TURNS" | tr -d '\n')" >> $GITHUB_OUTPUT
+          echo "candidate=$CANDIDATE" >> $GITHUB_OUTPUT
+          echo "delta=$DELTA_FORMATTED" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "pass=$PASS" >> $GITHUB_OUTPUT
 
-          # Use heredoc for multiline values
-          {
-            echo "summary<<EOF"
-            echo "$SUMMARY"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
-          {
-            echo "criteria<<EOF"
-            echo "$CRITERIA"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
-          echo "E2E Score: $AVG_SCORE (+/- $STD_DEV)"
-          echo "Baseline Status: $BASELINE_STATUS"
-          echo "Pass: $PASS"
-
-      - name: Comment E2E results on PR
+      - name: Comment quick check results on PR
         uses: actions/github-script@v7
         with:
           script: |
-            const score = '${{ steps.evaluate.outputs.score }}';
-            const pass = '${{ steps.evaluate.outputs.pass }}' === 'true';
-            const stdDev = '${{ steps.evaluate.outputs.std_dev }}';
-            const scores = '${{ steps.evaluate.outputs.scores }}';
-            const baseline = '${{ steps.evaluate.outputs.baseline }}';
-            const baselineStatus = '${{ steps.evaluate.outputs.baseline_status }}';
-            const cost = '${{ steps.evaluate.outputs.cost }}';
-            const turns = '${{ steps.evaluate.outputs.turns }}';
-            const summary = `${{ steps.evaluate.outputs.summary }}`;
-            const criteria = `${{ steps.evaluate.outputs.criteria }}`;
+            const baseline = '${{ steps.compare.outputs.baseline }}';
+            const candidate = '${{ steps.compare.outputs.candidate }}';
+            const delta = '${{ steps.compare.outputs.delta }}';
+            const status = '${{ steps.compare.outputs.status }}';
+            const emoji = '${{ steps.compare.outputs.emoji }}';
+            const pass = '${{ steps.compare.outputs.pass }}' === 'true';
 
-            let emoji, status;
-            if (baselineStatus === 'pass') {
-              emoji = ':white_check_mark:';
-              status = 'PASSED';
-            } else if (baselineStatus === 'warn') {
-              emoji = ':warning:';
-              status = 'WARNING';
-            } else {
-              emoji = ':x:';
-              status = 'FAILED';
-            }
+            const statusText = {
+              'IMPROVED': 'Wizard changes IMPROVED SDLC compliance!',
+              'UNCHANGED': 'No change in SDLC compliance (stable)',
+              'MINOR_DIP': 'Minor variance detected (within acceptable range)',
+              'REGRESSION': 'REGRESSION: Wizard changes reduced SDLC compliance'
+            }[status] || status;
 
             const body = [
-              `## E2E SDLC Evaluation ${emoji}`,
+              `## E2E Quick Check (Tier 1) ${emoji}`,
               '',
-              '_Note: This measures PROCESS compliance (did Claude follow SDLC?), not output quality._',
+              '_Fast quality gate - single comparison per commit._',
               '',
               '| Metric | Value |',
               '|--------|-------|',
-              `| Status | ${status} |`,
-              `| Score | ${score} +/- ${stdDev} / 10 |`,
-              `| Individual Runs | ${scores} |`,
-              `| Baseline | ${baseline} |`,
-              `| Cost | $${cost} (${turns} turns) |`,
+              `| Baseline (main) | ${baseline} / 10 |`,
+              `| Candidate (PR) | ${candidate} / 10 |`,
+              `| Delta | ${delta >= 0 ? '+' : ''}${delta} |`,
+              `| Status | **${status}** |`,
               '',
-              '### Criteria Breakdown',
-              criteria,
+              `### Result: ${statusText}`,
               '',
-              '### Summary',
-              summary,
+              '_Add `merge-ready` label for full 3x evaluation before merge._',
               '',
               '---',
-              '*Evaluated by [LLM-as-a-Judge](tests/e2e/evaluate.sh)*'
+              '*Tier 1: 1x run each. Tier 2: 3x runs averaged for statistical confidence.*'
             ].join('\n');
 
             github.rest.issues.createComment({
@@ -292,10 +326,292 @@ jobs:
               body: body
             });
 
-      - name: Fail if below minimum acceptable
-        if: steps.evaluate.outputs.pass != 'true'
+      - name: Fail on regression
+        if: steps.compare.outputs.pass != 'true'
         run: |
-          echo "E2E evaluation failed with score ${{ steps.evaluate.outputs.score }}"
-          echo "Baseline status: ${{ steps.evaluate.outputs.baseline_status }}"
-          echo "Minimum acceptable threshold not met"
+          echo "E2E quick check detected a regression"
+          echo "Baseline: ${{ steps.compare.outputs.baseline }}"
+          echo "Candidate: ${{ steps.compare.outputs.candidate }}"
+          echo "Delta: ${{ steps.compare.outputs.delta }}"
+          exit 1
+
+  # TIER 2: Full E2E Evaluation - Runs before merge
+  # 3x evaluations each, averaged for statistical confidence
+  # Triggered by: merge-ready label
+  e2e-full-evaluation:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'merge-ready')
+    needs: [validate, cleanup-old-comments]
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          path: pr-branch
+
+      - name: Checkout main branch for baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-branch
+
+      - name: Install BASELINE wizard (main branch) into test fixture
+        run: |
+          echo "Installing main branch wizard into test fixture..."
+          mkdir -p pr-branch/tests/e2e/fixtures/test-repo/.claude
+          cp -r main-branch/.claude/hooks pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp -r main-branch/.claude/skills pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp main-branch/.claude/settings.json pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+
+      - name: Run BASELINE simulation with Claude
+        id: baseline
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: pr-branch/tests/e2e/fixtures/test-repo
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+          prompt: |
+            Run an E2E SDLC simulation using scenario: ../../scenarios/medium-add-feature.md
+
+            1. Read the scenario file to understand the task
+            2. Execute the scenario task following SDLC principles
+            3. Return results as JSON with score
+
+            After execution, output a summary of what you did and whether SDLC was followed.
+
+      - name: Evaluate BASELINE (3x for variance reduction)
+        id: eval-baseline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        working-directory: pr-branch
+        run: |
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "baseline_score=0" >> $GITHUB_OUTPUT
+            echo "baseline_scores=0 0 0" >> $GITHUB_OUTPUT
+            echo "baseline_std=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Run evaluation 3x for variance reduction
+          echo "Running baseline evaluation 3 times..."
+          SCORES=""
+          for i in 1 2 3; do
+            echo "Baseline evaluation run $i/3..."
+            RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
+            if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
+              SCORE=$(echo "$RESULT" | jq -r '.score // 0')
+            else
+              SCORE="0"
+            fi
+            SCORES="$SCORES $SCORE"
+            echo "  Run $i score: $SCORE"
+            sleep 1
+          done
+
+          # Calculate average and std dev
+          AVG=$(echo "$SCORES" | awk '{sum=0; for(i=1;i<=NF;i++) sum+=$i; printf "%.1f", sum/NF}')
+          STD=$(echo "$SCORES" | awk -v avg="$AVG" '{sum=0; for(i=1;i<=NF;i++) sum+=($i-avg)^2; printf "%.1f", sqrt(sum/NF)}')
+          SCORES_DISPLAY=$(echo "$SCORES" | sed 's/^ //')
+
+          echo "Baseline: $AVG (+/- $STD) from [$SCORES_DISPLAY]"
+          echo "baseline_score=$AVG" >> $GITHUB_OUTPUT
+          echo "baseline_scores=$SCORES_DISPLAY" >> $GITHUB_OUTPUT
+          echo "baseline_std=$STD" >> $GITHUB_OUTPUT
+
+          cp "$OUTPUT_FILE" "/tmp/baseline-output.json" 2>/dev/null || true
+
+      - name: Reset test fixture for CANDIDATE
+        run: |
+          cd pr-branch/tests/e2e/fixtures/test-repo
+          git checkout -- . 2>/dev/null || true
+          git clean -fd 2>/dev/null || true
+          rm -rf .claude
+
+      - name: Install CANDIDATE wizard (PR branch) into test fixture
+        run: |
+          mkdir -p pr-branch/tests/e2e/fixtures/test-repo/.claude
+          cp -r pr-branch/.claude/hooks pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp -r pr-branch/.claude/skills pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp pr-branch/.claude/settings.json pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+
+      - name: Run CANDIDATE simulation with Claude
+        id: candidate
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: pr-branch/tests/e2e/fixtures/test-repo
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+          prompt: |
+            Run an E2E SDLC simulation using scenario: ../../scenarios/medium-add-feature.md
+
+            1. Read the scenario file to understand the task
+            2. Execute the scenario task following SDLC principles
+            3. Return results as JSON with score
+
+            After execution, output a summary of what you did and whether SDLC was followed.
+
+      - name: Evaluate CANDIDATE (3x for variance reduction)
+        id: eval-candidate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        working-directory: pr-branch
+        run: |
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "candidate_score=0" >> $GITHUB_OUTPUT
+            echo "candidate_scores=0 0 0" >> $GITHUB_OUTPUT
+            echo "candidate_std=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Run evaluation 3x for variance reduction
+          echo "Running candidate evaluation 3 times..."
+          SCORES=""
+          LAST_RESULT=""
+          for i in 1 2 3; do
+            echo "Candidate evaluation run $i/3..."
+            RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
+            if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
+              SCORE=$(echo "$RESULT" | jq -r '.score // 0')
+            else
+              SCORE="0"
+            fi
+            SCORES="$SCORES $SCORE"
+            LAST_RESULT="$RESULT"
+            echo "  Run $i score: $SCORE"
+            sleep 1
+          done
+
+          # Calculate average and std dev
+          AVG=$(echo "$SCORES" | awk '{sum=0; for(i=1;i<=NF;i++) sum+=$i; printf "%.1f", sum/NF}')
+          STD=$(echo "$SCORES" | awk -v avg="$AVG" '{sum=0; for(i=1;i<=NF;i++) sum+=($i-avg)^2; printf "%.1f", sqrt(sum/NF)}')
+          SCORES_DISPLAY=$(echo "$SCORES" | sed 's/^ //')
+
+          echo "Candidate: $AVG (+/- $STD) from [$SCORES_DISPLAY]"
+          echo "candidate_score=$AVG" >> $GITHUB_OUTPUT
+          echo "candidate_scores=$SCORES_DISPLAY" >> $GITHUB_OUTPUT
+          echo "candidate_std=$STD" >> $GITHUB_OUTPUT
+
+          # Extract criteria breakdown from last result
+          CRITERIA=$(echo "$LAST_RESULT" | jq -r '.criteria | to_entries | map("- **\(.key)**: \(.value.points)/\(.value.max)") | join("\n")' 2>/dev/null || echo "Could not parse criteria")
+          {
+            echo "criteria<<EOF"
+            echo "$CRITERIA"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Compare scores (full evaluation)
+        id: compare
+        run: |
+          BASELINE="${{ steps.eval-baseline.outputs.baseline_score }}"
+          CANDIDATE="${{ steps.eval-candidate.outputs.candidate_score }}"
+          BASELINE_STD="${{ steps.eval-baseline.outputs.baseline_std }}"
+          CANDIDATE_STD="${{ steps.eval-candidate.outputs.candidate_std }}"
+
+          BASELINE=${BASELINE:-0}
+          CANDIDATE=${CANDIDATE:-0}
+
+          DELTA=$(echo "$CANDIDATE - $BASELINE" | bc -l)
+          DELTA_FORMATTED=$(printf "%.1f" "$DELTA")
+
+          echo "Baseline: $BASELINE (+/- $BASELINE_STD)"
+          echo "Candidate: $CANDIDATE (+/- $CANDIDATE_STD)"
+          echo "Delta: $DELTA_FORMATTED"
+
+          # For full evaluation, be stricter about regression
+          if [ "$(echo "$DELTA >= 0" | bc -l)" -eq 1 ]; then
+            if [ "$(echo "$DELTA > 0.5" | bc -l)" -eq 1 ]; then
+              STATUS="IMPROVED"
+              EMOJI=":rocket:"
+            else
+              STATUS="STABLE"
+              EMOJI=":white_check_mark:"
+            fi
+            PASS="true"
+          else
+            # Any regression in full eval is a fail
+            STATUS="REGRESSION"
+            EMOJI=":x:"
+            PASS="false"
+          fi
+
+          echo "baseline=$BASELINE" >> $GITHUB_OUTPUT
+          echo "candidate=$CANDIDATE" >> $GITHUB_OUTPUT
+          echo "baseline_std=$BASELINE_STD" >> $GITHUB_OUTPUT
+          echo "candidate_std=$CANDIDATE_STD" >> $GITHUB_OUTPUT
+          echo "delta=$DELTA_FORMATTED" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "pass=$PASS" >> $GITHUB_OUTPUT
+
+      - name: Comment full evaluation results on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const baseline = '${{ steps.compare.outputs.baseline }}';
+            const candidate = '${{ steps.compare.outputs.candidate }}';
+            const baselineStd = '${{ steps.compare.outputs.baseline_std }}';
+            const candidateStd = '${{ steps.compare.outputs.candidate_std }}';
+            const baselineScores = '${{ steps.eval-baseline.outputs.baseline_scores }}';
+            const candidateScores = '${{ steps.eval-candidate.outputs.candidate_scores }}';
+            const delta = '${{ steps.compare.outputs.delta }}';
+            const status = '${{ steps.compare.outputs.status }}';
+            const emoji = '${{ steps.compare.outputs.emoji }}';
+            const pass = '${{ steps.compare.outputs.pass }}' === 'true';
+            const criteria = `${{ steps.eval-candidate.outputs.criteria }}`;
+
+            const statusText = {
+              'IMPROVED': 'Wizard IMPROVED SDLC compliance - ready to merge!',
+              'STABLE': 'No regression detected - safe to merge',
+              'REGRESSION': 'REGRESSION detected - do not merge'
+            }[status] || status;
+
+            const body = [
+              `## E2E Full Evaluation (Tier 2) ${emoji}`,
+              '',
+              '_Thorough pre-merge check with 3x evaluation runs for statistical confidence._',
+              '',
+              '| Metric | Baseline (main) | Candidate (PR) |',
+              '|--------|-----------------|----------------|',
+              `| Average Score | ${baseline} +/- ${baselineStd} | ${candidate} +/- ${candidateStd} |`,
+              `| Individual Runs | ${baselineScores} | ${candidateScores} |`,
+              `| Delta | | **${delta >= 0 ? '+' : ''}${delta}** |`,
+              '',
+              `### Status: **${status}** - ${statusText}`,
+              '',
+              '### Criteria Breakdown (Candidate)',
+              criteria,
+              '',
+              '---',
+              '*Tier 2: 3x runs averaged. Statistical confidence for merge decisions.*'
+            ].join('\n');
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Fail on regression
+        if: steps.compare.outputs.pass != 'true'
+        run: |
+          echo "Full E2E evaluation detected a regression"
+          echo "Baseline: ${{ steps.compare.outputs.baseline }}"
+          echo "Candidate: ${{ steps.compare.outputs.candidate }}"
+          echo "Delta: ${{ steps.compare.outputs.delta }}"
+          echo "DO NOT MERGE - regression detected"
           exit 1

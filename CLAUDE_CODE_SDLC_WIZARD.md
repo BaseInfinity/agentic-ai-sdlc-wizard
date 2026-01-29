@@ -379,6 +379,35 @@ Existing test patterns are building blocks - leverage them:
 | **Application bug** | Race condition, timing issue, edge case | Fix the app code - test found a real bug |
 | **Environment/Infra bug** | CI config, memory, isolation issues | Fix the environment/setup/teardown |
 
+### The Absolute Rule: ALL TESTS MUST PASS
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ALL TESTS MUST PASS. NO EXCEPTIONS.                                │
+│                                                                     │
+│  This is not negotiable. This is not flexible. This is absolute.   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Not acceptable excuses:**
+- "Those tests were already failing" → Then fix them first
+- "That's not related to my changes" → Doesn't matter, fix it
+- "It's flaky, just ignore it" → Flaky = bug, investigate it
+- "It passes locally" → CI is the source of truth
+- "It's just a warning" → Warnings become errors, fix it
+
+**The fix is always the same:**
+1. Tests fail → STOP
+2. Investigate → Find root cause
+3. Fix → Whatever is actually broken (code, test, or environment)
+4. All tests pass → THEN commit
+
+**Why this is absolute:**
+- Tests are your safety net
+- A failing test means something is wrong
+- Committing with failing tests = committing known bugs
+- "Works on my machine" is not a standard
+
 **MCP Awareness for Testing (optional, nuanced):**
 - **Where MCP adds real value:** E2E/browser testing (can't "see" UI without it), graphics projects, external systems Claude can't otherwise access
 - **Often overkill for:** API/Integration tests (reading code/docs is usually sufficient), internal code work
@@ -571,23 +600,89 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 | **ARCHITECTURE.md** | System design, data flows, services | Understanding how components connect |
 | **TESTING.md** | Testing philosophy, patterns, commands | TDD guidance, test organization |
 | **SDLC.md** | Development workflow (this system) | Full SDLC reference |
+| **ROADMAP.md** | Vision, goals, milestones, timeline | Understanding project direction |
+| **CONTRIBUTING.md** | How to contribute, PR process | Guiding external contributors |
 | **Feature docs** | Per-feature documentation | Context for specific changes |
 
 **Why these matter:**
 - **CLAUDE.md** - Claude reads this automatically every session. Put commands, style rules, architecture overview here.
 - **ARCHITECTURE.md** - Claude needs to understand how your system fits together before making changes.
 - **TESTING.md** - Claude needs to know your testing approach, what to mock, what not to mock.
+- **ROADMAP.md** - Shows where the project is going. Helps Claude understand priorities and what's next.
+- **CONTRIBUTING.md** - For open source projects, defines how contributions work. Claude follows these when suggesting changes.
 - **Feature docs** - For complex features, Claude reads these during planning to understand context.
 
 **Start simple, expand over time:**
 1. Create CLAUDE.md with commands and basic architecture
 2. Create TESTING.md with your testing approach
 3. Add ARCHITECTURE.md when system grows complex
-4. Add feature docs as major features emerge
+4. Add ROADMAP.md when you have clear milestones/vision
+5. Add CONTRIBUTING.md if open source or team project
+6. Add feature docs as major features emerge
 
 ---
 
-## Step 0: Auto-Scan & Plugin Setup
+## Step 0: Repository Protection & Plugin Setup
+
+### Step 0.0: Enable Branch Protection (CRITICAL)
+
+**Before setting up SDLC, protect your main branch.** This is non-negotiable for teams and highly recommended for solo developers.
+
+**Why this matters:**
+- SDLC enforcement is only as strong as your merge protection
+- Without branch protection, anyone (including Claude) can push broken code to main
+- Built-in GitHub feature - deterministic, no custom code needed
+
+**Required Settings:**
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| Require pull request before merging | ✓ Enabled | All changes go through PR review |
+| Require approvals | 1+ (your choice) | Human must approve before merge |
+| Require status checks to pass | ✓ Enabled | CI must be green |
+| Require branches to be up to date | ✓ Enabled | No stale merges |
+
+**How to enable:**
+1. Go to: `Settings > Branches > Add rule`
+2. Branch name pattern: `main` (or `master`)
+3. Enable the settings above
+4. Save changes
+
+**Optional but recommended:**
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| Include administrators | ✓ Enabled | No one bypasses the rules |
+| Require CODEOWNERS review | ✓ Enabled | Specific people must approve |
+
+**CODEOWNERS file (optional):**
+Create `.github/CODEOWNERS`:
+```
+# Default owners for everything
+* @your-username
+
+# Or specific paths
+/src/ @dev-team
+/.github/ @platform-team
+```
+
+**The principle:** Built-in protection > custom enforcement. GitHub branch protection is battle-tested, always runs, and can't be accidentally bypassed.
+
+**Why PRs even for solo devs?**
+
+| Benefit | Solo Dev | Team |
+|---------|----------|------|
+| AI code review subagent | ✓ | ✓ |
+| CI must pass before merge | ✓ | ✓ |
+| Clean commit history | ✓ | ✓ |
+| Easy rollback (revert PR) | ✓ | ✓ |
+| Human review required | Optional | ✓ |
+
+**Not required, but good practice.** The SDLC workflow includes a self-review step where Claude uses a code-reviewer subagent. When you use PRs, this review happens in context with the full diff visible. You always have final say - the subagent just catches things you might miss.
+
+**Solo devs:** You can approve your own PRs. The value is the structured workflow (CI gates, code review, clean history), not the approval ceremony.
+
+---
 
 ### Step 0.1: Required Plugins
 

@@ -109,6 +109,8 @@ But it never auto-merges - you stay in control.
 | Owner PRs | Yes | Yes | Yes |
 | External PRs | Yes | Yes | No |
 
+**Why PRs even for solo devs?** Not required, but good practice. PRs give you: AI code review via subagent, CI gates before merge, clean history, easy rollback. You approve your own PRs - the value is the structured workflow, not the approval ceremony.
+
 ### How E2E Scoring Works
 
 Like evaluating scientific method adherence - we measure **process compliance**, not outcome quality:

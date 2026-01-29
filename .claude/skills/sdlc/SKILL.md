@@ -128,7 +128,18 @@ If you notice something else that should be fixed:
 
 ## Test Failure Recovery (SDET Philosophy)
 
-**ALL TESTS MUST PASS BEFORE COMMIT**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ALL TESTS MUST PASS. NO EXCEPTIONS.                                │
+│                                                                     │
+│  This is not negotiable. This is not flexible. This is absolute.   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Not acceptable:**
+- "Those were already failing" → Fix them first
+- "Not related to my changes" → Doesn't matter, fix it
+- "It's flaky" → Flaky = bug, investigate
 
 **Treat test code like app code.** Test failures are bugs. Investigate them the way a 15-year SDET would - with thought and care, not by brushing them aside.
 
