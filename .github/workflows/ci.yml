@@ -111,23 +111,11 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Give Claude enough turns to complete full SDLC cycle
+          # NOTE: additional_permissions is for GitHub API (like 'actions: read'), NOT file tools
+          # File tool permissions must be passed via --allowedTools in claude_args
           claude_args: |
             --max-turns 30
-          # Allow Claude to do TDD: read/write files, run tests, git operations
-          # Paths must be relative to repo root
-          additional_permissions: |
-            Bash(npm *)
-            Bash(node *)
-            Bash(git *)
-            Bash(cat *)
-            Bash(ls *)
-            Bash(mkdir *)
-            Bash(chmod *)
-            Write(tests/**)
-            Write(src/**)
-            Edit(tests/**)
-            Edit(src/**)
-            Read
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
           prompt: |
             Run an E2E SDLC simulation using scenario: tests/e2e/scenarios/medium-add-feature.md
 
