@@ -63,7 +63,7 @@ fi
 
 # Read scenario and output
 SCENARIO_CONTENT=$(cat "$SCENARIO_FILE")
-OUTPUT_CONTENT=$(cat "$OUTPUT_FILE" | head -c 50000)  # Limit to 50KB
+OUTPUT_CONTENT=$(head -c 50000 "$OUTPUT_FILE" 2>/dev/null)  # Limit to 50KB
 
 # Build evaluation prompt
 EVAL_PROMPT=$(cat << 'PROMPT_END'
