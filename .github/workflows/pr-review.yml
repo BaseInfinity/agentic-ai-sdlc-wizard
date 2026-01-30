@@ -156,22 +156,70 @@ jobs:
             - Are tests meaningful (not just for coverage)?
             - Do tests follow the testing diamond (integration > unit with mocks)?
 
-            Use the GitHub MCP tools to create a proper pull request review:
-            1. Get the diff with mcp__github__get_pull_request_diff
-            2. Create a pending review with mcp__github__create_pending_pull_request_review
-            3. Add inline comments with mcp__github__add_comment_to_pending_review
-            4. Submit the review with mcp__github__submit_pending_pull_request_review
+            Use mcp__github__get_pull_request_diff to get the changes, then output your review.
 
-            After completing the review, output a brief summary of:
-            - Files reviewed
-            - Key findings (if any)
-            - Overall recommendation (APPROVE, COMMENT, REQUEST_CHANGES)
+            ## Output Format
+
+            Output your review in this exact format (markdown):
+
+            ```
+            ## PR Code Review
+
+            ### Summary
+            [1-2 sentence summary of what this PR does]
+
+            ### Recommendation: [APPROVE/REQUEST_CHANGES/COMMENT]
+
+            ### Findings
+
+            #### Critical (must fix)
+            - [file:line] Issue description
+
+            #### Suggestions (nice to have)
+            - [file:line] Suggestion description
+
+            #### Strengths
+            - What's done well
+
+            ### Files Reviewed
+            - file1.ext
+            - file2.ext
+            ```
+
+            If there are no critical issues, recommend APPROVE.
+            Reference specific files and lines like `src/foo.ts:42` for easy navigation.
 
           claude_args: |
-            --allowedTools "mcp__github__create_pending_pull_request_review,mcp__github__add_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__get_pull_request_diff,Read,Grep,Glob"
+            --allowedTools "mcp__github__get_pull_request_diff,Read,Grep,Glob"
 
-      # ENHANCEMENT 3: Sticky review summary comment
-      - name: Post review summary
+      # Extract review from Claude's output
+      - name: Extract review content
+        if: |
+          steps.pr.outputs.skip != 'true' &&
+          steps.check-trivial.outputs.trivial != 'true' &&
+          steps.wait-ci.outputs.ci_passed == 'true'
+        id: extract-review
+        run: |
+          # Get Claude's output from the action
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+
+          if [ -f "$OUTPUT_FILE" ]; then
+            # Extract the review content (Claude's final output)
+            REVIEW=$(jq -r '.result // .output // "Review completed but no content captured."' "$OUTPUT_FILE" 2>/dev/null | head -c 60000)
+          else
+            REVIEW="Review completed but output file not found."
+          fi
+
+          # Write to file to preserve formatting
+          printf '%s' "$REVIEW" > /tmp/review-content.md
+
+          # Also create a fallback if empty
+          if [ -z "$REVIEW" ] || [ "$REVIEW" = "null" ]; then
+            echo "Review completed. Check the workflow logs for details." > /tmp/review-content.md
+          fi
+
+      # ENHANCEMENT 3: Sticky review comment (replaces inline review comments)
+      - name: Post review as sticky comment
         if: |
           steps.pr.outputs.skip != 'true' &&
           steps.check-trivial.outputs.trivial != 'true' &&
@@ -180,16 +228,7 @@ jobs:
         with:
           number: ${{ steps.pr.outputs.pr_number }}
           header: claude-review
-          message: |
-            ## Claude Code Review Summary
-
-            **Status:** Review completed
-            **PR:** #${{ steps.pr.outputs.pr_number }}
-
-            A formal code review has been submitted. See the **Reviews** tab for detailed inline comments.
-
-            ---
-            _To request a re-review after making changes, add the `needs-review` label._
+          path: /tmp/review-content.md
 
       # Post skip message for trivial PRs
       - name: Post trivial PR message
