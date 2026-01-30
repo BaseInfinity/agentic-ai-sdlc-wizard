@@ -174,6 +174,51 @@ test_yaml_validity() {
     fi
 }
 
+# ============================================
+# E2E Bootstrapping Detection Regression Tests
+# ============================================
+# These tests ensure the bootstrapping logic in ci.yml
+# is not accidentally removed or broken.
+
+# Test 11: CI has bootstrapping detection step
+test_e2e_bootstrapping_detection() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found"
+        return
+    fi
+
+    if grep -q "check-baseline" "$WORKFLOW" && \
+       grep -q "has_baseline" "$WORKFLOW"; then
+        pass "CI has bootstrapping detection step"
+    else
+        fail "CI missing bootstrapping detection (check-baseline + has_baseline)"
+    fi
+}
+
+# Test 12: Baseline steps are conditional on has_baseline
+test_e2e_conditional_baseline() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if grep -q "if:.*has_baseline.*true" "$WORKFLOW"; then
+        pass "Baseline steps are conditional on has_baseline"
+    else
+        fail "Baseline steps not properly conditional on has_baseline"
+    fi
+}
+
+# Test 13: Bootstrapping is handled in compare step
+test_e2e_bootstrapping_handling() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if grep -q "is_bootstrapping" "$WORKFLOW"; then
+        pass "Compare step handles bootstrapping case"
+    else
+        fail "Compare step missing bootstrapping handling (is_bootstrapping)"
+    fi
+}
+
 # Run all tests
 test_daily_dispatch
 test_weekly_dispatch
@@ -185,6 +230,9 @@ test_workflow_permissions
 test_workflow_checkout
 test_error_handling_pattern
 test_yaml_validity
+test_e2e_bootstrapping_detection
+test_e2e_conditional_baseline
+test_e2e_bootstrapping_handling
 
 echo ""
 echo "=== Results ==="

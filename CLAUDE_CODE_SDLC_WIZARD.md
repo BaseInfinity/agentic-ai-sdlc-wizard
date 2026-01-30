@@ -1927,6 +1927,71 @@ Add project-specific guidance to skills:
 
 ---
 
+## Testing AI Apps: What's Different
+
+AI-driven applications require fundamentally different testing approaches than traditional software.
+
+### Why AI Testing is Unique
+
+| Traditional Apps | AI-Driven Apps |
+|------------------|----------------|
+| Deterministic (same input → same output) | **Stochastic** (same input → varying outputs) |
+| Binary pass/fail tests | **Scored evaluation** with thresholds |
+| Test once, trust forever | **Continuous monitoring** for drift |
+| Logic bugs | Hallucination, bias, inaccuracy |
+
+### Key AI Testing Concepts
+
+**1. Multiple Runs for Confidence**
+
+AI outputs vary. Run evaluations multiple times and look at averages, not single results.
+
+```
+# Bad: Single run
+score = evaluate(prompt)  # 7.2 - is this good or lucky?
+
+# Good: Multiple runs with confidence interval
+scores = [evaluate(prompt) for _ in range(5)]
+mean = 7.1, 95% CI = [6.8, 7.4]  # Now we know the range
+```
+
+**2. Baseline Scores, Not Just Pass/Fail**
+
+Set baseline metrics (accuracy, relevancy, coherence) and detect regressions over time.
+
+| Metric | Baseline | Current | Status |
+|--------|----------|---------|--------|
+| SDLC compliance | 6.5 | 7.2 | IMPROVED |
+| Hallucination rate | 5% | 3% | IMPROVED |
+| Response time | 2.1s | 2.3s | STABLE |
+
+**3. AI-Specific Risk Categories**
+
+- **Hallucination**: AI invents facts that aren't true
+- **Bias**: Unfair treatment of demographic groups
+- **Adversarial**: Prompt injection attacks
+- **Data leakage**: Exposing training data or PII
+- **Drift**: Behavior changes silently over time (model updates, context changes)
+
+**4. Evaluation Frameworks**
+
+Consider tools for LLM output testing:
+- [DeepEval](https://github.com/confident-ai/deepeval) - Open source LLM evaluation
+- [Deepchecks](https://deepchecks.com) - ML/AI testing and monitoring
+- Custom scoring pipelines (like this wizard's E2E evaluation)
+
+### Practical Advice
+
+- **Don't trust single AI outputs** - verify with multiple samples or human review
+- **Set quantitative baselines** - "accuracy must stay above 85%" not "it should work"
+- **Monitor production** - AI apps can degrade without code changes (model drift, prompt injection)
+- **Budget for evaluation** - AI testing costs more (API calls, human review, compute)
+- **Use confidence intervals** - 5 runs with 95% CI is better than 1 run with crossed fingers
+
+_Sources: [Confident AI](https://www.confident-ai.com/blog/llm-testing-in-2024-top-methods-and-strategies), [IMDA Starter Kit](https://www.imda.gov.sg/-/media/imda/files/about/emerging-tech-and-research/artificial-intelligence/starter-kit-for-testing-llm-based-applications-for-safety-and-reliability.pdf), [aistupidlevel.info methodology](https://aistupidlevel.info/methodology)_
+
+---
+
 ## User Understanding and Periodic Feedback
 
 **During wizard setup and ongoing use:**

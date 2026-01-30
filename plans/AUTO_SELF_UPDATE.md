@@ -154,3 +154,60 @@ tests/
 - Start: D/C level (4.0-6.0)
 - Q2 2026: B level (7.0-8.0)
 - Q3 2026: A level (8.0-9.0)
+
+## Statistical Methodology
+
+_Inspired by [aistupidlevel.info](https://aistupidlevel.info/methodology)_
+
+### Why Multiple Trials?
+
+AI models are stochastic - same prompt → different outputs. Single measurements are unreliable.
+
+### 95% Confidence Intervals
+
+- **5 trials** per evaluation (optimal cost vs statistical power)
+- **t-distribution** with df=4 for small samples
+- **Formula:** `mean ± (t_value × std_error)`
+- **Interpretation:** "95% confident true score is within interval"
+
+### Scoring Axes (7 criteria → 10 points)
+
+| Criterion | Weight | What It Measures |
+|-----------|--------|------------------|
+| TodoWrite | 1pt | Task planning |
+| Confidence | 1pt | State HIGH/MEDIUM/LOW |
+| Plan mode | 2pt | Complex task planning |
+| TDD RED | 2pt | Write failing test first |
+| TDD GREEN | 2pt | Make test pass |
+| Self-review | 1pt | Code review before done |
+| Clean code | 1pt | Quality and coherence |
+
+### Regression Detection (Overlapping CI Method)
+
+_Both baseline AND candidate have uncertainty - account for both._
+
+| Condition | Result | Meaning |
+|-----------|--------|---------|
+| `candidate_lower_CI > baseline_upper_CI` | **IMPROVED** | Statistically significant improvement |
+| CIs overlap | **STABLE** | No significant difference (pass) |
+| `candidate_upper_CI < baseline_lower_CI` | **REGRESSION** | Statistically significant regression (fail) |
+
+**Why this is correct:**
+- Both measurements have uncertainty (stochastic AI)
+- Only claim improvement/regression when CIs don't overlap
+- Overlapping CIs = can't distinguish = assume stable
+
+### Implementation
+
+Stats library: `tests/e2e/lib/stats.sh`
+
+```bash
+# Calculate 95% CI
+source tests/e2e/lib/stats.sh
+CI_RESULT=$(calculate_confidence_interval "5.1 5.3 5.0 5.2 5.4")
+# Output: "5.2 ± 0.2 (95% CI: [5.0, 5.4])"
+
+# Compare two sets of scores
+VERDICT=$(compare_ci "$BASELINE_SCORES" "$CANDIDATE_SCORES")
+# Output: IMPROVED | STABLE | REGRESSION
+```
