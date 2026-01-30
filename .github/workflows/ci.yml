@@ -316,78 +316,85 @@ jobs:
           echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
           echo "pass=$PASS" >> $GITHUB_OUTPUT
 
+      - name: Build quick check comment message
+        id: build-quick-message
+        run: |
+          IS_BOOTSTRAPPING="${{ steps.compare.outputs.is_bootstrapping }}"
+          BASELINE="${{ steps.compare.outputs.baseline }}"
+          CANDIDATE="${{ steps.compare.outputs.candidate }}"
+          DELTA="${{ steps.compare.outputs.delta }}"
+          STATUS="${{ steps.compare.outputs.status }}"
+          EMOJI="${{ steps.compare.outputs.emoji }}"
+
+          # Write message to output using echo
+          if [ "$IS_BOOTSTRAPPING" = "true" ]; then
+            {
+              echo "message<<EOF"
+              echo "## E2E Quick Check (Tier 1) :seedling:"
+              echo ""
+              echo "_First wizard installation - no baseline to compare against._"
+              echo ""
+              echo "| Metric | Value |"
+              echo "|--------|-------|"
+              echo "| Baseline (main) | N/A (no wizard yet) |"
+              echo "| Candidate (PR) | $CANDIDATE / 10 |"
+              echo "| Status | **BOOTSTRAPPING** |"
+              echo ""
+              echo "### Result: First wizard installation verified"
+              echo ""
+              echo "This PR introduces the wizard for the first time. After merge, future PRs will have a baseline to compare against."
+              echo ""
+              echo "_Add \`merge-ready\` label for full evaluation before merge._"
+              echo ""
+              echo "---"
+              echo "*Bootstrapping mode: Candidate-only evaluation (no baseline exists).*"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            # Determine status text
+            case "$STATUS" in
+              "IMPROVED") STATUS_TEXT="Wizard changes IMPROVED SDLC compliance!" ;;
+              "UNCHANGED") STATUS_TEXT="No change in SDLC compliance (stable)" ;;
+              "MINOR_DIP") STATUS_TEXT="Minor variance detected (within acceptable range)" ;;
+              "REGRESSION") STATUS_TEXT="REGRESSION: Wizard changes reduced SDLC compliance" ;;
+              *) STATUS_TEXT="$STATUS" ;;
+            esac
+
+            # Format delta with sign
+            if [ "$(echo "$DELTA >= 0" | bc -l)" -eq 1 ]; then
+              DELTA_DISPLAY="+$DELTA"
+            else
+              DELTA_DISPLAY="$DELTA"
+            fi
+
+            {
+              echo "message<<EOF"
+              echo "## E2E Quick Check (Tier 1) $EMOJI"
+              echo ""
+              echo "_Fast quality gate - single comparison per commit._"
+              echo ""
+              echo "| Metric | Value |"
+              echo "|--------|-------|"
+              echo "| Baseline (main) | $BASELINE / 10 |"
+              echo "| Candidate (PR) | $CANDIDATE / 10 |"
+              echo "| Delta | $DELTA_DISPLAY |"
+              echo "| Status | **$STATUS** |"
+              echo ""
+              echo "### Result: $STATUS_TEXT"
+              echo ""
+              echo "_Add \`merge-ready\` label for full 5x evaluation before merge._"
+              echo ""
+              echo "---"
+              echo "*Tier 1: 1x run each. Tier 2: 5x runs with 95% confidence intervals.*"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
+
       - name: Comment quick check results on PR
-        uses: actions/github-script@v7
+        uses: marocchino/sticky-pull-request-comment@v2
         with:
-          script: |
-            const isBootstrapping = '${{ steps.compare.outputs.is_bootstrapping }}' === 'true';
-            const baseline = '${{ steps.compare.outputs.baseline }}';
-            const candidate = '${{ steps.compare.outputs.candidate }}';
-            const delta = '${{ steps.compare.outputs.delta }}';
-            const status = '${{ steps.compare.outputs.status }}';
-            const emoji = '${{ steps.compare.outputs.emoji }}';
-            const pass = '${{ steps.compare.outputs.pass }}' === 'true';
-
-            let body;
-
-            if (isBootstrapping) {
-              // Bootstrapping: first wizard installation, no baseline to compare
-              body = [
-                `## E2E Quick Check (Tier 1) ${emoji}`,
-                '',
-                '_First wizard installation - no baseline to compare against._',
-                '',
-                '| Metric | Value |',
-                '|--------|-------|',
-                `| Baseline (main) | N/A (no wizard yet) |`,
-                `| Candidate (PR) | ${candidate} / 10 |`,
-                `| Status | **BOOTSTRAPPING** |`,
-                '',
-                `### Result: First wizard installation verified`,
-                '',
-                'This PR introduces the wizard for the first time. After merge, future PRs will have a baseline to compare against.',
-                '',
-                '_Add `merge-ready` label for full evaluation before merge._',
-                '',
-                '---',
-                '*Bootstrapping mode: Candidate-only evaluation (no baseline exists).*'
-              ].join('\n');
-            } else {
-              // Normal comparison mode
-              const statusText = {
-                'IMPROVED': 'Wizard changes IMPROVED SDLC compliance!',
-                'UNCHANGED': 'No change in SDLC compliance (stable)',
-                'MINOR_DIP': 'Minor variance detected (within acceptable range)',
-                'REGRESSION': 'REGRESSION: Wizard changes reduced SDLC compliance'
-              }[status] || status;
-
-              body = [
-                `## E2E Quick Check (Tier 1) ${emoji}`,
-                '',
-                '_Fast quality gate - single comparison per commit._',
-                '',
-                '| Metric | Value |',
-                '|--------|-------|',
-                `| Baseline (main) | ${baseline} / 10 |`,
-                `| Candidate (PR) | ${candidate} / 10 |`,
-                `| Delta | ${delta >= 0 ? '+' : ''}${delta} |`,
-                `| Status | **${status}** |`,
-                '',
-                `### Result: ${statusText}`,
-                '',
-                '_Add `merge-ready` label for full 3x evaluation before merge._',
-                '',
-                '---',
-                '*Tier 1: 1x run each. Tier 2: 3x runs averaged for statistical confidence.*'
-              ].join('\n');
-            }
-
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: body
-            });
+          header: e2e-quick-check
+          message: ${{ steps.build-quick-message.outputs.message }}
 
       - name: Fail on regression
         if: steps.compare.outputs.pass != 'true'
@@ -705,93 +712,92 @@ jobs:
           echo "pass=$PASS" >> $GITHUB_OUTPUT
           echo "verdict=$VERDICT" >> $GITHUB_OUTPUT
 
+      - name: Build full evaluation comment message
+        id: build-full-message
+        run: |
+          IS_BOOTSTRAPPING="${{ steps.compare.outputs.is_bootstrapping }}"
+          BASELINE="${{ steps.compare.outputs.baseline }}"
+          CANDIDATE="${{ steps.compare.outputs.candidate }}"
+          BASELINE_CI="${{ steps.compare.outputs.baseline_ci }}"
+          CANDIDATE_CI="${{ steps.compare.outputs.candidate_ci }}"
+          BASELINE_CI_LOWER="${{ steps.compare.outputs.baseline_ci_lower }}"
+          BASELINE_CI_UPPER="${{ steps.compare.outputs.baseline_ci_upper }}"
+          CANDIDATE_CI_LOWER="${{ steps.compare.outputs.candidate_ci_lower }}"
+          CANDIDATE_CI_UPPER="${{ steps.compare.outputs.candidate_ci_upper }}"
+          BASELINE_SCORES="${{ steps.eval-baseline.outputs.baseline_scores }}"
+          CANDIDATE_SCORES="${{ steps.eval-candidate.outputs.candidate_scores }}"
+          DELTA="${{ steps.compare.outputs.delta }}"
+          STATUS="${{ steps.compare.outputs.status }}"
+          EMOJI="${{ steps.compare.outputs.emoji }}"
+          VERDICT="${{ steps.compare.outputs.verdict }}"
+          CRITERIA="${{ steps.eval-candidate.outputs.criteria }}"
+
+          if [ "$IS_BOOTSTRAPPING" = "true" ]; then
+            {
+              echo "message<<EOF"
+              echo "## E2E Full Evaluation (Tier 2) $EMOJI"
+              echo ""
+              echo "_First wizard installation - no baseline to compare against._"
+              echo ""
+              echo "| Metric | Value |"
+              echo "|--------|-------|"
+              echo "| Baseline (main) | N/A (no wizard yet) |"
+              echo "| Candidate (PR) | $CANDIDATE_CI |"
+              echo "| 95% CI | [$CANDIDATE_CI_LOWER, $CANDIDATE_CI_UPPER] |"
+              echo "| Individual Runs | $CANDIDATE_SCORES |"
+              echo "| Status | **BOOTSTRAPPING** |"
+              echo ""
+              echo "### Result: First wizard installation verified (5x evaluation)"
+              echo ""
+              echo "### Criteria Breakdown (Candidate)"
+              echo "$CRITERIA"
+              echo ""
+              echo "This PR introduces the wizard for the first time. After merge, future PRs will have a baseline to compare against."
+              echo ""
+              echo "---"
+              echo "*Bootstrapping mode: Candidate-only evaluation with 5x runs + 95% CI.*"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            # Determine status text
+            case "$STATUS" in
+              "IMPROVED") STATUS_TEXT="Statistically significant IMPROVEMENT - ready to merge!" ;;
+              "STABLE") STATUS_TEXT="No significant difference - safe to merge" ;;
+              "REGRESSION") STATUS_TEXT="Statistically significant REGRESSION - do not merge" ;;
+              *) STATUS_TEXT="$STATUS" ;;
+            esac
+
+            {
+              echo "message<<EOF"
+              echo "## E2E Full Evaluation (Tier 2) $EMOJI"
+              echo ""
+              echo "_Thorough pre-merge check with 5x evaluation runs + 95% confidence intervals._"
+              echo ""
+              echo "| Metric | Baseline (main) | Candidate (PR) |"
+              echo "|--------|-----------------|----------------|"
+              echo "| Score | $BASELINE_CI | $CANDIDATE_CI |"
+              echo "| 95% CI | [$BASELINE_CI_LOWER, $BASELINE_CI_UPPER] | [$CANDIDATE_CI_LOWER, $CANDIDATE_CI_UPPER] |"
+              echo "| Runs | $BASELINE_SCORES | $CANDIDATE_SCORES |"
+              echo ""
+              echo "### Statistical Verdict: **$STATUS** $EMOJI"
+              echo "$VERDICT"
+              echo ""
+              echo "### Status: $STATUS_TEXT"
+              echo ""
+              echo "### Criteria Breakdown (Candidate)"
+              echo "$CRITERIA"
+              echo ""
+              echo "---"
+              echo "*Tier 2: 5x runs with t-distribution 95% CI. Overlapping CI method for regression detection.*"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
+
       - name: Comment full evaluation results on PR
-        uses: actions/github-script@v7
+        uses: marocchino/sticky-pull-request-comment@v2
         with:
-          script: |
-            const isBootstrapping = '${{ steps.compare.outputs.is_bootstrapping }}' === 'true';
-            const baseline = '${{ steps.compare.outputs.baseline }}';
-            const candidate = '${{ steps.compare.outputs.candidate }}';
-            const baselineCi = '${{ steps.compare.outputs.baseline_ci }}';
-            const candidateCi = '${{ steps.compare.outputs.candidate_ci }}';
-            const baselineCiLower = '${{ steps.compare.outputs.baseline_ci_lower }}';
-            const baselineCiUpper = '${{ steps.compare.outputs.baseline_ci_upper }}';
-            const candidateCiLower = '${{ steps.compare.outputs.candidate_ci_lower }}';
-            const candidateCiUpper = '${{ steps.compare.outputs.candidate_ci_upper }}';
-            const baselineScores = '${{ steps.eval-baseline.outputs.baseline_scores }}';
-            const candidateScores = '${{ steps.eval-candidate.outputs.candidate_scores }}';
-            const delta = '${{ steps.compare.outputs.delta }}';
-            const status = '${{ steps.compare.outputs.status }}';
-            const emoji = '${{ steps.compare.outputs.emoji }}';
-            const pass = '${{ steps.compare.outputs.pass }}' === 'true';
-            const verdict = '${{ steps.compare.outputs.verdict }}';
-            const criteria = `${{ steps.eval-candidate.outputs.criteria }}`;
-
-            let body;
-
-            if (isBootstrapping) {
-              // Bootstrapping: first wizard installation, no baseline to compare
-              body = [
-                `## E2E Full Evaluation (Tier 2) ${emoji}`,
-                '',
-                '_First wizard installation - no baseline to compare against._',
-                '',
-                '| Metric | Value |',
-                '|--------|-------|',
-                `| Baseline (main) | N/A (no wizard yet) |`,
-                `| Candidate (PR) | ${candidateCi} |`,
-                `| 95% CI | [${candidateCiLower}, ${candidateCiUpper}] |`,
-                `| Individual Runs | ${candidateScores} |`,
-                `| Status | **BOOTSTRAPPING** |`,
-                '',
-                `### Result: First wizard installation verified (5x evaluation)`,
-                '',
-                '### Criteria Breakdown (Candidate)',
-                criteria,
-                '',
-                'This PR introduces the wizard for the first time. After merge, future PRs will have a baseline to compare against.',
-                '',
-                '---',
-                '*Bootstrapping mode: Candidate-only evaluation with 5x runs + 95% CI.*'
-              ].join('\n');
-            } else {
-              // Normal comparison mode with statistical CI
-              const statusText = {
-                'IMPROVED': 'Statistically significant IMPROVEMENT - ready to merge!',
-                'STABLE': 'No significant difference - safe to merge',
-                'REGRESSION': 'Statistically significant REGRESSION - do not merge'
-              }[status] || status;
-
-              body = [
-                `## E2E Full Evaluation (Tier 2) ${emoji}`,
-                '',
-                '_Thorough pre-merge check with 5x evaluation runs + 95% confidence intervals._',
-                '',
-                '| Metric | Baseline (main) | Candidate (PR) |',
-                '|--------|-----------------|----------------|',
-                `| Score | ${baselineCi} | ${candidateCi} |`,
-                `| 95% CI | [${baselineCiLower}, ${baselineCiUpper}] | [${candidateCiLower}, ${candidateCiUpper}] |`,
-                `| Runs | ${baselineScores} | ${candidateScores} |`,
-                '',
-                `### Statistical Verdict: **${status}** ${emoji}`,
-                verdict,
-                '',
-                `### Status: ${statusText}`,
-                '',
-                '### Criteria Breakdown (Candidate)',
-                criteria,
-                '',
-                '---',
-                '*Tier 2: 5x runs with t-distribution 95% CI. Overlapping CI method for regression detection.*'
-              ].join('\n');
-            }
-
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: body
-            });
+          header: e2e-full-eval
+          message: ${{ steps.build-full-message.outputs.message }}
 
       - name: Fail on regression
         if: steps.compare.outputs.pass != 'true'
