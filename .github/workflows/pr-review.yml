@@ -45,7 +45,37 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ENHANCEMENT 2: Skip trivial changes (docs-only, config-only)
+      # ENHANCEMENT 2: Fetch existing PR comments for Claude to address
+      - name: Fetch PR comments
+        if: steps.pr.outputs.skip != 'true'
+        id: fetch-comments
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM="${{ steps.pr.outputs.pr_number }}"
+
+          # Get review comments (on specific lines)
+          REVIEW_COMMENTS=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUM/comments" \
+            --jq '[.[] | {author: .user.login, body: .body, path: .path, line: .line}]' 2>/dev/null || echo "[]")
+
+          # Get issue comments (general PR comments)
+          ISSUE_COMMENTS=$(gh api "repos/${{ github.repository }}/issues/$PR_NUM/comments" \
+            --jq '[.[] | {author: .user.login, body: .body}]' 2>/dev/null || echo "[]")
+
+          # Save to files for Claude to read
+          echo "$REVIEW_COMMENTS" > /tmp/review-comments.json
+          echo "$ISSUE_COMMENTS" > /tmp/issue-comments.json
+
+          # Count for logging (defensive handling for malformed JSON)
+          REVIEW_COUNT=$(echo "$REVIEW_COMMENTS" | jq 'length' 2>/dev/null || echo "0")
+          ISSUE_COUNT=$(echo "$ISSUE_COMMENTS" | jq 'length' 2>/dev/null || echo "0")
+          echo "Found $REVIEW_COUNT review comments, $ISSUE_COUNT issue comments"
+
+          # Output counts for conditional logic
+          echo "review_count=$REVIEW_COUNT" >> $GITHUB_OUTPUT
+          echo "issue_count=$ISSUE_COUNT" >> $GITHUB_OUTPUT
+
+      # ENHANCEMENT 3: Skip trivial changes (docs-only, config-only)
       - name: Check if trivial PR
         if: steps.pr.outputs.skip != 'true'
         id: check-trivial
@@ -134,6 +164,18 @@ jobs:
 
             You are reviewing a pull request for the SDLC Wizard repository.
 
+            ## Existing PR Comments to Address
+
+            If there are existing comments, address them in your review:
+
+            Review comments (on specific lines):
+            $(cat /tmp/review-comments.json 2>/dev/null || echo "[]")
+
+            General PR comments:
+            $(cat /tmp/issue-comments.json 2>/dev/null || echo "[]")
+
+            When addressing comments, reference them: "Regarding @user's question about X: ..."
+
             ## Review Focus Areas
 
             ### 1. SDLC Compliance
@@ -218,7 +260,7 @@ jobs:
             echo "Review completed. Check the workflow logs for details." > /tmp/review-content.md
           fi
 
-      # ENHANCEMENT 3: Sticky review comment (replaces inline review comments)
+      # ENHANCEMENT 4: Sticky review comment (replaces inline review comments)
       - name: Post review as sticky comment
         if: |
           steps.pr.outputs.skip != 'true' &&

@@ -2050,6 +2050,69 @@ _Sources: [Confident AI](https://www.confident-ai.com/blog/llm-testing-in-2024-t
 
 ---
 
+## CI/CD Gotchas
+
+Common pitfalls when automating AI-assisted development workflows.
+
+### `workflow_dispatch` Requires Merge First
+
+GitHub Actions with `workflow_dispatch` (manual trigger) can only be triggered AFTER the workflow file exists on the default branch.
+
+| What You Want | What Works |
+|---------------|------------|
+| Test new workflow before merge | Use `act` locally, or test via push/PR events |
+| Manual trigger new workflow | Merge first, then `gh workflow run` |
+
+**Local testing with `act`:**
+```bash
+# Install act
+brew install act
+
+# Run workflow locally (macOS/Linux)
+act workflow_dispatch -W .github/workflows/my-workflow.yml \
+  --secret MY_SECRET="$MY_SECRET"
+```
+
+This catches most issues before merge. For full GitHub environment testing, merge then trigger.
+
+### PR Review with Comment Response (Optional)
+
+Want Claude to respond to existing PR comments during review? Add comment fetching to your review workflow.
+
+**The Flow:**
+1. PR opens → Claude reviews diff → Posts sticky comment
+2. You read review, leave questions/comments on PR
+3. Add `needs-review` label
+4. Claude fetches your comments + reviews diff again
+5. Updated sticky comment addresses your questions
+
+**Two layers of interaction:**
+
+| Layer | What | When to Use |
+|-------|------|-------------|
+| **Workflow** | Claude addresses comments in sticky review | Quick async response |
+| **Local terminal** | Ask Claude to fetch comments, have discussion | Deep interactive discussion |
+
+**Example workflow step:**
+```yaml
+- name: Fetch PR comments
+  run: |
+    gh api repos/$REPO/pulls/$PR_NUMBER/comments \
+      --jq '[.[] | {author: .user.login, body: .body}]' > /tmp/comments.json
+```
+
+Then include `/tmp/comments.json` in Claude's prompt context.
+
+**Local discussion:**
+```
+You: "Fetch comments from PR #42 and let's discuss the concerns"
+Claude: [fetches via gh api, discusses with you interactively]
+```
+
+This is optional - skip if you prefer fresh reviews only.
+
+---
+
 ## User Understanding and Periodic Feedback
 
 **During wizard setup and ongoing use:**
