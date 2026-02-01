@@ -76,12 +76,21 @@ jobs:
           echo "issue_count=$ISSUE_COUNT" >> $GITHUB_OUTPUT
 
       # ENHANCEMENT 3: Skip trivial changes (docs-only, config-only)
+      # BUT: needs-review label forces full review even for trivial PRs
       - name: Check if trivial PR
         if: steps.pr.outputs.skip != 'true'
         id: check-trivial
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_LABEL: ${{ github.event.label.name }}
         run: |
+          # If needs-review label triggered this, force full review
+          if [ "$EVENT_LABEL" = "needs-review" ]; then
+            echo "trivial=false" >> $GITHUB_OUTPUT
+            echo "needs-review label present, forcing full review"
+            exit 0
+          fi
+
           # Get changed files
           FILES=$(gh pr view ${{ steps.pr.outputs.pr_number }} --json files --jq '.files[].path' 2>/dev/null || echo "")
 

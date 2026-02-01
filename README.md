@@ -141,3 +141,5 @@ The wizard integrates with Anthropic's official plugins:
 ## Contributing
 
 PRs welcome. Good contributions: philosophical insights, generalizable patterns, simplifications. Keep it generic - Claude figures out the tech specifics.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for our evaluation methodology and testing approach.
