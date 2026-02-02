@@ -19,6 +19,7 @@ TodoWrite([
   { content: "Assess doc health - flag issues (ask before cleaning)", status: "pending", activeForm: "Checking doc health" },
   { content: "DRY scan: What patterns exist to reuse?", status: "pending", activeForm: "Scanning for reusable patterns" },
   { content: "Blast radius: What depends on code I'm changing?", status: "pending", activeForm: "Checking dependencies" },
+  { content: "Design system check (if UI change)", status: "pending", activeForm: "Checking design system" },
   { content: "Restate task in own words - verify understanding", status: "pending", activeForm: "Verifying understanding" },
   { content: "Scrutinize test design - right things tested? Follow TESTING.md?", status: "pending", activeForm: "Reviewing test approach" },
   { content: "Present approach + STATE CONFIDENCE LEVEL", status: "pending", activeForm: "Presenting approach" },
@@ -34,6 +35,7 @@ TodoWrite([
   { content: "Production build check", status: "pending", activeForm: "Verifying production build" },
   // REVIEW PHASE
   { content: "DRY check: Is logic duplicated elsewhere?", status: "pending", activeForm: "Checking for duplication" },
+  { content: "Visual consistency check (if UI change)", status: "pending", activeForm: "Checking visual consistency" },
   { content: "Self-review: code-reviewer subagent", status: "pending", activeForm: "Running code review" },
   { content: "Security review (if warranted)", status: "pending", activeForm: "Checking security implications" },
   // CI FEEDBACK LOOP (After local tests pass)
@@ -200,6 +202,25 @@ Local tests pass -> Commit -> Push -> Watch CI
 
 **Before coding:** "What patterns exist I can reuse?"
 **After coding:** "Did I accidentally duplicate anything?"
+
+## Design System Check (If UI Change)
+
+**When to check:** CSS/styling changes, new UI components, color/font usage.
+**When to skip:** Backend-only changes, config/build changes, non-visual code.
+
+**Planning phase - "Design system check":**
+1. Read DESIGN_SYSTEM.md if it exists
+2. Check if change involves colors, fonts, spacing, or components
+3. Verify intended styles match design system tokens
+4. Flag if introducing new patterns not in design system
+
+**Review phase - "Visual consistency check":**
+1. Are colors from the design system palette?
+2. Are fonts/sizes from typography scale?
+3. Are spacing values from the spacing scale?
+4. Do new components follow existing patterns?
+
+**If no DESIGN_SYSTEM.md exists:** Skip these checks (project has no documented design system).
 
 ## DELETE Legacy Code
 
