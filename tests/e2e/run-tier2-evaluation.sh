@@ -2,11 +2,12 @@
 # Run Tier 2 (5-trial) statistical evaluation
 #
 # Usage:
-#   ./run-tier2-evaluation.sh <scenario> [fixture]
+#   ./run-tier2-evaluation.sh <scenario> <output_file> [trials]
 #
 # Arguments:
-#   scenario    Scenario file path (required)
-#   fixture     Fixture directory (default: tests/e2e/fixtures/test-repo)
+#   scenario     Scenario file path (required)
+#   output_file  Claude execution output file (required)
+#   trials       Number of evaluation trials (default: 5)
 #
 # Output (to stdout):
 #   scores=<space-separated scores>
@@ -14,7 +15,7 @@
 #   ci=<confidence interval string>
 #
 # Example:
-#   ./run-tier2-evaluation.sh tests/e2e/scenarios/version-upgrade.md
+#   ./run-tier2-evaluation.sh tests/e2e/scenarios/version-upgrade.md /tmp/claude-output.json
 #   # Output:
 #   # scores= 5.1 5.3 5.0 5.2 5.4
 #   # score=5.2
@@ -25,7 +26,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SCENARIO="${1:?Error: scenario file path required}"
-FIXTURE="${2:-$SCRIPT_DIR/fixtures/test-repo}"
+OUTPUT_FILE="${2:?Error: output file path required}"
 TRIALS="${3:-5}"
 
 # Verify scenario exists
@@ -34,11 +35,17 @@ if [ ! -f "$SCENARIO" ]; then
     exit 1
 fi
 
+# Verify output file exists
+if [ ! -f "$OUTPUT_FILE" ]; then
+    echo "Error: Output file not found: $OUTPUT_FILE" >&2
+    exit 1
+fi
+
 # Run evaluations
 SCORES=""
 for i in $(seq 1 "$TRIALS"); do
     echo "Trial $i/$TRIALS..." >&2
-    RESULT=$("$SCRIPT_DIR/evaluate.sh" "$SCENARIO" "$FIXTURE" --json 2>/dev/null || echo '{"score":0}')
+    RESULT=$("$SCRIPT_DIR/evaluate.sh" "$SCENARIO" "$OUTPUT_FILE" --json 2>/dev/null || echo '{"score":0}')
     SCORE=$(echo "$RESULT" | jq -r '.score // 0')
     SCORES="$SCORES $SCORE"
     echo "  Trial $i score: $SCORE" >&2

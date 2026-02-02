@@ -228,6 +228,38 @@ jobs:
           npm install -g @anthropic-ai/claude-code@${{ needs.check-updates.outputs.latest_version }}
           claude --version
 
+      - name: Setup test fixture with wizard
+        run: |
+          echo "Installing wizard into test fixture..."
+          mkdir -p tests/e2e/fixtures/test-repo/.claude
+          cp -r .claude/hooks tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp -r .claude/skills tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp .claude/settings.json tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          echo "Wizard installed:"
+          ls -la tests/e2e/fixtures/test-repo/.claude/ || echo "No .claude directory"
+
+      - name: Run scenario simulation with Claude (Tier 1)
+        id: run-scenario-tier1
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: tests/e2e/fixtures/test-repo
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+          prompt: |
+            Run an E2E SDLC simulation.
+
+            Scenario file: ../scenarios/${{ env.VERSION_SCENARIO }}.md
+
+            1. Read the scenario file to understand the task
+            2. Execute the scenario task following SDLC principles
+            3. Return results as JSON with score
+
+            After execution, output a summary of what you did and whether SDLC was followed.
+          model: claude-sonnet-4-20250514
+
       - name: Phase A - Regression Test (Tier 1)
         id: phase-a-tier1
         env:
@@ -236,11 +268,20 @@ jobs:
           echo "Running Phase A: Regression test with current SDLC docs"
           echo "Testing if new CC version breaks SDLC enforcement..."
 
-          # Run single evaluation (Tier 1 - quick check)
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "No output file - simulation may have failed"
+            echo "score=0" >> $GITHUB_OUTPUT
+            echo "passed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Run evaluation with Claude's output
           RESULT=$(./tests/e2e/evaluate.sh \
             tests/e2e/scenarios/${{ env.VERSION_SCENARIO }}.md \
-            tests/e2e/fixtures/test-repo \
-            --json 2>/dev/null || echo '{"score":0,"pass":false}')
+            "$OUTPUT_FILE" \
+            --json 2>&1) || true
 
           SCORE=$(echo "$RESULT" | jq -r '.score // 0')
           PASSED=$(echo "$RESULT" | jq -r '.pass // false')
@@ -257,9 +298,21 @@ jobs:
         run: |
           echo "Running Phase A Tier 2: Full statistical evaluation (5 trials)"
 
-          # Use shared evaluation script to reduce duplication
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "No output file from Tier 1 simulation"
+            echo "scores=0" >> $GITHUB_OUTPUT
+            echo "score=0" >> $GITHUB_OUTPUT
+            echo "ci=0 (no data)" >> $GITHUB_OUTPUT
+            echo "passed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Use shared evaluation script with output file
           RESULT=$(./tests/e2e/run-tier2-evaluation.sh \
-            tests/e2e/scenarios/${{ env.VERSION_SCENARIO }}.md)
+            tests/e2e/scenarios/${{ env.VERSION_SCENARIO }}.md \
+            "$OUTPUT_FILE")
 
           # Parse output
           SCORES=$(echo "$RESULT" | grep '^scores=' | cut -d= -f2)
@@ -303,6 +356,29 @@ jobs:
           direct_prompt: true
           model: claude-sonnet-4-20250514
 
+      - name: Run scenario simulation for Phase B
+        id: run-scenario-phase-b
+        if: steps.phase-a.outputs.passed == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: tests/e2e/fixtures/test-repo
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+          prompt: |
+            Run an E2E SDLC simulation with the improved SDLC docs.
+
+            Scenario file: ../scenarios/${{ env.VERSION_SCENARIO }}.md
+
+            1. Read the scenario file to understand the task
+            2. Execute the scenario task following SDLC principles
+            3. Return results as JSON with score
+
+            After execution, output a summary of what you did and whether SDLC was followed.
+          model: claude-sonnet-4-20250514
+
       - name: Phase B - Improvement Test (Tier 2)
         id: phase-b
         if: steps.phase-a.outputs.passed == 'true'
@@ -311,9 +387,20 @@ jobs:
         run: |
           echo "Running Phase B: Testing with suggested SDLC improvements"
 
-          # Use shared evaluation script
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "No output file from Phase B simulation"
+            echo "scores=0" >> $GITHUB_OUTPUT
+            echo "score=0" >> $GITHUB_OUTPUT
+            echo "ci=0 (no data)" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Use shared evaluation script with output file
           RESULT=$(./tests/e2e/run-tier2-evaluation.sh \
-            tests/e2e/scenarios/${{ env.VERSION_SCENARIO }}.md)
+            tests/e2e/scenarios/${{ env.VERSION_SCENARIO }}.md \
+            "$OUTPUT_FILE")
 
           SCORES=$(echo "$RESULT" | grep '^scores=' | cut -d= -f2)
           MEAN=$(echo "$RESULT" | grep '^score=' | cut -d= -f2)

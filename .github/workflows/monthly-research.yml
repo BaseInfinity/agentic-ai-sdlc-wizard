@@ -230,7 +230,37 @@ jobs:
           npm install -g @anthropic-ai/claude-code
           claude --version
 
+      - name: Setup test fixture with wizard
+        run: |
+          echo "Installing wizard into test fixture..."
+          mkdir -p tests/e2e/fixtures/test-repo/.claude
+          cp -r .claude/hooks tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp -r .claude/skills tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+          cp .claude/settings.json tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
+
       # Baseline: Current SDLC docs
+      - name: Run baseline simulation with Claude
+        id: baseline-sim
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: tests/e2e/fixtures/test-repo
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+          prompt: |
+            Run an E2E SDLC simulation.
+
+            Scenario file: ../scenarios/medium-add-feature.md
+
+            1. Read the scenario file to understand the task
+            2. Execute the scenario task following SDLC principles
+            3. Return results as JSON with score
+
+            After execution, output a summary of what you did and whether SDLC was followed.
+          model: claude-sonnet-4-20250514
+
       - name: Baseline - Current SDLC (Tier 2)
         id: baseline
         env:
@@ -238,9 +268,20 @@ jobs:
         run: |
           echo "Running baseline evaluation with current SDLC docs"
 
-          # Use shared evaluation script
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "No output file from baseline simulation"
+            echo "scores=0" >> $GITHUB_OUTPUT
+            echo "score=0" >> $GITHUB_OUTPUT
+            echo "ci=0 (no data)" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Use shared evaluation script with output file
           RESULT=$(./tests/e2e/run-tier2-evaluation.sh \
-            tests/e2e/scenarios/medium-add-feature.md)
+            tests/e2e/scenarios/medium-add-feature.md \
+            "$OUTPUT_FILE")
 
           SCORES=$(echo "$RESULT" | grep '^scores=' | cut -d= -f2)
           MEAN=$(echo "$RESULT" | grep '^score=' | cut -d= -f2)
@@ -272,7 +313,35 @@ jobs:
           direct_prompt: true
           model: claude-sonnet-4-20250514
 
+      - name: Reset test fixture for candidate
+        run: |
+          cd tests/e2e/fixtures/test-repo
+          git checkout -- . 2>/dev/null || true
+          git clean -fd 2>/dev/null || true
+
       # Candidate: SDLC with research improvements
+      - name: Run candidate simulation with Claude
+        id: candidate-sim
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: tests/e2e/fixtures/test-repo
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+          prompt: |
+            Run an E2E SDLC simulation with research improvements applied.
+
+            Scenario file: ../scenarios/medium-add-feature.md
+
+            1. Read the scenario file to understand the task
+            2. Execute the scenario task following SDLC principles
+            3. Return results as JSON with score
+
+            After execution, output a summary of what you did and whether SDLC was followed.
+          model: claude-sonnet-4-20250514
+
       - name: Candidate - With Improvements (Tier 2)
         id: candidate
         env:
@@ -280,9 +349,20 @@ jobs:
         run: |
           echo "Running candidate evaluation with research improvements"
 
-          # Use shared evaluation script
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "No output file from candidate simulation"
+            echo "scores=0" >> $GITHUB_OUTPUT
+            echo "score=0" >> $GITHUB_OUTPUT
+            echo "ci=0 (no data)" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Use shared evaluation script with output file
           RESULT=$(./tests/e2e/run-tier2-evaluation.sh \
-            tests/e2e/scenarios/medium-add-feature.md)
+            tests/e2e/scenarios/medium-add-feature.md \
+            "$OUTPUT_FILE")
 
           SCORES=$(echo "$RESULT" | grep '^scores=' | cut -d= -f2)
           MEAN=$(echo "$RESULT" | grep '^score=' | cut -d= -f2)
