@@ -1087,6 +1087,50 @@ Options:
 Your answer: _______________
 ```
 
+### Code Coverage (Optional)
+
+**If test framework detected (Jest, pytest, Go, etc.):**
+
+```
+Q16: Code Coverage (Optional)
+
+Detected: [test framework] with coverage configuration
+
+Traditional Coverage:
+[1] Enforce threshold in CI (e.g., 80%) - Fail build if coverage drops
+[2] Report but don't enforce - Track coverage without blocking
+[3] Skip traditional coverage
+
+AI Coverage Suggestions:
+[4] Enable AI-suggested coverage gaps in PR reviews
+    (Claude notes: "You changed X but didn't add tests for edge case Y")
+[5] Skip AI suggestions
+
+(You can choose one from each group, or skip both)
+Your answer: _______________
+```
+
+**If no test framework detected (docs/AI-heavy project):**
+
+```
+Q16: Code Coverage (Optional)
+
+No test framework detected (documentation/AI-heavy project).
+
+Options:
+[1] AI-suggested coverage gaps in PR reviews (Recommended)
+    (Claude notes when changes affect behavior but lack test scenarios)
+[2] Skip - not needed for this project
+
+Your answer: _______________
+```
+
+**How they work:**
+- **Traditional coverage:** Deterministic line/branch/function percentages via nyc, c8, coverage.py, etc.
+- **AI coverage suggestions:** Claude analyzes changes and suggests missing test cases based on context
+
+**Not mutually exclusive:** Both can be used together for comprehensive coverage awareness.
+
 ---
 
 ### Using Your Answers

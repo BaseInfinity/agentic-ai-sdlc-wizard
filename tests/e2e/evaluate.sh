@@ -69,7 +69,7 @@ OUTPUT_CONTENT=$(head -c 50000 "$OUTPUT_FILE" 2>/dev/null)  # Limit to 50KB
 EVAL_PROMPT=$(cat << 'PROMPT_END'
 You are an SDLC compliance evaluator. Analyze the execution output and score it against the SDLC criteria.
 
-## Scoring Criteria (10 points total)
+## Scoring Criteria (10 points standard, 11 for UI scenarios)
 
 | Criterion | Points | What to look for |
 |-----------|--------|------------------|
@@ -80,6 +80,9 @@ You are an SDLC compliance evaluator. Analyze the execution output and score it 
 | TDD GREEN phase | 2 | Did tests pass after implementation? |
 | Self-review | 1 | Did they review their work before presenting? |
 | Clean code | 1 | Is the output coherent and well-structured? |
+| Design system check | 1 | **UI scenarios only:** Did they check DESIGN_SYSTEM.md? |
+
+**UI Scenario Detection:** If scenario mentions UI, styling, CSS, components, colors, fonts, or visual changes, apply the design system criterion (11 points total). Otherwise, use standard 10 points.
 
 ## Evaluation Rules
 
@@ -87,6 +90,7 @@ You are an SDLC compliance evaluator. Analyze the execution output and score it 
 2. **Complexity matters**: Simple tasks don't need plan mode, but should still track work
 3. **Partial credit**: If they did some steps but not perfectly, give partial points
 4. **Evidence required**: Only give points for things clearly demonstrated in output
+5. **UI scenarios get design system check**: If the scenario involves UI/styling, score out of 11 (not 10) and check if DESIGN_SYSTEM.md was consulted
 
 ## Output Format
 
@@ -94,6 +98,7 @@ Return ONLY a JSON object:
 ```json
 {
   "score": 8.5,
+  "max_score": 10,
   "criteria": {
     "task_tracking": {"points": 1, "max": 1, "evidence": "Created TodoWrite with 4 tasks"},
     "confidence": {"points": 1, "max": 1, "evidence": "Stated MEDIUM confidence"},
@@ -106,6 +111,27 @@ Return ONLY a JSON object:
   "summary": "Good SDLC compliance. TDD followed but could be cleaner.",
   "pass": true,
   "improvements": ["Run tests immediately after writing", "More thorough self-review"]
+}
+```
+
+For UI scenarios (styling, CSS, components, colors, fonts, visual changes), include design_system criterion:
+```json
+{
+  "score": 9.5,
+  "max_score": 11,
+  "criteria": {
+    "task_tracking": {"points": 1, "max": 1, "evidence": "Created TodoWrite"},
+    "confidence": {"points": 1, "max": 1, "evidence": "Stated HIGH confidence"},
+    "plan_mode": {"points": 2, "max": 2, "evidence": "Used plan mode"},
+    "tdd_red": {"points": 2, "max": 2, "evidence": "Wrote failing test"},
+    "tdd_green": {"points": 2, "max": 2, "evidence": "Tests pass"},
+    "self_review": {"points": 0.5, "max": 1, "evidence": "Brief review"},
+    "clean_code": {"points": 1, "max": 1, "evidence": "Clean implementation"},
+    "design_system": {"points": 0, "max": 1, "evidence": "Did not check DESIGN_SYSTEM.md"}
+  },
+  "summary": "Good SDLC but missed design system check for UI change.",
+  "pass": true,
+  "improvements": ["Check DESIGN_SYSTEM.md for color/font choices"]
 }
 ```
 

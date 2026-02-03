@@ -3,57 +3,93 @@
     "baseline": 5.5,
     "min_acceptable": 4.0,
     "target": 8.0,
+    "max_score": 10,
     "description": "Simple tasks need less process overhead but should still track work"
   },
   "medium-add-feature": {
     "baseline": 5.0,
     "min_acceptable": 4.0,
     "target": 7.5,
+    "max_score": 10,
     "description": "Medium tasks require TDD and some planning"
   },
   "add-feature": {
     "baseline": 5.0,
     "min_acceptable": 4.0,
     "target": 7.5,
+    "max_score": 10,
     "description": "Same as medium-add-feature"
   },
   "fix-bug": {
     "baseline": 5.0,
     "min_acceptable": 4.0,
     "target": 7.5,
+    "max_score": 10,
     "description": "Bug fixes need investigation and testing"
   },
   "refactor": {
     "baseline": 4.5,
     "min_acceptable": 3.5,
     "target": 7.0,
+    "max_score": 10,
     "description": "Refactoring requires careful planning to avoid regressions"
   },
   "hard-refactor": {
     "baseline": 4.0,
     "min_acceptable": 3.0,
     "target": 7.0,
+    "max_score": 10,
     "description": "Complex refactoring is hardest to do with full SDLC discipline"
   },
   "version-upgrade": {
     "baseline": 5.0,
     "min_acceptable": 4.0,
     "target": 7.5,
+    "max_score": 10,
     "description": "SDLC enforcement validation for new Claude Code versions"
   },
+  "ui-styling-change": {
+    "baseline": 5.0,
+    "min_acceptable": 4.0,
+    "target": 8.5,
+    "max_score": 11,
+    "is_ui_scenario": true,
+    "description": "UI styling changes require design system check (scored /11)"
+  },
+  "add-ui-component": {
+    "baseline": 5.0,
+    "min_acceptable": 4.0,
+    "target": 8.5,
+    "max_score": 11,
+    "is_ui_scenario": true,
+    "description": "New UI components require design system adherence (scored /11)"
+  },
+  "tool-permissions": {
+    "baseline": 5.5,
+    "min_acceptable": 4.5,
+    "target": 8.0,
+    "max_score": 10,
+    "description": "Tests allowedTools compliance - TDD criteria get partial credit"
+  },
   "_meta": {
-    "version": "1.0.0",
-    "last_updated": "2026-01-31",
+    "version": "1.1.0",
+    "last_updated": "2026-02-02",
     "notes": [
       "Baselines are conservative (D/C level) - honest about current state",
       "Goal is to track improvement over time, not enforce unrealistic standards",
       "Raise baselines after 3 consecutive runs above current baseline",
-      "target is aspirational - what we're working toward"
+      "target is aspirational - what we're working toward",
+      "UI scenarios (is_ui_scenario: true) are scored out of 11 (includes design_system criterion)",
+      "Standard scenarios are scored out of 10"
     ],
     "regression_logic": {
       "pass": "score >= baseline",
       "warn": "score >= min_acceptable AND score < baseline",
       "fail": "score < min_acceptable"
+    },
+    "scoring_scales": {
+      "standard": 10,
+      "ui_scenario": 11
     }
   }
 }

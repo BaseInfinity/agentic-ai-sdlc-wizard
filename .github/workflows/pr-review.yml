@@ -208,6 +208,20 @@ jobs:
             - Are tests meaningful (not just for coverage)?
             - Do tests follow the testing diamond (integration > unit with mocks)?
 
+            ### 5. E2E Coverage Awareness
+
+            Analyze if the changes affect SDLC behavior:
+            - Changes to `.claude/hooks/` -> SDLC enforcement affected
+            - Changes to `.claude/skills/` -> SDLC guidance affected
+            - Changes to `CLAUDE_CODE_SDLC_WIZARD.md` -> Wizard behavior affected
+            - Changes to `.github/workflows/` -> CI/auto-update behavior affected
+            - Changes to `tests/e2e/` -> E2E test infrastructure affected
+
+            If changes affect SDLC behavior, check if relevant E2E scenarios exist in `tests/e2e/scenarios/`.
+            If no coverage exists, add a note:
+            "Warning: This change affects [area] but has no E2E scenario testing it.
+            Consider adding a scenario if the behavior change is significant."
+
             Use mcp__github__get_pull_request_diff to get the changes, then output your review.
 
             ## Output Format

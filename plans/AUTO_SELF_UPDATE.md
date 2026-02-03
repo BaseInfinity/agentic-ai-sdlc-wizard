@@ -301,3 +301,99 @@ New scenario for testing SDLC enforcement with new CC versions:
 Used in daily-update workflow to validate that:
 1. New CC version doesn't break SDLC enforcement (Phase A)
 2. Changelog-suggested improvements help (Phase B)
+
+---
+
+## E2E Coverage & Scoring Updates (2026-02-02)
+
+### Items 6-9: New Features Testing & Coverage Awareness
+
+| Item | Description | Status |
+|------|-------------|--------|
+| 6 | E2E scenarios for new wizard features | DONE |
+| 7 | Coverage-aware PR review | DONE |
+| 8 | Scoring criteria update (UI scenarios) | DONE |
+| 9 | Adaptive code coverage in wizard | DONE |
+
+### Item 6: New E2E Scenarios
+
+Added scenarios to test new wizard features:
+
+| Scenario | Tests | File |
+|----------|-------|------|
+| `ui-styling-change.md` | Design system check triggers | `tests/e2e/scenarios/` |
+| `add-ui-component.md` | Visual consistency in review | `tests/e2e/scenarios/` |
+| `tool-permissions.md` | allowedTools compliance | `tests/e2e/scenarios/` |
+
+**Purpose:** Validate that new wizard features (design system check, tool permissions) are being followed during SDLC execution.
+
+### Item 7: Coverage-Aware PR Review
+
+Updated `pr-review.yml` to detect E2E coverage gaps:
+
+```yaml
+# When changes affect SDLC behavior, check for E2E coverage:
+# - .claude/hooks/ → SDLC enforcement
+# - .claude/skills/ → SDLC guidance
+# - CLAUDE_CODE_SDLC_WIZARD.md → Wizard behavior
+# - .github/workflows/ → CI/auto-update
+
+# If no scenario tests the changed behavior:
+# "Warning: This change affects [area] but has no E2E scenario testing it."
+```
+
+**Why:** Self-improving feedback loop - when wizard changes lack test coverage, PR review flags it.
+
+### Item 8: UI Scenario Scoring (11 points)
+
+Updated `evaluate.sh` to handle UI scenarios:
+
+| Scenario Type | Max Score | Criteria |
+|---------------|-----------|----------|
+| Standard | 10 points | 7 criteria |
+| UI (styling/components) | 11 points | 7 criteria + design_system |
+
+**Design system criterion (1pt):** Did Claude check DESIGN_SYSTEM.md before making UI changes?
+
+**Detection:** Scenario mentions UI, styling, CSS, components, colors, fonts, or visual changes.
+
+### Item 9: Adaptive Code Coverage
+
+Added optional Q16 to wizard Step 1:
+
+**For projects with test framework:**
+- Traditional coverage (enforce threshold / report only / skip)
+- AI coverage suggestions (Claude notes missing test cases)
+
+**For docs/AI-heavy projects:**
+- AI coverage suggestions (recommended)
+- Skip
+
+**Key insight:** Traditional coverage and AI suggestions are complementary, not mutually exclusive:
+- Traditional: "You have 80% line coverage" (deterministic)
+- AI: "You changed X but didn't test edge case Y" (context-aware)
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `tests/e2e/evaluate.sh` | Added design_system criterion for UI scenarios |
+| `tests/e2e/baselines.json` | Added 3 new scenarios, max_score field, UI flags |
+| `tests/e2e/scenarios/ui-styling-change.md` | NEW: Tests design system check |
+| `tests/e2e/scenarios/add-ui-component.md` | NEW: Tests visual consistency |
+| `tests/e2e/scenarios/tool-permissions.md` | NEW: Tests allowedTools compliance |
+| `.github/workflows/pr-review.yml` | Added E2E coverage awareness to prompt |
+| `CLAUDE_CODE_SDLC_WIZARD.md` | Added Q16 (adaptive code coverage) |
+
+### The Virtuous Cycle
+
+```
+Wizard changes → PR review flags missing coverage → Add E2E scenario →
+Scoring updated → Future changes validated → Wizard stays high quality
+```
+
+**This is meta/self-improving:**
+1. AI evaluates AI (E2E scenarios scored by Claude)
+2. Coverage for non-code (AI-suggested for docs/YAML)
+3. Adaptive by project type (detect if traditional or AI approach is better)
+4. Scoring evolves with wizard (new features get new criteria)
