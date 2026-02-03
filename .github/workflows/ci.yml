@@ -131,6 +131,10 @@ jobs:
           echo "Baseline wizard installed:"
           ls -la pr-branch/tests/e2e/fixtures/test-repo/.claude/ || echo "No .claude directory"
 
+      - name: Record baseline simulation start time
+        if: steps.check-baseline.outputs.has_baseline == 'true'
+        run: echo "BASELINE_START=$SECONDS" >> $GITHUB_ENV
+
       - name: Run BASELINE simulation with Claude
         if: steps.check-baseline.outputs.has_baseline == 'true'
         id: baseline
@@ -153,6 +157,33 @@ jobs:
             3. Return results as JSON with score
 
             After execution, output a summary of what you did and whether SDLC was followed.
+
+      - name: Integrity check BASELINE simulation
+        if: steps.check-baseline.outputs.has_baseline == 'true'
+        run: |
+          ELAPSED=$((SECONDS - BASELINE_START))
+          echo "Baseline simulation took ${ELAPSED}s"
+
+          # Timing check: Real Claude simulations take >30s
+          if [ "$ELAPSED" -lt 30 ]; then
+            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >30s)"
+            echo "This indicates Claude API was not called - check ANTHROPIC_API_KEY"
+            exit 1
+          fi
+
+          # Output file check
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "::error::Integrity Check Failed: Output file not found"
+            exit 1
+          fi
+
+          # JSON structure check
+          if ! jq -e '.result or .output or .messages' "$OUTPUT_FILE" > /dev/null 2>&1; then
+            echo "::warning::Output file may have unexpected structure (checking anyway)"
+          fi
+
+          echo "✓ Integrity check passed for baseline simulation"
 
       - name: Evaluate BASELINE
         if: steps.check-baseline.outputs.has_baseline == 'true'
@@ -177,6 +208,12 @@ jobs:
             SCORE=$(echo "$RESULT" | jq -r '.score // 0')
           else
             SCORE="0"
+          fi
+
+          # Score bounds check (max 11 for UI scenarios, 10 for standard)
+          if [ "$(echo "$SCORE < 0 || $SCORE > 11" | bc -l)" -eq 1 ]; then
+            echo "::error::Integrity Check Failed: Score $SCORE out of bounds [0-11]"
+            exit 1
           fi
 
           echo "Baseline score: $SCORE"
@@ -207,6 +244,9 @@ jobs:
           echo "Candidate wizard installed:"
           ls -la pr-branch/tests/e2e/fixtures/test-repo/.claude/ || echo "No .claude directory"
 
+      - name: Record candidate simulation start time
+        run: echo "CANDIDATE_START=$SECONDS" >> $GITHUB_ENV
+
       - name: Run CANDIDATE simulation with Claude
         id: candidate
         uses: anthropics/claude-code-action@v1
@@ -228,6 +268,32 @@ jobs:
             3. Return results as JSON with score
 
             After execution, output a summary of what you did and whether SDLC was followed.
+
+      - name: Integrity check CANDIDATE simulation
+        run: |
+          ELAPSED=$((SECONDS - CANDIDATE_START))
+          echo "Candidate simulation took ${ELAPSED}s"
+
+          # Timing check: Real Claude simulations take >30s
+          if [ "$ELAPSED" -lt 30 ]; then
+            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >30s)"
+            echo "This indicates Claude API was not called - check ANTHROPIC_API_KEY"
+            exit 1
+          fi
+
+          # Output file check
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "::error::Integrity Check Failed: Output file not found"
+            exit 1
+          fi
+
+          # JSON structure check
+          if ! jq -e '.result or .output or .messages' "$OUTPUT_FILE" > /dev/null 2>&1; then
+            echo "::warning::Output file may have unexpected structure (checking anyway)"
+          fi
+
+          echo "✓ Integrity check passed for candidate simulation"
 
       - name: Evaluate CANDIDATE
         id: eval-candidate
@@ -251,6 +317,12 @@ jobs:
             SCORE=$(echo "$RESULT" | jq -r '.score // 0')
           else
             SCORE="0"
+          fi
+
+          # Score bounds check (max 11 for UI scenarios, 10 for standard)
+          if [ "$(echo "$SCORE < 0 || $SCORE > 11" | bc -l)" -eq 1 ]; then
+            echo "::error::Integrity Check Failed: Score $SCORE out of bounds [0-11]"
+            exit 1
           fi
 
           echo "Candidate score: $SCORE"
@@ -449,6 +521,10 @@ jobs:
           cp -r main-branch/.claude/skills pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
           cp main-branch/.claude/settings.json pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
 
+      - name: Record baseline simulation start time (Tier 2)
+        if: steps.check-baseline.outputs.has_baseline == 'true'
+        run: echo "BASELINE_START_T2=$SECONDS" >> $GITHUB_ENV
+
       - name: Run BASELINE simulation with Claude
         if: steps.check-baseline.outputs.has_baseline == 'true'
         id: baseline
@@ -471,6 +547,33 @@ jobs:
             3. Return results as JSON with score
 
             After execution, output a summary of what you did and whether SDLC was followed.
+
+      - name: Integrity check BASELINE simulation (Tier 2)
+        if: steps.check-baseline.outputs.has_baseline == 'true'
+        run: |
+          ELAPSED=$((SECONDS - BASELINE_START_T2))
+          echo "Baseline simulation (Tier 2) took ${ELAPSED}s"
+
+          # Timing check: Real Claude simulations take >30s
+          if [ "$ELAPSED" -lt 30 ]; then
+            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >30s)"
+            echo "This indicates Claude API was not called - check ANTHROPIC_API_KEY"
+            exit 1
+          fi
+
+          # Output file check
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "::error::Integrity Check Failed: Output file not found"
+            exit 1
+          fi
+
+          # JSON structure check
+          if ! jq -e '.result or .output or .messages' "$OUTPUT_FILE" > /dev/null 2>&1; then
+            echo "::warning::Output file may have unexpected structure (checking anyway)"
+          fi
+
+          echo "✓ Integrity check passed for baseline simulation (Tier 2)"
 
       - name: Evaluate BASELINE (5x for statistical power)
         if: steps.check-baseline.outputs.has_baseline == 'true'
@@ -505,6 +608,13 @@ jobs:
             else
               SCORE="0"
             fi
+
+            # Score bounds check (max 11 for UI scenarios, 10 for standard)
+            if [ "$(echo "$SCORE < 0 || $SCORE > 11" | bc -l)" -eq 1 ]; then
+              echo "::error::Integrity Check Failed: Score $SCORE out of bounds [0-11]"
+              exit 1
+            fi
+
             SCORES="$SCORES $SCORE"
             echo "  Run $i score: $SCORE"
             sleep 1
@@ -542,6 +652,9 @@ jobs:
           cp -r pr-branch/.claude/skills pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
           cp pr-branch/.claude/settings.json pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
 
+      - name: Record candidate simulation start time (Tier 2)
+        run: echo "CANDIDATE_START_T2=$SECONDS" >> $GITHUB_ENV
+
       - name: Run CANDIDATE simulation with Claude
         id: candidate
         uses: anthropics/claude-code-action@v1
@@ -563,6 +676,32 @@ jobs:
             3. Return results as JSON with score
 
             After execution, output a summary of what you did and whether SDLC was followed.
+
+      - name: Integrity check CANDIDATE simulation (Tier 2)
+        run: |
+          ELAPSED=$((SECONDS - CANDIDATE_START_T2))
+          echo "Candidate simulation (Tier 2) took ${ELAPSED}s"
+
+          # Timing check: Real Claude simulations take >30s
+          if [ "$ELAPSED" -lt 30 ]; then
+            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >30s)"
+            echo "This indicates Claude API was not called - check ANTHROPIC_API_KEY"
+            exit 1
+          fi
+
+          # Output file check
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "::error::Integrity Check Failed: Output file not found"
+            exit 1
+          fi
+
+          # JSON structure check
+          if ! jq -e '.result or .output or .messages' "$OUTPUT_FILE" > /dev/null 2>&1; then
+            echo "::warning::Output file may have unexpected structure (checking anyway)"
+          fi
+
+          echo "✓ Integrity check passed for candidate simulation (Tier 2)"
 
       - name: Evaluate CANDIDATE (5x for statistical power)
         id: eval-candidate
@@ -597,6 +736,13 @@ jobs:
             else
               SCORE="0"
             fi
+
+            # Score bounds check (max 11 for UI scenarios, 10 for standard)
+            if [ "$(echo "$SCORE < 0 || $SCORE > 11" | bc -l)" -eq 1 ]; then
+              echo "::error::Integrity Check Failed: Score $SCORE out of bounds [0-11]"
+              exit 1
+            fi
+
             SCORES="$SCORES $SCORE"
             LAST_RESULT="$RESULT"
             echo "  Run $i score: $SCORE"

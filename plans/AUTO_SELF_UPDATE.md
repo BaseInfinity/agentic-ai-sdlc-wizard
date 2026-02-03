@@ -397,3 +397,71 @@ Scoring updated → Future changes validated → Wizard stays high quality
 2. Coverage for non-code (AI-suggested for docs/YAML)
 3. Adaptive by project type (detect if traditional or AI approach is better)
 4. Scoring evolves with wizard (new features get new criteria)
+
+---
+
+## Item 10: CI Integrity Checks (2026-02-02)
+
+**Purpose:** Automatically verify E2E tests are REAL, not mocked/broken.
+
+### Checks Added to `ci.yml`
+
+| Check | Implementation | Catches |
+|-------|----------------|---------|
+| **Timing >30s** | Record start/end time of each simulation | Mocked API, skipped steps |
+| **Score bounds** | Assert 0 ≤ score ≤ 11 | Parse errors, malformed output |
+| **Output JSON valid** | Verify output file exists | Empty/corrupt output files |
+
+### Implementation
+
+Added to both `e2e-quick-check` (Tier 1) and `e2e-full-evaluation` (Tier 2) jobs:
+
+```yaml
+# Before each simulation:
+- name: Record simulation start time
+  run: echo "START_TIME=$SECONDS" >> $GITHUB_ENV
+
+# After each simulation:
+- name: Integrity check simulation
+  run: |
+    ELAPSED=$((SECONDS - START_TIME))
+
+    # Timing check
+    if [ "$ELAPSED" -lt 30 ]; then
+      echo "::error::Integrity Check Failed: Took ${ELAPSED}s (expected >30s)"
+      exit 1
+    fi
+
+    # Output file check
+    if [ ! -f "$OUTPUT_FILE" ]; then
+      echo "::error::Integrity Check Failed: Output file not found"
+      exit 1
+    fi
+
+    # JSON structure check (warning only)
+    if ! jq -e '.result or .output or .messages' "$OUTPUT_FILE" > /dev/null 2>&1; then
+      echo "::warning::Output file may have unexpected structure"
+    fi
+
+# In evaluation loops:
+# Score bounds check
+if [ "$(echo "$SCORE < 0 || $SCORE > 11" | bc -l)" -eq 1 ]; then
+  echo "::error::Integrity Check Failed: Score $SCORE out of bounds [0-11]"
+  exit 1
+fi
+```
+
+### Why This Matters
+
+| Problem | Without Integrity Checks | With Integrity Checks |
+|---------|--------------------------|----------------------|
+| API key expired | Scores silently = 0 | Immediate failure with explanation |
+| Output file missing | Cryptic jq errors | Clear "Output file not found" error |
+| Mocked/skipped simulation | Passes with fake scores | Fails timing check |
+| Malformed evaluation | Garbage scores accepted | Bounds check catches it |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `.github/workflows/ci.yml` | Added integrity checks to 4 simulation points (baseline/candidate × Tier1/Tier2) |
