@@ -127,7 +127,7 @@ test_cap_applied() {
     fi
 }
 
-# Test 7: Robustness calculation
+# Test 7: Robustness calculation (must be non-negative)
 test_robustness() {
     local output
     output=$("$SDP_SCRIPT" 7.0 claude-sonnet-4 2>/dev/null) || true
@@ -135,11 +135,11 @@ test_robustness() {
     robustness=$(echo "$output" | grep "robustness=" | cut -d'=' -f2)
 
     if [ -n "$robustness" ]; then
-        # Robustness should be a number (can be negative or positive)
-        if echo "$robustness" | grep -qE '^-?[0-9]+\.?[0-9]*$'; then
-            pass "Robustness is calculated: $robustness"
+        # Robustness should be a non-negative number (uses absolute ratio)
+        if echo "$robustness" | grep -qE '^[0-9]+\.?[0-9]*$'; then
+            pass "Robustness is non-negative: $robustness"
         else
-            fail "Robustness should be numeric, got: $robustness"
+            fail "Robustness should be non-negative numeric, got: $robustness"
         fi
     else
         fail "Robustness field not found in output"
@@ -197,6 +197,26 @@ test_external_change() {
     fi
 }
 
+# Test 11: Robustness is never negative (regression test for * -1 bug)
+test_robustness_never_negative() {
+    local scores="3.0 5.0 7.0 9.0"
+    local all_positive=true
+    for score in $scores; do
+        local output
+        output=$("$SDP_SCRIPT" "$score" claude-sonnet-4 2>/dev/null) || true
+        local robustness
+        robustness=$(echo "$output" | grep "robustness=" | cut -d'=' -f2)
+        if [ -n "$robustness" ] && echo "$robustness" | grep -q '^-'; then
+            all_positive=false
+            fail "Robustness negative for score=$score: $robustness"
+            return
+        fi
+    done
+    if [ "$all_positive" = "true" ]; then
+        pass "Robustness never negative across multiple scores"
+    fi
+}
+
 # Run all tests
 test_script_exists
 test_help
@@ -208,6 +228,7 @@ test_robustness
 test_interpretation
 test_invalid_input
 test_external_change
+test_robustness_never_negative
 
 echo ""
 echo "=== Results ==="

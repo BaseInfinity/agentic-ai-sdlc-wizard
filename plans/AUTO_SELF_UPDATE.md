@@ -626,12 +626,53 @@ PR comments now show:
 
 | Metric | Value |
 |--------|-------|
+| Duration | 45s |
+| Tool uses | 12 |
 | Input tokens | 12,345 |
 | Output tokens | 8,901 |
 | Total tokens | 21,246 |
-| Est. cost | ~$0.17 |
+| Est. cost | ~$0.85 |
 | Tokens/point | 2,125 |
 
-_Token usage is tracked but not scored. Data collection for future analysis._
+_Native Task metrics (duration, tool uses) + token tracking. Not scored yet._
 </details>
 ```
+
+---
+
+## Item 13: Native Task Metrics (2026-02-05)
+
+**Purpose:** Leverage Claude Code Task tool's native metrics for richer E2E telemetry.
+
+### Native Fields
+
+Claude Code's Task tool now provides these fields natively in execution output:
+
+| Field | Description | Source |
+|-------|-------------|--------|
+| `duration` | Total execution time in seconds | Task tool output |
+| `tool_uses` | Number of tool calls made | Task tool output |
+| `total_tokens` | Combined token count | Task tool output |
+
+### What Changed
+
+| File | Change |
+|------|--------|
+| `.github/workflows/ci.yml` | Extract native metrics, show in PR comments |
+| `tests/e2e/evaluate.sh` | Track evaluation duration, include in JSON output |
+| `tests/test-token-extraction.sh` | Tests for native metric extraction |
+| `plans/AUTO_SELF_UPDATE.md` | This documentation |
+
+### CI Audit Fixes (bundled)
+
+Also includes fixes from CI audit:
+
+| Fix | Severity | Description |
+|-----|----------|-------------|
+| Model mismatch | CRITICAL | evaluate.sh now uses claude-opus-4-6 |
+| SDP robustness negation | CRITICAL | Removed `* -1`, use absolute ratio |
+| Silent failures | CRITICAL | Missing output files now exit 1 |
+| Hardcoded output path | HIGH | Use `RUNNER_TEMP` env var |
+| Timing threshold | HIGH | Reduced to 20s, warning for 20-30s |
+| API retry | MEDIUM | 1 retry with 5s delay |
+| Pricing | MEDIUM | Updated to Opus 4.6 rates ($15/$75 per 1M) |

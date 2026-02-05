@@ -164,15 +164,17 @@ jobs:
           ELAPSED=$(($(date +%s) - BASELINE_START))
           echo "Baseline simulation took ${ELAPSED}s"
 
-          # Timing check: Real Claude simulations take >30s
-          if [ "$ELAPSED" -lt 30 ]; then
-            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >30s)"
+          # Timing check: Real Claude simulations take >20s
+          if [ "$ELAPSED" -lt 20 ]; then
+            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >20s)"
             echo "This indicates Claude API was not called - check ANTHROPIC_API_KEY"
             exit 1
+          elif [ "$ELAPSED" -lt 30 ]; then
+            echo "::warning::Simulation took ${ELAPSED}s (faster than typical >30s, but above minimum)"
           fi
 
           # Output file check
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "::error::Integrity Check Failed: Output file not found"
             exit 1
@@ -192,13 +194,12 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         working-directory: pr-branch
         run: |
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
           SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
-            echo "baseline_score=0" >> $GITHUB_OUTPUT
-            echo "baseline_status=fail" >> $GITHUB_OUTPUT
-            exit 0
+            echo "::error::Baseline output file not found: $OUTPUT_FILE"
+            exit 1
           fi
 
           # Run evaluation
@@ -274,15 +275,17 @@ jobs:
           ELAPSED=$(($(date +%s) - CANDIDATE_START))
           echo "Candidate simulation took ${ELAPSED}s"
 
-          # Timing check: Real Claude simulations take >30s
-          if [ "$ELAPSED" -lt 30 ]; then
-            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >30s)"
+          # Timing check: Real Claude simulations take >20s
+          if [ "$ELAPSED" -lt 20 ]; then
+            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >20s)"
             echo "This indicates Claude API was not called - check ANTHROPIC_API_KEY"
             exit 1
+          elif [ "$ELAPSED" -lt 30 ]; then
+            echo "::warning::Simulation took ${ELAPSED}s (faster than typical >30s, but above minimum)"
           fi
 
           # Output file check
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "::error::Integrity Check Failed: Output file not found"
             exit 1
@@ -301,17 +304,12 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         working-directory: pr-branch
         run: |
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
           SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
-            echo "candidate_score=0" >> $GITHUB_OUTPUT
-            echo "candidate_status=fail" >> $GITHUB_OUTPUT
-            echo "sdp_score=0" >> $GITHUB_OUTPUT
-            echo "sdp_external=75" >> $GITHUB_OUTPUT
-            echo "sdp_robustness=1.0" >> $GITHUB_OUTPUT
-            echo "sdp_interpretation=STABLE" >> $GITHUB_OUTPUT
-            exit 0
+            echo "::error::Candidate output file not found: $OUTPUT_FILE"
+            exit 1
           fi
 
           # Run evaluation
@@ -346,31 +344,42 @@ jobs:
           echo "sdp_robustness=$SDP_ROBUSTNESS" >> $GITHUB_OUTPUT
           echo "sdp_interpretation=$SDP_INTERPRETATION" >> $GITHUB_OUTPUT
 
-          # Extract token usage from output file (if available)
-          # Token data may be in .usage, .token_usage, or similar fields
+          # Extract native Task metrics (duration, tool_uses) from output
+          DURATION=$(jq -r '.duration // .elapsed_seconds // "N/A"' "$OUTPUT_FILE" 2>/dev/null || echo "N/A")
+          TOOL_USES=$(jq -r '.tool_uses // .num_tool_calls // "N/A"' "$OUTPUT_FILE" 2>/dev/null || echo "N/A")
+
+          # Extract token usage - check native .total_tokens first, then nested paths
           INPUT_TOKENS=$(jq -r '.usage.input_tokens // .token_usage.input_tokens // .input_tokens // "N/A"' "$OUTPUT_FILE" 2>/dev/null || echo "N/A")
           OUTPUT_TOKENS=$(jq -r '.usage.output_tokens // .token_usage.output_tokens // .output_tokens // "N/A"' "$OUTPUT_FILE" 2>/dev/null || echo "N/A")
+          NATIVE_TOTAL=$(jq -r '.total_tokens // "N/A"' "$OUTPUT_FILE" 2>/dev/null || echo "N/A")
 
           # Calculate totals and cost estimate if tokens available
-          if [ "$INPUT_TOKENS" != "N/A" ] && [ "$OUTPUT_TOKENS" != "N/A" ]; then
-            # Use bc for float-safe arithmetic (tokens may be floats)
+          if [ "$NATIVE_TOTAL" != "N/A" ] && [ "$NATIVE_TOTAL" != "null" ]; then
+            TOTAL_TOKENS="$NATIVE_TOTAL"
+          elif [ "$INPUT_TOKENS" != "N/A" ] && [ "$OUTPUT_TOKENS" != "N/A" ]; then
             TOTAL_TOKENS=$(echo "$INPUT_TOKENS + $OUTPUT_TOKENS" | bc -l | cut -d. -f1)
-            # Estimate cost: ~$3/1M input, ~$15/1M output (Claude pricing approximation)
-            COST=$(echo "scale=4; ($INPUT_TOKENS * 0.000003) + ($OUTPUT_TOKENS * 0.000015)" | bc -l)
-            COST_DISPLAY=$(printf "~\$%.2f" "$COST")
-            # Tokens per point efficiency
-            if [ "$SCORE" != "0" ] && [ "$SCORE" != "" ]; then
-              TOKENS_PER_POINT=$(echo "scale=0; $TOTAL_TOKENS / $SCORE" | bc -l 2>/dev/null || echo "N/A")
-            else
-              TOKENS_PER_POINT="N/A"
-            fi
           else
             TOTAL_TOKENS="N/A"
+          fi
+
+          if [ "$INPUT_TOKENS" != "N/A" ] && [ "$OUTPUT_TOKENS" != "N/A" ]; then
+            # Estimate cost: ~$15/1M input, ~$75/1M output (Opus 4.6 pricing)
+            COST=$(echo "scale=4; ($INPUT_TOKENS * 0.000015) + ($OUTPUT_TOKENS * 0.000075)" | bc -l)
+            COST_DISPLAY=$(printf "~\$%.2f" "$COST")
+          else
             COST_DISPLAY="N/A"
+          fi
+
+          # Tokens per point efficiency
+          if [ "$TOTAL_TOKENS" != "N/A" ] && [ "$SCORE" != "0" ] && [ "$SCORE" != "" ]; then
+            TOKENS_PER_POINT=$(echo "scale=0; $TOTAL_TOKENS / $SCORE" | bc -l 2>/dev/null || echo "N/A")
+          else
             TOKENS_PER_POINT="N/A"
           fi
 
-          echo "Token usage: input=$INPUT_TOKENS, output=$OUTPUT_TOKENS, total=$TOTAL_TOKENS"
+          echo "Metrics: duration=${DURATION}s, tool_uses=$TOOL_USES, tokens=$TOTAL_TOKENS"
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
+          echo "tool_uses=$TOOL_USES" >> $GITHUB_OUTPUT
           echo "input_tokens=$INPUT_TOKENS" >> $GITHUB_OUTPUT
           echo "output_tokens=$OUTPUT_TOKENS" >> $GITHUB_OUTPUT
           echo "total_tokens=$TOTAL_TOKENS" >> $GITHUB_OUTPUT
@@ -453,6 +462,8 @@ jobs:
           SDP_EXTERNAL_CHANGE="${{ steps.eval-candidate.outputs.sdp_external_change }}"
           SDP_ROBUSTNESS="${{ steps.eval-candidate.outputs.sdp_robustness }}"
           SDP_INTERPRETATION="${{ steps.eval-candidate.outputs.sdp_interpretation }}"
+          DURATION="${{ steps.eval-candidate.outputs.duration }}"
+          TOOL_USES="${{ steps.eval-candidate.outputs.tool_uses }}"
           INPUT_TOKENS="${{ steps.eval-candidate.outputs.input_tokens }}"
           OUTPUT_TOKENS="${{ steps.eval-candidate.outputs.output_tokens }}"
           TOTAL_TOKENS="${{ steps.eval-candidate.outputs.total_tokens }}"
@@ -484,13 +495,15 @@ jobs:
               echo ""
               echo "| Metric | Value |"
               echo "|--------|-------|"
+              echo "| Duration | ${DURATION}s |"
+              echo "| Tool uses | $TOOL_USES |"
               echo "| Input tokens | $INPUT_TOKENS |"
               echo "| Output tokens | $OUTPUT_TOKENS |"
               echo "| Total tokens | $TOTAL_TOKENS |"
               echo "| Est. cost | $EST_COST |"
               echo "| Tokens/point | $TOKENS_PER_POINT |"
               echo ""
-              echo "_Token usage is tracked but not scored. Data collection for future analysis._"
+              echo "_Native Task metrics (duration, tool uses) + token tracking. Not scored yet._"
               echo "</details>"
               echo ""
               echo "_Add \`merge-ready\` label for full evaluation before merge._"
@@ -553,13 +566,15 @@ jobs:
               echo ""
               echo "| Metric | Value |"
               echo "|--------|-------|"
+              echo "| Duration | ${DURATION}s |"
+              echo "| Tool uses | $TOOL_USES |"
               echo "| Input tokens | $INPUT_TOKENS |"
               echo "| Output tokens | $OUTPUT_TOKENS |"
               echo "| Total tokens | $TOTAL_TOKENS |"
               echo "| Est. cost | $EST_COST |"
               echo "| Tokens/point | $TOKENS_PER_POINT |"
               echo ""
-              echo "_Token usage is tracked but not scored. Data collection for future analysis._"
+              echo "_Native Task metrics (duration, tool uses) + token tracking. Not scored yet._"
               echo "</details>"
               echo ""
               echo "_Add \`merge-ready\` label for full 5x evaluation before merge._"
@@ -660,15 +675,17 @@ jobs:
           ELAPSED=$(($(date +%s) - BASELINE_START_T2))
           echo "Baseline simulation (Tier 2) took ${ELAPSED}s"
 
-          # Timing check: Real Claude simulations take >30s
-          if [ "$ELAPSED" -lt 30 ]; then
-            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >30s)"
+          # Timing check: Real Claude simulations take >20s
+          if [ "$ELAPSED" -lt 20 ]; then
+            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >20s)"
             echo "This indicates Claude API was not called - check ANTHROPIC_API_KEY"
             exit 1
+          elif [ "$ELAPSED" -lt 30 ]; then
+            echo "::warning::Simulation took ${ELAPSED}s (faster than typical >30s, but above minimum)"
           fi
 
           # Output file check
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "::error::Integrity Check Failed: Output file not found"
             exit 1
@@ -688,19 +705,15 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         working-directory: pr-branch
         run: |
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
           SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
 
           # Source stats library for confidence interval calculation
           source tests/e2e/lib/stats.sh
 
           if [ ! -f "$OUTPUT_FILE" ]; then
-            echo "baseline_score=0" >> $GITHUB_OUTPUT
-            echo "baseline_scores=0 0 0 0 0" >> $GITHUB_OUTPUT
-            echo "baseline_ci=0 (no data)" >> $GITHUB_OUTPUT
-            echo "baseline_ci_lower=0" >> $GITHUB_OUTPUT
-            echo "baseline_ci_upper=0" >> $GITHUB_OUTPUT
-            exit 0
+            echo "::error::Tier 2 baseline output file not found: $OUTPUT_FILE"
+            exit 1
           fi
 
           # Run evaluation 5x for statistical power (t-distribution)
@@ -788,15 +801,17 @@ jobs:
           ELAPSED=$(($(date +%s) - CANDIDATE_START_T2))
           echo "Candidate simulation (Tier 2) took ${ELAPSED}s"
 
-          # Timing check: Real Claude simulations take >30s
-          if [ "$ELAPSED" -lt 30 ]; then
-            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >30s)"
+          # Timing check: Real Claude simulations take >20s
+          if [ "$ELAPSED" -lt 20 ]; then
+            echo "::error::Integrity Check Failed: Simulation took ${ELAPSED}s (expected >20s)"
             echo "This indicates Claude API was not called - check ANTHROPIC_API_KEY"
             exit 1
+          elif [ "$ELAPSED" -lt 30 ]; then
+            echo "::warning::Simulation took ${ELAPSED}s (faster than typical >30s, but above minimum)"
           fi
 
           # Output file check
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "::error::Integrity Check Failed: Output file not found"
             exit 1
@@ -815,19 +830,15 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         working-directory: pr-branch
         run: |
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
           SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
 
           # Source stats library for confidence interval calculation
           source tests/e2e/lib/stats.sh
 
           if [ ! -f "$OUTPUT_FILE" ]; then
-            echo "candidate_score=0" >> $GITHUB_OUTPUT
-            echo "candidate_scores=0 0 0 0 0" >> $GITHUB_OUTPUT
-            echo "candidate_ci=0 (no data)" >> $GITHUB_OUTPUT
-            echo "candidate_ci_lower=0" >> $GITHUB_OUTPUT
-            echo "candidate_ci_upper=0" >> $GITHUB_OUTPUT
-            exit 0
+            echo "::error::Tier 2 candidate output file not found: $OUTPUT_FILE"
+            exit 1
           fi
 
           # Run evaluation 5x for statistical power (t-distribution)

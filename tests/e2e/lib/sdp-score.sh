@@ -162,18 +162,19 @@ calculate_robustness() {
     local ext_nonzero
     ext_nonzero=$(echo "$ext_change_pct != 0" | bc -l 2>/dev/null || echo "0")
     if [ "$ext_nonzero" = "1" ]; then
-        # Invert because positive ext_change means improvement, which should reduce our adjustment
-        robustness=$(echo "scale=2; ($our_change_pct / $ext_change_pct) * -1" | bc 2>/dev/null || echo "1.0")
-        # Handle edge cases: empty, dash-only, or extreme values (cap at ±5.0)
+        # Robustness = absolute ratio of our change vs external change
+        # < 1.0 = SDLC more resilient than model (good)
+        # = 1.0 = tracks model exactly
+        # > 1.0 = SDLC more sensitive (fragile)
+        local abs_our abs_ext
+        abs_our=$(echo "${our_change_pct#-}" | bc 2>/dev/null || echo "0")
+        abs_ext=$(echo "${ext_change_pct#-}" | bc 2>/dev/null || echo "1")
+        robustness=$(echo "scale=2; $abs_our / $abs_ext" | bc 2>/dev/null || echo "1.0")
+        # Handle edge cases: empty, dash-only, or extreme values (cap at 5.0)
         if [ -z "$robustness" ] || [ "$robustness" = "-" ]; then
             robustness="1.0"
-        elif [ "$(echo "${robustness#-} > 5" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
-            # Cap extreme robustness values (abs value > 5 is unrealistic)
-            if [ "$(echo "$robustness < 0" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
-                robustness="-5.0"
-            else
-                robustness="5.0"
-            fi
+        elif [ "$(echo "$robustness > 5" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+            robustness="5.0"
         fi
     else
         robustness="1.0"  # No external change = neutral

@@ -22,6 +22,8 @@
 
 set -e
 
+EVAL_START=$(date +%s)
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/json-utils.sh"
 
@@ -173,29 +175,39 @@ Now evaluate the execution output against the scenario requirements. Return only
 # Escape the prompt for JSON
 ESCAPED_PROMPT=$(echo "$FULL_PROMPT" | jq -Rs .)
 
-API_RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
-    -H "Content-Type: application/json" \
-    -H "x-api-key: $ANTHROPIC_API_KEY" \
-    -H "anthropic-version: 2023-06-01" \
-    -d "{
-        \"model\": \"claude-sonnet-4-20250514\",
-        \"max_tokens\": 2048,
-        \"messages\": [{
-            \"role\": \"user\",
-            \"content\": $ESCAPED_PROMPT
-        }]
-    }")
+# API call with 1 retry on failure
+call_api() {
+    curl -s https://api.anthropic.com/v1/messages \
+        -H "Content-Type: application/json" \
+        -H "x-api-key: $ANTHROPIC_API_KEY" \
+        -H "anthropic-version: 2023-06-01" \
+        -d "{
+            \"model\": \"claude-opus-4-6\",
+            \"max_tokens\": 2048,
+            \"messages\": [{
+                \"role\": \"user\",
+                \"content\": $ESCAPED_PROMPT
+            }]
+        }"
+}
 
-# Extract the response text
+API_RESPONSE=$(call_api)
 RAW_RESULT=$(echo "$API_RESPONSE" | jq -r '.content[0].text // empty')
+
+# Retry once on failure
+if [ -z "$RAW_RESULT" ]; then
+    echo "First API attempt failed, retrying in 5s..." >&2
+    sleep 5
+    API_RESPONSE=$(call_api)
+    RAW_RESULT=$(echo "$API_RESPONSE" | jq -r '.content[0].text // empty')
+fi
 
 if [ -z "$RAW_RESULT" ]; then
     if [ "$JSON_OUTPUT" = "--json" ]; then
-        # Output valid JSON so CI can parse it (errors go to stderr)
-        echo '{"score":0,"pass":false,"summary":"Claude API call failed - check API key and rate limits","criteria":{},"baseline_comparison":{"status":"fail","baseline":5.0,"min_acceptable":4.0,"target":7.0}}'
-        exit 0  # Don't fail - let CI handle the zero score
+        echo '{"score":0,"pass":false,"summary":"Claude API call failed after retry - check API key and rate limits","criteria":{},"baseline_comparison":{"status":"fail","baseline":5.0,"min_acceptable":4.0,"target":7.0}}' >&2
+        exit 1
     else
-        echo "Error: Failed to get evaluation from Claude API" >&2
+        echo "Error: Failed to get evaluation from Claude API (after retry)" >&2
         echo "API Response: $API_RESPONSE" >&2
         exit 1
     fi
@@ -289,7 +301,10 @@ if [ "$JSON_OUTPUT" = "--json" ]; then
     [ -z "$SDP_BASELINE_EXT" ] || ! is_numeric "$SDP_BASELINE_EXT" && SDP_BASELINE_EXT="75"
     [ -z "$SDP_ROBUSTNESS" ] || ! is_numeric "$SDP_ROBUSTNESS" && SDP_ROBUSTNESS="1.0"
 
-    # Enrich the result with baseline comparison AND SDP scoring
+    # Calculate evaluation duration
+    EVAL_DURATION=$(($(date +%s) - EVAL_START))
+
+    # Enrich the result with baseline comparison, SDP scoring, and duration
     ENRICHED_RESULT=$(echo "$EVAL_RESULT" | jq \
         --arg pass "$PASS" \
         --arg baseline_status "$BASELINE_STATUS" \
@@ -303,8 +318,10 @@ if [ "$JSON_OUTPUT" = "--json" ]; then
         --arg sdp_external_change "$SDP_EXTERNAL_CHANGE" \
         --argjson sdp_robustness "$SDP_ROBUSTNESS" \
         --arg sdp_interpretation "$SDP_INTERPRETATION" \
+        --argjson eval_duration "$EVAL_DURATION" \
         '. + {
             pass: ($pass == "true"),
+            eval_duration: $eval_duration,
             baseline_comparison: {
                 status: $baseline_status,
                 baseline: $baseline,
@@ -324,12 +341,15 @@ if [ "$JSON_OUTPUT" = "--json" ]; then
         }')
     echo "$ENRICHED_RESULT"
 else
+    EVAL_DURATION=$(($(date +%s) - EVAL_START))
+
     echo ""
     echo "=========================================="
     echo "  SDLC Evaluation Results"
     echo "=========================================="
     echo ""
     echo "Scenario: $(basename "$SCENARIO_FILE" .md)"
+    echo "Evaluation duration: ${EVAL_DURATION}s"
     echo ""
 
     # Show criteria breakdown

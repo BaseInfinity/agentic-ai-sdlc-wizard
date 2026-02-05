@@ -121,12 +121,12 @@ fi
 # ============================================
 echo "Test 5: Cost calculation math"
 
-# Using same pricing as ci.yml: ~$3/1M input, ~$15/1M output
+# Using same pricing as ci.yml: ~$15/1M input, ~$75/1M output (Opus 4.6)
 INPUT_TOKENS=12345
 OUTPUT_TOKENS=8901
-EXPECTED_COST="0.1706"  # (12345 * 0.000003) + (8901 * 0.000015) = 0.037035 + 0.133515 = 0.17055 ≈ 0.1706
+EXPECTED_COST="0.8528"  # (12345 * 0.000015) + (8901 * 0.000075) = 0.185175 + 0.667575 = 0.85275 → rounds to 0.8528
 
-COST=$(echo "scale=4; ($INPUT_TOKENS * 0.000003) + ($OUTPUT_TOKENS * 0.000015)" | bc -l)
+COST=$(echo "scale=4; ($INPUT_TOKENS * 0.000015) + ($OUTPUT_TOKENS * 0.000075)" | bc -l)
 # Compare first 4 digits
 COST_TRIMMED=$(printf "%.4f" "$COST")
 
@@ -219,6 +219,109 @@ if [ "$INPUT_TOKENS" = "N/A" ] && [ "$OUTPUT_TOKENS" = "N/A" ]; then
   pass "Handle missing file gracefully"
 else
   fail "Handle missing file gracefully" "input=N/A, output=N/A" "input=$INPUT_TOKENS, output=$OUTPUT_TOKENS"
+fi
+
+# ============================================
+# Test 11: Extract native .duration field
+# ============================================
+echo "Test 11: Extract native duration from Task metrics"
+
+cat > "$TEMP_DIR/output11.json" << 'EOF'
+{
+  "result": "success",
+  "duration": 45,
+  "tool_uses": 12,
+  "total_tokens": 25000
+}
+EOF
+
+DURATION=$(jq -r '.duration // .elapsed_seconds // "N/A"' "$TEMP_DIR/output11.json" 2>/dev/null || echo "N/A")
+
+if [ "$DURATION" = "45" ]; then
+  pass "Extract native duration"
+else
+  fail "Extract native duration" "45" "$DURATION"
+fi
+
+# ============================================
+# Test 12: Extract native .tool_uses field
+# ============================================
+echo "Test 12: Extract native tool_uses from Task metrics"
+
+TOOL_USES=$(jq -r '.tool_uses // .num_tool_calls // "N/A"' "$TEMP_DIR/output11.json" 2>/dev/null || echo "N/A")
+
+if [ "$TOOL_USES" = "12" ]; then
+  pass "Extract native tool_uses"
+else
+  fail "Extract native tool_uses" "12" "$TOOL_USES"
+fi
+
+# ============================================
+# Test 13: Extract native .total_tokens field
+# ============================================
+echo "Test 13: Extract native total_tokens from Task metrics"
+
+NATIVE_TOTAL=$(jq -r '.total_tokens // "N/A"' "$TEMP_DIR/output11.json" 2>/dev/null || echo "N/A")
+
+if [ "$NATIVE_TOTAL" = "25000" ]; then
+  pass "Extract native total_tokens"
+else
+  fail "Extract native total_tokens" "25000" "$NATIVE_TOTAL"
+fi
+
+# ============================================
+# Test 14: Native total_tokens takes priority over computed
+# ============================================
+echo "Test 14: Native total_tokens takes priority"
+
+cat > "$TEMP_DIR/output14.json" << 'EOF'
+{
+  "result": "success",
+  "total_tokens": 30000,
+  "usage": {
+    "input_tokens": 12000,
+    "output_tokens": 8000
+  }
+}
+EOF
+
+NATIVE_TOTAL=$(jq -r '.total_tokens // "N/A"' "$TEMP_DIR/output14.json" 2>/dev/null || echo "N/A")
+INPUT_TOKENS=$(jq -r '.usage.input_tokens // .token_usage.input_tokens // .input_tokens // "N/A"' "$TEMP_DIR/output14.json" 2>/dev/null || echo "N/A")
+OUTPUT_TOKENS=$(jq -r '.usage.output_tokens // .token_usage.output_tokens // .output_tokens // "N/A"' "$TEMP_DIR/output14.json" 2>/dev/null || echo "N/A")
+
+# Native total should be used (30000) not computed (20000)
+if [ "$NATIVE_TOTAL" != "N/A" ] && [ "$NATIVE_TOTAL" != "null" ]; then
+  TOTAL_TOKENS="$NATIVE_TOTAL"
+elif [ "$INPUT_TOKENS" != "N/A" ] && [ "$OUTPUT_TOKENS" != "N/A" ]; then
+  TOTAL_TOKENS=$(echo "$INPUT_TOKENS + $OUTPUT_TOKENS" | bc -l | cut -d. -f1)
+else
+  TOTAL_TOKENS="N/A"
+fi
+
+if [ "$TOTAL_TOKENS" = "30000" ]; then
+  pass "Native total_tokens takes priority over computed"
+else
+  fail "Native total_tokens takes priority" "30000" "$TOTAL_TOKENS"
+fi
+
+# ============================================
+# Test 15: Duration/tool_uses fallback to N/A
+# ============================================
+echo "Test 15: Duration and tool_uses fallback to N/A when missing"
+
+cat > "$TEMP_DIR/output15.json" << 'EOF'
+{
+  "result": "success"
+}
+EOF
+
+DURATION=$(jq -r '.duration // .elapsed_seconds // "N/A"' "$TEMP_DIR/output15.json" 2>/dev/null || echo "N/A")
+TOOL_USES=$(jq -r '.tool_uses // .num_tool_calls // "N/A"' "$TEMP_DIR/output15.json" 2>/dev/null || echo "N/A")
+
+if [ "$DURATION" = "N/A" ] && [ "$TOOL_USES" = "N/A" ]; then
+  pass "Duration and tool_uses fallback to N/A"
+else
+  fail "Duration/tool_uses fallback" "duration=N/A, tool_uses=N/A" "duration=$DURATION, tool_uses=$TOOL_USES"
 fi
 
 # ============================================
