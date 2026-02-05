@@ -307,6 +307,10 @@ jobs:
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "candidate_score=0" >> $GITHUB_OUTPUT
             echo "candidate_status=fail" >> $GITHUB_OUTPUT
+            echo "sdp_score=0" >> $GITHUB_OUTPUT
+            echo "sdp_external=75" >> $GITHUB_OUTPUT
+            echo "sdp_robustness=1.0" >> $GITHUB_OUTPUT
+            echo "sdp_interpretation=STABLE" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -327,6 +331,51 @@ jobs:
 
           echo "Candidate score: $SCORE"
           echo "candidate_score=$SCORE" >> $GITHUB_OUTPUT
+
+          # Extract SDP scores from result
+          SDP_SCORE=$(echo "$RESULT" | jq -r '.sdp.adjusted // .score // 0')
+          SDP_EXTERNAL=$(echo "$RESULT" | jq -r '.sdp.external_benchmark // 75')
+          SDP_EXTERNAL_CHANGE=$(echo "$RESULT" | jq -r '.sdp.external_change // "0%"')
+          SDP_ROBUSTNESS=$(echo "$RESULT" | jq -r '.sdp.robustness // 1.0')
+          SDP_INTERPRETATION=$(echo "$RESULT" | jq -r '.sdp.interpretation // "STABLE"')
+
+          echo "SDP Score: $SDP_SCORE (external: $SDP_EXTERNAL, robustness: $SDP_ROBUSTNESS)"
+          echo "sdp_score=$SDP_SCORE" >> $GITHUB_OUTPUT
+          echo "sdp_external=$SDP_EXTERNAL" >> $GITHUB_OUTPUT
+          echo "sdp_external_change=$SDP_EXTERNAL_CHANGE" >> $GITHUB_OUTPUT
+          echo "sdp_robustness=$SDP_ROBUSTNESS" >> $GITHUB_OUTPUT
+          echo "sdp_interpretation=$SDP_INTERPRETATION" >> $GITHUB_OUTPUT
+
+          # Extract token usage from output file (if available)
+          # Token data may be in .usage, .token_usage, or similar fields
+          INPUT_TOKENS=$(jq -r '.usage.input_tokens // .token_usage.input_tokens // .input_tokens // "N/A"' "$OUTPUT_FILE" 2>/dev/null || echo "N/A")
+          OUTPUT_TOKENS=$(jq -r '.usage.output_tokens // .token_usage.output_tokens // .output_tokens // "N/A"' "$OUTPUT_FILE" 2>/dev/null || echo "N/A")
+
+          # Calculate totals and cost estimate if tokens available
+          if [ "$INPUT_TOKENS" != "N/A" ] && [ "$OUTPUT_TOKENS" != "N/A" ]; then
+            # Use bc for float-safe arithmetic (tokens may be floats)
+            TOTAL_TOKENS=$(echo "$INPUT_TOKENS + $OUTPUT_TOKENS" | bc -l | cut -d. -f1)
+            # Estimate cost: ~$3/1M input, ~$15/1M output (Claude pricing approximation)
+            COST=$(echo "scale=4; ($INPUT_TOKENS * 0.000003) + ($OUTPUT_TOKENS * 0.000015)" | bc -l)
+            COST_DISPLAY=$(printf "~\$%.2f" "$COST")
+            # Tokens per point efficiency
+            if [ "$SCORE" != "0" ] && [ "$SCORE" != "" ]; then
+              TOKENS_PER_POINT=$(echo "scale=0; $TOTAL_TOKENS / $SCORE" | bc -l 2>/dev/null || echo "N/A")
+            else
+              TOKENS_PER_POINT="N/A"
+            fi
+          else
+            TOTAL_TOKENS="N/A"
+            COST_DISPLAY="N/A"
+            TOKENS_PER_POINT="N/A"
+          fi
+
+          echo "Token usage: input=$INPUT_TOKENS, output=$OUTPUT_TOKENS, total=$TOTAL_TOKENS"
+          echo "input_tokens=$INPUT_TOKENS" >> $GITHUB_OUTPUT
+          echo "output_tokens=$OUTPUT_TOKENS" >> $GITHUB_OUTPUT
+          echo "total_tokens=$TOTAL_TOKENS" >> $GITHUB_OUTPUT
+          echo "est_cost=$COST_DISPLAY" >> $GITHUB_OUTPUT
+          echo "tokens_per_point=$TOKENS_PER_POINT" >> $GITHUB_OUTPUT
 
       - name: Compare scores
         id: compare
@@ -399,6 +448,16 @@ jobs:
           DELTA="${{ steps.compare.outputs.delta }}"
           STATUS="${{ steps.compare.outputs.status }}"
           EMOJI="${{ steps.compare.outputs.emoji }}"
+          SDP_SCORE="${{ steps.eval-candidate.outputs.sdp_score }}"
+          SDP_EXTERNAL="${{ steps.eval-candidate.outputs.sdp_external }}"
+          SDP_EXTERNAL_CHANGE="${{ steps.eval-candidate.outputs.sdp_external_change }}"
+          SDP_ROBUSTNESS="${{ steps.eval-candidate.outputs.sdp_robustness }}"
+          SDP_INTERPRETATION="${{ steps.eval-candidate.outputs.sdp_interpretation }}"
+          INPUT_TOKENS="${{ steps.eval-candidate.outputs.input_tokens }}"
+          OUTPUT_TOKENS="${{ steps.eval-candidate.outputs.output_tokens }}"
+          TOTAL_TOKENS="${{ steps.eval-candidate.outputs.total_tokens }}"
+          EST_COST="${{ steps.eval-candidate.outputs.est_cost }}"
+          TOKENS_PER_POINT="${{ steps.eval-candidate.outputs.tokens_per_point }}"
 
           # Write message to output using echo
           if [ "$IS_BOOTSTRAPPING" = "true" ]; then
@@ -412,11 +471,27 @@ jobs:
               echo "|--------|-------|"
               echo "| Baseline (main) | N/A (no wizard yet) |"
               echo "| Candidate (PR) | $CANDIDATE / 10 |"
+              echo "| SDP (adjusted) | $SDP_SCORE / 10 |"
+              echo "| Model Benchmark | $SDP_EXTERNAL ($SDP_EXTERNAL_CHANGE) |"
               echo "| Status | **BOOTSTRAPPING** |"
               echo ""
               echo "### Result: First wizard installation verified"
               echo ""
               echo "This PR introduces the wizard for the first time. After merge, future PRs will have a baseline to compare against."
+              echo ""
+              echo "<details>"
+              echo "<summary>Resource Usage (informational)</summary>"
+              echo ""
+              echo "| Metric | Value |"
+              echo "|--------|-------|"
+              echo "| Input tokens | $INPUT_TOKENS |"
+              echo "| Output tokens | $OUTPUT_TOKENS |"
+              echo "| Total tokens | $TOTAL_TOKENS |"
+              echo "| Est. cost | $EST_COST |"
+              echo "| Tokens/point | $TOKENS_PER_POINT |"
+              echo ""
+              echo "_Token usage is tracked but not scored. Data collection for future analysis._"
+              echo "</details>"
               echo ""
               echo "_Add \`merge-ready\` label for full evaluation before merge._"
               echo ""
@@ -441,25 +516,56 @@ jobs:
               DELTA_DISPLAY="$DELTA"
             fi
 
+            # Robustness interpretation (validate numeric before bc comparison)
+            ROBUSTNESS_NOTE=""
+            if [ -n "$SDP_ROBUSTNESS" ] && echo "$SDP_ROBUSTNESS" | grep -qE '^-?[0-9]+\.?[0-9]*$'; then
+              if [ "$SDP_ROBUSTNESS" != "1.0" ]; then
+                if [ "$(echo "$SDP_ROBUSTNESS < 0.8" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+                  ROBUSTNESS_NOTE=" (ROBUST - SDLC resilient to model changes)"
+                elif [ "$(echo "$SDP_ROBUSTNESS > 1.2" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+                  ROBUSTNESS_NOTE=" (FRAGILE - investigate SDLC sensitivity)"
+                fi
+              fi
+            fi
+
             {
               echo "message<<EOF"
               echo "## E2E Quick Check (Tier 1) $EMOJI"
               echo ""
               echo "_Fast quality gate - single comparison per commit._"
               echo ""
-              echo "| Metric | Value |"
-              echo "|--------|-------|"
-              echo "| Baseline (main) | $BASELINE / 10 |"
-              echo "| Candidate (PR) | $CANDIDATE / 10 |"
-              echo "| Delta | $DELTA_DISPLAY |"
-              echo "| Status | **$STATUS** |"
+              echo "| Layer | Metric | Value |"
+              echo "|-------|--------|-------|"
+              echo "| **L1: Model** | External Benchmark | $SDP_EXTERNAL ($SDP_EXTERNAL_CHANGE vs baseline) |"
+              echo "| **L2: SDLC** | Baseline (main) | $BASELINE / 10 |"
+              echo "| | Candidate (PR) | $CANDIDATE / 10 |"
+              echo "| | SDP (adjusted) | $SDP_SCORE / 10 |"
+              echo "| | Delta | $DELTA_DISPLAY |"
+              echo "| **Combined** | Robustness | $SDP_ROBUSTNESS$ROBUSTNESS_NOTE |"
+              echo "| | Status | **$STATUS** |"
               echo ""
               echo "### Result: $STATUS_TEXT"
+              echo ""
+              echo "> **Interpretation:** $SDP_INTERPRETATION"
+              echo ""
+              echo "<details>"
+              echo "<summary>Resource Usage (informational)</summary>"
+              echo ""
+              echo "| Metric | Value |"
+              echo "|--------|-------|"
+              echo "| Input tokens | $INPUT_TOKENS |"
+              echo "| Output tokens | $OUTPUT_TOKENS |"
+              echo "| Total tokens | $TOTAL_TOKENS |"
+              echo "| Est. cost | $EST_COST |"
+              echo "| Tokens/point | $TOKENS_PER_POINT |"
+              echo ""
+              echo "_Token usage is tracked but not scored. Data collection for future analysis._"
+              echo "</details>"
               echo ""
               echo "_Add \`merge-ready\` label for full 5x evaluation before merge._"
               echo ""
               echo "---"
-              echo "*Tier 1: 1x run each. Tier 2: 5x runs with 95% confidence intervals.*"
+              echo "*Tier 1: 1x run each. SDP adjusts for external model conditions.*"
               echo "EOF"
             } >> $GITHUB_OUTPUT
           fi
@@ -772,6 +878,20 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
 
+          # Extract SDP scores from last result
+          SDP_SCORE=$(echo "$LAST_RESULT" | jq -r '.sdp.adjusted // .score // 0')
+          SDP_EXTERNAL=$(echo "$LAST_RESULT" | jq -r '.sdp.external_benchmark // 75')
+          SDP_EXTERNAL_CHANGE=$(echo "$LAST_RESULT" | jq -r '.sdp.external_change // "0%"')
+          SDP_ROBUSTNESS=$(echo "$LAST_RESULT" | jq -r '.sdp.robustness // 1.0')
+          SDP_INTERPRETATION=$(echo "$LAST_RESULT" | jq -r '.sdp.interpretation // "STABLE"')
+
+          echo "SDP Score: $SDP_SCORE (external: $SDP_EXTERNAL, robustness: $SDP_ROBUSTNESS)"
+          echo "sdp_score=$SDP_SCORE" >> $GITHUB_OUTPUT
+          echo "sdp_external=$SDP_EXTERNAL" >> $GITHUB_OUTPUT
+          echo "sdp_external_change=$SDP_EXTERNAL_CHANGE" >> $GITHUB_OUTPUT
+          echo "sdp_robustness=$SDP_ROBUSTNESS" >> $GITHUB_OUTPUT
+          echo "sdp_interpretation=$SDP_INTERPRETATION" >> $GITHUB_OUTPUT
+
       - name: Compare scores (full evaluation with CI)
         id: compare
         working-directory: pr-branch
@@ -879,6 +999,11 @@ jobs:
           EMOJI="${{ steps.compare.outputs.emoji }}"
           VERDICT="${{ steps.compare.outputs.verdict }}"
           CRITERIA="${{ steps.eval-candidate.outputs.criteria }}"
+          SDP_SCORE="${{ steps.eval-candidate.outputs.sdp_score }}"
+          SDP_EXTERNAL="${{ steps.eval-candidate.outputs.sdp_external }}"
+          SDP_EXTERNAL_CHANGE="${{ steps.eval-candidate.outputs.sdp_external_change }}"
+          SDP_ROBUSTNESS="${{ steps.eval-candidate.outputs.sdp_robustness }}"
+          SDP_INTERPRETATION="${{ steps.eval-candidate.outputs.sdp_interpretation }}"
 
           if [ "$IS_BOOTSTRAPPING" = "true" ]; then
             {
@@ -887,13 +1012,15 @@ jobs:
               echo ""
               echo "_First wizard installation - no baseline to compare against._"
               echo ""
-              echo "| Metric | Value |"
-              echo "|--------|-------|"
-              echo "| Baseline (main) | N/A (no wizard yet) |"
-              echo "| Candidate (PR) | $CANDIDATE_CI |"
-              echo "| 95% CI | [$CANDIDATE_CI_LOWER, $CANDIDATE_CI_UPPER] |"
-              echo "| Individual Runs | $CANDIDATE_SCORES |"
-              echo "| Status | **BOOTSTRAPPING** |"
+              echo "| Layer | Metric | Value |"
+              echo "|-------|--------|-------|"
+              echo "| **L1: Model** | External Benchmark | $SDP_EXTERNAL ($SDP_EXTERNAL_CHANGE) |"
+              echo "| **L2: SDLC** | Candidate (PR) | $CANDIDATE_CI |"
+              echo "| | SDP (adjusted) | $SDP_SCORE / 10 |"
+              echo "| | 95% CI | [$CANDIDATE_CI_LOWER, $CANDIDATE_CI_UPPER] |"
+              echo "| | Individual Runs | $CANDIDATE_SCORES |"
+              echo "| **Combined** | Robustness | $SDP_ROBUSTNESS |"
+              echo "| | Status | **BOOTSTRAPPING** |"
               echo ""
               echo "### Result: First wizard installation verified (5x evaluation)"
               echo ""
@@ -903,7 +1030,7 @@ jobs:
               echo "This PR introduces the wizard for the first time. After merge, future PRs will have a baseline to compare against."
               echo ""
               echo "---"
-              echo "*Bootstrapping mode: Candidate-only evaluation with 5x runs + 95% CI.*"
+              echo "*Bootstrapping mode: Candidate-only evaluation with 5x runs + 95% CI + SDP scoring.*"
               echo "EOF"
             } >> $GITHUB_OUTPUT
           else
@@ -915,20 +1042,45 @@ jobs:
               *) STATUS_TEXT="$STATUS" ;;
             esac
 
+            # Robustness interpretation (validate numeric before bc comparison)
+            ROBUSTNESS_NOTE=""
+            if [ -n "$SDP_ROBUSTNESS" ] && echo "$SDP_ROBUSTNESS" | grep -qE '^-?[0-9]+\.?[0-9]*$'; then
+              if [ "$SDP_ROBUSTNESS" != "1.0" ]; then
+                if [ "$(echo "$SDP_ROBUSTNESS < 0.8" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+                  ROBUSTNESS_NOTE=" (ROBUST)"
+                elif [ "$(echo "$SDP_ROBUSTNESS > 1.2" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+                  ROBUSTNESS_NOTE=" (FRAGILE)"
+                fi
+              fi
+            fi
+
             {
               echo "message<<EOF"
               echo "## E2E Full Evaluation (Tier 2) $EMOJI"
               echo ""
-              echo "_Thorough pre-merge check with 5x evaluation runs + 95% confidence intervals._"
+              echo "_Thorough pre-merge check with 5x evaluation runs + 95% confidence intervals + SDP model tracking._"
               echo ""
+              echo "### Model Context (Layer 1)"
+              echo "| Metric | Value |"
+              echo "|--------|-------|"
+              echo "| External Benchmark | $SDP_EXTERNAL ($SDP_EXTERNAL_CHANGE vs baseline) |"
+              echo "| Interpretation | $SDP_INTERPRETATION |"
+              echo ""
+              echo "### SDLC Scores (Layer 2)"
               echo "| Metric | Baseline (main) | Candidate (PR) |"
               echo "|--------|-----------------|----------------|"
-              echo "| Score | $BASELINE_CI | $CANDIDATE_CI |"
+              echo "| Raw Score | $BASELINE_CI | $CANDIDATE_CI |"
+              echo "| SDP (adjusted) | - | $SDP_SCORE / 10 |"
               echo "| 95% CI | [$BASELINE_CI_LOWER, $BASELINE_CI_UPPER] | [$CANDIDATE_CI_LOWER, $CANDIDATE_CI_UPPER] |"
               echo "| Runs | $BASELINE_SCORES | $CANDIDATE_SCORES |"
               echo ""
-              echo "### Statistical Verdict: **$STATUS** $EMOJI"
-              echo "$VERDICT"
+              echo "### Combined Analysis"
+              echo "| Metric | Value |"
+              echo "|--------|-------|"
+              echo "| Robustness | $SDP_ROBUSTNESS$ROBUSTNESS_NOTE |"
+              echo "| Statistical Verdict | **$STATUS** $EMOJI |"
+              echo ""
+              echo "**Verdict:** $VERDICT"
               echo ""
               echo "### Status: $STATUS_TEXT"
               echo ""
@@ -936,7 +1088,7 @@ jobs:
               echo "$CRITERIA"
               echo ""
               echo "---"
-              echo "*Tier 2: 5x runs with t-distribution 95% CI. Overlapping CI method for regression detection.*"
+              echo "*Tier 2: 5x runs with t-distribution 95% CI. SDP adjusts for model conditions. Robustness < 1.0 = SDLC resilient.*"
               echo "EOF"
             } >> $GITHUB_OUTPUT
           fi

@@ -222,6 +222,33 @@ Local tests pass -> Commit -> Push -> Watch CI
 
 **If no DESIGN_SYSTEM.md exists:** Skip these checks (project has no documented design system).
 
+## Deployment Tasks (If Task Involves Deploy)
+
+**When to check:** Task mentions "deploy", "release", "push to prod", "staging", etc.
+**When to skip:** Code changes only, no deployment involved.
+
+**Before any deployment:**
+1. Read ARCHITECTURE.md → Find the Environments table and Deployment Checklist
+2. Verify which environment is the target (dev/staging/prod)
+3. Follow the deployment checklist in ARCHITECTURE.md
+
+**Confidence levels for deployment:**
+
+| Target | Required Confidence | If Lower |
+|--------|---------------------|----------|
+| Dev/Preview | MEDIUM or higher | Proceed with caution |
+| Staging | MEDIUM or higher | Proceed, note uncertainties |
+| **Production** | **HIGH only** | **ASK USER before deploying** |
+
+**Production deployment requires:**
+- All tests passing
+- Production build succeeding
+- Changes tested in staging/preview first
+- HIGH confidence (90%+)
+- If ANY doubt → ASK USER first
+
+**If ARCHITECTURE.md has no Environments section:** Ask user "How do you deploy to [target]?" before proceeding.
+
 ## DELETE Legacy Code
 
 - Legacy code? DELETE IT

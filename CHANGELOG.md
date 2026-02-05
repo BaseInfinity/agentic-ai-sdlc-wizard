@@ -4,6 +4,34 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.5.0] - 2026-02-03
+
+### Added
+- SDP (SDLC Degradation-adjusted Performance) scoring to distinguish "model issues" from "wizard issues"
+- External benchmark tracking (DailyBench, LiveBench) with 24-hour caching
+- Robustness metric showing how well SDLC holds up vs model changes
+- Two-layer scoring: L1 (Model Quality) + L2 (SDLC Compliance)
+
+### How It Works
+PR comments now show three metrics:
+- **Raw Score**: Actual E2E measurement
+- **SDP Score**: Adjusted for external model conditions
+- **Robustness**: < 1.0 = resilient, > 1.0 = sensitive
+
+When model benchmarks drop but your SDLC score holds steady, that's a sign your wizard setup is robust.
+
+### Files Added
+- `tests/e2e/lib/external-benchmark.sh` - Multi-source benchmark fetcher
+- `tests/e2e/lib/sdp-score.sh` - SDP calculation logic
+- `tests/e2e/external-baseline.json` - Baseline external benchmarks
+- `tests/test-external-benchmark.sh` - Benchmark fetcher tests
+- `tests/test-sdp-calculation.sh` - SDP calculation tests
+
+### Files Modified
+- `tests/e2e/evaluate.sh` - Outputs SDP alongside raw scores
+- `.github/workflows/ci.yml` - PR comments include SDP metrics
+- Documentation updated (README, CONTRIBUTING, CI_CD, AUTO_SELF_UPDATE)
+
 ## [1.4.0] - 2026-01-26
 
 ### Added

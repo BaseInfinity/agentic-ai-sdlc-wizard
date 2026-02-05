@@ -853,6 +853,20 @@ Claude scans for:
 ├── Feature docs: *_PLAN.md, *_DOCS.md, *_SPEC.md, docs/
 ├── README, CLAUDE.md, ARCHITECTURE.md
 │
+├── Deployment targets (for ARCHITECTURE.md environments):
+│   ├── Dockerfile, docker-compose.yml    → Container deployment
+│   ├── k8s/, kubernetes/, helm/          → Kubernetes
+│   ├── vercel.json, .vercel/             → Vercel
+│   ├── netlify.toml                      → Netlify
+│   ├── fly.toml                          → Fly.io
+│   ├── railway.json, railway.toml        → Railway
+│   ├── render.yaml                       → Render
+│   ├── Procfile                          → Heroku
+│   ├── app.yaml, appengine/              → Google App Engine
+│   ├── deploy.sh, deploy/                → Custom scripts
+│   ├── .github/workflows/deploy*.yml     → GitHub Actions deploy
+│   └── package.json scripts (deploy:*)   → npm deploy scripts
+│
 ├── Tool permissions (for allowedTools):
 │   ├── package.json           → Bash(npm *), Bash(node *), Bash(npx *)
 │   ├── pnpm-lock.yaml         → Bash(pnpm *)
@@ -928,6 +942,18 @@ Recommendation: Your current tests rely heavily on mocks.
    [1] Generate DESIGN_SYSTEM.md from detected config
    [2] Point to external design system (Figma, Storybook URL)
    [3] Skip - no UI work expected in this project
+
+🚀 Deployment Targets (auto-detected):
+   Found: vercel.json, .github/workflows/deploy.yml
+
+   Detected environments:
+   - Preview: vercel (auto on PR)
+   - Production: vercel --prod (manual trigger)
+
+   Options:
+   [1] Accept detected deployment config (will populate ARCHITECTURE.md)
+   [2] Let me specify deployment targets manually
+   [3] Skip - no deployment from this project
 
 📝 Feature Doc Suffix:
    Current pattern: *_PLAN.md
@@ -1013,6 +1039,29 @@ Your answer: _______________
 **Q8: What builds for production?**
 ```
 Examples: npm run build, pnpm build, go build, cargo build
+Your answer: _______________
+```
+
+### Deployment
+
+**Q8.5: How do you deploy? (auto-detected, confirm or override)**
+```
+Detected: [e.g., Vercel, GitHub Actions, Docker, none]
+
+Environments (will populate ARCHITECTURE.md):
+┌─────────────┬──────────────────────┬────────────────────────┐
+│ Environment │ Trigger              │ Deploy Command         │
+├─────────────┼──────────────────────┼────────────────────────┤
+│ Preview     │ Auto on PR           │ vercel                 │
+│ Staging     │ Push to staging      │ [your staging deploy]  │
+│ Production  │ Manual / push main   │ vercel --prod          │
+└─────────────┴──────────────────────┴────────────────────────┘
+
+Options:
+[1] Accept detected config (recommended)
+[2] Customize environments
+[3] No deployment config needed
+
 Your answer: _______________
 ```
 
@@ -1846,10 +1895,44 @@ These are your full reference docs. Start with stubs and expand over time:
 
 # Database (prod)
 [connection info or how to access]
-
-# Deployment
-[how to deploy: e.g., ./deploy.sh, git push heroku, etc.]
 ```
+
+## Environments
+
+<!-- Claude auto-populates this from Q8.5 deployment detection -->
+
+| Environment | URL | Deploy Command | Trigger |
+|-------------|-----|----------------|---------|
+| Local Dev | http://localhost:3000 | `npm run dev` | Manual |
+| Preview | [auto-generated PR URL] | `vercel` | Auto on PR |
+| Staging | https://staging.example.com | `[your staging deploy]` | Push to staging |
+| Production | https://example.com | `vercel --prod` | Manual / push to main |
+
+## Deployment Checklist
+
+**Before deploying to ANY environment:**
+- [ ] All tests pass locally
+- [ ] Production build succeeds (`npm run build`)
+- [ ] No uncommitted changes
+
+**Before deploying to PRODUCTION:**
+- [ ] Changes tested in staging/preview first
+- [ ] STATE CONFIDENCE: HIGH before proceeding
+- [ ] If LOW confidence → ASK USER before deploying
+
+**Claude follows this automatically.** When task involves "deploy to prod" and confidence is LOW, Claude will ask before proceeding.
+
+## Rollback
+
+If deployment fails or causes issues:
+
+| Environment | Rollback Command | Notes |
+|-------------|------------------|-------|
+| Preview | [auto-expires or redeploy] | Usually self-heals |
+| Staging | `[your rollback command]` | [notes] |
+| Production | `[your rollback command]` | [critical - document clearly] |
+
+<!-- Add specific rollback procedures as you discover them -->
 
 ## System Overview
 

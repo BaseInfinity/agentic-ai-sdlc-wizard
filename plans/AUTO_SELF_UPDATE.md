@@ -465,3 +465,173 @@ fi
 | File | Change |
 |------|--------|
 | `.github/workflows/ci.yml` | Added integrity checks to 4 simulation points (baseline/candidate × Tier1/Tier2) |
+
+---
+
+## Item 11: SDP Scoring (Model Degradation Tracking) (2026-02-03)
+
+**Purpose:** Distinguish "model issues" from "wizard issues" when E2E scores drop.
+
+### The Problem
+
+When E2E scores drop, we don't know if:
+- Our SDLC wizard broke (we need to fix something)
+- The model got worse globally (not our fault, wait it out)
+
+### The Solution: Two-Layer Scoring
+
+| Layer | What It Measures | Source |
+|-------|------------------|--------|
+| **L1: General Model Quality** | Did the model get dumber overall? | External benchmarks (DailyBench, LiveBench) |
+| **L2: SDLC Compliance** | Did the model get worse at following OUR methodology? | Our E2E scores |
+
+### SDP Formula
+
+```
+Raw Score = Our E2E result (0-10)
+External Score = General model benchmark (0-100)
+SDP = Raw × (baseline_external / current_external)
+
+Robustness = How well our SDLC holds up vs model changes
+  - Robustness < 1.0 = SDLC MORE resilient than model (good!)
+  - Robustness ≈ 1.0 = SDLC tracks model exactly (expected)
+  - Robustness > 1.0 = SDLC MORE sensitive than model (fragile - investigate)
+```
+
+### Interpretation Matrix
+
+| L1 (Model) | L2 (SDLC) | Interpretation |
+|------------|-----------|----------------|
+| Stable | Stable | All good |
+| Dropped | Dropped proportionally | Model issue, not us |
+| Stable | Dropped | **Our SDLC setup broke** - investigate |
+| Dropped | Stable | **Our SDLC is robust** - good sign! |
+
+### External Benchmark Sources (Cheapest First)
+
+| Priority | Source | Method | Cost |
+|----------|--------|--------|------|
+| 1 | DailyBench | GitHub raw CSV | Free |
+| 2 | LiveBench | GitHub data | Free |
+| 3 | Cached baseline | Local file | Free (fallback) |
+
+### PR Comment Format
+
+PR comments now show:
+
+```markdown
+| Layer | Metric | Value |
+|-------|--------|-------|
+| **L1: Model** | External Benchmark | 67.5 (-10% vs baseline) |
+| **L2: SDLC** | Raw Score | 6.0/10 |
+| | SDP (adjusted) | 6.67/10 |
+| **Combined** | Robustness | 0.85 (ROBUST) |
+```
+
+### Self-Healing
+
+- 24-hour cache for external benchmarks
+- Falls back to baseline on fetch failure
+- Tracks consecutive failures (3x = warning)
+
+### Files Added/Modified
+
+| File | Action | Purpose |
+|------|--------|---------|
+| `tests/e2e/lib/external-benchmark.sh` | CREATE | Multi-source benchmark fetcher |
+| `tests/e2e/lib/sdp-score.sh` | CREATE | SDP calculation logic |
+| `tests/e2e/external-baseline.json` | CREATE | Baseline external benchmarks |
+| `tests/e2e/evaluate.sh` | MODIFY | Output SDP alongside raw |
+| `.github/workflows/ci.yml` | MODIFY | Include SDP in PR comments |
+| `tests/test-external-benchmark.sh` | CREATE | Test fallback logic |
+| `tests/test-sdp-calculation.sh` | CREATE | Test SDP math |
+| `README.md` | MODIFY | Document SDP scoring |
+| `CONTRIBUTING.md` | MODIFY | Add SDP to scoring criteria |
+| `CI_CD.md` | MODIFY | Explain SDP in E2E section |
+
+### Why This Matters
+
+| Without SDP | With SDP |
+|-------------|----------|
+| Score dropped → panic, investigate wizard | Score dropped → check if model dropped too |
+| False positives when model has bad day | Context for when to investigate vs wait |
+| No visibility into model condition | Robustness metric shows SDLC resilience |
+
+---
+
+## Item 12: Deployment Docs + Token Tracking (2026-02-03)
+
+### Part 1: Deployment Documentation
+
+**Problem:** Claude doesn't know how to deploy correctly (dev vs prod).
+
+**Solution:**
+- Auto-detect deployment targets (Dockerfile, k8s/, vercel.json, etc.) in Step 0.4
+- Added Q8.5 in wizard setup for deployment confirmation
+- Expanded ARCHITECTURE.md template with Environments table and Deployment Checklist
+- Added deployment confidence requirements (HIGH for prod, MEDIUM for staging)
+- Added deployment guidance to SKILL.md
+
+**Detection Patterns:**
+
+| File/Pattern | Detected As | Deploy Command |
+|--------------|-------------|----------------|
+| `Dockerfile` | Container | `docker build && docker push` |
+| `k8s/`, `kubernetes/` | Kubernetes | `kubectl apply -f k8s/` |
+| `vercel.json`, `.vercel/` | Vercel | `vercel --prod` |
+| `netlify.toml` | Netlify | `netlify deploy --prod` |
+| `fly.toml` | Fly.io | `fly deploy` |
+| `.github/workflows/deploy*.yml` | GitHub Actions | Auto (on push) |
+| `deploy.sh`, `deploy/` | Custom script | `./deploy.sh` |
+| `package.json` scripts | npm scripts | `npm run deploy:*` |
+| `Procfile` | Heroku | `git push heroku` |
+| `railway.json` | Railway | `railway up` |
+| `render.yaml` | Render | Auto (on push) |
+
+### Part 2: Token Usage Tracking
+
+**Problem:** Token usage should be measured even if not scored.
+
+**Solution:**
+- Extract tokens from claude-code-action output (`.usage`, `.token_usage`, or top-level)
+- Display in PR comments (collapsible Resource Usage section)
+- Calculate cost estimates (~$3/1M input, ~$15/1M output)
+- Track tokens/point efficiency metric
+- Track but don't score yet (need baseline data first)
+
+**Why Measure But Not Score (Yet):**
+
+| Reason | Explanation |
+|--------|-------------|
+| Data first | Need baseline data before weighting |
+| Avoid perverse incentives | Don't penalize thoroughness |
+| Task variance | Some tasks legitimately need more tokens |
+| Informational value | Useful for monitoring even without scoring |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `CLAUDE_CODE_SDLC_WIZARD.md` | Deployment detection in Step 0.4, Q8.5, ARCHITECTURE.md template |
+| `.claude/skills/sdlc/SKILL.md` | Deployment-aware guidance section |
+| `.github/workflows/ci.yml` | Token extraction + display in PR comments |
+| `CONTRIBUTING.md` | Token tracking documentation |
+| `tests/test-token-extraction.sh` | Test token extraction logic |
+
+### PR Comment Format
+
+```markdown
+<details>
+<summary>Resource Usage (informational)</summary>
+
+| Metric | Value |
+|--------|-------|
+| Input tokens | 12,345 |
+| Output tokens | 8,901 |
+| Total tokens | 21,246 |
+| Est. cost | ~$0.17 |
+| Tokens/point | 2,125 |
+
+_Token usage is tracked but not scored. Data collection for future analysis._
+</details>
+```

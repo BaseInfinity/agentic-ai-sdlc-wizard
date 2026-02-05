@@ -124,6 +124,20 @@ Like evaluating scientific method adherence - we measure **process compliance**,
 
 Scores are based on consistent criteria. Conservative baselines that rise as we improve.
 
+### Model-Adjusted Scoring (SDP)
+
+E2E scores now show three metrics to distinguish "model issues" from "our issues":
+
+| Metric | Meaning |
+|--------|---------|
+| **Raw** | Actual score measured (Layer 2: SDLC compliance) |
+| **SDP** | Score adjusted for model conditions |
+| **Robustness** | How well our SDLC holds up vs general model changes |
+
+When external benchmarks show model degradation, SDP contextualizes our scores:
+- **Robustness < 1.0** = Our SDLC is resilient (good!)
+- **Robustness > 1.0** = Our SDLC is sensitive to model changes (investigate)
+
 See `.github/workflows/` and `tests/e2e/` for implementation details.
 
 ## Official Plugin Integration

@@ -1,8 +1,10 @@
 #!/bin/bash
-# AI-Powered SDLC Evaluation
+# AI-Powered SDLC Evaluation with SDP (Model Degradation) Tracking
 #
 # Uses Claude to evaluate whether a scenario execution followed SDLC principles.
 # Returns a score 0-10, with pass threshold of 7.0.
+# Also calculates SDP (SDLC Degradation-adjusted Performance) to account for
+# external model quality fluctuations.
 #
 # Usage:
 #   ./evaluate.sh <scenario_file> <output_file> [--json]
@@ -11,11 +13,20 @@
 #   - ANTHROPIC_API_KEY environment variable
 #   - jq for JSON parsing
 #   - curl for API calls
+#
+# SDP Scoring:
+#   - Raw Score: Our E2E result (Layer 2 - SDLC compliance)
+#   - External Benchmark: General model quality (Layer 1)
+#   - SDP: Raw adjusted for model conditions
+#   - Robustness: How well our SDLC holds up vs model changes
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/json-utils.sh"
+
+# SDP scoring script
+SDP_SCRIPT="$SCRIPT_DIR/lib/sdp-score.sh"
 
 SCENARIO_FILE="$1"
 OUTPUT_FILE="$2"
@@ -243,16 +254,74 @@ else
     BASELINE_STATUS="fail"
 fi
 
+# Calculate SDP scores if script is available
+SDP_SCORE="$SCORE"
+SDP_DELTA="0"
+SDP_EXTERNAL="75"
+SDP_BASELINE_EXT="75"
+SDP_EXTERNAL_CHANGE="0%"
+SDP_ROBUSTNESS="1.0"
+SDP_INTERPRETATION="STABLE"
+
+if [ -x "$SDP_SCRIPT" ]; then
+    SDP_OUTPUT=$("$SDP_SCRIPT" "$SCORE" claude-sonnet-4 2>&1) || true
+    if [ -n "$SDP_OUTPUT" ] && ! echo "$SDP_OUTPUT" | grep -qi "error"; then
+        SDP_SCORE=$(echo "$SDP_OUTPUT" | grep "^sdp=" | cut -d'=' -f2 || echo "$SCORE")
+        SDP_DELTA=$(echo "$SDP_OUTPUT" | grep "^delta=" | cut -d'=' -f2 || echo "0")
+        SDP_EXTERNAL=$(echo "$SDP_OUTPUT" | grep "^external=" | cut -d'=' -f2 || echo "75")
+        SDP_BASELINE_EXT=$(echo "$SDP_OUTPUT" | grep "^baseline_external=" | cut -d'=' -f2 || echo "75")
+        SDP_EXTERNAL_CHANGE=$(echo "$SDP_OUTPUT" | grep "^external_change=" | cut -d'=' -f2 || echo "0%")
+        SDP_ROBUSTNESS=$(echo "$SDP_OUTPUT" | grep "^robustness=" | cut -d'=' -f2 || echo "1.0")
+        SDP_INTERPRETATION=$(echo "$SDP_OUTPUT" | grep "^interpretation=" | cut -d'=' -f2 || echo "STABLE")
+    fi
+fi
+
 # Output results
 if [ "$JSON_OUTPUT" = "--json" ]; then
-    # Enrich the result with baseline comparison
+    # Validate SDP values are numeric before using --argjson
+    # Use --arg for non-numeric values
+    is_numeric() { echo "$1" | grep -qE '^-?[0-9]+\.?[0-9]*$'; }
+
+    # Ensure numeric values or use defaults
+    [ -z "$SDP_SCORE" ] || ! is_numeric "$SDP_SCORE" && SDP_SCORE="$SCORE"
+    [ -z "$SDP_DELTA" ] || ! is_numeric "$SDP_DELTA" && SDP_DELTA="0"
+    [ -z "$SDP_EXTERNAL" ] || ! is_numeric "$SDP_EXTERNAL" && SDP_EXTERNAL="75"
+    [ -z "$SDP_BASELINE_EXT" ] || ! is_numeric "$SDP_BASELINE_EXT" && SDP_BASELINE_EXT="75"
+    [ -z "$SDP_ROBUSTNESS" ] || ! is_numeric "$SDP_ROBUSTNESS" && SDP_ROBUSTNESS="1.0"
+
+    # Enrich the result with baseline comparison AND SDP scoring
     ENRICHED_RESULT=$(echo "$EVAL_RESULT" | jq \
         --arg pass "$PASS" \
         --arg baseline_status "$BASELINE_STATUS" \
         --argjson baseline "$BASELINE" \
         --argjson min_acceptable "$MIN_ACCEPTABLE" \
         --argjson target "$TARGET" \
-        '. + {pass: ($pass == "true"), baseline_comparison: {status: $baseline_status, baseline: $baseline, min_acceptable: $min_acceptable, target: $target}}')
+        --argjson sdp_score "$SDP_SCORE" \
+        --argjson sdp_delta "$SDP_DELTA" \
+        --argjson sdp_external "$SDP_EXTERNAL" \
+        --argjson sdp_baseline_ext "$SDP_BASELINE_EXT" \
+        --arg sdp_external_change "$SDP_EXTERNAL_CHANGE" \
+        --argjson sdp_robustness "$SDP_ROBUSTNESS" \
+        --arg sdp_interpretation "$SDP_INTERPRETATION" \
+        '. + {
+            pass: ($pass == "true"),
+            baseline_comparison: {
+                status: $baseline_status,
+                baseline: $baseline,
+                min_acceptable: $min_acceptable,
+                target: $target
+            },
+            sdp: {
+                raw: .score,
+                adjusted: $sdp_score,
+                delta: $sdp_delta,
+                external_benchmark: $sdp_external,
+                baseline_external: $sdp_baseline_ext,
+                external_change: $sdp_external_change,
+                robustness: $sdp_robustness,
+                interpretation: $sdp_interpretation
+            }
+        }')
     echo "$ENRICHED_RESULT"
 else
     echo ""
@@ -270,8 +339,16 @@ else
 
     # Show score with baseline comparison
     echo "--- Final Score ---"
-    echo -e "Score: ${BLUE}$SCORE${NC} / 10"
+    echo -e "Raw Score: ${BLUE}$SCORE${NC} / 10"
+    echo -e "SDP Score: ${BLUE}$SDP_SCORE${NC} / 10 (delta: $SDP_DELTA)"
     echo "Baseline: $BASELINE | Min: $MIN_ACCEPTABLE | Target: $TARGET"
+    echo ""
+
+    # Show SDP context
+    echo "--- Model Context (SDP) ---"
+    echo "External Benchmark: $SDP_EXTERNAL (baseline: $SDP_BASELINE_EXT, change: $SDP_EXTERNAL_CHANGE)"
+    echo "Robustness: $SDP_ROBUSTNESS"
+    echo "Interpretation: $SDP_INTERPRETATION"
     echo ""
 
     # Show pass/fail with baseline status

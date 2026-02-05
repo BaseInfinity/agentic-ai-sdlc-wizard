@@ -1,0 +1,27 @@
+{
+  "claude-sonnet-4": {
+    "baseline": 75.0,
+    "calibrated": "2026-02-03",
+    "source": "DailyBench average over 7 days"
+  },
+  "claude-opus-4": {
+    "baseline": 82.0,
+    "calibrated": "2026-02-03",
+    "source": "DailyBench average over 7 days"
+  },
+  "claude-3-5-sonnet": {
+    "baseline": 72.0,
+    "calibrated": "2026-02-03",
+    "source": "DailyBench average over 7 days"
+  },
+  "_metadata": {
+    "version": "1.0.0",
+    "recalibrate_after_days": 30,
+    "min_datapoints": 7,
+    "notes": [
+      "Baselines are 7-day rolling averages from DailyBench",
+      "Recalibrate monthly or after major model updates",
+      "Default fallback is 75.0 for unknown models"
+    ]
+  }
+}

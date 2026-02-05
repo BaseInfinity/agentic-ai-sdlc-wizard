@@ -20,6 +20,29 @@
 5. **Version Logic Tests**: Runs `test-version-logic.sh`
 6. **Schema Tests**: Runs `test-analysis-schema.sh`
 7. **E2E Validation**: Runs `run-simulation.sh` in validation mode
+8. **SDP Scoring**: Tracks external model benchmarks and calculates degradation-adjusted scores
+
+### SDP (Model Degradation Tracking)
+
+E2E evaluations now include SDP scoring to distinguish "model issues" from "wizard issues":
+
+| Layer | What It Measures | Source |
+|-------|------------------|--------|
+| **L1: Model** | General model quality | External benchmarks (DailyBench, LiveBench) |
+| **L2: SDLC** | SDLC compliance | Our E2E evaluation |
+
+**PR comments show:**
+- Raw Score: Actual E2E score
+- SDP Score: Adjusted for model conditions
+- Robustness: How well our SDLC holds up vs model changes
+
+**Interpretation Matrix:**
+| L1 (Model) | L2 (SDLC) | Meaning |
+|------------|-----------|---------|
+| Stable | Stable | All good |
+| Dropped | Dropped proportionally | Model issue, not us |
+| Stable | Dropped | **Our SDLC broke** - investigate |
+| Dropped | Stable | **Our SDLC is robust** - good!
 
 ### Runs On
 - Every pull request
