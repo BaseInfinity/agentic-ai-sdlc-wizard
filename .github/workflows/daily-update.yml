@@ -42,9 +42,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RELEASE_JSON=$(gh api repos/anthropics/claude-code/releases/latest 2>/dev/null || echo '{"tag_name": "v0.0.0", "body": "Unable to fetch release"}')
+          # W4: Fail loudly on API failure instead of silent fallback to v0.0.0
+          RELEASE_JSON=$(gh api repos/anthropics/claude-code/releases/latest 2>/dev/null) || {
+            echo "::error::Failed to fetch latest Claude Code release from GitHub API"
+            exit 1
+          }
 
           LATEST_VERSION=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
+            echo "::error::Could not parse tag_name from release JSON"
+            exit 1
+          fi
+
           RELEASE_DATE=$(echo "$RELEASE_JSON" | jq -r '.published_at // "unknown"')
           RELEASE_URL=$(echo "$RELEASE_JSON" | jq -r '.html_url // ""')
 
@@ -77,7 +86,21 @@ jobs:
         id: read-prompt
         run: |
           # Store prompt in file to avoid shell escaping issues
+          # W5: Single prompt source (prompt_file only, no duplicate inline prompt)
           cat .github/prompts/analyze-release.md > /tmp/analysis_prompt.md
+
+          # Append release context to the prompt file
+          {
+            echo ""
+            echo "## Release to Analyze"
+            echo ""
+            echo "**Version:** ${{ steps.latest-release.outputs.latest_version }}"
+            echo "**Date:** ${{ steps.latest-release.outputs.release_date }}"
+            echo "**URL:** ${{ steps.latest-release.outputs.release_url }}"
+            echo ""
+            echo "**Release Notes:**"
+            cat /tmp/release_body.md
+          } >> /tmp/analysis_prompt.md
 
       - name: Analyze release with Claude
         if: steps.check-update.outputs.needs_update == 'true'
@@ -87,17 +110,6 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt_file: /tmp/analysis_prompt.md
-          prompt: |
-            ---
-
-            ## Release to Analyze
-
-            **Version:** ${{ steps.latest-release.outputs.latest_version }}
-            **Date:** ${{ steps.latest-release.outputs.release_date }}
-            **URL:** ${{ steps.latest-release.outputs.release_url }}
-
-            **Release Notes:**
-            (See /tmp/release_body.md)
           direct_prompt: true
           model: claude-sonnet-4-20250514
 
@@ -238,7 +250,13 @@ jobs:
       # Test if new CC version breaks SDLC enforcement with current docs
       - name: Install new Claude Code version
         run: |
-          npm install -g @anthropic-ai/claude-code@${{ needs.check-updates.outputs.latest_version }}
+          VERSION="${{ needs.check-updates.outputs.latest_version }}"
+          # W1: Validate version format before npm install (prevent injection)
+          if ! echo "$VERSION" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Invalid version format: $VERSION"
+            exit 1
+          fi
+          npm install -g "@anthropic-ai/claude-code@${VERSION}"
           claude --version
 
       - name: Setup test fixture with wizard
@@ -281,7 +299,7 @@ jobs:
           echo "Running Phase A: Regression test with current SDLC docs"
           echo "Testing if new CC version breaks SDLC enforcement..."
 
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "No output file - simulation may have failed"
@@ -311,7 +329,7 @@ jobs:
         run: |
           echo "Running Phase A Tier 2: Full statistical evaluation (5 trials)"
 
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "No output file from Tier 1 simulation"
@@ -400,7 +418,7 @@ jobs:
         run: |
           echo "Running Phase B: Testing with suggested SDLC improvements"
 
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "No output file from Phase B simulation"

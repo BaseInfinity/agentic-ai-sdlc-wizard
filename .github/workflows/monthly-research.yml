@@ -281,7 +281,7 @@ jobs:
         run: |
           echo "Running baseline evaluation with current SDLC docs"
 
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "No output file from baseline simulation"
@@ -362,7 +362,7 @@ jobs:
         run: |
           echo "Running candidate evaluation with research improvements"
 
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "No output file from candidate simulation"

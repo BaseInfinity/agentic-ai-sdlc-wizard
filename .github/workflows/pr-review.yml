@@ -267,7 +267,7 @@ jobs:
         id: extract-review
         run: |
           # Get Claude's output from the action
-          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
 
           if [ -f "$OUTPUT_FILE" ]; then
             # Extract the review content (Claude's final output)

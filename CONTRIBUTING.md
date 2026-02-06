@@ -7,7 +7,14 @@ Thank you for your interest in improving the SDLC Wizard!
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/your-feature`
 3. Make your changes
-4. Run tests: `./tests/test-version-logic.sh && ./tests/test-cusum.sh`
+4. Run tests:
+   ```bash
+   ./tests/test-version-logic.sh && ./tests/test-analysis-schema.sh && \
+   ./tests/test-workflow-triggers.sh && ./tests/test-cusum.sh && \
+   ./tests/test-stats.sh && ./tests/test-hooks.sh && \
+   ./tests/test-compliance.sh && ./tests/test-sdp-calculation.sh && \
+   ./tests/test-external-benchmark.sh
+   ```
 5. Submit a PR
 
 ## How We Evaluate Changes
@@ -133,10 +140,17 @@ This methodology is evolving. If you have ideas for improving our evaluation app
 # Validate YAML workflows
 python3 -c "import yaml; yaml.safe_load(open('.github/workflows/daily-update.yml'))"
 
-# Run unit tests
+# Run all test suites
 ./tests/test-version-logic.sh
-./tests/test-cusum.sh
 ./tests/test-analysis-schema.sh
+./tests/test-workflow-triggers.sh
+./tests/test-cusum.sh
+./tests/test-stats.sh
+./tests/test-hooks.sh
+./tests/test-compliance.sh
+./tests/test-sdp-calculation.sh
+./tests/test-external-benchmark.sh
+./tests/test-token-extraction.sh
 
 # Run E2E validation (no API key needed)
 ./tests/e2e/run-simulation.sh --validate

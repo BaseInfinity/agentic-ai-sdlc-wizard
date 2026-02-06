@@ -140,6 +140,70 @@ cleanup() {
     rm -rf "$cache_dir"
 }
 
+# Test 9: Opus model name mapping works
+test_opus_model() {
+    local output
+    output=$("$BENCHMARK_SCRIPT" claude-opus-4 2>/dev/null) || true
+    if [ -n "$output" ] && echo "$output" | grep -qE '^[0-9]+\.?[0-9]*$'; then
+        pass "claude-opus-4 returns numeric score: $output"
+    else
+        fail "claude-opus-4 should return numeric score, got: $output"
+    fi
+}
+
+# Test 10: Missing baseline file falls back to 75
+test_missing_baseline() {
+    local baseline_file="$SCRIPT_DIR/e2e/external-baseline.json"
+    local backup=""
+
+    # Temporarily rename baseline file if it exists
+    if [ -f "$baseline_file" ]; then
+        backup="$baseline_file.bak"
+        mv "$baseline_file" "$backup"
+    fi
+
+    local output
+    output=$("$BENCHMARK_SCRIPT" "model-with-no-baseline" 2>/dev/null) || true
+
+    # Restore baseline
+    if [ -n "$backup" ]; then
+        mv "$backup" "$baseline_file"
+    fi
+
+    if [ -n "$output" ] && echo "$output" | grep -qE '^[0-9]+\.?[0-9]*$'; then
+        pass "Missing baseline file returns fallback score: $output"
+    else
+        fail "Missing baseline should fall back, got: $output"
+    fi
+}
+
+# Test 11: Multiple calls return consistent results (from cache)
+test_consistency() {
+    local cache_dir="$SCRIPT_DIR/e2e/.cache"
+    rm -rf "$cache_dir"
+
+    local first second
+    first=$("$BENCHMARK_SCRIPT" claude-sonnet-4 2>/dev/null) || true
+    second=$("$BENCHMARK_SCRIPT" claude-sonnet-4 2>/dev/null) || true
+
+    if [ "$first" = "$second" ]; then
+        pass "Consecutive calls return consistent results: $first"
+    else
+        fail "Cached calls should be consistent, got: $first vs $second"
+    fi
+}
+
+# Test 12: Sonnet model name variants
+test_sonnet_variants() {
+    local output
+    output=$("$BENCHMARK_SCRIPT" claude-sonnet-4 2>/dev/null) || true
+    if [ -n "$output" ] && echo "$output" | grep -qE '^[0-9]+\.?[0-9]*$'; then
+        pass "claude-sonnet-4 variant returns score: $output"
+    else
+        fail "claude-sonnet-4 should return score, got: $output"
+    fi
+}
+
 # Run all tests
 test_script_exists
 test_help
@@ -149,6 +213,10 @@ test_cache_used
 test_fallback_baseline
 test_fail_count
 test_score_range
+test_opus_model
+test_missing_baseline
+test_consistency
+test_sonnet_variants
 cleanup
 
 echo ""

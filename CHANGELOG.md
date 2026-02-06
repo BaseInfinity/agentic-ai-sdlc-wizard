@@ -4,6 +4,37 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.6.0] - 2026-02-06
+
+### Added
+- Full test coverage for stats library, hooks, and compliance checker (34 new tests)
+- Extended SDP calculation and external benchmark tests (9 new tests)
+- Future roadmap items 14-19 in AUTO_SELF_UPDATE.md
+
+### Fixed
+- Version format validation before npm install (security: prevents injection)
+- Hardcoded `/home/runner/work/_temp/` paths replaced with `${RUNNER_TEMP:-/tmp}`
+- Silent fallback to v0.0.0 on API failure (now fails loudly)
+- Duplicate prompt sources in daily-update workflow (prompt_file + inline prompt)
+- Hardcoded output path in pr-review workflow
+- Weekly community workflow hardcoded output path
+
+### Changed
+- Documentation overhaul: TESTING.md, CI_CD.md, CONTRIBUTING.md, README.md updated
+- SDLC.md version tracking updated from 1.0.0 to 1.6.0
+
+### Files Added
+- `tests/test-stats.sh` - Statistical functions tests (14 tests)
+- `tests/test-hooks.sh` - Hook script tests (11 tests)
+- `tests/test-compliance.sh` - Compliance checker tests (9 tests)
+
+### Files Modified
+- `.github/workflows/daily-update.yml` - Security + correctness fixes
+- `.github/workflows/pr-review.yml` - Hardcoded path fix
+- `.github/workflows/weekly-community.yml` - Hardcoded path fix
+- `tests/test-sdp-calculation.sh` - Extended (5 new tests)
+- `tests/test-external-benchmark.sh` - Extended (4 new tests)
+
 ## [1.5.0] - 2026-02-03
 
 ### Added

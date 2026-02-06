@@ -676,3 +676,83 @@ Also includes fixes from CI audit:
 | Timing threshold | HIGH | Reduced to 20s, warning for 20-30s |
 | API retry | MEDIUM | 1 retry with 5s delay |
 | Pricing | MEDIUM | Updated to Opus 4.6 rates ($15/$75 per 1M) |
+
+---
+
+## Future Roadmap
+
+| # | Item | Priority | Description | Status |
+|---|------|----------|-------------|--------|
+| 14 | Promptfoo/DeepEval adoption | HIGH | Richer evaluation metrics, structured eval framework | PLANNED |
+| 15 | Pairwise comparison | HIGH | LLM directly compares two outputs (more reliable than independent scoring) | PLANNED |
+| 16 | Multi-model evaluation | MED | Test with Sonnet vs Opus to validate robustness across models | PLANNED |
+| 17 | Deterministic pre-checks | MED | Pattern match for TodoWrite/test-first before LLM judge (cheaper, faster) | PLANNED |
+| 18 | Real-world scenarios | MED | Extract from public repos like SWE-bench for realistic E2E testing | PLANNED |
+| 19 | Observability/tracing | LOW | Structured logging for debugging score changes across runs | PLANNED |
+
+### Item 14: Promptfoo/DeepEval Adoption
+
+**Problem:** Our evaluation is a single Claude call scoring 0-10. No structured rubrics, no multi-criteria breakdowns, no eval framework.
+
+**Solution:** Integrate Promptfoo or DeepEval for:
+- Structured rubric evaluation (each criterion scored independently)
+- Built-in statistical analysis (no custom stats.sh needed)
+- Evaluation dataset management
+- Regression testing across prompt versions
+
+**Why HIGH priority:** This replaces the most fragile part of our system (single-call AI judge) with an established framework.
+
+### Item 15: Pairwise Comparison
+
+**Problem:** Independent scoring (score A, score B, compare) is less reliable than direct comparison.
+
+**Solution:** Have Claude directly compare two outputs:
+- "Which output better follows SDLC? A or B?"
+- More reliable than scoring each independently
+- Handles scale drift (AI judges tend to cluster around certain scores)
+- Can use ELO-style ranking over multiple comparisons
+
+**Why HIGH priority:** Direct comparison is a known-better methodology from LLM evaluation research.
+
+### Item 16: Multi-Model Evaluation
+
+**Problem:** We only test with one model. If the wizard only works with Sonnet, that's fragile.
+
+**Solution:**
+- Run E2E with both Sonnet and Opus
+- Compare scores across models
+- Flag if wizard only works well with one model
+- Validates robustness beyond SDP's external benchmark approach
+
+### Item 17: Deterministic Pre-Checks
+
+**Problem:** Using an LLM judge to check "did the output contain TodoWrite?" is expensive and stochastic when a grep would work.
+
+**Solution:**
+- Pattern match for deterministic criteria before calling LLM judge
+- TodoWrite/TaskCreate: grep the output
+- Confidence stated: grep for HIGH/MEDIUM/LOW
+- Test file created: check filesystem
+- Only use LLM judge for genuinely subjective criteria (plan quality, code quality)
+
+**Benefit:** Cheaper, faster, more reproducible for 60% of scoring.
+
+### Item 18: Real-World Scenarios
+
+**Problem:** Our E2E scenarios are synthetic. Real-world tasks are messier.
+
+**Solution:**
+- Extract scenarios from public repos (SWE-bench style)
+- Real bug reports, feature requests, refactoring needs
+- More diverse complexity levels
+- Better validates wizard effectiveness on actual work
+
+### Item 19: Observability/Tracing
+
+**Problem:** When scores change, debugging why requires manual log reading.
+
+**Solution:**
+- Structured JSON logging for each evaluation step
+- Trace ID linking simulation -> evaluation -> scoring
+- Dashboard showing score trends over time
+- Alert on anomalies beyond CUSUM (e.g., specific criteria regressing)

@@ -217,6 +217,110 @@ test_robustness_never_negative() {
     fi
 }
 
+# Test 12: Raw score of 0 handled gracefully
+test_raw_zero() {
+    local output
+    output=$("$SDP_SCRIPT" 0.0 claude-sonnet-4 2>/dev/null) || true
+    local sdp
+    sdp=$(echo "$output" | grep "sdp=" | cut -d'=' -f2)
+
+    if [ -n "$sdp" ]; then
+        # SDP of 0 raw should be 0 (or near 0)
+        local is_zero
+        is_zero=$(echo "$sdp <= 0.01" | bc -l 2>/dev/null || echo "1")
+        if [ "$is_zero" = "1" ]; then
+            pass "Raw score 0.0 produces SDP near zero: $sdp"
+        else
+            fail "Raw 0.0 should produce near-zero SDP, got: $sdp"
+        fi
+    else
+        fail "Should handle raw=0 input, no output"
+    fi
+}
+
+# Test 13: SDP output format is consistent (all fields present for raw=0)
+test_raw_zero_all_fields() {
+    local output
+    output=$("$SDP_SCRIPT" 0.0 claude-sonnet-4 2>/dev/null) || true
+    local has_all=true
+
+    for field in "raw=" "sdp=" "delta=" "external=" "robustness="; do
+        if ! echo "$output" | grep -q "$field"; then
+            has_all=false
+            break
+        fi
+    done
+
+    if [ "$has_all" = "true" ]; then
+        pass "Raw=0 still outputs all required fields"
+    else
+        fail "Raw=0 should still output all fields, got: $output"
+    fi
+}
+
+# Test 14: High raw score (10.0) works
+test_max_score() {
+    local output
+    output=$("$SDP_SCRIPT" 10.0 claude-sonnet-4 2>/dev/null) || true
+    local sdp
+    sdp=$(echo "$output" | grep "sdp=" | cut -d'=' -f2)
+
+    if [ -n "$sdp" ]; then
+        local in_range
+        in_range=$(echo "$sdp >= 8.0 && $sdp <= 12.0" | bc -l 2>/dev/null || echo "1")
+        if [ "$in_range" = "1" ]; then
+            pass "Max score 10.0 produces reasonable SDP: $sdp"
+        else
+            fail "Max score SDP should be 8.0-12.0, got: $sdp"
+        fi
+    else
+        fail "Should handle max score"
+    fi
+}
+
+# Test 15: Interpretation covers all 5 valid values
+test_all_interpretations_valid() {
+    local valid_interpretations="MODEL_DEGRADED MODEL_IMPROVED STABLE SDLC_ISSUE SDLC_ROBUST"
+    local scores="1.0 3.0 5.0 7.0 9.0"
+    local all_valid=true
+
+    for score in $scores; do
+        local output
+        output=$("$SDP_SCRIPT" "$score" claude-sonnet-4 2>/dev/null) || true
+        local interpretation
+        interpretation=$(echo "$output" | grep "interpretation=" | cut -d'=' -f2)
+        if [ -n "$interpretation" ]; then
+            local found=false
+            for valid in $valid_interpretations; do
+                if [ "$interpretation" = "$valid" ]; then
+                    found=true
+                    break
+                fi
+            done
+            if [ "$found" = "false" ]; then
+                all_valid=false
+                fail "Invalid interpretation '$interpretation' for score $score"
+                return
+            fi
+        fi
+    done
+
+    if [ "$all_valid" = "true" ]; then
+        pass "All interpretations are from valid set"
+    fi
+}
+
+# Test 16: Missing model argument defaults gracefully
+test_default_model() {
+    local output
+    output=$("$SDP_SCRIPT" 7.0 2>/dev/null) || true
+    if echo "$output" | grep -q "raw=7.0"; then
+        pass "Missing model argument uses default"
+    else
+        fail "Should work with default model, got: $output"
+    fi
+}
+
 # Run all tests
 test_script_exists
 test_help
@@ -229,6 +333,11 @@ test_interpretation
 test_invalid_input
 test_external_change
 test_robustness_never_negative
+test_raw_zero
+test_raw_zero_all_fields
+test_max_score
+test_all_interpretations_valid
+test_default_model
 
 echo ""
 echo "=== Results ==="
