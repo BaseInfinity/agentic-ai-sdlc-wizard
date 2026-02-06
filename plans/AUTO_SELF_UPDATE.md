@@ -689,6 +689,7 @@ Also includes fixes from CI audit:
 | 17 | Deterministic pre-checks | MED | Pattern match for TodoWrite/test-first before LLM judge (cheaper, faster) | PLANNED |
 | 18 | Real-world scenarios | MED | Extract from public repos like SWE-bench for realistic E2E testing | PLANNED |
 | 19 | Observability/tracing | LOW | Structured logging for debugging score changes across runs | PLANNED |
+| 20 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. | PLANNED |
 
 ### Item 14: Promptfoo/DeepEval Adoption
 
@@ -756,3 +757,22 @@ Also includes fixes from CI audit:
 - Trace ID linking simulation -> evaluation -> scoring
 - Dashboard showing score trends over time
 - Alert on anomalies beyond CUSUM (e.g., specific criteria regressing)
+
+### Item 20: Mutation Testing
+
+**Problem:** We don't know which wizard doc sections are load-bearing vs noise.
+
+**Two tracks:**
+
+**(a) Wizard recommendation for user projects:**
+- Dynamically detect stack and offer mutation testing as optional setup
+- Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust
+- Validates test quality for ANY project, not just AI workflows
+- Follows same dynamic detection pattern as test frameworks and lint tools
+
+**(b) Our own CI - SDLC document mutation testing (novel):**
+- Mutate wizard doc sections (remove a section, weaken guidance, change rules)
+- Run E2E evaluation against mutated docs
+- Verify score drops - proving which sections are load-bearing
+- Sections where score doesn't drop = dead weight (candidates for removal)
+- Sections where score drops significantly = critical (protect from regressions)

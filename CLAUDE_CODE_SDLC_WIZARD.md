@@ -823,6 +823,27 @@ Feature branches still recommended for solo devs (keeps main clean, easy rollbac
 
 **Back-and-forth:** User questions live in PR comments. Bot's response is always the latest sticky comment. Clean and organized.
 
+**CI monitoring question:**
+> "Should Claude monitor CI checks after pushing and auto-diagnose failures? (y/n)"
+
+- **Yes** → Enable CI feedback loop in SDLC skill, add `gh` CLI to allowedTools
+- **No** → Skip CI monitoring steps (Claude still runs local tests, just doesn't watch CI)
+
+**What this does:**
+1. After pushing, Claude runs `gh pr checks` to watch CI status
+2. If checks fail, Claude reads logs via `gh run view --log-failed`
+3. Claude diagnoses the failure and proposes a fix
+4. Max 2 fix attempts, then asks user
+5. Job isn't done until CI is green
+
+**Recommendation:** Yes if you have CI configured. This closes the loop between
+"local tests pass" and "PR is actually ready to merge."
+
+**Requirements:**
+- `gh` CLI installed and authenticated
+- CI/CD configured (GitHub Actions, etc.)
+- If no CI yet: skip, add later when you set up CI
+
 **Check for new plugins periodically:**
 ```
 /plugin > Discover
@@ -1292,6 +1313,11 @@ The `allowedTools` array is auto-generated based on your stack detected in Step 
 | `docker-compose.yml` | `Bash(docker *)` |
 | `.github/workflows/` | `Bash(gh *)` |
 
+**CI monitoring commands** (covered by `Bash(gh *)` above):
+- `gh pr checks` / `gh pr checks --watch` - watch CI status
+- `gh run view <RUN_ID> --log-failed` - read failure logs
+- `gh run list` - find workflow runs
+
 **Always included:** `Read`, `Edit`, `Write`, `Glob`, `Grep`, `Task`
 
 **Why this matters:** Explicitly listing allowed tools:
@@ -1595,10 +1621,20 @@ Local tests pass -> Commit -> Push -> Watch CI
 
 **How to watch CI:**
 1. Push changes to remote
-2. Check CI status (use `gh` CLI or GitHub MCP)
+2. Check CI status:
+   ```bash
+   # Watch checks in real-time (blocks until complete)
+   gh pr checks --watch
+
+   # Or check status without blocking
+   gh pr checks
+
+   # View specific failed run logs
+   gh run view <RUN_ID> --log-failed
+   ```
 3. If CI fails:
-   - Read failure logs
-   - Diagnose root cause (same as local test failures)
+   - Read failure logs: `gh run view <RUN_ID> --log-failed`
+   - Diagnose root cause (same philosophy as local test failures)
    - Fix and push again
 4. Max 2 fix attempts - if still failing, ASK USER
 5. If CI passes - proceed to present final summary

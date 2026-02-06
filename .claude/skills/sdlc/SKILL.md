@@ -38,7 +38,7 @@ TodoWrite([
   { content: "Visual consistency check (if UI change)", status: "pending", activeForm: "Checking visual consistency" },
   { content: "Self-review: code-reviewer subagent", status: "pending", activeForm: "Running code review" },
   { content: "Security review (if warranted)", status: "pending", activeForm: "Checking security implications" },
-  // CI FEEDBACK LOOP (After local tests pass)
+  // CI FEEDBACK LOOP (if CI monitoring enabled in setup - skip if no CI)
   { content: "Commit and push to remote", status: "pending", activeForm: "Pushing to remote" },
   { content: "Watch CI - fix failures, iterate until green (max 2x)", status: "pending", activeForm: "Watching CI" },
   // FINAL
@@ -184,10 +184,20 @@ Local tests pass -> Commit -> Push -> Watch CI
 
 **How to watch CI:**
 1. Push changes to remote
-2. Check CI status (use `gh` CLI or GitHub MCP)
+2. Check CI status:
+   ```bash
+   # Watch checks in real-time (blocks until complete)
+   gh pr checks --watch
+
+   # Or check status without blocking
+   gh pr checks
+
+   # View specific failed run logs
+   gh run view <RUN_ID> --log-failed
+   ```
 3. If CI fails:
-   - Read failure logs
-   - Diagnose root cause (same as local test failures)
+   - Read failure logs: `gh run view <RUN_ID> --log-failed`
+   - Diagnose root cause (same philosophy as local test failures)
    - Fix and push again
 4. Max 2 fix attempts - if still failing, ASK USER
 5. If CI passes - proceed to present final summary
