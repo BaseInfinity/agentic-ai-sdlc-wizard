@@ -181,9 +181,10 @@ jobs:
           fi
 
           # JSON structure check
-          if ! jq -e '.result or .output or .messages' "$OUTPUT_FILE" > /dev/null 2>&1; then
-            echo "::warning::Output file may have unexpected structure (checking anyway)"
+          if ! jq -e 'length > 0' "$OUTPUT_FILE" > /dev/null 2>&1; then
+            echo "::warning::Output file is empty or invalid JSON"
           fi
+          echo "Output file keys: $(jq -r 'keys | join(", ")' "$OUTPUT_FILE" 2>/dev/null || echo "not parseable")"
 
           echo "✓ Integrity check passed for baseline simulation"
 
@@ -202,13 +203,30 @@ jobs:
             exit 1
           fi
 
-          # Run evaluation
-          RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
+          # Run evaluation (stderr separated for debugging)
+          EVAL_STDERR="/tmp/eval-stderr-baseline.log"
+          EVAL_EXIT=0
+          RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>"$EVAL_STDERR") || EVAL_EXIT=$?
+
+          if [ "$EVAL_EXIT" -ne 0 ]; then
+            echo "::warning::Baseline evaluation exited with code $EVAL_EXIT"
+            echo "::warning::Stderr: $(cat "$EVAL_STDERR")"
+          fi
+
+          # Check for evaluation error (distinct from score=0)
+          if echo "$RESULT" | jq -e '.error == true' > /dev/null 2>&1; then
+            echo "::error::Baseline evaluation failed: $(echo "$RESULT" | jq -r '.summary')"
+            echo "Stderr: $(cat "$EVAL_STDERR")"
+            exit 1
+          fi
 
           if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
-            SCORE=$(echo "$RESULT" | jq -r '.score // 0')
+            SCORE=$(echo "$RESULT" | jq -r '.score')
           else
-            SCORE="0"
+            echo "::error::Baseline evaluation returned invalid JSON - cannot extract score"
+            echo "Result preview: ${RESULT:0:500}"
+            echo "Stderr: $(cat "$EVAL_STDERR")"
+            exit 1
           fi
 
           # Score bounds check (max 11 for UI scenarios, 10 for standard)
@@ -292,9 +310,10 @@ jobs:
           fi
 
           # JSON structure check
-          if ! jq -e '.result or .output or .messages' "$OUTPUT_FILE" > /dev/null 2>&1; then
-            echo "::warning::Output file may have unexpected structure (checking anyway)"
+          if ! jq -e 'length > 0' "$OUTPUT_FILE" > /dev/null 2>&1; then
+            echo "::warning::Output file is empty or invalid JSON"
           fi
+          echo "Output file keys: $(jq -r 'keys | join(", ")' "$OUTPUT_FILE" 2>/dev/null || echo "not parseable")"
 
           echo "✓ Integrity check passed for candidate simulation"
 
@@ -312,13 +331,30 @@ jobs:
             exit 1
           fi
 
-          # Run evaluation
-          RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
+          # Run evaluation (stderr separated for debugging)
+          EVAL_STDERR="/tmp/eval-stderr-candidate.log"
+          EVAL_EXIT=0
+          RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>"$EVAL_STDERR") || EVAL_EXIT=$?
+
+          if [ "$EVAL_EXIT" -ne 0 ]; then
+            echo "::warning::Candidate evaluation exited with code $EVAL_EXIT"
+            echo "::warning::Stderr: $(cat "$EVAL_STDERR")"
+          fi
+
+          # Check for evaluation error (distinct from score=0)
+          if echo "$RESULT" | jq -e '.error == true' > /dev/null 2>&1; then
+            echo "::error::Candidate evaluation failed: $(echo "$RESULT" | jq -r '.summary')"
+            echo "Stderr: $(cat "$EVAL_STDERR")"
+            exit 1
+          fi
 
           if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
-            SCORE=$(echo "$RESULT" | jq -r '.score // 0')
+            SCORE=$(echo "$RESULT" | jq -r '.score')
           else
-            SCORE="0"
+            echo "::error::Candidate evaluation returned invalid JSON - cannot extract score"
+            echo "Result preview: ${RESULT:0:500}"
+            echo "Stderr: $(cat "$EVAL_STDERR")"
+            exit 1
           fi
 
           # Score bounds check (max 11 for UI scenarios, 10 for standard)
@@ -377,7 +413,7 @@ jobs:
             TOKENS_PER_POINT="N/A"
           fi
 
-          echo "Metrics: duration=${DURATION}s, tool_uses=$TOOL_USES, tokens=$TOTAL_TOKENS"
+          echo "Metrics: duration=$DURATION, tool_uses=$TOOL_USES, tokens=$TOTAL_TOKENS"
           echo "duration=$DURATION" >> $GITHUB_OUTPUT
           echo "tool_uses=$TOOL_USES" >> $GITHUB_OUTPUT
           echo "input_tokens=$INPUT_TOKENS" >> $GITHUB_OUTPUT
@@ -470,6 +506,24 @@ jobs:
           EST_COST="${{ steps.eval-candidate.outputs.est_cost }}"
           TOKENS_PER_POINT="${{ steps.eval-candidate.outputs.tokens_per_point }}"
 
+          # N/A-aware metric formatting (prevents "N/As" display bug)
+          format_metric() {
+            local val="$1" suffix="$2"
+            if [ "$val" = "N/A" ] || [ "$val" = "null" ] || [ -z "$val" ]; then
+              echo "N/A"
+            else
+              echo "${val}${suffix}"
+            fi
+          }
+
+          DURATION_DISPLAY=$(format_metric "$DURATION" "s")
+          TOOL_USES_DISPLAY=$(format_metric "$TOOL_USES" "")
+          INPUT_TOKENS_DISPLAY=$(format_metric "$INPUT_TOKENS" "")
+          OUTPUT_TOKENS_DISPLAY=$(format_metric "$OUTPUT_TOKENS" "")
+          TOTAL_TOKENS_DISPLAY=$(format_metric "$TOTAL_TOKENS" "")
+          EST_COST_DISPLAY=$(format_metric "$EST_COST" "")
+          TOKENS_PER_POINT_DISPLAY=$(format_metric "$TOKENS_PER_POINT" "")
+
           # Write message to output using echo
           if [ "$IS_BOOTSTRAPPING" = "true" ]; then
             {
@@ -495,13 +549,13 @@ jobs:
               echo ""
               echo "| Metric | Value |"
               echo "|--------|-------|"
-              echo "| Duration | ${DURATION}s |"
-              echo "| Tool uses | $TOOL_USES |"
-              echo "| Input tokens | $INPUT_TOKENS |"
-              echo "| Output tokens | $OUTPUT_TOKENS |"
-              echo "| Total tokens | $TOTAL_TOKENS |"
-              echo "| Est. cost | $EST_COST |"
-              echo "| Tokens/point | $TOKENS_PER_POINT |"
+              echo "| Duration | $DURATION_DISPLAY |"
+              echo "| Tool uses | $TOOL_USES_DISPLAY |"
+              echo "| Input tokens | $INPUT_TOKENS_DISPLAY |"
+              echo "| Output tokens | $OUTPUT_TOKENS_DISPLAY |"
+              echo "| Total tokens | $TOTAL_TOKENS_DISPLAY |"
+              echo "| Est. cost | $EST_COST_DISPLAY |"
+              echo "| Tokens/point | $TOKENS_PER_POINT_DISPLAY |"
               echo ""
               echo "_Native Task metrics (duration, tool uses) + token tracking. Not scored yet._"
               echo "</details>"
@@ -566,13 +620,13 @@ jobs:
               echo ""
               echo "| Metric | Value |"
               echo "|--------|-------|"
-              echo "| Duration | ${DURATION}s |"
-              echo "| Tool uses | $TOOL_USES |"
-              echo "| Input tokens | $INPUT_TOKENS |"
-              echo "| Output tokens | $OUTPUT_TOKENS |"
-              echo "| Total tokens | $TOTAL_TOKENS |"
-              echo "| Est. cost | $EST_COST |"
-              echo "| Tokens/point | $TOKENS_PER_POINT |"
+              echo "| Duration | $DURATION_DISPLAY |"
+              echo "| Tool uses | $TOOL_USES_DISPLAY |"
+              echo "| Input tokens | $INPUT_TOKENS_DISPLAY |"
+              echo "| Output tokens | $OUTPUT_TOKENS_DISPLAY |"
+              echo "| Total tokens | $TOTAL_TOKENS_DISPLAY |"
+              echo "| Est. cost | $EST_COST_DISPLAY |"
+              echo "| Tokens/point | $TOKENS_PER_POINT_DISPLAY |"
               echo ""
               echo "_Native Task metrics (duration, tool uses) + token tracking. Not scored yet._"
               echo "</details>"
@@ -692,9 +746,10 @@ jobs:
           fi
 
           # JSON structure check
-          if ! jq -e '.result or .output or .messages' "$OUTPUT_FILE" > /dev/null 2>&1; then
-            echo "::warning::Output file may have unexpected structure (checking anyway)"
+          if ! jq -e 'length > 0' "$OUTPUT_FILE" > /dev/null 2>&1; then
+            echo "::warning::Output file is empty or invalid JSON"
           fi
+          echo "Output file keys: $(jq -r 'keys | join(", ")' "$OUTPUT_FILE" 2>/dev/null || echo "not parseable")"
 
           echo "✓ Integrity check passed for baseline simulation (Tier 2)"
 
@@ -721,11 +776,27 @@ jobs:
           SCORES=""
           for i in 1 2 3 4 5; do
             echo "Baseline evaluation run $i/5..."
-            RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
+            EVAL_STDERR="/tmp/eval-stderr-baseline-t2-$i.log"
+            EVAL_EXIT=0
+            RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>"$EVAL_STDERR") || EVAL_EXIT=$?
+
+            if [ "$EVAL_EXIT" -ne 0 ]; then
+              echo "::warning::Baseline eval run $i exited with code $EVAL_EXIT"
+              echo "::warning::Stderr: $(cat "$EVAL_STDERR")"
+            fi
+
+            # Check for evaluation error
+            if echo "$RESULT" | jq -e '.error == true' > /dev/null 2>&1; then
+              echo "::error::Baseline eval run $i failed: $(echo "$RESULT" | jq -r '.summary')"
+              exit 1
+            fi
+
             if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
-              SCORE=$(echo "$RESULT" | jq -r '.score // 0')
+              SCORE=$(echo "$RESULT" | jq -r '.score')
             else
-              SCORE="0"
+              echo "::error::Baseline eval run $i returned invalid JSON"
+              echo "Result preview: ${RESULT:0:500}"
+              exit 1
             fi
 
             # Score bounds check (max 11 for UI scenarios, 10 for standard)
@@ -818,9 +889,10 @@ jobs:
           fi
 
           # JSON structure check
-          if ! jq -e '.result or .output or .messages' "$OUTPUT_FILE" > /dev/null 2>&1; then
-            echo "::warning::Output file may have unexpected structure (checking anyway)"
+          if ! jq -e 'length > 0' "$OUTPUT_FILE" > /dev/null 2>&1; then
+            echo "::warning::Output file is empty or invalid JSON"
           fi
+          echo "Output file keys: $(jq -r 'keys | join(", ")' "$OUTPUT_FILE" 2>/dev/null || echo "not parseable")"
 
           echo "✓ Integrity check passed for candidate simulation (Tier 2)"
 
@@ -847,11 +919,27 @@ jobs:
           LAST_RESULT=""
           for i in 1 2 3 4 5; do
             echo "Candidate evaluation run $i/5..."
-            RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>&1) || true
+            EVAL_STDERR="/tmp/eval-stderr-candidate-t2-$i.log"
+            EVAL_EXIT=0
+            RESULT=$(./tests/e2e/evaluate.sh "$SCENARIO" "$OUTPUT_FILE" --json 2>"$EVAL_STDERR") || EVAL_EXIT=$?
+
+            if [ "$EVAL_EXIT" -ne 0 ]; then
+              echo "::warning::Candidate eval run $i exited with code $EVAL_EXIT"
+              echo "::warning::Stderr: $(cat "$EVAL_STDERR")"
+            fi
+
+            # Check for evaluation error
+            if echo "$RESULT" | jq -e '.error == true' > /dev/null 2>&1; then
+              echo "::error::Candidate eval run $i failed: $(echo "$RESULT" | jq -r '.summary')"
+              exit 1
+            fi
+
             if echo "$RESULT" | jq -e '.score' > /dev/null 2>&1; then
-              SCORE=$(echo "$RESULT" | jq -r '.score // 0')
+              SCORE=$(echo "$RESULT" | jq -r '.score')
             else
-              SCORE="0"
+              echo "::error::Candidate eval run $i returned invalid JSON"
+              echo "Result preview: ${RESULT:0:500}"
+              exit 1
             fi
 
             # Score bounds check (max 11 for UI scenarios, 10 for standard)

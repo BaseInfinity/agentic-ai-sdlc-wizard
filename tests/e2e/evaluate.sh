@@ -224,7 +224,7 @@ if ! is_valid_json "$EVAL_RESULT"; then
     echo "Raw response (first 500 chars): ${RAW_RESULT:0:500}" >&2
 
     if [ "$JSON_OUTPUT" = "--json" ]; then
-        echo '{"score":0,"pass":false,"summary":"Claude returned invalid JSON response","criteria":{},"baseline_comparison":{"status":"fail","baseline":5.0,"min_acceptable":4.0,"target":7.0}}'
+        echo '{"score":0,"pass":false,"error":true,"summary":"Claude returned invalid JSON response","criteria":{},"baseline_comparison":{"status":"fail","baseline":5.0,"min_acceptable":4.0,"target":7.0}}'
         exit 0
     else
         echo "Error: Could not extract valid JSON from Claude's response" >&2
@@ -276,7 +276,8 @@ SDP_ROBUSTNESS="1.0"
 SDP_INTERPRETATION="STABLE"
 
 if [ -x "$SDP_SCRIPT" ]; then
-    SDP_OUTPUT=$("$SDP_SCRIPT" "$SCORE" claude-sonnet-4 2>&1) || true
+    SDP_MODEL="${SDP_MODEL:-claude-opus-4-6}"
+    SDP_OUTPUT=$("$SDP_SCRIPT" "$SCORE" "$SDP_MODEL" 2>&1) || true
     if [ -n "$SDP_OUTPUT" ] && ! echo "$SDP_OUTPUT" | grep -qi "error"; then
         SDP_SCORE=$(echo "$SDP_OUTPUT" | grep "^sdp=" | cut -d'=' -f2 || echo "$SCORE")
         SDP_DELTA=$(echo "$SDP_OUTPUT" | grep "^delta=" | cut -d'=' -f2 || echo "0")
@@ -295,11 +296,11 @@ if [ "$JSON_OUTPUT" = "--json" ]; then
     is_numeric() { echo "$1" | grep -qE '^-?[0-9]+\.?[0-9]*$'; }
 
     # Ensure numeric values or use defaults
-    [ -z "$SDP_SCORE" ] || ! is_numeric "$SDP_SCORE" && SDP_SCORE="$SCORE"
-    [ -z "$SDP_DELTA" ] || ! is_numeric "$SDP_DELTA" && SDP_DELTA="0"
-    [ -z "$SDP_EXTERNAL" ] || ! is_numeric "$SDP_EXTERNAL" && SDP_EXTERNAL="75"
-    [ -z "$SDP_BASELINE_EXT" ] || ! is_numeric "$SDP_BASELINE_EXT" && SDP_BASELINE_EXT="75"
-    [ -z "$SDP_ROBUSTNESS" ] || ! is_numeric "$SDP_ROBUSTNESS" && SDP_ROBUSTNESS="1.0"
+    if [ -z "$SDP_SCORE" ] || ! is_numeric "$SDP_SCORE"; then SDP_SCORE="$SCORE"; fi
+    if [ -z "$SDP_DELTA" ] || ! is_numeric "$SDP_DELTA"; then SDP_DELTA="0"; fi
+    if [ -z "$SDP_EXTERNAL" ] || ! is_numeric "$SDP_EXTERNAL"; then SDP_EXTERNAL="75"; fi
+    if [ -z "$SDP_BASELINE_EXT" ] || ! is_numeric "$SDP_BASELINE_EXT"; then SDP_BASELINE_EXT="75"; fi
+    if [ -z "$SDP_ROBUSTNESS" ] || ! is_numeric "$SDP_ROBUSTNESS"; then SDP_ROBUSTNESS="1.0"; fi
 
     # Calculate evaluation duration
     EVAL_DURATION=$(($(date +%s) - EVAL_START))
