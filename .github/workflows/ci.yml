@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
 
@@ -71,7 +72,7 @@ jobs:
   # Clean up old bot comments on PR push (keeps PRs tidy)
   cleanup-old-comments:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     steps:
       - name: Resolve outdated bot comments
         uses: int128/hide-comment-action@v1
@@ -92,7 +93,7 @@ jobs:
   # Purpose: Fast quality gate to catch regressions early
   e2e-quick-check:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     needs: [validate, cleanup-old-comments]
 
     steps:
