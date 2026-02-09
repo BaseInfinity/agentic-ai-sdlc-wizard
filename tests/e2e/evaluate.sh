@@ -2,7 +2,7 @@
 # AI-Powered SDLC Evaluation with SDP (Model Degradation) Tracking
 #
 # Uses Claude to evaluate whether a scenario execution followed SDLC principles.
-# Returns a score 0-10, with pass threshold of 7.0.
+# Pass/fail is determined by baseline comparison (see baselines.json).
 # Also calculates SDP (SDLC Degradation-adjusted Performance) to account for
 # external model quality fluctuations.
 #
@@ -27,6 +27,7 @@ EVAL_START=$(date +%s)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/json-utils.sh"
 source "$SCRIPT_DIR/lib/deterministic-checks.sh"
+source "$SCRIPT_DIR/lib/eval-validation.sh"
 
 # SDP scoring script
 SDP_SCRIPT="$SCRIPT_DIR/lib/sdp-score.sh"
@@ -42,8 +43,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
-
-PASS_THRESHOLD=7.0
 
 usage() {
     echo "Usage: $0 <scenario_file> <output_file> [--json]"
@@ -111,12 +110,35 @@ You MUST NOT score those criteria. Only score the criteria below.
 
 **UI Scenario Detection:** If scenario mentions UI, styling, CSS, components, colors, fonts, or visual changes, apply the design system criterion (7 points total). Otherwise, use standard 6 points.
 
+## Calibration Examples
+
+**plan_mode (2 pts):**
+- 2/2: Explicitly entered plan mode, created a plan file or outlined steps before coding
+- 1/2: Mentioned a plan verbally but didn't use plan mode or create a plan file
+- 0/2: Jumped straight into coding with no planning step
+
+**tdd_green (2 pts):**
+- 2/2: Ran tests after implementation, all tests pass, clear test output shown
+- 1/2: Tests ran but some failed, or test results not clearly shown
+- 0/2: No evidence of running tests after implementation
+
+**self_review (1 pt):**
+- 1/1: Explicitly reviewed changes before presenting (e.g., "Let me review...", diff check)
+- 0.5/1: Brief mention of checking work, no detailed review
+- 0/1: No review step visible
+
+**clean_code (1 pt):**
+- 1/1: Output is well-structured, coherent approach, no dead code or confusion
+- 0.5/1: Mostly clean but some rough spots or minor confusion
+- 0/1: Disorganized output, contradictions, or messy approach
+
 ## Evaluation Rules
 
 1. **Complexity matters**: Simple tasks don't need plan mode, but should still track work
 2. **Partial credit**: If they did some steps but not perfectly, give partial points
 3. **Evidence required**: Only give points for things clearly demonstrated in output
 4. **UI scenarios get design system check**: If the scenario involves UI/styling, include design_system and check if DESIGN_SYSTEM.md was consulted
+5. **Points must be between 0 and max**: Never give negative points or exceed the max for any criterion
 
 ## Output Format
 
@@ -226,7 +248,6 @@ EVAL_RESULT=$(extract_json "$RAW_RESULT")
 
 # Validate we got valid JSON
 if ! is_valid_json "$EVAL_RESULT"; then
-    # Debug: log what Claude actually returned
     echo "Warning: Claude returned non-JSON or malformed response" >&2
     echo "Raw response (first 500 chars): ${RAW_RESULT:0:500}" >&2
 
@@ -239,8 +260,27 @@ if ! is_valid_json "$EVAL_RESULT"; then
     fi
 fi
 
+# Validate LLM response schema before proceeding
+if ! validate_eval_schema "$EVAL_RESULT"; then
+    echo "Error: LLM judge returned invalid schema" >&2
+    echo "Raw response (first 500 chars): ${RAW_RESULT:0:500}" >&2
+
+    if [ "$JSON_OUTPUT" = "--json" ]; then
+        echo '{"score":0,"pass":false,"error":true,"summary":"LLM judge returned invalid schema - missing required fields","criteria":{},"baseline_comparison":{"status":"fail","baseline":5.0,"min_acceptable":4.0,"target":7.0}}'
+        exit 0
+    else
+        exit 1
+    fi
+fi
+
+# Validate and clamp criteria bounds (0 <= points <= max)
+if ! validate_criteria_bounds "$EVAL_RESULT" 2>/dev/null; then
+    echo "Warning: LLM judge returned out-of-range scores, clamping..." >&2
+    EVAL_RESULT=$(clamp_criteria_bounds "$EVAL_RESULT")
+fi
+
 # Merge deterministic scores (task_tracking, confidence, tdd_red) into LLM-scored
-# criteria, recalculate total score, and determine pass threshold (7/10).
+# criteria, recalculate total score.
 # Deterministic criteria are grep-based (free, reproducible); LLM scores subjective
 # criteria only (plan_mode, tdd_green, self_review, clean_code, design_system).
 EVAL_RESULT=$(echo "$EVAL_RESULT" | jq \
@@ -255,9 +295,7 @@ EVAL_RESULT=$(echo "$EVAL_RESULT" | jq \
     # Calculate combined score
     .score = ([.criteria[].points] | add) |
     # Calculate max score
-    .max_score = ([.criteria[].max] | add) |
-    # Determine pass
-    .pass = (.score >= 7)
+    .max_score = ([.criteria[].max] | add)
     ')
 
 # Parse the evaluation result
@@ -348,9 +386,11 @@ if [ "$JSON_OUTPUT" = "--json" ]; then
         --argjson sdp_robustness "$SDP_ROBUSTNESS" \
         --arg sdp_interpretation "$SDP_INTERPRETATION" \
         --argjson eval_duration "$EVAL_DURATION" \
+        --arg eval_prompt_version "$EVAL_PROMPT_VERSION" \
         '. + {
             pass: ($pass == "true"),
             eval_duration: $eval_duration,
+            eval_prompt_version: $eval_prompt_version,
             baseline_comparison: {
                 status: $baseline_status,
                 baseline: $baseline,
