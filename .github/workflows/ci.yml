@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
 
@@ -65,13 +66,19 @@ jobs:
       - name: Run workflow trigger tests
         run: ./tests/test-workflow-triggers.sh
 
+      - name: Run deterministic pre-check tests
+        run: ./tests/e2e/test-deterministic-checks.sh
+
+      - name: Run scenario rotation tests
+        run: ./tests/e2e/test-scenario-rotation.sh
+
       - name: Validate E2E fixtures and scenarios
         run: ./tests/e2e/run-simulation.sh
 
   # Clean up old bot comments on PR push (keeps PRs tidy)
   cleanup-old-comments:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     steps:
       - name: Resolve outdated bot comments
         uses: int128/hide-comment-action@v1
@@ -92,7 +99,7 @@ jobs:
   # Purpose: Fast quality gate to catch regressions early
   e2e-quick-check:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     needs: [validate, cleanup-old-comments]
 
     steps:
@@ -117,6 +124,17 @@ jobs:
             echo "has_baseline=false" >> $GITHUB_OUTPUT
             echo "⚠️ BOOTSTRAPPING: No wizard in main branch (first installation)"
           fi
+
+      - name: Select scenario (round-robin by PR number)
+        id: select-scenario
+        run: |
+          source pr-branch/tests/e2e/lib/scenario-selector.sh
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          SCENARIO_PATH=$(select_scenario "pr-branch/tests/e2e/scenarios" "${PR_NUMBER:-0}")
+          SCENARIO_NAME=$(basename "$SCENARIO_PATH" .md)
+          echo "scenario=tests/e2e/scenarios/${SCENARIO_NAME}.md" >> $GITHUB_OUTPUT
+          echo "scenario_name=$SCENARIO_NAME" >> $GITHUB_OUTPUT
+          echo "Selected scenario: $SCENARIO_NAME (PR #${PR_NUMBER:-push})"
 
       - name: Install BASELINE wizard (main branch) into test fixture
         if: steps.check-baseline.outputs.has_baseline == 'true'
@@ -150,7 +168,7 @@ jobs:
             Run an E2E SDLC simulation.
 
             Working directory: pr-branch/tests/e2e/fixtures/test-repo
-            Scenario file: pr-branch/tests/e2e/scenarios/medium-add-feature.md
+            Scenario file: pr-branch/${{ steps.select-scenario.outputs.scenario }}
 
             1. Read the scenario file to understand the task
             2. Execute the scenario task following SDLC principles
@@ -196,7 +214,7 @@ jobs:
         working-directory: pr-branch
         run: |
           OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
-          SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
+          SCENARIO="${{ steps.select-scenario.outputs.scenario }}"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "::error::Baseline output file not found: $OUTPUT_FILE"
@@ -280,7 +298,7 @@ jobs:
             Run an E2E SDLC simulation.
 
             Working directory: pr-branch/tests/e2e/fixtures/test-repo
-            Scenario file: pr-branch/tests/e2e/scenarios/medium-add-feature.md
+            Scenario file: pr-branch/${{ steps.select-scenario.outputs.scenario }}
 
             1. Read the scenario file to understand the task
             2. Execute the scenario task following SDLC principles
@@ -324,7 +342,7 @@ jobs:
         working-directory: pr-branch
         run: |
           OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
-          SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
+          SCENARIO="${{ steps.select-scenario.outputs.scenario }}"
 
           if [ ! -f "$OUTPUT_FILE" ]; then
             echo "::error::Candidate output file not found: $OUTPUT_FILE"
@@ -379,6 +397,21 @@ jobs:
           echo "sdp_external_change=$SDP_EXTERNAL_CHANGE" >> $GITHUB_OUTPUT
           echo "sdp_robustness=$SDP_ROBUSTNESS" >> $GITHUB_OUTPUT
           echo "sdp_interpretation=$SDP_INTERPRETATION" >> $GITHUB_OUTPUT
+
+          # Extract criteria breakdown with color-coded emoji indicators
+          # Full/max = green circle, partial = yellow circle, zero = red circle
+          CRITERIA=$(echo "$RESULT" | jq -r '
+            .criteria | to_entries | map(
+              (if .value.points == .value.max then ":green_circle:"
+               elif .value.points > 0 then ":yellow_circle:"
+               else ":red_circle:" end) as $emoji |
+              "| \($emoji) | \(.key) | \(.value.points)/\(.value.max) | \(.value.evidence) |"
+            ) | join("\n")' 2>/dev/null || echo "| :warning: | criteria | N/A | Could not parse |")
+          {
+            echo "criteria<<EOF"
+            echo "$CRITERIA"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
           # Extract native Task metrics (duration, tool_uses) from output
           DURATION=$(jq -r '.duration // .elapsed_seconds // "N/A"' "$OUTPUT_FILE" 2>/dev/null || echo "N/A")
@@ -505,6 +538,8 @@ jobs:
           TOTAL_TOKENS="${{ steps.eval-candidate.outputs.total_tokens }}"
           EST_COST="${{ steps.eval-candidate.outputs.est_cost }}"
           TOKENS_PER_POINT="${{ steps.eval-candidate.outputs.tokens_per_point }}"
+          CRITERIA="${{ steps.eval-candidate.outputs.criteria }}"
+          SCENARIO_NAME="${{ steps.select-scenario.outputs.scenario_name }}"
 
           # N/A-aware metric formatting (prevents "N/As" display bug)
           format_metric() {
@@ -532,6 +567,8 @@ jobs:
               echo ""
               echo "_First wizard installation - no baseline to compare against._"
               echo ""
+              echo "> **Scenario:** \`$SCENARIO_NAME\`"
+              echo ""
               echo "| Metric | Value |"
               echo "|--------|-------|"
               echo "| Baseline (main) | N/A (no wizard yet) |"
@@ -541,6 +578,15 @@ jobs:
               echo "| Status | **BOOTSTRAPPING** |"
               echo ""
               echo "### Result: First wizard installation verified"
+              echo ""
+              echo "<details>"
+              echo "<summary>Criteria Breakdown</summary>"
+              echo ""
+              echo "| | Criterion | Score | Evidence |"
+              echo "|---|-----------|-------|----------|"
+              echo "$CRITERIA"
+              echo ""
+              echo "</details>"
               echo ""
               echo "This PR introduces the wizard for the first time. After merge, future PRs will have a baseline to compare against."
               echo ""
@@ -601,6 +647,8 @@ jobs:
               echo ""
               echo "_Fast quality gate - single comparison per commit._"
               echo ""
+              echo "> **Scenario:** \`$SCENARIO_NAME\`"
+              echo ""
               echo "| Layer | Metric | Value |"
               echo "|-------|--------|-------|"
               echo "| **L1: Model** | External Benchmark | $SDP_EXTERNAL ($SDP_EXTERNAL_CHANGE vs baseline) |"
@@ -614,6 +662,15 @@ jobs:
               echo "### Result: $STATUS_TEXT"
               echo ""
               echo "> **Interpretation:** $SDP_INTERPRETATION"
+              echo ""
+              echo "<details>"
+              echo "<summary>Criteria Breakdown</summary>"
+              echo ""
+              echo "| | Criterion | Score | Evidence |"
+              echo "|---|-----------|-------|----------|"
+              echo "$CRITERIA"
+              echo ""
+              echo "</details>"
               echo ""
               echo "<details>"
               echo "<summary>Resource Usage (informational)</summary>"
@@ -687,6 +744,17 @@ jobs:
             echo "⚠️ BOOTSTRAPPING: No wizard in main branch (first installation)"
           fi
 
+      - name: Select scenario (round-robin by PR number)
+        id: select-scenario
+        run: |
+          source pr-branch/tests/e2e/lib/scenario-selector.sh
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          SCENARIO_PATH=$(select_scenario "pr-branch/tests/e2e/scenarios" "${PR_NUMBER:-0}")
+          SCENARIO_NAME=$(basename "$SCENARIO_PATH" .md)
+          echo "scenario=tests/e2e/scenarios/${SCENARIO_NAME}.md" >> $GITHUB_OUTPUT
+          echo "scenario_name=$SCENARIO_NAME" >> $GITHUB_OUTPUT
+          echo "Selected scenario: $SCENARIO_NAME (PR #${PR_NUMBER:-push})"
+
       - name: Install BASELINE wizard (main branch) into test fixture
         if: steps.check-baseline.outputs.has_baseline == 'true'
         run: |
@@ -715,7 +783,7 @@ jobs:
             Run an E2E SDLC simulation.
 
             Working directory: pr-branch/tests/e2e/fixtures/test-repo
-            Scenario file: pr-branch/tests/e2e/scenarios/medium-add-feature.md
+            Scenario file: pr-branch/${{ steps.select-scenario.outputs.scenario }}
 
             1. Read the scenario file to understand the task
             2. Execute the scenario task following SDLC principles
@@ -761,7 +829,7 @@ jobs:
         working-directory: pr-branch
         run: |
           OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
-          SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
+          SCENARIO="${{ steps.select-scenario.outputs.scenario }}"
 
           # Source stats library for confidence interval calculation
           source tests/e2e/lib/stats.sh
@@ -859,7 +927,7 @@ jobs:
             Run an E2E SDLC simulation.
 
             Working directory: pr-branch/tests/e2e/fixtures/test-repo
-            Scenario file: pr-branch/tests/e2e/scenarios/medium-add-feature.md
+            Scenario file: pr-branch/${{ steps.select-scenario.outputs.scenario }}
 
             1. Read the scenario file to understand the task
             2. Execute the scenario task following SDLC principles
@@ -903,7 +971,7 @@ jobs:
         working-directory: pr-branch
         run: |
           OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
-          SCENARIO="tests/e2e/scenarios/medium-add-feature.md"
+          SCENARIO="${{ steps.select-scenario.outputs.scenario }}"
 
           # Source stats library for confidence interval calculation
           source tests/e2e/lib/stats.sh
@@ -969,8 +1037,14 @@ jobs:
           echo "candidate_ci_lower=$CI_LOWER" >> $GITHUB_OUTPUT
           echo "candidate_ci_upper=$CI_UPPER" >> $GITHUB_OUTPUT
 
-          # Extract criteria breakdown from last result
-          CRITERIA=$(echo "$LAST_RESULT" | jq -r '.criteria | to_entries | map("- **\(.key)**: \(.value.points)/\(.value.max)") | join("\n")' 2>/dev/null || echo "Could not parse criteria")
+          # Extract criteria breakdown with color-coded emoji indicators
+          CRITERIA=$(echo "$LAST_RESULT" | jq -r '
+            .criteria | to_entries | map(
+              (if .value.points == .value.max then ":green_circle:"
+               elif .value.points > 0 then ":yellow_circle:"
+               else ":red_circle:" end) as $emoji |
+              "| \($emoji) | \(.key) | \(.value.points)/\(.value.max) | \(.value.evidence) |"
+            ) | join("\n")' 2>/dev/null || echo "| :warning: | criteria | N/A | Could not parse |")
           {
             echo "criteria<<EOF"
             echo "$CRITERIA"
@@ -1103,6 +1177,7 @@ jobs:
           SDP_EXTERNAL_CHANGE="${{ steps.eval-candidate.outputs.sdp_external_change }}"
           SDP_ROBUSTNESS="${{ steps.eval-candidate.outputs.sdp_robustness }}"
           SDP_INTERPRETATION="${{ steps.eval-candidate.outputs.sdp_interpretation }}"
+          SCENARIO_NAME="${{ steps.select-scenario.outputs.scenario_name }}"
 
           if [ "$IS_BOOTSTRAPPING" = "true" ]; then
             {
@@ -1110,6 +1185,8 @@ jobs:
               echo "## E2E Full Evaluation (Tier 2) $EMOJI"
               echo ""
               echo "_First wizard installation - no baseline to compare against._"
+              echo ""
+              echo "> **Scenario:** \`$SCENARIO_NAME\`"
               echo ""
               echo "| Layer | Metric | Value |"
               echo "|-------|--------|-------|"
@@ -1124,6 +1201,9 @@ jobs:
               echo "### Result: First wizard installation verified (5x evaluation)"
               echo ""
               echo "### Criteria Breakdown (Candidate)"
+              echo ""
+              echo "| | Criterion | Score | Evidence |"
+              echo "|---|-----------|-------|----------|"
               echo "$CRITERIA"
               echo ""
               echo "This PR introduces the wizard for the first time. After merge, future PRs will have a baseline to compare against."
@@ -1159,6 +1239,8 @@ jobs:
               echo ""
               echo "_Thorough pre-merge check with 5x evaluation runs + 95% confidence intervals + SDP model tracking._"
               echo ""
+              echo "> **Scenario:** \`$SCENARIO_NAME\`"
+              echo ""
               echo "### Model Context (Layer 1)"
               echo "| Metric | Value |"
               echo "|--------|-------|"
@@ -1184,6 +1266,9 @@ jobs:
               echo "### Status: $STATUS_TEXT"
               echo ""
               echo "### Criteria Breakdown (Candidate)"
+              echo ""
+              echo "| | Criterion | Score | Evidence |"
+              echo "|---|-----------|-------|----------|"
               echo "$CRITERIA"
               echo ""
               echo "---"

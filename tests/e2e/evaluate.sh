@@ -26,6 +26,7 @@ EVAL_START=$(date +%s)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/json-utils.sh"
+source "$SCRIPT_DIR/lib/deterministic-checks.sh"
 
 # SDP scoring script
 SDP_SCRIPT="$SCRIPT_DIR/lib/sdp-score.sh"
@@ -78,72 +79,72 @@ fi
 SCENARIO_CONTENT=$(cat "$SCENARIO_FILE")
 OUTPUT_CONTENT=$(head -c 50000 "$OUTPUT_FILE" 2>/dev/null)  # Limit to 50KB
 
-# Build evaluation prompt
-EVAL_PROMPT=$(cat << 'PROMPT_END'
-You are an SDLC compliance evaluator. Analyze the execution output and score it against the SDLC criteria.
+# Run deterministic pre-checks (free, fast, reproducible)
+echo "Running deterministic pre-checks..." >&2
+DETERMINISTIC_RESULT=$(run_deterministic_checks "$OUTPUT_CONTENT")
+DET_TASK=$(echo "$DETERMINISTIC_RESULT" | jq -r '.task_tracking.points')
+DET_CONFIDENCE=$(echo "$DETERMINISTIC_RESULT" | jq -r '.confidence.points')
+DET_TDD_RED=$(echo "$DETERMINISTIC_RESULT" | jq -r '.tdd_red.points')
+DET_TOTAL=$(echo "$DETERMINISTIC_RESULT" | jq -r '.total')
+echo "Deterministic scores: task=$DET_TASK confidence=$DET_CONFIDENCE tdd_red=$DET_TDD_RED total=$DET_TOTAL/4" >&2
 
-## Scoring Criteria (10 points standard, 11 for UI scenarios)
+# Build evaluation prompt - LLM only scores subjective criteria
+EVAL_PROMPT=$(cat << 'PROMPT_END'
+You are an SDLC compliance evaluator. Analyze the execution output and score it against the SUBJECTIVE SDLC criteria only.
+
+NOTE: The following criteria have already been scored deterministically (via grep):
+- task_tracking (TodoWrite/TaskCreate usage)
+- confidence (HIGH/MEDIUM/LOW stated)
+- tdd_red (test file written before implementation)
+
+You MUST NOT score those criteria. Only score the criteria below.
+
+## Your Scoring Criteria (6 points standard, 7 for UI scenarios)
 
 | Criterion | Points | What to look for |
 |-----------|--------|------------------|
-| TodoWrite/TaskCreate | 1 | Did they create a task list to track work? |
-| Confidence stated | 1 | Did they state HIGH/MEDIUM/LOW confidence? |
 | Plan mode (if needed) | 2 | For complex tasks, did they enter plan mode first? |
-| TDD RED phase | 2 | Did they write failing tests BEFORE implementation? |
 | TDD GREEN phase | 2 | Did tests pass after implementation? |
 | Self-review | 1 | Did they review their work before presenting? |
 | Clean code | 1 | Is the output coherent and well-structured? |
 | Design system check | 1 | **UI scenarios only:** Did they check DESIGN_SYSTEM.md? |
 
-**UI Scenario Detection:** If scenario mentions UI, styling, CSS, components, colors, fonts, or visual changes, apply the design system criterion (11 points total). Otherwise, use standard 10 points.
+**UI Scenario Detection:** If scenario mentions UI, styling, CSS, components, colors, fonts, or visual changes, apply the design system criterion (7 points total). Otherwise, use standard 6 points.
 
 ## Evaluation Rules
 
-1. **Be strict about TDD order**: Tests MUST be written before implementation for full points
-2. **Complexity matters**: Simple tasks don't need plan mode, but should still track work
-3. **Partial credit**: If they did some steps but not perfectly, give partial points
-4. **Evidence required**: Only give points for things clearly demonstrated in output
-5. **UI scenarios get design system check**: If the scenario involves UI/styling, score out of 11 (not 10) and check if DESIGN_SYSTEM.md was consulted
+1. **Complexity matters**: Simple tasks don't need plan mode, but should still track work
+2. **Partial credit**: If they did some steps but not perfectly, give partial points
+3. **Evidence required**: Only give points for things clearly demonstrated in output
+4. **UI scenarios get design system check**: If the scenario involves UI/styling, include design_system and check if DESIGN_SYSTEM.md was consulted
 
 ## Output Format
 
-Return ONLY a JSON object:
+Return ONLY a JSON object with the subjective criteria:
 ```json
 {
-  "score": 8.5,
-  "max_score": 10,
   "criteria": {
-    "task_tracking": {"points": 1, "max": 1, "evidence": "Created TodoWrite with 4 tasks"},
-    "confidence": {"points": 1, "max": 1, "evidence": "Stated MEDIUM confidence"},
     "plan_mode": {"points": 2, "max": 2, "evidence": "Entered plan mode, created plan file"},
-    "tdd_red": {"points": 2, "max": 2, "evidence": "Wrote test first, showed it failing"},
     "tdd_green": {"points": 1.5, "max": 2, "evidence": "Tests pass but ran late"},
     "self_review": {"points": 0.5, "max": 1, "evidence": "Brief mention of review"},
     "clean_code": {"points": 0.5, "max": 1, "evidence": "Some rough spots"}
   },
   "summary": "Good SDLC compliance. TDD followed but could be cleaner.",
-  "pass": true,
   "improvements": ["Run tests immediately after writing", "More thorough self-review"]
 }
 ```
 
-For UI scenarios (styling, CSS, components, colors, fonts, visual changes), include design_system criterion:
+For UI scenarios, also include:
 ```json
 {
-  "score": 9.5,
-  "max_score": 11,
   "criteria": {
-    "task_tracking": {"points": 1, "max": 1, "evidence": "Created TodoWrite"},
-    "confidence": {"points": 1, "max": 1, "evidence": "Stated HIGH confidence"},
     "plan_mode": {"points": 2, "max": 2, "evidence": "Used plan mode"},
-    "tdd_red": {"points": 2, "max": 2, "evidence": "Wrote failing test"},
     "tdd_green": {"points": 2, "max": 2, "evidence": "Tests pass"},
     "self_review": {"points": 0.5, "max": 1, "evidence": "Brief review"},
     "clean_code": {"points": 1, "max": 1, "evidence": "Clean implementation"},
     "design_system": {"points": 0, "max": 1, "evidence": "Did not check DESIGN_SYSTEM.md"}
   },
-  "summary": "Good SDLC but missed design system check for UI change.",
-  "pass": true,
+  "summary": "Good SDLC but missed design system check.",
   "improvements": ["Check DESIGN_SYSTEM.md for color/font choices"]
 }
 ```
@@ -231,6 +232,24 @@ if ! is_valid_json "$EVAL_RESULT"; then
         exit 1
     fi
 fi
+
+# Merge deterministic + LLM scores into final result
+EVAL_RESULT=$(echo "$EVAL_RESULT" | jq \
+    --argjson det "$DETERMINISTIC_RESULT" \
+    '
+    # Add deterministic criteria into LLM criteria
+    .criteria = (.criteria // {}) + {
+        task_tracking: $det.task_tracking,
+        confidence: $det.confidence,
+        tdd_red: $det.tdd_red
+    } |
+    # Calculate combined score
+    .score = ([.criteria[].points] | add) |
+    # Calculate max score
+    .max_score = ([.criteria[].max] | add) |
+    # Determine pass
+    .pass = (.score >= 7)
+    ')
 
 # Parse the evaluation result
 SCORE=$(echo "$EVAL_RESULT" | jq -r '.score // 0')

@@ -21,6 +21,7 @@ jobs:
     outputs:
       needs_update: ${{ steps.check-update.outputs.needs_update }}
       latest_version: ${{ steps.latest-release.outputs.latest_version }}
+      skip: ${{ steps.existing-pr.outputs.skip }}
 
     steps:
       - name: Checkout repository
@@ -81,8 +82,23 @@ jobs:
             echo "needs_update=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Read analysis prompt
+      - name: Check for existing PR for this version
         if: steps.check-update.outputs.needs_update == 'true'
+        id: existing-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.latest-release.outputs.latest_version }}"
+          EXISTING=$(gh pr list --head "auto-update/claude-code-${VERSION}" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "PR #$EXISTING already exists for $VERSION - skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Read analysis prompt
+        if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
         id: read-prompt
         run: |
           # Store prompt in file to avoid shell escaping issues
@@ -103,7 +119,7 @@ jobs:
           } >> /tmp/analysis_prompt.md
 
       - name: Analyze release with Claude
-        if: steps.check-update.outputs.needs_update == 'true'
+        if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
         id: analyze
         uses: anthropics/claude-code-action@v1
         with:
@@ -114,7 +130,7 @@ jobs:
           model: claude-sonnet-4-20250514
 
       - name: Save analysis to file
-        if: steps.check-update.outputs.needs_update == 'true'
+        if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
         env:
           # Use env to safely pass potentially malicious content
           ANALYSIS_RESPONSE: ${{ steps.analyze.outputs.response }}
@@ -123,7 +139,7 @@ jobs:
           printf '%s' "$ANALYSIS_RESPONSE" > /tmp/analysis.json
 
       - name: Parse analysis result
-        if: steps.check-update.outputs.needs_update == 'true'
+        if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
         id: parse
         run: |
           # Read from file (safe) instead of shell variable interpolation
@@ -140,12 +156,12 @@ jobs:
           echo "Summary: $SAFE_SUMMARY"
 
       - name: Update version file
-        if: steps.check-update.outputs.needs_update == 'true'
+        if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
         run: |
           echo "${{ steps.latest-release.outputs.latest_version }}" > .github/last-checked-version.txt
 
       - name: Build PR body
-        if: steps.check-update.outputs.needs_update == 'true'
+        if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
         run: |
           RELEVANCE="${{ steps.parse.outputs.relevance }}"
 
@@ -199,7 +215,7 @@ jobs:
           PREOF
 
       - name: Close stale auto-update PRs
-        if: steps.check-update.outputs.needs_update == 'true'
+        if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -212,7 +228,7 @@ jobs:
           done
 
       - name: Create PR for all updates
-        if: steps.check-update.outputs.needs_update == 'true'
+        if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -228,7 +244,7 @@ jobs:
   # Version Testing: Validate SDLC enforcement with new CC version
   version-test:
     needs: check-updates
-    if: needs.check-updates.outputs.needs_update == 'true'
+    if: needs.check-updates.outputs.needs_update == 'true' && needs.check-updates.outputs.skip != 'true'
     runs-on: ubuntu-latest
 
     outputs:

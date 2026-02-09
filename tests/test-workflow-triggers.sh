@@ -219,6 +219,69 @@ test_e2e_bootstrapping_handling() {
     fi
 }
 
+# ============================================
+# CI Label Trigger Tests
+# ============================================
+# These tests ensure the CI workflow properly handles
+# the `labeled` event for merge-ready label triggering.
+
+# Test 14: CI pull_request trigger includes 'labeled' type
+test_ci_labeled_trigger() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found"
+        return
+    fi
+
+    if grep -q "labeled" "$WORKFLOW"; then
+        pass "CI pull_request trigger includes 'labeled' type"
+    else
+        fail "CI pull_request trigger missing 'labeled' type"
+    fi
+}
+
+# Test 15: e2e-quick-check is guarded from labeled events
+test_quick_check_labeled_guard() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    # The e2e-quick-check job should skip on labeled events
+    # Look for the guard condition near the e2e-quick-check job
+    if grep -A 3 "e2e-quick-check:" "$WORKFLOW" | grep -q "labeled"; then
+        pass "e2e-quick-check is guarded from labeled events"
+    else
+        fail "e2e-quick-check missing guard for labeled events"
+    fi
+}
+
+# Test 16: cleanup-old-comments is guarded from labeled events
+test_cleanup_labeled_guard() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    # The cleanup-old-comments job should skip on labeled events
+    if grep -A 3 "cleanup-old-comments:" "$WORKFLOW" | grep -q "labeled"; then
+        pass "cleanup-old-comments is guarded from labeled events"
+    else
+        fail "cleanup-old-comments missing guard for labeled events"
+    fi
+}
+
+# Test 17: Daily workflow checks for existing PR before creating
+test_daily_existing_pr_check() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/daily-update.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "Daily workflow file not found"
+        return
+    fi
+
+    if grep -q "existing-pr" "$WORKFLOW" && grep -q "skip" "$WORKFLOW"; then
+        pass "Daily workflow checks for existing PR before creating"
+    else
+        fail "Daily workflow missing existing PR check"
+    fi
+}
+
 # Run all tests
 test_daily_dispatch
 test_weekly_dispatch
@@ -233,6 +296,10 @@ test_yaml_validity
 test_e2e_bootstrapping_detection
 test_e2e_conditional_baseline
 test_e2e_bootstrapping_handling
+test_ci_labeled_trigger
+test_quick_check_labeled_guard
+test_cleanup_labeled_guard
+test_daily_existing_pr_check
 
 echo ""
 echo "=== Results ==="
