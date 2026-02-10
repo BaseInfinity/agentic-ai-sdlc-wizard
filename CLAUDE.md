@@ -56,6 +56,13 @@ Key concepts:
 - **Hooks**: Enforce SDLC on every interaction
 - **Skills**: Provide detailed guidance when invoked
 
+## Git Workflow
+
+- **Never commit directly to `main`** — branch protection requires PRs
+- Create a feature branch, commit there, and open a PR
+- PRs require 1 approving review and passing CI (`validate`, `e2e-quick-check`)
+- Admin enforcement is on — no bypassing, even for repo owners
+
 ## Special Notes
 
 This is a **recursive/meta project**:
