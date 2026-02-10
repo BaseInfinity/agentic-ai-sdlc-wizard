@@ -844,6 +844,23 @@ Feature branches still recommended for solo devs (keeps main clean, easy rollbac
 - CI/CD configured (GitHub Actions, etc.)
 - If no CI yet: skip, add later when you set up CI
 
+**CI review feedback question (only if CI monitoring is enabled):**
+> "How should Claude handle CI code review suggestions?"
+
+| Option | Behavior |
+|--------|----------|
+| **Auto-implement valid ones** (recommended) | Claude reads review, implements suggestions that are real improvements (bug fixes, missing error handling, test coverage, DRY), skips style opinions. Iterates until reviewer is satisfied. |
+| **Ask me first** | Claude reads review, presents suggestions to you, you decide which to implement. More control, more interruptions. |
+| **Skip review feedback** | Claude only fixes CI failures (broken tests, lint errors), ignores review suggestions. Fastest, but you handle review feedback manually. |
+
+**What this does:**
+1. After CI passes, Claude reads the automated code review comments
+2. Claude evaluates each suggestion: real improvement vs. style opinion
+3. Based on your preference: implements, asks, or skips
+4. Iterates (push -> re-review) until no substantive suggestions remain
+5. Only brings you in when everything is clean (CI green + reviewer satisfied)
+6. Max 3 iterations to prevent infinite loops
+
 **Check for new plugins periodically:**
 ```
 /plugin > Discover
@@ -1489,6 +1506,7 @@ TodoWrite([
   // CI FEEDBACK LOOP (After local tests pass)
   { content: "Commit and push to remote", status: "pending", activeForm: "Pushing to remote" },
   { content: "Watch CI - fix failures, iterate until green (max 2x)", status: "pending", activeForm: "Watching CI" },
+  { content: "Read CI review - implement valid suggestions, iterate until clean", status: "pending", activeForm: "Addressing CI review feedback" },
   // FINAL
   { content: "Present summary: changes, tests, CI status", status: "pending", activeForm: "Presenting final summary" }
 ])
@@ -1644,6 +1662,38 @@ Local tests pass -> Commit -> Push -> Watch CI
 - CI config issue? Fix the config
 - Flaky? Investigate - flakiness is a bug
 - Stuck? ASK USER
+
+## CI Review Feedback Loop (After CI Passes)
+
+**CI passing isn't the end.** If CI includes a code reviewer, read and address its suggestions.
+
+```
+CI passes -> Read review suggestions
+                    |
+        Valid improvements? -+-> YES -> Implement -> Run tests -> Push
+                             |                                      |
+                             |                          Review again (iterate)
+                             |
+                             +-> NO (just opinions/style) -> Skip, note why
+                             |
+                             +-> None -> Done, present to user
+```
+
+**How to evaluate suggestions:**
+1. Read all CI review comments: `gh api repos/OWNER/REPO/pulls/PR/comments`
+2. For each suggestion, ask: **"Is this a real improvement or just an opinion?"**
+   - **Real improvement:** Fixes a bug, improves performance, adds missing error handling, reduces duplication, improves test coverage → Implement it
+   - **Opinion/style:** Different but equivalent formatting, subjective naming preference, "you could also..." without clear benefit → Skip it
+3. Implement the valid ones, run tests locally, push
+4. CI re-reviews — repeat until no substantive suggestions remain
+5. Max 3 iterations — if reviewer keeps finding new things, ASK USER
+
+**The goal:** User is only brought in at the very end, when both CI and reviewer are satisfied. The code should be polished before human review.
+
+**Customizable behavior** (set during wizard setup):
+- **Auto-implement** (default): Implement valid suggestions autonomously, skip opinions
+- **Ask first**: Present suggestions to user, let them decide which to implement
+- **Skip review feedback**: Ignore CI review suggestions, only fix CI failures
 
 ## DRY Principle
 
