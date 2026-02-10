@@ -162,7 +162,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
             --max-turns 30
-            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,EnterPlanMode,ExitPlanMode,TodoWrite,TaskCreate,Task"
             --add-dir pr-branch/tests/e2e
           prompt: |
             Run an E2E SDLC simulation.
@@ -292,7 +292,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
             --max-turns 30
-            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,EnterPlanMode,ExitPlanMode,TodoWrite,TaskCreate,Task"
             --add-dir pr-branch/tests/e2e
           prompt: |
             Run an E2E SDLC simulation.
@@ -777,7 +777,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
             --max-turns 30
-            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,EnterPlanMode,ExitPlanMode,TodoWrite,TaskCreate,Task"
             --add-dir pr-branch/tests/e2e
           prompt: |
             Run an E2E SDLC simulation.
@@ -921,7 +921,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
             --max-turns 30
-            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *)"
+            --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,EnterPlanMode,ExitPlanMode,TodoWrite,TaskCreate,Task"
             --add-dir pr-branch/tests/e2e
           prompt: |
             Run an E2E SDLC simulation.

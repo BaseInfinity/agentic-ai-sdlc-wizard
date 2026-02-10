@@ -322,6 +322,44 @@ test_pr_review_synchronize_condition() {
     fi
 }
 
+# ============================================
+# E2E AllowedTools Coverage Tests
+# ============================================
+# These tests ensure Claude simulations have access
+# to the tools that scenarios actually need.
+
+# Test 20: CI allowedTools includes EnterPlanMode (needed by complex scenarios)
+test_ci_allowed_tools_plan_mode() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found"
+        return
+    fi
+
+    if grep "allowedTools" "$WORKFLOW" | grep -q "EnterPlanMode"; then
+        pass "CI allowedTools includes EnterPlanMode"
+    else
+        fail "CI allowedTools missing EnterPlanMode (complex scenarios need plan mode)"
+    fi
+}
+
+# Test 21: CI allowedTools includes task tracking tools (needed for scoring)
+test_ci_allowed_tools_task_tracking() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found"
+        return
+    fi
+
+    if grep "allowedTools" "$WORKFLOW" | grep -q "TaskCreate"; then
+        pass "CI allowedTools includes TaskCreate"
+    else
+        fail "CI allowedTools missing TaskCreate (8/10 scenarios score on task tracking)"
+    fi
+}
+
 # Run all tests
 test_daily_dispatch
 test_weekly_dispatch
@@ -342,6 +380,8 @@ test_cleanup_labeled_guard
 test_daily_existing_pr_check
 test_pr_review_synchronize_trigger
 test_pr_review_synchronize_condition
+test_ci_allowed_tools_plan_mode
+test_ci_allowed_tools_task_tracking
 
 echo ""
 echo "=== Results ==="
