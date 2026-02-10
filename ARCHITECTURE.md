@@ -193,6 +193,7 @@ sdlc-wizard/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml                 # Validation & tests
+│   │   ├── ci-autofix.yml         # Auto-fix loop (CI + review)
 │   │   ├── daily-update.yml       # Auto-update check
 │   │   ├── weekly-community.yml   # Community scan
 │   │   └── pr-review.yml          # AI code review

@@ -1,10 +1,8 @@
 name: PR Code Review
 
 on:
-  # ENHANCEMENT 1: Review once (not every push)
-  # Only review on PR open or ready_for_review, not on every commit
   pull_request:
-    types: [opened, ready_for_review]
+    types: [opened, synchronize, ready_for_review]
   # Re-review on label (for when changes are made and review needed)
   pull_request_target:
     types: [labeled]
@@ -21,6 +19,7 @@ jobs:
     # Skip draft PRs on open - they'll be reviewed when marked ready
     if: |
       ((github.event.action == 'opened' && github.event.pull_request.draft != true) ||
+       github.event.action == 'synchronize' ||
        github.event.action == 'ready_for_review' ||
        github.event.label.name == 'needs-review')
 

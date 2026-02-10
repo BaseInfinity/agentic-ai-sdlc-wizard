@@ -19,7 +19,7 @@
 # Returns: "1" if found, "0" if not
 check_task_tracking() {
     local output="$1"
-    if echo "$output" | grep -qE 'TodoWrite|TaskCreate'; then
+    if grep -qE 'TodoWrite|TaskCreate' <<< "$output"; then
         echo "1"
     else
         echo "0"
@@ -30,7 +30,7 @@ check_task_tracking() {
 # Returns: "1" if found, "0" if not
 check_confidence() {
     local output="$1"
-    if echo "$output" | grep -qE '\bHIGH\b|\bMEDIUM\b|\bLOW\b'; then
+    if grep -qE '\bHIGH\b|\bMEDIUM\b|\bLOW\b' <<< "$output"; then
         # Verify it's in a confidence context, not random text
         # Look for the word near "confidence" or as a standalone statement
         # For now, uppercase-only match is selective enough
@@ -49,7 +49,7 @@ check_tdd_red() {
     # Extract file operations in order: Write/Edit file paths
     # Patterns: "Write file: path", "Edit file: path", "Write(path)", etc.
     local operations
-    operations=$(echo "$output" | grep -oE '(Write|Edit) file: [^ ]+' | sed 's/.*: //')
+    operations=$(grep -oE '(Write|Edit) file: [^ ]+' <<< "$output" | sed 's/.*: //')
 
     if [ -z "$operations" ]; then
         echo "0"
@@ -66,7 +66,7 @@ check_tdd_red() {
         # Check if this is a test file
         # Matches: *.test.ext, *.spec.ext (JS/TS/Python/Ruby/Java/Go/Rust)
         # Also matches directories: tests/, test/, spec/, __tests__/
-        if echo "$filepath" | grep -qE '(test|spec)\.(js|ts|jsx|tsx|py|rb|java|go|rs)$|tests/|test/|spec/|__tests__/'; then
+        if grep -qE '(test|spec)\.(js|ts|jsx|tsx|py|rb|java|go|rs)$|tests/|test/|spec/|__tests__/' <<< "$filepath"; then
             if [ -z "$first_test_line" ]; then
                 first_test_line="$line_num"
             fi
@@ -106,14 +106,14 @@ run_deterministic_checks() {
     # Build evidence strings
     local task_evidence="Not found"
     if [ "$task_score" = "1" ]; then
-        task_evidence=$(echo "$output" | grep -oE 'TodoWrite|TaskCreate' | head -1)
+        task_evidence=$(grep -oE 'TodoWrite|TaskCreate' <<< "$output" | head -1)
         task_evidence="Found $task_evidence usage"
     fi
 
     local confidence_evidence="Not found"
     if [ "$confidence_score" = "1" ]; then
         local level
-        level=$(echo "$output" | grep -oE '\b(HIGH|MEDIUM|LOW)\b' | head -1)
+        level=$(grep -oE '\b(HIGH|MEDIUM|LOW)\b' <<< "$output" | head -1)
         confidence_evidence="Stated $level confidence"
     fi
 

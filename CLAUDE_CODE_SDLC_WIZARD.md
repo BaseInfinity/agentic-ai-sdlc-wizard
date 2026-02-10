@@ -2478,6 +2478,78 @@ Claude: [fetches via gh api, discusses with you interactively]
 
 This is optional - skip if you prefer fresh reviews only.
 
+### CI Auto-Fix Loop (Optional)
+
+Automatically fix CI failures and PR review findings. Claude reads the error context, fixes the code, commits, and re-triggers CI. Loops until CI passes AND review approves, or max retries hit.
+
+**The Loop:**
+```
+Push to PR
+    |
+    v
+CI runs ──► FAIL ──► ci-autofix: Claude reads logs, fixes, commits [autofix 1/3] ──► re-trigger
+    |
+    └── PASS ──► PR Review ──► has criticals? ──► ci-autofix: Claude reads review, fixes ──► re-trigger
+                      |
+                      └── APPROVE, no criticals ──► DONE
+```
+
+**Safety measures:**
+- Never runs on main branch
+- Max retries (default 3, configurable via `MAX_AUTOFIX_RETRIES`)
+- Restricted Claude tools (no git, no npm)
+- Self-modification ban (can't edit ci-autofix.yml)
+- `[autofix N/M]` commit tags for audit trail
+- Sticky PR comments show status
+
+**Setup:**
+1. Create `.github/workflows/ci-autofix.yml`:
+
+```yaml
+name: CI Auto-Fix
+
+on:
+  workflow_run:
+    workflows: ["CI", "PR Code Review"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  MAX_AUTOFIX_RETRIES: 3
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.workflow_run.head_branch != 'main' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      (
+        (github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'failure') ||
+        (github.event.workflow_run.name == 'PR Code Review' && github.event.workflow_run.conclusion == 'success')
+      )
+    steps:
+      # Count previous [autofix] commits to enforce max retries
+      # Download CI failure logs or fetch review comment
+      # Run Claude to fix issues with restricted tools
+      # Commit [autofix N/M], push, re-trigger CI
+      # Post sticky PR comment with status
+```
+
+2. Add `workflow_dispatch:` trigger to your CI workflow (so autofix can re-trigger it)
+3. Optionally configure a GitHub App for token generation (avoids `workflow_run` default-branch constraint)
+
+**Token approaches:**
+
+| Approach | When | Pros |
+|----------|------|------|
+| GITHUB_TOKEN + `gh workflow run` | Default | No extra setup |
+| GitHub App token | `CI_AUTOFIX_APP_ID` secret exists | Push triggers `synchronize` naturally |
+
+**Note:** `workflow_run` only fires for workflows on the default branch. The ci-autofix workflow is dormant until first merged to main.
+
 ---
 
 ## User Understanding and Periodic Feedback

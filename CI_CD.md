@@ -8,6 +8,7 @@
 | `daily-update.yml` | Daily 9 AM UTC, manual | Check for Claude Code updates |
 | `weekly-community.yml` | Weekly Sunday 9 AM UTC | Scan community for patterns |
 | `monthly-research.yml` | 1st of month 9 AM UTC | Deep research and trends |
+| `ci-autofix.yml` | CI fail / review findings | Auto-fix loop |
 | `pr-review.yml` | PR opened/ready/labeled | AI code review |
 
 ## CI Workflow (`ci.yml`)
@@ -145,6 +146,54 @@ Both use Tier 1 (quick) + Tier 2 (full statistical) evaluation.
 ### Runs On
 - 1st of month at 9 AM UTC
 
+## CI Auto-Fix Workflow (`ci-autofix.yml`)
+
+### What It Does
+
+Automated fix loop that responds to CI failures and PR review findings:
+
+1. **CI failure mode**: Downloads failure logs, Claude reads them, fixes code, commits, re-triggers CI
+2. **Review findings mode**: Fetches `claude-review` sticky comment, checks for critical findings, Claude fixes them
+
+### Loop Architecture
+
+```
+Push to PR
+    |
+    v
+CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► commit [autofix N/M] ──► re-trigger CI
+    |                                                                              |
+    |   <──────────────────────────────────────────────────────────────────────────┘
+    |
+    └── PASS ──► PR Review ──► APPROVE, no criticals ──► DONE
+                      |
+                      └── has criticals ──► ci-autofix ──► Claude fixes ──► loop back
+```
+
+### Safety Measures
+
+| Measure | Purpose |
+|---------|---------|
+| `head_branch != 'main'` | Never auto-fix production |
+| `MAX_AUTOFIX_RETRIES: 3` | Prevent infinite loops (configurable) |
+| Restricted Claude tools | No git, no npm - only read/edit/write/test |
+| `--max-turns 20` | Limit Claude execution |
+| `[autofix N/M]` commits | Audit trail in git history |
+| Sticky PR comments | User always sees status |
+| Self-modification ban | Prompt forbids editing ci-autofix.yml |
+
+### Token Approaches
+
+| Approach | When | How |
+|----------|------|-----|
+| **GITHUB_TOKEN** (default) | No app secrets | Commit + `gh workflow run ci.yml` to re-trigger |
+| **GitHub App** | `CI_AUTOFIX_APP_ID` secret exists | `actions/create-github-app-token` → push triggers `synchronize` |
+
+### Runs On
+- `workflow_run` completion of CI (on failure)
+- `workflow_run` completion of PR Code Review (on success, to check findings)
+- Only on PR branches (never main)
+
 ## PR Review Workflow (`pr-review.yml`)
 
 ### What It Does
@@ -202,8 +251,10 @@ act workflow_dispatch -W .github/workflows/daily-update.yml \
 
 | Secret | Used By | Purpose |
 |--------|---------|---------|
-| `ANTHROPIC_API_KEY` | daily-update, weekly-community, monthly-research, ci, pr-review | Claude API access |
+| `ANTHROPIC_API_KEY` | daily-update, weekly-community, monthly-research, ci, pr-review, ci-autofix | Claude API access |
 | `GITHUB_TOKEN` | All workflows | Auto-provided by GitHub |
+| `CI_AUTOFIX_APP_ID` | ci-autofix (optional) | GitHub App ID for token generation |
+| `CI_AUTOFIX_PRIVATE_KEY` | ci-autofix (optional) | GitHub App private key |
 
 ## Workflow Permissions
 

@@ -88,6 +88,7 @@ Detect something new → Suggest changes → Test with E2E → Create PR with re
 | 1st of month | monthly-research.yml | Deep research → Issue |
 | On PR | ci.yml | Run tests + E2E eval |
 | On PR | pr-review.yml | AI code review |
+| On CI fail / review findings | ci-autofix.yml | Auto-fix loop |
 
 ## Who Gets What on PR
 
@@ -119,6 +120,7 @@ Detect something new → Suggest changes → Test with E2E → Create PR with re
 │   ├── weekly-community.yml  # Community discussion scanning
 │   ├── monthly-research.yml  # Deep research and trends
 │   ├── ci.yml                # Tests + E2E evaluation
+│   ├── ci-autofix.yml         # Auto-fix loop (CI + review)
 │   └── pr-review.yml         # AI code review
 ├── prompts/
 │   ├── analyze-release.md    # Claude prompt for release analysis
@@ -679,20 +681,99 @@ Also includes fixes from CI audit:
 
 ---
 
+## Item 14: CI Auto-Fix Loop (2026-02-09)
+
+**Purpose:** Close the full SDLC feedback cycle — when CI fails or PR review has critical findings, Claude automatically reads the context, fixes the code, commits, and re-triggers CI.
+
+### Architecture
+
+```
+Push to PR
+    |
+    v
+CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► commit [autofix N/M] ──► re-trigger CI
+    |                                                                              |
+    |   <──────────────────────────────────────────────────────────────────────────┘
+    |
+    └── PASS ──► PR Review ──► APPROVE, no criticals ──► DONE
+                      |
+                      └── has criticals ──► ci-autofix ──► Claude reads review, fixes ──► loop
+```
+
+### Two Modes
+
+| Mode | Trigger | What Claude Reads |
+|------|---------|-------------------|
+| **CI failure** | CI workflow completes with `failure` | `gh run view --log-failed` output |
+| **Review findings** | PR Code Review completes with `success` | `claude-review` sticky comment body |
+
+### Safety Measures
+
+| Measure | Purpose |
+|---------|---------|
+| `head_branch != 'main'` | Never auto-fix production |
+| `MAX_AUTOFIX_RETRIES: 3` | Prevent infinite loops (configurable env var) |
+| Restricted Claude tools | `Read,Edit,Write,Bash(./tests/*),Bash(python3 *),Glob,Grep` |
+| `--max-turns 20` | Limit Claude execution per attempt |
+| `[autofix N/M]` commits | Audit trail in git history |
+| Self-modification ban | Prompt forbids editing ci-autofix.yml |
+| Sticky PR comments | User always sees autofix status |
+| APPROVE detection | Loop exits when review is clean |
+
+### Token Approach (Auto-Detected)
+
+| Approach | When | How |
+|----------|------|-----|
+| **GITHUB_TOKEN** (default) | No app secrets configured | Commit + `gh workflow run ci.yml` to re-trigger |
+| **GitHub App** (recommended) | `CI_AUTOFIX_APP_ID` + `CI_AUTOFIX_PRIVATE_KEY` exist | `actions/create-github-app-token` → push triggers `synchronize` naturally |
+
+### Key Constraint
+
+`workflow_run` only fires for workflows on the default branch. The ci-autofix workflow is dormant until first merged to main.
+
+### Files Added/Modified
+
+| File | Action | Purpose |
+|------|--------|---------|
+| `.github/workflows/ci-autofix.yml` | CREATE | Core auto-fix workflow |
+| `.github/workflows/ci.yml` | MODIFY | Added `workflow_dispatch` trigger for re-triggering |
+| `tests/test-workflow-triggers.sh` | MODIFY | Added 10 tests (22-31) for ci-autofix |
+| `CI_CD.md` | MODIFY | Documented ci-autofix workflow + secrets |
+| `ARCHITECTURE.md` | MODIFY | Added ci-autofix to file tree |
+| `CLAUDE_CODE_SDLC_WIZARD.md` | MODIFY | Added optional CI Auto-Fix section |
+| `plans/AUTO_SELF_UPDATE.md` | MODIFY | This documentation |
+
+### Test Coverage
+
+| Test # | What It Checks |
+|--------|---------------|
+| 22 | `ci-autofix.yml` file exists |
+| 23 | Triggers on `workflow_run` |
+| 24 | Watches both `"CI"` and `"PR Code Review"` workflows |
+| 25 | Has `MAX_AUTOFIX_RETRIES` config |
+| 26 | Excludes main branch |
+| 27 | Uses `claude-code-action` |
+| 28 | Uses `[autofix` commit tag pattern |
+| 29 | Posts sticky PR comment |
+| 30 | ci.yml has `workflow_dispatch` trigger |
+| 31 | Reads review comment (`claude-review` header) |
+
+---
+
 ## Future Roadmap
 
 | # | Item | Priority | Description | Status |
 |---|------|----------|-------------|--------|
-| 14 | Promptfoo/DeepEval adoption | HIGH | Richer evaluation metrics, structured eval framework | PLANNED |
-| 15 | Pairwise comparison | HIGH | LLM directly compares two outputs (more reliable than independent scoring) | PLANNED |
-| 16 | Multi-model evaluation | MED | Test with Sonnet vs Opus to validate robustness across models | PLANNED |
-| 17 | Deterministic pre-checks | MED | Pattern match for TodoWrite/test-first before LLM judge (cheaper, faster) | PLANNED |
-| 18 | Real-world scenarios | MED | Extract from public repos like SWE-bench for realistic E2E testing | PLANNED |
-| 19 | Observability/tracing | LOW | Structured logging for debugging score changes across runs | PLANNED |
-| 20 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. | PLANNED |
-| 21 | Color-coded PR comments | LOW | Add visual indicators to E2E scoring PR comments - green/red/yellow emoji or status badges for PASS/WARN/FAIL per criterion. Makes it easier to scan results at a glance instead of reading raw numbers. | PLANNED |
+| 15 | Promptfoo/DeepEval adoption | HIGH | Richer evaluation metrics, structured eval framework | PLANNED |
+| 16 | Pairwise comparison | HIGH | LLM directly compares two outputs (more reliable than independent scoring) | PLANNED |
+| 17 | Multi-model evaluation | MED | Test with Sonnet vs Opus to validate robustness across models | PLANNED |
+| 18 | Deterministic pre-checks | MED | Pattern match for TodoWrite/test-first before LLM judge (cheaper, faster) | PLANNED |
+| 19 | Real-world scenarios | MED | Extract from public repos like SWE-bench for realistic E2E testing | PLANNED |
+| 20 | Observability/tracing | LOW | Structured logging for debugging score changes across runs | PLANNED |
+| 21 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. | PLANNED |
+| 22 | Color-coded PR comments | LOW | Add visual indicators to E2E scoring PR comments - green/red/yellow emoji or status badges for PASS/WARN/FAIL per criterion. Makes it easier to scan results at a glance instead of reading raw numbers. | PLANNED |
 
-### Item 14: Promptfoo/DeepEval Adoption
+### Item 15: Promptfoo/DeepEval Adoption
 
 **Problem:** Our evaluation is a single Claude call scoring 0-10. No structured rubrics, no multi-criteria breakdowns, no eval framework.
 
@@ -704,7 +785,7 @@ Also includes fixes from CI audit:
 
 **Why HIGH priority:** This replaces the most fragile part of our system (single-call AI judge) with an established framework.
 
-### Item 15: Pairwise Comparison
+### Item 16: Pairwise Comparison
 
 **Problem:** Independent scoring (score A, score B, compare) is less reliable than direct comparison.
 
@@ -716,7 +797,7 @@ Also includes fixes from CI audit:
 
 **Why HIGH priority:** Direct comparison is a known-better methodology from LLM evaluation research.
 
-### Item 16: Multi-Model Evaluation
+### Item 17: Multi-Model Evaluation
 
 **Problem:** We only test with one model. If the wizard only works with Sonnet, that's fragile.
 
@@ -726,7 +807,7 @@ Also includes fixes from CI audit:
 - Flag if wizard only works well with one model
 - Validates robustness beyond SDP's external benchmark approach
 
-### Item 17: Deterministic Pre-Checks
+### Item 18: Deterministic Pre-Checks
 
 **Problem:** Using an LLM judge to check "did the output contain TodoWrite?" is expensive and stochastic when a grep would work.
 
@@ -739,7 +820,7 @@ Also includes fixes from CI audit:
 
 **Benefit:** Cheaper, faster, more reproducible for 60% of scoring.
 
-### Item 18: Real-World Scenarios
+### Item 19: Real-World Scenarios
 
 **Problem:** Our E2E scenarios are synthetic. Real-world tasks are messier.
 
@@ -749,7 +830,7 @@ Also includes fixes from CI audit:
 - More diverse complexity levels
 - Better validates wizard effectiveness on actual work
 
-### Item 19: Observability/Tracing
+### Item 20: Observability/Tracing
 
 **Problem:** When scores change, debugging why requires manual log reading.
 
@@ -759,7 +840,7 @@ Also includes fixes from CI audit:
 - Dashboard showing score trends over time
 - Alert on anomalies beyond CUSUM (e.g., specific criteria regressing)
 
-### Item 20: Mutation Testing
+### Item 21: Mutation Testing
 
 **Problem:** We don't know which wizard doc sections are load-bearing vs noise.
 
