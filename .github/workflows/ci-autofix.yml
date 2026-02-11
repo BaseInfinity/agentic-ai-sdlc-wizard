@@ -233,10 +233,13 @@ jobs:
             - Focus only on fixing the reported issues
             - Run relevant tests locally before declaring done
             - Keep changes minimal and focused
+            - Do NOT use EnterPlanMode or ExitPlanMode
+            - Use the Read tool to read files (NOT Bash with cat/find/ls)
+            - You do NOT have access to gh or git CLI — use Read, Glob, Grep instead
 
-            ${{ steps.source.outputs.mode == 'ci-failure' && '## CI Failure Context\n\nThe CI workflow failed. Read the failure logs from /tmp/ci-failure-context.txt to understand what went wrong.\n\nRead the logs carefully, identify the root cause, and fix the code.' || '' }}
+            ${{ steps.source.outputs.mode == 'ci-failure' && '## CI Failure Context\n\nThe CI workflow failed. Use the Read tool to read /tmp/ci-failure-context.txt for failure logs.\n\nRead the logs carefully, identify the root cause, and fix the code.' || '' }}
 
-            ${{ steps.source.outputs.mode == 'review-findings' && '## Code Review Findings\n\nThe PR code review found issues that need fixing. Read the review findings from /tmp/review-findings.md.\n\nAddress all findings — both critical issues and suggestions.\nIf the reviewer flagged it, fix it. Criticals first, then suggestions.\nAfter fixing, summarize what you changed in two sections:\n- Critical fixes: [list]\n- Suggestion fixes: [list]' || '' }}
+            ${{ steps.source.outputs.mode == 'review-findings' && '## Code Review Findings\n\nThe PR code review found issues that need fixing. Use the Read tool to read /tmp/review-findings.md for the full review.\n\nAddress all findings — both critical issues and suggestions.\nIf the reviewer flagged it, fix it. Criticals first, then suggestions.\nAfter fixing, summarize what you changed in two sections:\n- Critical fixes: [list]\n- Suggestion fixes: [list]' || '' }}
 
             After fixing:
             1. Run any relevant test scripts to verify your fixes

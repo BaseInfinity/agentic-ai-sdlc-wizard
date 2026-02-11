@@ -683,8 +683,25 @@ test_ci_autofix_prompt_all_findings() {
     fi
 }
 
+# Test 39: ci-autofix prompt tells Claude to use Read tool (not Bash) for context files
+test_ci_autofix_prompt_read_tool() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for Read tool test)"
+        return
+    fi
+
+    if grep -q "Use the Read tool" "$WORKFLOW" && grep -q "NOT Bash" "$WORKFLOW"; then
+        pass "ci-autofix prompt steers Claude to Read tool (prevents wasted Bash denials)"
+    else
+        fail "ci-autofix prompt missing Read tool guidance (Claude will waste turns on denied Bash calls)"
+    fi
+}
+
 test_ci_autofix_checks_suggestions
 test_ci_autofix_prompt_all_findings
+test_ci_autofix_prompt_read_tool
 
 echo ""
 echo "=== Results ==="
