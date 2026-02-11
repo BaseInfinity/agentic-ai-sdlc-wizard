@@ -695,9 +695,9 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
     |                                                                              |
     |   <──────────────────────────────────────────────────────────────────────────┘
     |
-    └── PASS ──► PR Review ──► APPROVE, no criticals ──► DONE
+    └── PASS ──► PR Review ──► APPROVE, no findings at level ──► DONE
                       |
-                      └── has criticals ──► ci-autofix ──► Claude reads review, fixes ──► loop
+                      └── has findings ──► ci-autofix ──► Claude reads review, fixes all ──► loop
 ```
 
 ### Two Modes
@@ -719,6 +719,8 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | Self-modification ban | Prompt forbids editing ci-autofix.yml |
 | Sticky PR comments | User always sees autofix status |
 | APPROVE detection | Loop exits when review is clean |
+| Suggestion handling | Autofix addresses ALL review findings, not just criticals |
+| `AUTOFIX_LEVEL` env var | 4 strictness levels: `ci-only`, `criticals`, `thorough`, `all-findings` (configurable per-repo) |
 
 ### Token Approach (Auto-Detected)
 
@@ -757,6 +759,8 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | 29 | Posts sticky PR comment |
 | 30 | ci.yml has `workflow_dispatch` trigger |
 | 31 | Reads review comment (`claude-review` header) |
+| 37 | Checks for suggestions (not just criticals) |
+| 38 | Prompt addresses both criticals and suggestions |
 
 ---
 

@@ -645,6 +645,47 @@ test_ci_autofix_prompt_failure_file
 test_ci_autofix_prompt_review_file
 test_ci_max_turns_sufficient
 
+# ============================================
+# CI Autofix Suggestion Handling Tests
+# ============================================
+# These tests ensure ci-autofix addresses ALL review
+# findings (both criticals and suggestions), not just criticals.
+
+# Test 37: ci-autofix checks for suggestions (not just criticals)
+test_ci_autofix_checks_suggestions() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for suggestions test)"
+        return
+    fi
+
+    if grep -q "Suggestions (nice to have)" "$WORKFLOW"; then
+        pass "ci-autofix checks for suggestions (not just criticals)"
+    else
+        fail "ci-autofix only checks for criticals, ignores suggestions"
+    fi
+}
+
+# Test 38: ci-autofix prompt addresses all findings
+test_ci_autofix_prompt_all_findings() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for prompt test)"
+        return
+    fi
+
+    if grep -q "suggestions" "$WORKFLOW" && grep -q "critical" "$WORKFLOW"; then
+        pass "ci-autofix prompt addresses both criticals and suggestions"
+    else
+        fail "ci-autofix prompt only addresses criticals"
+    fi
+}
+
+test_ci_autofix_checks_suggestions
+test_ci_autofix_prompt_all_findings
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"

@@ -845,21 +845,25 @@ Feature branches still recommended for solo devs (keeps main clean, easy rollbac
 - If no CI yet: skip, add later when you set up CI
 
 **CI review feedback question (only if CI monitoring is enabled):**
-> "How should Claude handle CI code review suggestions?"
+> "What level of automated review response do you want?"
 
-| Option | Behavior |
-|--------|----------|
-| **Auto-implement valid ones** (recommended) | Claude reads review, implements suggestions that are real improvements (bug fixes, missing error handling, test coverage, DRY), skips style opinions. Iterates until reviewer is satisfied. |
-| **Ask me first** | Claude reads review, presents suggestions to you, you decide which to implement. More control, more interruptions. |
-| **Skip review feedback** | Claude only fixes CI failures (broken tests, lint errors), ignores review suggestions. Fastest, but you handle review feedback manually. |
+| Level | Name | What autofix handles | Est. API cost |
+|-------|------|---------------------|---------------|
+| **L1** | `ci-only` | CI failures only (broken tests, lint) | ~$0.50/fix |
+| **L2** | `criticals` | + Review critical findings (must-fix) | ~$1/fix |
+| **L3** | `thorough` | + Test/coverage gaps from suggestions | ~$1.50/fix |
+| **L4** | `all-findings` (recommended) | + Every suggestion the reviewer flags | ~$2/fix |
+
+> **Cost note:** Higher levels mean more autofix iterations (each ~$0.50).
+> L4 typically adds 1-2 extra iterations per PR but produces cleaner code.
+> You can change this anytime by editing `AUTOFIX_LEVEL` in your ci-autofix workflow.
 
 **What this does:**
 1. After CI passes, Claude reads the automated code review comments
-2. Claude evaluates each suggestion: real improvement vs. style opinion
-3. Based on your preference: implements, asks, or skips
-4. Iterates (push -> re-review) until no substantive suggestions remain
-5. Only brings you in when everything is clean (CI green + reviewer satisfied)
-6. Max 3 iterations to prevent infinite loops
+2. Based on your level: fixes criticals only, or all findings
+3. Iterates (push -> re-review) until no findings remain at your chosen level
+4. Only brings you in when everything is clean
+5. Max 3 iterations to prevent infinite loops
 
 **Check for new plugins periodically:**
 ```
@@ -2530,7 +2534,7 @@ This is optional - skip if you prefer fresh reviews only.
 
 ### CI Auto-Fix Loop (Optional)
 
-Automatically fix CI failures and PR review findings. Claude reads the error context, fixes the code, commits, and re-triggers CI. Loops until CI passes AND review approves, or max retries hit.
+Automatically fix CI failures and PR review findings. Claude reads the error context, fixes the code, commits, and re-triggers CI. Loops until CI passes AND review has no findings at your chosen level, or max retries hit.
 
 **The Loop:**
 ```
@@ -2539,14 +2543,15 @@ Push to PR
     v
 CI runs ──► FAIL ──► ci-autofix: Claude reads logs, fixes, commits [autofix 1/3] ──► re-trigger
     |
-    └── PASS ──► PR Review ──► has criticals? ──► ci-autofix: Claude reads review, fixes ──► re-trigger
+    └── PASS ──► PR Review ──► has findings at your level? ──► ci-autofix: fixes all ──► re-trigger
                       |
-                      └── APPROVE, no criticals ──► DONE
+                      └── APPROVE, no findings ──► DONE
 ```
 
 **Safety measures:**
 - Never runs on main branch
 - Max retries (default 3, configurable via `MAX_AUTOFIX_RETRIES`)
+- `AUTOFIX_LEVEL` controls what findings to act on (`ci-only`, `criticals`, `thorough`, `all-findings`)
 - Restricted Claude tools (no git, no npm)
 - Self-modification ban (can't edit ci-autofix.yml)
 - `[autofix N/M]` commit tags for audit trail
@@ -2569,6 +2574,7 @@ permissions:
 
 env:
   MAX_AUTOFIX_RETRIES: 3
+  AUTOFIX_LEVEL: all-findings  # ci-only | criticals | thorough | all-findings
 
 jobs:
   autofix:
@@ -2583,7 +2589,8 @@ jobs:
     steps:
       # Count previous [autofix] commits to enforce max retries
       # Download CI failure logs or fetch review comment
-      # Run Claude to fix issues with restricted tools
+      # Check findings at your AUTOFIX_LEVEL (criticals + suggestions)
+      # Run Claude to fix ALL findings with restricted tools
       # Commit [autofix N/M], push, re-trigger CI
       # Post sticky PR comment with status
 ```

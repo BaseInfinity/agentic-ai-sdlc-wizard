@@ -155,7 +155,7 @@ Both use Tier 1 (quick) + Tier 2 (full statistical) evaluation.
 Automated fix loop that responds to CI failures and PR review findings:
 
 1. **CI failure mode**: Downloads failure logs, Claude reads them, fixes code, commits, re-triggers CI
-2. **Review findings mode**: Fetches `claude-review` sticky comment, checks for critical findings, Claude fixes them
+2. **Review findings mode**: Fetches `claude-review` sticky comment, checks for findings (criticals + suggestions) based on `AUTOFIX_LEVEL`, Claude fixes them
 
 ### Loop Architecture
 
@@ -167,9 +167,9 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
     |                                                                              |
     |   <──────────────────────────────────────────────────────────────────────────┘
     |
-    └── PASS ──► PR Review ──► APPROVE, no criticals ──► DONE
+    └── PASS ──► PR Review ──► APPROVE, no findings at level ──► DONE
                       |
-                      └── has criticals ──► ci-autofix ──► Claude fixes ──► loop back
+                      └── has findings ──► ci-autofix ──► Claude fixes all ──► loop back
 ```
 
 ### Safety Measures
@@ -178,6 +178,7 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 |---------|---------|
 | `head_branch != 'main'` | Never auto-fix production |
 | `MAX_AUTOFIX_RETRIES: 3` | Prevent infinite loops (configurable) |
+| `AUTOFIX_LEVEL` | Controls what findings to act on (`ci-only`, `criticals`, `thorough`, `all-findings`) |
 | Restricted Claude tools | No git, no npm - only read/edit/write/test |
 | `--max-turns 20` | Limit Claude execution |
 | `[autofix N/M]` commits | Audit trail in git history |
