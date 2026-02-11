@@ -12,7 +12,7 @@ permissions:
 
 env:
   MAX_AUTOFIX_RETRIES: 3
-  AUTOFIX_LEVEL: all-findings
+  AUTOFIX_LEVEL: criticals
 
 jobs:
   autofix:
@@ -182,13 +182,13 @@ jobs:
                 SKIP=true
               fi
               ;;
-            thorough|all-findings)
+            all-findings)
               if [ "$HAS_CRITICALS" = false ] && [ "$HAS_SUGGESTIONS" = false ]; then
                 SKIP=true
               fi
               ;;
             *)
-              echo "WARNING: Unknown AUTOFIX_LEVEL='$AUTOFIX_LEVEL', defaulting to criticals"
+              echo "WARNING: Unknown AUTOFIX_LEVEL='$AUTOFIX_LEVEL' (valid: ci-only, criticals, all-findings), defaulting to criticals"
               if [ "$HAS_CRITICALS" = false ]; then
                 SKIP=true
               fi
@@ -223,27 +223,34 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --max-turns 20
+            --max-turns 30
             --allowedTools "Read,Edit,Write,Bash(./tests/*),Bash(python3 *),Glob,Grep"
+          show_full_output: true
           prompt: |
-            You are fixing issues found by CI or code review. This is autofix attempt ${{ steps.count.outputs.attempt }}/${{ env.MAX_AUTOFIX_RETRIES }}.
+            You are fixing issues found by CI or code review.
+            This is autofix attempt ${{ steps.count.outputs.attempt }}/${{ env.MAX_AUTOFIX_RETRIES }}.
+            Trigger mode: ${{ steps.source.outputs.mode }}
 
             IMPORTANT RULES:
-            - Do NOT modify .github/workflows/ci-autofix.yml (self-modification ban)
-            - Focus only on fixing the reported issues
-            - Run relevant tests locally before declaring done
-            - Keep changes minimal and focused
+            - Do NOT modify .github/workflows/ci-autofix.yml
             - Do NOT use EnterPlanMode or ExitPlanMode
             - Use the Read tool to read files (NOT Bash with cat/find/ls)
-            - You do NOT have access to gh or git CLI — use Read, Glob, Grep instead
+            - You do NOT have access to gh or git CLI
+            - Focus only on fixing the reported issues
+            - Keep changes minimal and focused
 
-            ${{ steps.source.outputs.mode == 'ci-failure' && '## CI Failure Context\n\nThe CI workflow failed. Use the Read tool to read /tmp/ci-failure-context.txt for failure logs.\n\nRead the logs carefully, identify the root cause, and fix the code.' || '' }}
+            ## What to fix
 
-            ${{ steps.source.outputs.mode == 'review-findings' && '## Code Review Findings\n\nThe PR code review found issues that need fixing. Use the Read tool to read /tmp/review-findings.md for the full review.\n\nAddress all findings — both critical issues and suggestions.\nIf the reviewer flagged it, fix it. Criticals first, then suggestions.\nAfter fixing, summarize what you changed in two sections:\n- Critical fixes: [list]\n- Suggestion fixes: [list]' || '' }}
+            If trigger mode is "ci-failure":
+            - Use the Read tool to read /tmp/ci-failure-context.txt
+            - Diagnose the root cause and fix the code
 
-            After fixing:
-            1. Run any relevant test scripts to verify your fixes
-            2. Summarize what you changed and why
+            If trigger mode is "review-findings":
+            - Use the Read tool to read /tmp/review-findings.md
+            - Address all findings — criticals first, then suggestions
+            - Summarize: Critical fixes: [list], Suggestion fixes: [list]
+
+            After fixing, run relevant test scripts to verify your fixes.
 
       # === COMMIT AND PUSH ===
       - name: Detect token approach

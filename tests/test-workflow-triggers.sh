@@ -703,6 +703,54 @@ test_ci_autofix_checks_suggestions
 test_ci_autofix_prompt_all_findings
 test_ci_autofix_prompt_read_tool
 
+# ============================================
+# CI Autofix Max-Turns & Prompt Hygiene Tests
+# ============================================
+
+# Test 40: ci-autofix --max-turns >= 30
+test_ci_autofix_max_turns() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for max-turns test)"
+        return
+    fi
+
+    # Extract --max-turns value from ci-autofix.yml
+    TURNS=$(grep -oE '\-\-max-turns [0-9]+' "$WORKFLOW" | grep -oE '[0-9]+')
+
+    if [ -z "$TURNS" ]; then
+        fail "ci-autofix.yml missing --max-turns flag"
+        return
+    fi
+
+    if [ "$TURNS" -ge 30 ]; then
+        pass "ci-autofix --max-turns is >= 30 ($TURNS)"
+    else
+        fail "ci-autofix --max-turns is $TURNS (need >= 30 for complex fixes)"
+    fi
+}
+
+# Test 41: ci-autofix prompt has no literal \n ternary pattern
+test_ci_autofix_no_ternary_newlines() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for ternary test)"
+        return
+    fi
+
+    # Check for the problematic pattern: ${{ expr && 'text\n' || '' }}
+    if grep -q "&&.*\\\\n.*||" "$WORKFLOW"; then
+        fail "ci-autofix prompt uses ternary with literal \\n (renders as literal backslash-n, not newline)"
+    else
+        pass "ci-autofix prompt has no ternary \\n pattern"
+    fi
+}
+
+test_ci_autofix_max_turns
+test_ci_autofix_no_ternary_newlines
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"

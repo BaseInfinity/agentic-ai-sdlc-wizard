@@ -152,7 +152,16 @@ Both use Tier 1 (quick) + Tier 2 (full statistical) evaluation.
 
 ### What It Does
 
-Automated fix loop that responds to CI failures and PR review findings:
+Automated fix loop that responds to CI failures and PR review findings.
+
+**Review architecture:**
+```
+Solo:   Code → /code-review → Fix locally → Push → CI tests → Done
+Team:   Code → /code-review → Push → CI tests → CI PR Review → Team discusses
+        (optional: CI autofix addresses findings automatically)
+```
+
+**How it works:**
 
 1. **CI failure mode**: Downloads failure logs, Claude reads them, fixes code, commits, re-triggers CI
 2. **Review findings mode**: Fetches `claude-review` sticky comment, checks for findings (criticals + suggestions) based on `AUTOFIX_LEVEL`, Claude fixes them
@@ -178,9 +187,9 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 |---------|---------|
 | `head_branch != 'main'` | Never auto-fix production |
 | `MAX_AUTOFIX_RETRIES: 3` | Prevent infinite loops (configurable) |
-| `AUTOFIX_LEVEL` | Controls what findings to act on (`ci-only`, `criticals`, `thorough`, `all-findings`) |
+| `AUTOFIX_LEVEL` | Controls what findings to act on (`ci-only`, `criticals` (default), `all-findings`) |
 | Restricted Claude tools | No git, no npm - only read/edit/write/test |
-| `--max-turns 20` | Limit Claude execution |
+| `--max-turns 30` | Limit Claude execution |
 | `[autofix N/M]` commits | Audit trail in git history |
 | Sticky PR comments | User always sees status |
 | Self-modification ban | Prompt forbids editing ci-autofix.yml |

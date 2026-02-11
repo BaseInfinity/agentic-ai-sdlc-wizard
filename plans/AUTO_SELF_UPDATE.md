@@ -714,13 +714,13 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | `head_branch != 'main'` | Never auto-fix production |
 | `MAX_AUTOFIX_RETRIES: 3` | Prevent infinite loops (configurable env var) |
 | Restricted Claude tools | `Read,Edit,Write,Bash(./tests/*),Bash(python3 *),Glob,Grep` |
-| `--max-turns 20` | Limit Claude execution per attempt |
+| `--max-turns 30` | Limit Claude execution per attempt |
 | `[autofix N/M]` commits | Audit trail in git history |
 | Self-modification ban | Prompt forbids editing ci-autofix.yml |
 | Sticky PR comments | User always sees autofix status |
 | APPROVE detection | Loop exits when review is clean |
 | Suggestion handling | Autofix addresses ALL review findings, not just criticals |
-| `AUTOFIX_LEVEL` env var | 4 strictness levels: `ci-only`, `criticals`, `thorough`, `all-findings` (configurable per-repo) |
+| `AUTOFIX_LEVEL` env var | 3 strictness levels: `ci-only`, `criticals` (default), `all-findings` (configurable per-repo) |
 
 ### Token Approach (Auto-Detected)
 
