@@ -547,6 +547,7 @@ jobs:
 
       - name: Build quick check comment message
         id: build-quick-message
+        continue-on-error: true   # Comment is cosmetic — don't fail the job
         run: |
           IS_BOOTSTRAPPING="${{ steps.compare.outputs.is_bootstrapping }}"
           BASELINE="${{ steps.compare.outputs.baseline }}"
@@ -725,6 +726,7 @@ jobs:
           fi
 
       - name: Comment quick check results on PR
+        continue-on-error: true   # Comment is cosmetic — don't fail the job
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: e2e-quick-check

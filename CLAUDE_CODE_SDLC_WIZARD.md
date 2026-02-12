@@ -1658,6 +1658,36 @@ If tests fail:
 
 Debug it. Find root cause. Fix it properly. Tests ARE code.
 
+## Flaky Test Prevention
+
+**Flaky tests are bugs. Period.** They erode trust in the test suite, slow down teams, and mask real regressions.
+
+### Principles
+
+1. **Treat test code like app code** — same code review standards, same quality bar. Tests are first-class citizens, not afterthoughts.
+
+2. **Investigate every flaky failure** — never ignore a flaky test. It's a bug somewhere in one of three layers:
+   - **Test code** — shared state, not parallel-safe, timing assumptions, missing cleanup
+   - **App code** — race condition, unhandled edge case, non-deterministic behavior
+   - **Environment/infra** — CI runner flakiness, resource contention, external service instability
+
+3. **Stress-test new tests** — run new or modified tests N times before merge to sniff out flakiness early. A test that passes 1x but fails on run 50 has a bug.
+
+4. **Isolate testing environments** — sanitize state between tests. Don't share databases. Clean up properly. Each test should be independently runnable.
+
+5. **Address flakiness immediately** — momentum matters. The longer a flaky test lives, the more trust erodes and the harder root cause becomes to find.
+
+6. **Quarantine only if actively fixing** — quarantine is a temporary holding pen, not a permanent ignore. If a test is quarantined for more than a sprint, it needs attention or deletion.
+
+7. **Track flaky rates** — you can't fix what you don't measure. Know which tests are flaky and how often.
+
+### When the Bug Is in CI Infrastructure
+
+Sometimes the flakiness is genuinely in CI infrastructure (runner environment, GitHub Actions internals, third-party action bugs). When this happens:
+- **Make cosmetic steps non-blocking** — PR comments, notifications, and reports should use `continue-on-error: true`
+- **Keep quality gates strict** — the actual pass/fail decision must NOT have `continue-on-error`
+- **Separate "fail the build" from "nice to have"** — a missing PR comment is not a regression
+
 ## CI Feedback Loop (After Commit)
 
 **The SDLC doesn't end at local tests.** CI must pass too.

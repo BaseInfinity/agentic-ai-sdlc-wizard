@@ -119,6 +119,15 @@ During self-review, critique tests HARDER than app code:
 
 **Tests are the foundation.** Bad tests = false confidence = production bugs.
 
+## Flaky Test Recovery
+
+When a test fails intermittently:
+1. **Don't dismiss it** — "flaky" means "bug we haven't found yet"
+2. **Identify the layer** — test code? app code? environment?
+3. **Stress-test** — run the suspect test N times to reproduce reliably
+4. **Fix root cause** — don't just retry-and-pray
+5. **If CI infrastructure** — make cosmetic steps non-blocking, keep quality gates strict
+
 ## Scope Guard (Stay in Your Lane)
 
 **Only make changes directly related to the task.**

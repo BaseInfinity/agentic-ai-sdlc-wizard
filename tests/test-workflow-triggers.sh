@@ -751,6 +751,67 @@ test_ci_autofix_no_ternary_newlines() {
 test_ci_autofix_max_turns
 test_ci_autofix_no_ternary_newlines
 
+# ============================================
+# CI Cosmetic Step Resilience Tests
+# ============================================
+# These tests ensure cosmetic CI steps (PR comments)
+# don't fail the build, while the real quality gate does.
+
+# Test 42: "Build quick check comment message" has continue-on-error
+test_quick_check_comment_continue_on_error() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found (needed for continue-on-error test)"
+        return
+    fi
+
+    # Check that the "Build quick check comment message" step has continue-on-error: true
+    if grep -A 2 "Build quick check comment message" "$WORKFLOW" | grep -q "continue-on-error: true"; then
+        pass "Build quick check comment message has continue-on-error: true"
+    else
+        fail "Build quick check comment message missing continue-on-error: true (cosmetic step can fail the build)"
+    fi
+}
+
+# Test 43: "Comment quick check results on PR" has continue-on-error
+test_quick_check_post_comment_continue_on_error() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found (needed for continue-on-error test)"
+        return
+    fi
+
+    # Check that the "Comment quick check results on PR" step has continue-on-error: true
+    if grep -A 2 "Comment quick check results on PR" "$WORKFLOW" | grep -q "continue-on-error: true"; then
+        pass "Comment quick check results on PR has continue-on-error: true"
+    else
+        fail "Comment quick check results on PR missing continue-on-error: true (cosmetic step can fail the build)"
+    fi
+}
+
+# Test 44: "Fail on regression" does NOT have continue-on-error
+test_fail_on_regression_no_continue_on_error() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found (needed for quality gate test)"
+        return
+    fi
+
+    # The quality gate must NOT have continue-on-error
+    if grep -A 2 "Fail on regression" "$WORKFLOW" | grep -q "continue-on-error"; then
+        fail "Fail on regression has continue-on-error (quality gate would be bypassed!)"
+    else
+        pass "Fail on regression does NOT have continue-on-error (quality gate intact)"
+    fi
+}
+
+test_quick_check_comment_continue_on_error
+test_quick_check_post_comment_continue_on_error
+test_fail_on_regression_no_continue_on_error
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
