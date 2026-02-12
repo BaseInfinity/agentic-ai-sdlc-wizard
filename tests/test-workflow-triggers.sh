@@ -808,6 +808,84 @@ test_fail_on_regression_no_continue_on_error() {
     fi
 }
 
+# ============================================
+# CI Comment Safety Tests
+# ============================================
+# These tests ensure untrusted LLM output (criteria evidence)
+# is NOT assigned via ${{ }} inline in bash (backtick injection).
+
+# Test 45: CRITERIA is passed via env block, not inline ${{ }} in bash
+test_criteria_not_inline_expanded() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found (needed for criteria safety test)"
+        return
+    fi
+
+    # Check that CRITERIA is NOT set via inline ${{ }} in a bash variable assignment
+    # Bad:  CRITERIA="${{ steps.eval-candidate.outputs.criteria }}"
+    # Good: env: CRITERIA: ${{ steps.eval-candidate.outputs.criteria }}
+    if grep -E 'CRITERIA="\$\{\{' "$WORKFLOW"; then
+        fail "CRITERIA uses inline \${{ }} expansion (backticks in LLM evidence text execute as commands)"
+    else
+        pass "CRITERIA is not inline-expanded in bash (safe from backtick injection)"
+    fi
+}
+
+# Test 46: Comment-building steps use env block for untrusted outputs
+test_comment_steps_use_env_block() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found (needed for env block test)"
+        return
+    fi
+
+    # Both "Build quick check comment message" and "Build full evaluation comment message"
+    # should have an env: block that includes CRITERIA
+    QUICK_HAS_ENV=false
+    FULL_HAS_ENV=false
+
+    # Use python for reliable multi-line YAML parsing
+    python3 -c "
+import yaml, sys
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+for job_name, job in wf.get('jobs', {}).items():
+    for step in job.get('steps', []):
+        name = step.get('name', '')
+        env = step.get('env', {})
+        if 'Build quick check comment message' in name:
+            if 'CRITERIA' in env:
+                print('QUICK_ENV_OK')
+        if 'Build full evaluation comment message' in name:
+            if 'CRITERIA' in env:
+                print('FULL_ENV_OK')
+" > /tmp/env_check_result.txt 2>&1
+
+    if grep -q "QUICK_ENV_OK" /tmp/env_check_result.txt; then
+        QUICK_HAS_ENV=true
+    fi
+    if grep -q "FULL_ENV_OK" /tmp/env_check_result.txt; then
+        FULL_HAS_ENV=true
+    fi
+
+    if [ "$QUICK_HAS_ENV" = true ] && [ "$FULL_HAS_ENV" = true ]; then
+        pass "Both comment-building steps pass CRITERIA via env block (safe)"
+    else
+        if [ "$QUICK_HAS_ENV" = false ]; then
+            fail "Quick check comment step missing CRITERIA in env block"
+        fi
+        if [ "$FULL_HAS_ENV" = false ]; then
+            fail "Full evaluation comment step missing CRITERIA in env block"
+        fi
+    fi
+}
+
+test_criteria_not_inline_expanded
+test_comment_steps_use_env_block
+
 test_quick_check_comment_continue_on_error
 test_quick_check_post_comment_continue_on_error
 test_fail_on_regression_no_continue_on_error
