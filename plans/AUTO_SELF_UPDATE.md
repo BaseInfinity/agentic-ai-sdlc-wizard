@@ -923,4 +923,4 @@ _Updated: 2026-02-11_
 
 **Summary:** 6/8 items DONE, 1 SKIPPED (by design), 1 DEFERRED (research needed).
 
-**Item 23 decision:** The only remaining blocker is mutation testing research (Item 21), which was deferred as it requires deep investigation into SDLC document mutation methodology. All other prerequisites for phased workflow re-enablement are met. User decides when to tackle Item 21 and whether it blocks re-enablement.
+**Item 23 decision:** Re-enablement is blocked until the full E2E pipeline passes end-to-end in CI, confirming that evaluation, scoring, observability, and PR comments all work together in a real GitHub Actions run. Mutation testing (Item 21) remains deferred and does not block re-enablement. All prerequisite items are complete — the gate is now operational verification, not feature work.
