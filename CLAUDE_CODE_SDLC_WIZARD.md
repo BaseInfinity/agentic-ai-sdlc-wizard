@@ -665,7 +665,17 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 - Without branch protection, anyone (including Claude) can push broken code to main
 - Built-in GitHub feature - deterministic, no custom code needed
 
-**Required Settings:**
+**Solo Developer Settings:**
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| Require pull request before merging | ✓ Enabled | All changes go through PR review |
+| Require approvals | **0 (none)** | No one else to approve — CI is your gate |
+| Require status checks to pass | ✓ Enabled | CI must be green |
+| Require branches to be up to date | ✓ Enabled | No stale merges |
+| Include administrators | **✗ Disabled** | You're the only admin — this locks you out |
+
+**Team Settings (2+ developers):**
 
 | Setting | Value | Why |
 |---------|-------|-----|
@@ -673,15 +683,16 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 | Require approvals | 1+ (your choice) | Human must approve before merge |
 | Require status checks to pass | ✓ Enabled | CI must be green |
 | Require branches to be up to date | ✓ Enabled | No stale merges |
+| Include administrators | ✓ Enabled | No one bypasses the rules |
 
 **How to enable (UI):**
 1. Go to: `Settings > Branches > Add rule`
 2. Branch name pattern: `main` (or `master`)
-3. Enable the settings above
+3. Enable the settings above (solo or team, as appropriate)
 4. Add required status checks: `validate`, `e2e-quick-check`
 5. Save changes
 
-**How to enable (CLI):**
+**How to enable (CLI — solo dev):**
 ```bash
 gh api repos/OWNER/REPO/branches/main/protection --method PUT --input - << 'EOF'
 {
@@ -696,14 +707,31 @@ gh api repos/OWNER/REPO/branches/main/protection --method PUT --input - << 'EOF'
 EOF
 ```
 
-**Optional but recommended:**
+**How to enable (CLI — team):**
+```bash
+gh api repos/OWNER/REPO/branches/main/protection --method PUT --input - << 'EOF'
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": ["validate", "e2e-quick-check"]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 1,
+    "dismiss_stale_reviews": true
+  },
+  "restrictions": null
+}
+EOF
+```
+
+**Optional (teams only):**
 
 | Setting | Value | Why |
 |---------|-------|-----|
-| Include administrators | ✓ Enabled | No one bypasses the rules |
 | Require CODEOWNERS review | ✓ Enabled | Specific people must approve |
 
-**CODEOWNERS file (optional):**
+**CODEOWNERS file (teams only):**
 Create `.github/CODEOWNERS`:
 ```
 # Default owners for everything
@@ -724,7 +752,7 @@ Create `.github/CODEOWNERS`:
 | CI must pass before merge | ✓ | ✓ |
 | Clean commit history | ✓ | ✓ |
 | Easy rollback (revert PR) | ✓ | ✓ |
-| Human review required | Optional | ✓ |
+| Human review required | — | ✓ |
 
 **Not required, but good practice.** The SDLC workflow includes a self-review step using `/code-review` (native Claude Code plugin). It launches parallel review agents for CLAUDE.md compliance, bug detection, and logic/security checks. You always have final say — the review just catches things you might miss.
 
@@ -736,7 +764,7 @@ Create `.github/CODEOWNERS`:
 | **Team** | Multiple contributors | `/code-review` locally + CI PR review for visibility |
 | **Open Source** | External contributors | CI PR review on contributor PRs |
 
-**Solo devs:** You can approve your own PRs. The value is the structured workflow (CI gates, code review, clean history), not the approval ceremony.
+**Solo devs:** Skip approval requirements — CI status checks are your quality gate. The AI code review (`pr-review.yml`) provides automated review without needing human approval. GitHub does not allow PR authors to approve their own PRs, so requiring approvals on a solo repo will block all merges.
 
 ---
 
