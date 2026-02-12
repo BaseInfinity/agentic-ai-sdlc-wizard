@@ -776,12 +776,12 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 |---|------|----------|-------------|--------|
 | 15 | Eval framework improvements | HIGH | Multi-call LLM judge, golden output regression, per-criterion CUSUM | DONE |
 | 16 | Pairwise tiebreaker | HIGH | Tiebreaker-only pairwise with full swap when scores within 1.0 | DONE |
-| 17 | Multi-model evaluation | MED | Test with Sonnet vs Opus to validate robustness across models | PLANNED |
+| 17 | Multi-model evaluation | MED | Test with Sonnet vs Opus to validate robustness across models | SKIPPED — Opus-only by design |
 | 18 | Deterministic pre-checks | MED | Pattern match for TodoWrite/test-first before LLM judge (cheaper, faster) | DONE |
-| 19 | Real-world scenarios | MED | Extract from public repos like SWE-bench for realistic E2E testing | PLANNED |
-| 20 | Observability/tracing | LOW | Structured logging for debugging score changes across runs | PLANNED |
-| 21 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. | PLANNED |
-| 22 | Color-coded PR comments | LOW | Add visual indicators to E2E scoring PR comments - green/red/yellow emoji or status badges for PASS/WARN/FAIL per criterion. Makes it easier to scan results at a glance instead of reading raw numbers. | PLANNED |
+| 19 | Real-world scenarios | MED | Extract from public repos like SWE-bench for realistic E2E testing | DONE |
+| 20 | Observability/tracing | LOW | Structured logging for debugging score changes across runs | DONE |
+| 21 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. | DEFERRED — deep research required before implementation |
+| 22 | Color-coded PR comments | LOW | Add visual indicators to E2E scoring PR comments - green/red/yellow emoji or status badges for PASS/WARN/FAIL per criterion. Makes it easier to scan results at a glance instead of reading raw numbers. | DONE — emoji indicators in ci.yml |
 | 23 | Phased workflow re-enablement | HIGH | Re-enable daily → weekly → monthly schedules after roadmap complete + audit. Phase 1: daily (most critical, tracks CC releases). Phase 2: weekly (after daily stable 1 week). Phase 3: monthly (lowest urgency). Gate: all items 15-22 addressed, Tier 2 E2E passes, workflow audit. | PLANNED |
 
 ### Item 15: Eval Framework Improvements (Targeted, Not Framework Adoption)
@@ -825,39 +825,65 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 **Test coverage:**
 - `test-pairwise-compare.sh` — 26 tests for threshold gating, prompt construction, validation, verdict logic, integration
 
-### Item 17: Multi-Model Evaluation
+### Item 17: Multi-Model Evaluation — SKIPPED
 
-**Problem:** We only test with one model. If the wizard only works with Sonnet, that's fragile.
-
-**Solution:**
-- Run E2E with both Sonnet and Opus
-- Compare scores across models
-- Flag if wizard only works well with one model
-- Validates robustness beyond SDP's external benchmark approach
+**Decision:** Skipped. The wizard is designed for Opus-only usage. Testing with Sonnet would validate a configuration we don't recommend. SDP scoring (Item 11) already tracks model degradation via external benchmarks.
 
 ### Item 18: Deterministic Pre-Checks (Already Implemented)
 
 **Status:** Already done as part of Items 10-14. `lib/deterministic-checks.sh` provides grep-based scoring for task_tracking, confidence, and tdd_red. The LLM judge only scores subjective criteria (plan_mode, tdd_green, self_review, clean_code, design_system). Marked DONE.
 
-### Item 19: Real-World Scenarios
+### Item 19: Real-World Scenarios — DONE
 
-**Problem:** Our E2E scenarios are synthetic. Real-world tasks are messier.
+**Problem:** Our 10 E2E scenarios were synthetic/templated. Real-world tasks are messier — multi-file, ambiguous, require judgment.
 
-**Solution:**
-- Extract scenarios from public repos (SWE-bench style)
-- Real bug reports, feature requests, refactoring needs
-- More diverse complexity levels
-- Better validates wizard effectiveness on actual work
+**Key insight:** No script changes needed. `scenario-selector.sh` auto-discovers any `.md` file in the scenarios directory.
 
-### Item 20: Observability/Tracing
+**3 scenarios added:**
 
-**Problem:** When scores change, debugging why requires manual log reading.
+| Scenario | Tests | Complexity | Baseline |
+|----------|-------|------------|----------|
+| `multi-file-api-endpoint.md` | Cross-file planning, TDD on integration | Medium | 5.0 |
+| `production-bug-investigation.md` | Investigation skills, regression TDD | Hard | 4.5 |
+| `technical-debt-cleanup.md` | Blast radius analysis, safe deletion | Medium | 5.0 |
 
-**Solution:**
-- Structured JSON logging for each evaluation step
-- Trace ID linking simulation -> evaluation -> scoring
-- Dashboard showing score trends over time
-- Alert on anomalies beyond CUSUM (e.g., specific criteria regressing)
+**Files:**
+- `tests/e2e/scenarios/multi-file-api-endpoint.md` — NEW
+- `tests/e2e/scenarios/production-bug-investigation.md` — NEW
+- `tests/e2e/scenarios/technical-debt-cleanup.md` — NEW
+- `tests/e2e/baselines.json` — 3 entries added (v1.2.0)
+
+**Total scenarios: 13** (10 original + 3 real-world)
+
+### Item 20: Observability & Score Trends — DONE
+
+**Problem:** `score-history.jsonl` existed but was empty. No way to see how scores evolve over time. No analytics.
+
+**What was built:**
+
+| Component | File | Description |
+|-----------|------|-------------|
+| Score history recording | `.github/workflows/ci.yml` | After each E2E evaluation, appends result to `score-history.jsonl` |
+| Analytics script | `tests/e2e/score-analytics.sh` | Reads history, outputs overall avg, trends, per-criterion, scenario ranking |
+| Trends report | `SCORE_TRENDS.md` | Auto-generated markdown with ASCII spark chart, tables, weakest areas |
+| Historical context | `.github/workflows/ci.yml` | Collapsible section in PR comments showing scenario avg and weakest criterion |
+| Analytics tests | `tests/test-score-analytics.sh` | 12 tests covering empty/single/multi/trend/malformed/report modes |
+
+**Score history format (per line):**
+```json
+{"timestamp":"...","scenario":"...","score":7.0,"max_score":10,"criteria":{...},"sdp":{...}}
+```
+
+**Analytics output includes:**
+- Overall average score + trend (last 5 vs older)
+- Per-criterion averages (identifies weakest)
+- Scenario difficulty ranking
+- Score distribution histogram
+- ASCII spark chart (last 20 scores)
+
+**PR comment enhancement:** Collapsible "Historical Context" section showing:
+- "This scenario avg: X.X (N runs)"
+- "Weakest criterion: clean_code (45%)"
 
 ### Item 21: Mutation Testing
 
@@ -877,3 +903,24 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 - Verify score drops - proving which sections are load-bearing
 - Sections where score doesn't drop = dead weight (candidates for removal)
 - Sections where score drops significantly = critical (protect from regressions)
+
+---
+
+## Readiness Assessment for Item 23 (Phased Workflow Re-enablement)
+
+_Updated: 2026-02-11_
+
+| Gate | Item | Status |
+|------|------|--------|
+| Eval framework improvements | 15 | DONE |
+| Pairwise tiebreaker | 16 | DONE |
+| Multi-model evaluation | 17 | SKIPPED — Opus-only by design |
+| Deterministic pre-checks | 18 | DONE |
+| Real-world scenarios | 19 | DONE |
+| Observability & score trends | 20 | DONE |
+| Mutation testing | 21 | DEFERRED — deep research required |
+| Color-coded PR comments | 22 | DONE |
+
+**Summary:** 6/8 items DONE, 1 SKIPPED (by design), 1 DEFERRED (research needed).
+
+**Item 23 decision:** The only remaining blocker is mutation testing research (Item 21), which was deferred as it requires deep investigation into SDLC document mutation methodology. All other prerequisites for phased workflow re-enablement are met. User decides when to tackle Item 21 and whether it blocks re-enablement.

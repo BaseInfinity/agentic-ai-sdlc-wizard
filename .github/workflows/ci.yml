@@ -76,6 +76,9 @@ jobs:
       - name: Run simulation prompt tests
         run: ./tests/e2e/test-simulation-prompt.sh
 
+      - name: Run score analytics tests
+        run: ./tests/test-score-analytics.sh
+
       - name: Validate E2E fixtures and scenarios
         run: ./tests/e2e/run-simulation.sh
 
@@ -412,6 +415,9 @@ jobs:
           echo "Candidate score: $SCORE"
           echo "candidate_score=$SCORE" >> $GITHUB_OUTPUT
 
+          # Save evaluation result for score history recording
+          echo "$RESULT" > "${RUNNER_TEMP:-/tmp}/eval-result-candidate.json"
+
           # Extract SDP scores from result
           SDP_SCORE=$(echo "$RESULT" | jq -r '.sdp.adjusted // .score // 0')
           SDP_EXTERNAL=$(echo "$RESULT" | jq -r '.sdp.external_benchmark // 75')
@@ -482,6 +488,87 @@ jobs:
           echo "total_tokens=$TOTAL_TOKENS" >> $GITHUB_OUTPUT
           echo "est_cost=$COST_DISPLAY" >> $GITHUB_OUTPUT
           echo "tokens_per_point=$TOKENS_PER_POINT" >> $GITHUB_OUTPUT
+
+      - name: Record score to history
+        continue-on-error: true
+        working-directory: pr-branch
+        run: |
+          SCORE="${{ steps.eval-candidate.outputs.candidate_score }}"
+          SCENARIO="${{ steps.select-scenario.outputs.scenario_name }}"
+
+          # Build criteria JSON from evaluation result
+          RESULT_FILE="${RUNNER_TEMP:-/tmp}/eval-result-candidate.json"
+          if [ -f "$RESULT_FILE" ]; then
+            CRIT=$(jq -c '.criteria // {}' "$RESULT_FILE" 2>/dev/null || echo "{}")
+          else
+            CRIT="{}"
+          fi
+
+          # Use numeric types for SDP fields (--argjson, avoid name "result")
+          SDP_ADJ="${{ steps.eval-candidate.outputs.sdp_score }}"
+          SDP_EXT="${{ steps.eval-candidate.outputs.sdp_external }}"
+          SDP_ROB="${{ steps.eval-candidate.outputs.sdp_robustness }}"
+          SDP_JSON=$(jq -n \
+            --argjson adj "${SDP_ADJ:-0}" \
+            --argjson ext "${SDP_EXT:-75}" \
+            --argjson rob "${SDP_ROB:-1.0}" \
+            '{adjusted: $adj, external_benchmark: $ext, robustness: $rob}')
+
+          # Append to score-history.jsonl
+          jq -nc \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg scenario "$SCENARIO" \
+            --argjson score "${SCORE:-0}" \
+            --argjson max_score 10 \
+            --argjson criteria "$CRIT" \
+            --argjson sdp "$SDP_JSON" \
+            '{timestamp: $ts, scenario: $scenario, score: $score, max_score: $max_score, criteria: $criteria, sdp: $sdp}' \
+            >> tests/e2e/score-history.jsonl
+
+          echo "Score recorded: $SCORE for $SCENARIO"
+
+      - name: Generate score trends report
+        continue-on-error: true
+        working-directory: pr-branch
+        run: |
+          if [ -x "tests/e2e/score-analytics.sh" ]; then
+            ./tests/e2e/score-analytics.sh --report > SCORE_TRENDS.md 2>/dev/null || true
+            echo "Score trends report generated"
+          fi
+
+      - name: Compute historical context for comment
+        id: historical
+        continue-on-error: true
+        working-directory: pr-branch
+        run: |
+          SCENARIO="${{ steps.select-scenario.outputs.scenario_name }}"
+          HISTORY="tests/e2e/score-history.jsonl"
+
+          if [ ! -s "$HISTORY" ]; then
+            echo "context=No historical data yet" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Scenario average and count
+          SCEN_DATA=$(jq -r "select(.scenario == \"$SCENARIO\") | .score" "$HISTORY" 2>/dev/null)
+          if [ -z "$SCEN_DATA" ]; then
+            echo "context=First run for this scenario" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          SCEN_AVG=$(echo "$SCEN_DATA" | awk '{s+=$1; n++} END {if(n>0) printf "%.1f", s/n; else print "N/A"}')
+          SCEN_COUNT=$(echo "$SCEN_DATA" | wc -l | tr -d ' ')
+
+          # Find weakest criterion across all history
+          WEAKEST=$(jq -r '.criteria | to_entries[] | "\(.key) \(.value.points) \(.value.max)"' "$HISTORY" 2>/dev/null | \
+            awk '{sum[$1]+=$2; max[$1]+=$3} END {worst=""; worst_pct=100; for(k in sum){if(max[k]>0){pct=sum[k]*100/max[k]; if(pct<worst_pct){worst=k; worst_pct=pct}}} printf "%s (%.0f%%)", worst, worst_pct}' 2>/dev/null || echo "N/A")
+
+          {
+            echo "context<<EOF"
+            echo "This scenario avg: $SCEN_AVG ($SCEN_COUNT runs)"
+            echo "Weakest criterion: $WEAKEST"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Compare scores
         id: compare
@@ -569,6 +656,7 @@ jobs:
           TOKENS_PER_POINT="${{ steps.eval-candidate.outputs.tokens_per_point }}"
           CRITERIA="${{ steps.eval-candidate.outputs.criteria }}"
           SCENARIO_NAME="${{ steps.select-scenario.outputs.scenario_name }}"
+          HISTORICAL_CONTEXT="${{ steps.historical.outputs.context }}"
 
           # N/A-aware metric formatting (prevents "N/As" display bug)
           format_metric() {
@@ -635,6 +723,15 @@ jobs:
               echo "_Native Task metrics (duration, tool uses) + token tracking. Not scored yet._"
               echo "</details>"
               echo ""
+              if [ -n "$HISTORICAL_CONTEXT" ] && [ "$HISTORICAL_CONTEXT" != "No historical data yet" ]; then
+                echo "<details>"
+                echo "<summary>Historical Context</summary>"
+                echo ""
+                echo "$HISTORICAL_CONTEXT"
+                echo ""
+                echo "</details>"
+                echo ""
+              fi
               echo "_Add \`merge-ready\` label for full evaluation before merge._"
               echo ""
               echo "---"
@@ -717,6 +814,15 @@ jobs:
               echo "_Native Task metrics (duration, tool uses) + token tracking. Not scored yet._"
               echo "</details>"
               echo ""
+              if [ -n "$HISTORICAL_CONTEXT" ] && [ "$HISTORICAL_CONTEXT" != "No historical data yet" ]; then
+                echo "<details>"
+                echo "<summary>Historical Context</summary>"
+                echo ""
+                echo "$HISTORICAL_CONTEXT"
+                echo ""
+                echo "</details>"
+                echo ""
+              fi
               echo "_Add \`merge-ready\` label for full 5x evaluation before merge._"
               echo ""
               echo "---"
@@ -1091,6 +1197,9 @@ jobs:
           echo "candidate_ci_lower=$CI_LOWER" >> $GITHUB_OUTPUT
           echo "candidate_ci_upper=$CI_UPPER" >> $GITHUB_OUTPUT
 
+          # Save evaluation result for score history recording
+          echo "$LAST_RESULT" > "${RUNNER_TEMP:-/tmp}/eval-result-candidate.json"
+
           # Extract criteria breakdown with color-coded emoji indicators
           CRITERIA=$(echo "$LAST_RESULT" | jq -r '
             .criteria | to_entries | map(
@@ -1118,6 +1227,82 @@ jobs:
           echo "sdp_external_change=$SDP_EXTERNAL_CHANGE" >> $GITHUB_OUTPUT
           echo "sdp_robustness=$SDP_ROBUSTNESS" >> $GITHUB_OUTPUT
           echo "sdp_interpretation=$SDP_INTERPRETATION" >> $GITHUB_OUTPUT
+
+      - name: Record score to history (Tier 2)
+        continue-on-error: true
+        working-directory: pr-branch
+        run: |
+          SCORE="${{ steps.eval-candidate.outputs.candidate_score }}"
+          SCENARIO="${{ steps.select-scenario.outputs.scenario_name }}"
+
+          RESULT_FILE="${RUNNER_TEMP:-/tmp}/eval-result-candidate.json"
+          if [ -f "$RESULT_FILE" ]; then
+            CRIT=$(jq -c '.criteria // {}' "$RESULT_FILE" 2>/dev/null || echo "{}")
+          else
+            CRIT="{}"
+          fi
+
+          SDP_ADJ="${{ steps.eval-candidate.outputs.sdp_score }}"
+          SDP_EXT="${{ steps.eval-candidate.outputs.sdp_external }}"
+          SDP_ROB="${{ steps.eval-candidate.outputs.sdp_robustness }}"
+          SDP_JSON=$(jq -n \
+            --argjson adj "${SDP_ADJ:-0}" \
+            --argjson ext "${SDP_EXT:-75}" \
+            --argjson rob "${SDP_ROB:-1.0}" \
+            '{adjusted: $adj, external_benchmark: $ext, robustness: $rob}')
+
+          jq -nc \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg scenario "$SCENARIO" \
+            --argjson score "${SCORE:-0}" \
+            --argjson max_score 10 \
+            --argjson criteria "$CRIT" \
+            --argjson sdp "$SDP_JSON" \
+            '{timestamp: $ts, scenario: $scenario, score: $score, max_score: $max_score, criteria: $criteria, sdp: $sdp}' \
+            >> tests/e2e/score-history.jsonl
+
+          echo "Score recorded: $SCORE for $SCENARIO (Tier 2)"
+
+      - name: Generate score trends report (Tier 2)
+        continue-on-error: true
+        working-directory: pr-branch
+        run: |
+          if [ -x "tests/e2e/score-analytics.sh" ]; then
+            ./tests/e2e/score-analytics.sh --report > SCORE_TRENDS.md 2>/dev/null || true
+            echo "Score trends report generated"
+          fi
+
+      - name: Compute historical context (Tier 2)
+        id: historical
+        continue-on-error: true
+        working-directory: pr-branch
+        run: |
+          SCENARIO="${{ steps.select-scenario.outputs.scenario_name }}"
+          HISTORY="tests/e2e/score-history.jsonl"
+
+          if [ ! -s "$HISTORY" ]; then
+            echo "context=No historical data yet" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          SCEN_DATA=$(jq -r "select(.scenario == \"$SCENARIO\") | .score" "$HISTORY" 2>/dev/null)
+          if [ -z "$SCEN_DATA" ]; then
+            echo "context=First run for this scenario" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          SCEN_AVG=$(echo "$SCEN_DATA" | awk '{s+=$1; n++} END {if(n>0) printf "%.1f", s/n; else print "N/A"}')
+          SCEN_COUNT=$(echo "$SCEN_DATA" | wc -l | tr -d ' ')
+
+          WEAKEST=$(jq -r '.criteria | to_entries[] | "\(.key) \(.value.points) \(.value.max)"' "$HISTORY" 2>/dev/null | \
+            awk '{sum[$1]+=$2; max[$1]+=$3} END {worst=""; worst_pct=100; for(k in sum){if(max[k]>0){pct=sum[k]*100/max[k]; if(pct<worst_pct){worst=k; worst_pct=pct}}} printf "%s (%.0f%%)", worst, worst_pct}' 2>/dev/null || echo "N/A")
+
+          {
+            echo "context<<EOF"
+            echo "This scenario avg: $SCEN_AVG ($SCEN_COUNT runs)"
+            echo "Weakest criterion: $WEAKEST"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Compare scores (full evaluation with CI)
         id: compare
@@ -1232,6 +1417,7 @@ jobs:
           SDP_ROBUSTNESS="${{ steps.eval-candidate.outputs.sdp_robustness }}"
           SDP_INTERPRETATION="${{ steps.eval-candidate.outputs.sdp_interpretation }}"
           SCENARIO_NAME="${{ steps.select-scenario.outputs.scenario_name }}"
+          HISTORICAL_CONTEXT="${{ steps.historical.outputs.context }}"
 
           if [ "$IS_BOOTSTRAPPING" = "true" ]; then
             {
@@ -1262,6 +1448,15 @@ jobs:
               echo ""
               echo "This PR introduces the wizard for the first time. After merge, future PRs will have a baseline to compare against."
               echo ""
+              if [ -n "$HISTORICAL_CONTEXT" ] && [ "$HISTORICAL_CONTEXT" != "No historical data yet" ]; then
+                echo "<details>"
+                echo "<summary>Historical Context</summary>"
+                echo ""
+                echo "$HISTORICAL_CONTEXT"
+                echo ""
+                echo "</details>"
+                echo ""
+              fi
               echo "---"
               echo "*Bootstrapping mode: Candidate-only evaluation with 5x runs + 95% CI + SDP scoring.*"
               echo "EOF"
@@ -1325,6 +1520,15 @@ jobs:
               echo "|---|-----------|-------|----------|"
               echo "$CRITERIA"
               echo ""
+              if [ -n "$HISTORICAL_CONTEXT" ] && [ "$HISTORICAL_CONTEXT" != "No historical data yet" ]; then
+                echo "<details>"
+                echo "<summary>Historical Context</summary>"
+                echo ""
+                echo "$HISTORICAL_CONTEXT"
+                echo ""
+                echo "</details>"
+                echo ""
+              fi
               echo "---"
               echo "*Tier 2: 5x runs with t-distribution 95% CI. SDP adjusts for model conditions. Robustness < 1.0 = SDLC resilient.*"
               echo "EOF"

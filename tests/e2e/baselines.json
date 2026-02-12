@@ -71,9 +71,30 @@
     "max_score": 10,
     "description": "Tests allowedTools compliance - TDD criteria get partial credit"
   },
+  "multi-file-api-endpoint": {
+    "baseline": 5.0,
+    "min_acceptable": 4.0,
+    "target": 7.5,
+    "max_score": 10,
+    "description": "Real-world multi-file REST endpoint — tests cross-file planning and TDD"
+  },
+  "production-bug-investigation": {
+    "baseline": 4.5,
+    "min_acceptable": 3.5,
+    "target": 7.0,
+    "max_score": 10,
+    "description": "Real-world production bug — tests investigation skills and regression TDD"
+  },
+  "technical-debt-cleanup": {
+    "baseline": 5.0,
+    "min_acceptable": 4.0,
+    "target": 7.5,
+    "max_score": 10,
+    "description": "Real-world tech debt removal — tests blast radius analysis and safe deletion"
+  },
   "_meta": {
-    "version": "1.1.0",
-    "last_updated": "2026-02-02",
+    "version": "1.2.0",
+    "last_updated": "2026-02-11",
     "notes": [
       "Baselines are conservative (D/C level) - honest about current state",
       "Goal is to track improvement over time, not enforce unrealistic standards",
