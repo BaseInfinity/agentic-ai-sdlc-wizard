@@ -36,7 +36,7 @@ TodoWrite([
   // REVIEW PHASE
   { content: "DRY check: Is logic duplicated elsewhere?", status: "pending", activeForm: "Checking for duplication" },
   { content: "Visual consistency check (if UI change)", status: "pending", activeForm: "Checking visual consistency" },
-  { content: "Self-review: code-reviewer subagent", status: "pending", activeForm: "Running code review" },
+  { content: "Self-review: run /code-review", status: "pending", activeForm: "Running code review" },
   { content: "Security review (if warranted)", status: "pending", activeForm: "Checking security implications" },
   // CI FEEDBACK LOOP (if CI monitoring enabled in setup - skip if no CI)
   { content: "Commit and push to remote", status: "pending", activeForm: "Pushing to remote" },
@@ -101,10 +101,10 @@ PLANNING -> DOCS -> TDD RED -> TDD GREEN -> Tests Pass -> Self-Review
 3. Then -> docs update -> TDD -> review (proper SDLC loop)
 
 **How to self-review:**
-1. Use Task tool with `subagent_type="general-purpose"` as code-reviewer
-2. Provide context: the diff, ARCHITECTURE.md, relevant feature docs
-3. Ask it to review for quality, DRY, consistency, and domain-specific patterns
-4. If low confidence on a pattern, search for 2026 best practices and weigh against your repo
+1. Run `/code-review` to review your changes
+2. It launches parallel agents (CLAUDE.md compliance, bug detection, logic & security)
+3. Issues at confidence >= 80 are real findings — go back to PLANNING to fix
+4. Issues below 80 are likely false positives — skip unless obviously valid
 5. Address issues by going back through the proper SDLC loop
 
 ## Test Review (Harder Than Implementation)

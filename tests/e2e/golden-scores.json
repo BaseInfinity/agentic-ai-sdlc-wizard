@@ -1,0 +1,50 @@
+{
+    "high-compliance": {
+        "scenario": "add-feature",
+        "deterministic": {
+            "task_tracking": 1,
+            "confidence": 1,
+            "tdd_red": 2
+        },
+        "expected_llm": {
+            "plan_mode": {"min": 1.5, "max": 2},
+            "tdd_green": {"min": 1.5, "max": 2},
+            "self_review": {"min": 0.5, "max": 1},
+            "clean_code": {"min": 0.5, "max": 1}
+        },
+        "expected_total": {"min": 8, "max": 10},
+        "description": "Full SDLC compliance: planning, TDD red/green, self-review, clean code"
+    },
+    "medium-compliance": {
+        "scenario": "fix-bug",
+        "deterministic": {
+            "task_tracking": 1,
+            "confidence": 1,
+            "tdd_red": 0
+        },
+        "expected_llm": {
+            "plan_mode": {"min": 0, "max": 1},
+            "tdd_green": {"min": 1, "max": 2},
+            "self_review": {"min": 0, "max": 0.5},
+            "clean_code": {"min": 0.5, "max": 1}
+        },
+        "expected_total": {"min": 4, "max": 7},
+        "description": "Partial compliance: task tracking + confidence, but no TDD RED, minimal planning, brief review"
+    },
+    "low-compliance": {
+        "scenario": "fix-bug",
+        "deterministic": {
+            "task_tracking": 0,
+            "confidence": 0,
+            "tdd_red": 0
+        },
+        "expected_llm": {
+            "plan_mode": {"min": 0, "max": 0.5},
+            "tdd_green": {"min": 0, "max": 0.5},
+            "self_review": {"min": 0, "max": 0.5},
+            "clean_code": {"min": 0, "max": 1}
+        },
+        "expected_total": {"min": 0, "max": 3},
+        "description": "Poor compliance: no planning, no TDD, no review, just raw edits"
+    }
+}

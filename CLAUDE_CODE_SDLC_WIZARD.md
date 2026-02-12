@@ -112,7 +112,7 @@ These adapt to your stack without affecting core behavior:
 | **Source directory patterns** | `/src/`, `/app/`, `/lib/`, etc. |
 | **Test directory patterns** | `/tests/`, `/__tests__/`, `/spec/` |
 | **Mocking rules** | What to mock in YOUR stack (external APIs, etc.) |
-| **Code review agent** | Enable/disable self-review subagent |
+| **Code review** | `/code-review` for local, CI review for team visibility |
 | **Security review triggers** | What's security-sensitive in your domain |
 
 ---
@@ -598,7 +598,7 @@ Here's what a typical task looks like with this system:
 │                                                                         │
 │ Claude:                                                                 │
 │ 1. DRY check - no duplicated logic                                     │
-│ 2. Self-review with code-reviewer subagent                             │
+│ 2. Self-review with /code-review                                       │
 │ 3. Security review (auth change = yes)                                 │
 │    - ✅ Token properly hashed                                          │
 │    - ✅ Rate limiting on endpoint                                       │
@@ -720,13 +720,21 @@ Create `.github/CODEOWNERS`:
 
 | Benefit | Solo Dev | Team |
 |---------|----------|------|
-| AI code review subagent | ✓ | ✓ |
+| `/code-review` self-review | ✓ | ✓ |
 | CI must pass before merge | ✓ | ✓ |
 | Clean commit history | ✓ | ✓ |
 | Easy rollback (revert PR) | ✓ | ✓ |
 | Human review required | Optional | ✓ |
 
-**Not required, but good practice.** The SDLC workflow includes a self-review step where Claude uses a code-reviewer subagent. When you use PRs, this review happens in context with the full diff visible. You always have final say - the subagent just catches things you might miss.
+**Not required, but good practice.** The SDLC workflow includes a self-review step using `/code-review` (native Claude Code plugin). It launches parallel review agents for CLAUDE.md compliance, bug detection, and logic/security checks. You always have final say — the review just catches things you might miss.
+
+**Code review workflows:**
+
+| Workflow | When to use | How |
+|----------|------------|-----|
+| **Solo** | Working alone | `/code-review` locally before push |
+| **Team** | Multiple contributors | `/code-review` locally + CI PR review for visibility |
+| **Open Source** | External contributors | CI PR review on contributor PRs |
 
 **Solo devs:** You can approve your own PRs. The value is the structured workflow (CI gates, code review, clean history), not the approval ceremony.
 
@@ -845,21 +853,24 @@ Feature branches still recommended for solo devs (keeps main clean, easy rollbac
 - If no CI yet: skip, add later when you set up CI
 
 **CI review feedback question (only if CI monitoring is enabled):**
-> "How should Claude handle CI code review suggestions?"
+> "What level of automated review response do you want?"
 
-| Option | Behavior |
-|--------|----------|
-| **Auto-implement valid ones** (recommended) | Claude reads review, implements suggestions that are real improvements (bug fixes, missing error handling, test coverage, DRY), skips style opinions. Iterates until reviewer is satisfied. |
-| **Ask me first** | Claude reads review, presents suggestions to you, you decide which to implement. More control, more interruptions. |
-| **Skip review feedback** | Claude only fixes CI failures (broken tests, lint errors), ignores review suggestions. Fastest, but you handle review feedback manually. |
+| Level | Name | What autofix handles | Est. API cost |
+|-------|------|---------------------|---------------|
+| **L1** | `ci-only` | CI failures only (broken tests, lint) | ~$0.50/fix |
+| **L2** | `criticals` (default) | + Critical review findings (must-fix) | ~$1/fix |
+| **L3** | `all-findings` | + Every suggestion the reviewer flags | ~$2/fix |
+
+> **Cost note:** Higher levels mean more autofix iterations (each ~$0.50).
+> L3 typically adds 1-2 extra iterations per PR but produces cleaner code.
+> You can change this anytime by editing `AUTOFIX_LEVEL` in your ci-autofix workflow.
 
 **What this does:**
 1. After CI passes, Claude reads the automated code review comments
-2. Claude evaluates each suggestion: real improvement vs. style opinion
-3. Based on your preference: implements, asks, or skips
-4. Iterates (push -> re-review) until no substantive suggestions remain
-5. Only brings you in when everything is clean (CI green + reviewer satisfied)
-6. Max 3 iterations to prevent infinite loops
+2. Based on your level: fixes criticals only, or all findings
+3. Iterates (push -> re-review) until no findings remain at your chosen level
+4. Only brings you in when everything is clean
+5. Max 3 iterations to prevent infinite loops
 
 **Check for new plugins periodically:**
 ```
@@ -1407,7 +1418,7 @@ Workflow phases:
 1. Plan Mode (research) → Present approach + confidence
 2. Transition (update docs) → Request /compact
 3. Implementation (TDD after compact)
-4. SELF-REVIEW (code-reviewer subagent) → BEFORE presenting to user
+4. SELF-REVIEW (/code-review) → BEFORE presenting to user
 
 Quick refs: SDLC.md | TESTING.md | *_PLAN.md for feature
 EOF
@@ -1501,7 +1512,7 @@ TodoWrite([
   { content: "Production build check", status: "pending", activeForm: "Verifying production build" },
   // REVIEW PHASE
   { content: "DRY check: Is logic duplicated elsewhere?", status: "pending", activeForm: "Checking for duplication" },
-  { content: "Self-review: code-reviewer subagent", status: "pending", activeForm: "Running code review" },
+  { content: "Self-review: run /code-review", status: "pending", activeForm: "Running code review" },
   { content: "Security review (if warranted)", status: "pending", activeForm: "Checking security implications" },
   // CI FEEDBACK LOOP (After local tests pass)
   { content: "Commit and push to remote", status: "pending", activeForm: "Pushing to remote" },
@@ -1566,10 +1577,10 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 3. Then → docs update → TDD → review (proper SDLC loop)
 
 **How to self-review:**
-1. Use Task tool with `subagent_type="general-purpose"` as code-reviewer
-2. Provide context: the diff, ARCHITECTURE.md, relevant feature docs
-3. Ask it to review for quality, DRY, consistency, and domain-specific patterns
-4. If low confidence on a pattern, search for 2026 best practices and weigh against your repo
+1. Run `/code-review` to review your changes
+2. It launches parallel agents (CLAUDE.md compliance, bug detection, logic & security)
+3. Issues at confidence >= 80 are real findings — go back to PLANNING to fix
+4. Issues below 80 are likely false positives — skip unless obviously valid
 5. Address issues by going back through the proper SDLC loop
 
 ## Test Review (Harder Than Implementation)
@@ -2530,7 +2541,7 @@ This is optional - skip if you prefer fresh reviews only.
 
 ### CI Auto-Fix Loop (Optional)
 
-Automatically fix CI failures and PR review findings. Claude reads the error context, fixes the code, commits, and re-triggers CI. Loops until CI passes AND review approves, or max retries hit.
+Automatically fix CI failures and PR review findings. Claude reads the error context, fixes the code, commits, and re-triggers CI. Loops until CI passes AND review has no findings at your chosen level, or max retries hit.
 
 **The Loop:**
 ```
@@ -2539,14 +2550,15 @@ Push to PR
     v
 CI runs ──► FAIL ──► ci-autofix: Claude reads logs, fixes, commits [autofix 1/3] ──► re-trigger
     |
-    └── PASS ──► PR Review ──► has criticals? ──► ci-autofix: Claude reads review, fixes ──► re-trigger
+    └── PASS ──► PR Review ──► has findings at your level? ──► ci-autofix: fixes all ──► re-trigger
                       |
-                      └── APPROVE, no criticals ──► DONE
+                      └── APPROVE, no findings ──► DONE
 ```
 
 **Safety measures:**
 - Never runs on main branch
 - Max retries (default 3, configurable via `MAX_AUTOFIX_RETRIES`)
+- `AUTOFIX_LEVEL` controls what findings to act on (`ci-only`, `criticals`, `all-findings`)
 - Restricted Claude tools (no git, no npm)
 - Self-modification ban (can't edit ci-autofix.yml)
 - `[autofix N/M]` commit tags for audit trail
@@ -2569,6 +2581,7 @@ permissions:
 
 env:
   MAX_AUTOFIX_RETRIES: 3
+  AUTOFIX_LEVEL: criticals  # ci-only | criticals | all-findings
 
 jobs:
   autofix:
@@ -2583,7 +2596,8 @@ jobs:
     steps:
       # Count previous [autofix] commits to enforce max retries
       # Download CI failure logs or fetch review comment
-      # Run Claude to fix issues with restricted tools
+      # Check findings at your AUTOFIX_LEVEL (criticals + suggestions)
+      # Run Claude to fix ALL findings with restricted tools
       # Commit [autofix N/M], push, re-trigger CI
       # Post sticky PR comment with status
 ```
@@ -2912,7 +2926,7 @@ When Anthropic provides official plugins that overlap with this SDLC:
 | Official Plugin | Replaces Our... | Scope |
 |-----------------|-----------------|-------|
 | `claude-md-management` | Manual CLAUDE.md audits | CLAUDE.md only (not feature docs, TESTING.md, hooks) |
-| `code-review` | Self-review subagent (if using PRs) | PR code review |
+| `code-review` | Custom self-review subagent | Local code review (parallel agents, confidence scoring) |
 | `commit-commands` | Git commit guidance | Commits only |
 | `claude-code-setup` | Manual automation discovery | Recommendations only |
 

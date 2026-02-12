@@ -1,0 +1,90 @@
+I'll start by creating a task list to track my work.
+
+TaskCreate: Add validation middleware to user endpoint
+Description: Implement input validation for the POST /users endpoint
+
+Confidence: HIGH - This is a well-defined task with clear requirements.
+
+Let me enter plan mode to think through the approach first.
+
+## Plan
+
+1. Write failing tests for validation rules (TDD RED)
+2. Implement validation middleware
+3. Run tests to verify they pass (TDD GREEN)
+4. Self-review the changes
+
+### Step 1: Write failing tests
+
+Write file: tests/user-validation.test.js
+
+```javascript
+describe('User Validation', () => {
+  test('rejects missing email', async () => {
+    const res = await request(app).post('/users').send({ name: 'Test' });
+    expect(res.status).toBe(400);
+  });
+
+  test('rejects invalid email format', async () => {
+    const res = await request(app).post('/users').send({ name: 'Test', email: 'not-email' });
+    expect(res.status).toBe(400);
+  });
+
+  test('accepts valid input', async () => {
+    const res = await request(app).post('/users').send({ name: 'Test', email: 'test@example.com' });
+    expect(res.status).toBe(201);
+  });
+});
+```
+
+Running tests to confirm they fail:
+```
+FAIL tests/user-validation.test.js
+  ✕ rejects missing email (expected 400, got 201)
+  ✕ rejects invalid email format (expected 400, got 201)
+  ✓ accepts valid input
+Tests: 2 failed, 1 passed, 3 total
+```
+
+Good, tests fail as expected. Now implementing.
+
+### Step 2: Implement validation
+
+Write file: src/middleware/validate-user.js
+
+```javascript
+function validateUser(req, res, next) {
+  const { name, email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Invalid email format' });
+  }
+  next();
+}
+module.exports = { validateUser };
+```
+
+Edit file: src/routes/users.js
+Added `validateUser` middleware to POST route.
+
+### Step 3: Run tests (TDD GREEN)
+
+```
+PASS tests/user-validation.test.js
+  ✓ rejects missing email (5ms)
+  ✓ rejects invalid email format (3ms)
+  ✓ accepts valid input (4ms)
+Tests: 3 passed, 3 total
+```
+
+All tests pass!
+
+### Step 4: Self-review
+
+Let me review the changes before finishing:
+- Validation middleware is clean and focused
+- Tests cover the key cases (missing, invalid, valid)
+- No dead code or unnecessary complexity
+- Error messages are clear and actionable
+
+Everything looks good. The implementation follows SDLC principles with TDD and proper planning.

@@ -11,7 +11,7 @@
 #   source "$(dirname "$0")/lib/eval-validation.sh"
 
 # Prompt version — increment when the eval prompt changes materially
-EVAL_PROMPT_VERSION="v2"
+EVAL_PROMPT_VERSION="v3"
 
 # Validate that eval result JSON has required structure
 #

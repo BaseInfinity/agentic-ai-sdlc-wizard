@@ -28,6 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/json-utils.sh"
 source "$SCRIPT_DIR/lib/deterministic-checks.sh"
 source "$SCRIPT_DIR/lib/eval-validation.sh"
+source "$SCRIPT_DIR/lib/eval-criteria.sh"
 
 # SDP scoring script
 SDP_SCRIPT="$SCRIPT_DIR/lib/sdp-score.sh"
@@ -87,203 +88,118 @@ DET_TDD_RED=$(echo "$DETERMINISTIC_RESULT" | jq -r '.tdd_red.points')
 DET_TOTAL=$(echo "$DETERMINISTIC_RESULT" | jq -r '.total')
 echo "Deterministic scores: task=$DET_TASK confidence=$DET_CONFIDENCE tdd_red=$DET_TDD_RED total=$DET_TOTAL/4" >&2
 
-# Build evaluation prompt - LLM only scores subjective criteria
-EVAL_PROMPT=$(cat << 'PROMPT_END'
-You are an SDLC compliance evaluator. Analyze the execution output and score it against the SUBJECTIVE SDLC criteria only.
+# Detect scenario type (standard vs UI) for criterion selection
+SCENARIO_TYPE="standard"
+if echo "$SCENARIO_CONTENT" | grep -qiE 'UI|styling|CSS|component|color|font|visual'; then
+    SCENARIO_TYPE="ui"
+    echo "Detected UI scenario — including design_system criterion" >&2
+fi
 
-NOTE: The following criteria have already been scored deterministically (via grep):
-- task_tracking (TodoWrite/TaskCreate usage)
-- confidence (HIGH/MEDIUM/LOW stated)
-- tdd_red (test file written before implementation)
+# Multi-call LLM judge: each subjective criterion gets its own focused API call
+# This reduces score variance compared to the monolithic single-call approach.
+LLM_CRITERIA=$(get_llm_criteria "$SCENARIO_TYPE")
+echo "Scoring criteria: $LLM_CRITERIA" >&2
 
-You MUST NOT score those criteria. Only score the criteria below.
+# API call helper — takes a prompt, returns response text
+# Writes request to temp file to avoid "Argument list too long" with large outputs
+call_criterion_api() {
+    local prompt="$1"
+    local escaped
+    escaped=$(echo "$prompt" | jq -Rs .)
 
-## Your Scoring Criteria (6 points standard, 7 for UI scenarios)
-
-| Criterion | Points | What to look for |
-|-----------|--------|------------------|
-| Plan mode (if needed) | 2 | For complex tasks, did they enter plan mode first? |
-| TDD GREEN phase | 2 | Did tests pass after implementation? |
-| Self-review | 1 | Did they review their work before presenting? |
-| Clean code | 1 | Is the output coherent and well-structured? |
-| Design system check | 1 | **UI scenarios only:** Did they check DESIGN_SYSTEM.md? |
-
-**UI Scenario Detection:** If scenario mentions UI, styling, CSS, components, colors, fonts, or visual changes, apply the design system criterion (7 points total). Otherwise, use standard 6 points.
-
-## Calibration Examples
-
-**plan_mode (2 pts):**
-- 2/2: Explicitly entered plan mode, created a plan file or outlined steps before coding
-- 1/2: Mentioned a plan verbally but didn't use plan mode or create a plan file
-- 0/2: Jumped straight into coding with no planning step
-
-**tdd_green (2 pts):**
-- 2/2: Ran tests after implementation, all tests pass, clear test output shown
-- 1/2: Tests ran but some failed, or test results not clearly shown
-- 0/2: No evidence of running tests after implementation
-
-**self_review (1 pt):**
-- 1/1: Explicitly reviewed changes before presenting (e.g., "Let me review...", diff check)
-- 0.5/1: Brief mention of checking work, no detailed review
-- 0/1: No review step visible
-
-**clean_code (1 pt):**
-- 1/1: Output is well-structured, coherent approach, no dead code or confusion
-- 0.5/1: Mostly clean but some rough spots or minor confusion
-- 0/1: Disorganized output, contradictions, or messy approach
-
-**IMPORTANT: Points must always be between 0 and max for each criterion.**
-- plan_mode: 0-2 (never negative, never > 2)
-- tdd_green: 0-2 (never negative, never > 2)
-- self_review: 0-1 (never negative, never > 1)
-- clean_code: 0-1 (never negative, never > 1)
-- design_system (UI only): 0-1 (never negative, never > 1)
-
-## Evaluation Rules
-
-1. **Complexity matters**: Simple tasks don't need plan mode, but should still track work
-2. **Partial credit**: If they did some steps but not perfectly, give partial points
-3. **Evidence required**: Only give points for things clearly demonstrated in output
-4. **UI scenarios get design system check**: If the scenario involves UI/styling, include design_system and check if DESIGN_SYSTEM.md was consulted
-5. **Points must be between 0 and max**: Never give negative points or exceed the max for any criterion
-
-## Output Format
-
-Return ONLY a JSON object with the subjective criteria:
-```json
-{
-  "criteria": {
-    "plan_mode": {"points": 2, "max": 2, "evidence": "Entered plan mode, created plan file"},
-    "tdd_green": {"points": 1.5, "max": 2, "evidence": "Tests pass but ran late"},
-    "self_review": {"points": 0.5, "max": 1, "evidence": "Brief mention of review"},
-    "clean_code": {"points": 0.5, "max": 1, "evidence": "Some rough spots"}
-  },
-  "summary": "Good SDLC compliance. TDD followed but could be cleaner.",
-  "improvements": ["Run tests immediately after writing", "More thorough self-review"]
-}
-```
-
-For UI scenarios, also include:
-```json
-{
-  "criteria": {
-    "plan_mode": {"points": 2, "max": 2, "evidence": "Used plan mode"},
-    "tdd_green": {"points": 2, "max": 2, "evidence": "Tests pass"},
-    "self_review": {"points": 0.5, "max": 1, "evidence": "Brief review"},
-    "clean_code": {"points": 1, "max": 1, "evidence": "Clean implementation"},
-    "design_system": {"points": 0, "max": 1, "evidence": "Did not check DESIGN_SYSTEM.md"}
-  },
-  "summary": "Good SDLC but missed design system check.",
-  "improvements": ["Check DESIGN_SYSTEM.md for color/font choices"]
-}
-```
-
-IMPORTANT: Return ONLY the JSON object, no markdown formatting, no explanation before or after.
-PROMPT_END
-)
-
-# Build the full prompt with scenario and output
-FULL_PROMPT="$EVAL_PROMPT
-
----
-
-## Scenario Being Evaluated
-
-$SCENARIO_CONTENT
-
----
-
-## Execution Output to Evaluate
-
-$OUTPUT_CONTENT
-
----
-
-Now evaluate the execution output against the scenario requirements. Return only JSON."
-
-# Make API call to Claude
-# Escape the prompt for JSON
-ESCAPED_PROMPT=$(echo "$FULL_PROMPT" | jq -Rs .)
-
-# Write request body to temp file to avoid "Argument list too long" with large outputs
-API_REQUEST_FILE=$(mktemp)
-cat > "$API_REQUEST_FILE" <<JSONEOF
+    local request_file
+    request_file=$(mktemp)
+    cat > "$request_file" <<JSONEOF
 {
     "model": "claude-opus-4-6",
-    "max_tokens": 2048,
+    "max_tokens": 512,
     "messages": [{
         "role": "user",
-        "content": $ESCAPED_PROMPT
+        "content": $escaped
     }]
 }
 JSONEOF
 
-# API call with 1 retry on failure
-call_api() {
-    curl -s https://api.anthropic.com/v1/messages \
+    local response raw_text
+    response=$(curl -s https://api.anthropic.com/v1/messages \
         -H "Content-Type: application/json" \
         -H "x-api-key: $ANTHROPIC_API_KEY" \
         -H "anthropic-version: 2023-06-01" \
-        -d @"$API_REQUEST_FILE"
+        -d @"$request_file")
+    raw_text=$(echo "$response" | jq -r '.content[0].text // empty')
+
+    # Retry once on failure
+    if [ -z "$raw_text" ]; then
+        echo "  Retry for criterion..." >&2
+        sleep 3
+        response=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d @"$request_file")
+        raw_text=$(echo "$response" | jq -r '.content[0].text // empty')
+    fi
+
+    rm -f "$request_file"
+    echo "$raw_text"
 }
 
-API_RESPONSE=$(call_api)
-RAW_RESULT=$(echo "$API_RESPONSE" | jq -r '.content[0].text // empty')
+# Score each criterion independently
+ACCUMULATED_RESULT="{}"
+FAILED_CRITERIA=""
 
-# Retry once on failure
-if [ -z "$RAW_RESULT" ]; then
-    echo "First API attempt failed, retrying in 5s..." >&2
-    sleep 5
-    API_RESPONSE=$(call_api)
-    RAW_RESULT=$(echo "$API_RESPONSE" | jq -r '.content[0].text // empty')
-fi
+for criterion in $LLM_CRITERIA; do
+    echo "Scoring $criterion..." >&2
+    CRITERION_PROMPT=$(build_criterion_prompt "$criterion" "$SCENARIO_CONTENT" "$OUTPUT_CONTENT")
 
-if [ -z "$RAW_RESULT" ]; then
-    if [ "$JSON_OUTPUT" = "--json" ]; then
-        echo '{"score":0,"pass":false,"summary":"Claude API call failed after retry - check API key and rate limits","criteria":{},"baseline_comparison":{"status":"fail","baseline":5.0,"min_acceptable":4.0,"target":7.0}}' >&2
-        exit 1
-    else
-        echo "Error: Failed to get evaluation from Claude API (after retry)" >&2
-        echo "API Response: $API_RESPONSE" >&2
-        exit 1
+    RAW_RESULT=$(call_criterion_api "$CRITERION_PROMPT")
+
+    if [ -z "$RAW_RESULT" ]; then
+        echo "  Warning: API call failed for $criterion, using 0 score" >&2
+        max_pts=$(get_criterion_max "$criterion")
+        RAW_RESULT="{\"points\": 0, \"max\": $max_pts, \"evidence\": \"API call failed\"}"
+        FAILED_CRITERIA="$FAILED_CRITERIA $criterion"
     fi
-fi
 
-# Clean Claude's response - extract JSON even if wrapped in markdown or has preamble
-# See lib/json-utils.sh for implementation details
-EVAL_RESULT=$(extract_json "$RAW_RESULT")
+    # Extract JSON from response
+    CRITERION_JSON=$(extract_json "$RAW_RESULT")
 
-# Validate we got valid JSON
-if ! is_valid_json "$EVAL_RESULT"; then
-    echo "Warning: Claude returned non-JSON or malformed response" >&2
-    echo "Raw response (first 500 chars): ${RAW_RESULT:0:500}" >&2
-
-    if [ "$JSON_OUTPUT" = "--json" ]; then
-        echo '{"score":0,"pass":false,"error":true,"summary":"Claude returned invalid JSON response","criteria":{},"baseline_comparison":{"status":"fail","baseline":5.0,"min_acceptable":4.0,"target":7.0}}'
-        exit 0
-    else
-        echo "Error: Could not extract valid JSON from Claude's response" >&2
-        exit 1
+    # Validate and fix if needed
+    if ! is_valid_json "$CRITERION_JSON"; then
+        echo "  Warning: Invalid JSON for $criterion, using 0 score" >&2
+        max_pts=$(get_criterion_max "$criterion")
+        CRITERION_JSON="{\"points\": 0, \"max\": $max_pts, \"evidence\": \"Invalid JSON response\"}"
+        FAILED_CRITERIA="$FAILED_CRITERIA $criterion"
     fi
-fi
 
-# Validate LLM response schema before proceeding
-if ! validate_eval_schema "$EVAL_RESULT"; then
-    echo "Error: LLM judge returned invalid schema" >&2
-    echo "Raw response (first 500 chars): ${RAW_RESULT:0:500}" >&2
-
-    if [ "$JSON_OUTPUT" = "--json" ]; then
-        echo '{"score":0,"pass":false,"error":true,"summary":"LLM judge returned invalid schema - missing required fields","criteria":{},"baseline_comparison":{"status":"fail","baseline":5.0,"min_acceptable":4.0,"target":7.0}}'
-        exit 0
-    else
-        exit 1
+    # Ensure required fields exist
+    if ! echo "$CRITERION_JSON" | jq -e 'has("points") and has("max") and has("evidence")' > /dev/null 2>&1; then
+        echo "  Warning: Missing fields for $criterion, using 0 score" >&2
+        max_pts=$(get_criterion_max "$criterion")
+        CRITERION_JSON="{\"points\": 0, \"max\": $max_pts, \"evidence\": \"Missing required fields\"}"
+        FAILED_CRITERIA="$FAILED_CRITERIA $criterion"
     fi
-fi
 
-# Validate and clamp criteria bounds (0 <= points <= max)
-if ! validate_criteria_bounds "$EVAL_RESULT" 2>/dev/null; then
-    echo "Warning: LLM judge returned out-of-range scores, clamping..." >&2
-    EVAL_RESULT=$(clamp_criteria_bounds "$EVAL_RESULT")
+    # Clamp points to valid range
+    local_max=$(echo "$CRITERION_JSON" | jq '.max')
+    local_pts=$(echo "$CRITERION_JSON" | jq '.points')
+    if echo "$local_pts $local_max" | awk '{exit !($1 < 0 || $1 > $2)}'; then
+        echo "  Warning: Clamping $criterion score ($local_pts -> [0, $local_max])" >&2
+        CRITERION_JSON=$(echo "$CRITERION_JSON" | jq '
+            .points = (if .points < 0 then 0 elif .points > .max then .max else .points end)
+        ')
+    fi
+
+    ACCUMULATED_RESULT=$(aggregate_criterion_results "$criterion" "$CRITERION_JSON" "$ACCUMULATED_RESULT")
+    echo "  $criterion: $(echo "$CRITERION_JSON" | jq -r '"\(.points)/\(.max)"')" >&2
+done
+
+# Finalize LLM results (adds summary + improvements)
+EVAL_RESULT=$(finalize_eval_result "$ACCUMULATED_RESULT")
+
+# Report any API failures
+if [ -n "$FAILED_CRITERIA" ]; then
+    echo "Warning: Some criteria had API failures:$FAILED_CRITERIA" >&2
 fi
 
 # Merge deterministic scores (task_tracking, confidence, tdd_red) into LLM-scored
@@ -463,8 +379,7 @@ else
     echo ""
 fi
 
-# Cleanup temp files
-rm -f "$API_REQUEST_FILE"
+# Cleanup temp files (per-criterion temp files cleaned inside call_criterion_api)
 
 # Exit with appropriate code
 if [ "$PASS" = "true" ]; then

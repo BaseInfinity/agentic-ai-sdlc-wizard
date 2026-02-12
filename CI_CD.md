@@ -5,9 +5,9 @@
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `ci.yml` | PR, push to main | Validation, tests, E2E evaluation |
-| `daily-update.yml` | Daily 9 AM UTC, manual | Check for Claude Code updates |
-| `weekly-community.yml` | Weekly Sunday 9 AM UTC | Scan community for patterns |
-| `monthly-research.yml` | 1st of month 9 AM UTC | Deep research and trends |
+| `daily-update.yml` | Manual only (schedule paused) | Check for Claude Code updates |
+| `weekly-community.yml` | Manual only (schedule paused) | Scan community for patterns |
+| `monthly-research.yml` | Manual only (schedule paused) | Deep research and trends |
 | `ci-autofix.yml` | CI fail / review findings | Auto-fix loop |
 | `pr-review.yml` | PR opened/ready/labeled | AI code review |
 
@@ -39,6 +39,42 @@
 3. 95% CI using t-distribution (df=4)
 4. Statistical comparison using overlapping CI method
 5. Criteria breakdown in PR comment
+
+### Multi-Call LLM Judge (v3)
+
+The evaluation pipeline uses per-criterion API calls instead of a single monolithic prompt:
+
+| Step | What Happens |
+|------|-------------|
+| 1. Deterministic pre-checks | Grep-based scoring for task_tracking, confidence, tdd_red (free, fast) |
+| 2. Per-criterion LLM calls | Each subjective criterion (plan_mode, tdd_green, self_review, clean_code, design_system) scored independently with focused calibration examples |
+| 3. Aggregation | Individual results merged into standard JSON structure |
+| 4. Validation | Schema check, bounds clamping, deterministic merge |
+
+**Why per-criterion:** Reduces score variance. If the LLM hallucinates one score, it doesn't drag down others. Improves Tier 2 statistical power without more trials.
+
+**Cost:** 4 smaller API calls instead of 1 large one. Net tokens similar.
+
+**Golden output regression:** 3 saved outputs with verified expected score ranges catch prompt drift when the eval prompt changes.
+
+**Per-criterion CUSUM:** Tracks individual criterion drift over time. A decline in `plan_mode` won't be masked by improvement in `clean_code`.
+
+### Pairwise Tiebreaker (v3.1)
+
+When two outputs have close pointwise scores (|scoreA - scoreB| <= 1.0), a pairwise tiebreaker runs:
+
+| Step | What Happens |
+|------|-------------|
+| 1. Threshold check | If score difference > 1.0, skip pairwise — winner is clear |
+| 2. AB ordering | Holistic "which output better follows SDLC?" comparison |
+| 3. BA ordering | Same comparison with outputs swapped (position bias mitigation) |
+| 4. Verdict | Both agree = winner. Disagree = TIE (position bias detected) |
+
+**Why tiebreaker-only:** Pointwise per-criterion scoring (v3) is better for instruction-following tasks like SDLC compliance. Pairwise is only more reliable for close calls where scale drift could mislead.
+
+**Cost:** 2 extra API calls, only when triggered (rare — most score differences exceed 1.0).
+
+**Position bias mitigation:** Full swap is the standard approach — run both orderings, only count consistent wins. This catches the ~40% position bias that LLM judges exhibit.
 
 ### Tier System
 
@@ -117,8 +153,8 @@ PR comments include resource usage (collapsed):
 Both use Tier 1 (quick) + Tier 2 (full statistical) evaluation.
 
 ### Runs On
-- Daily at 9 AM UTC (cron)
-- Manual trigger (workflow_dispatch)
+- Manual trigger only (workflow_dispatch)
+- Schedule paused until roadmap items 15-22 complete (see `plans/AUTO_SELF_UPDATE.md`)
 
 ### Required Secrets
 - `ANTHROPIC_API_KEY`: For Claude analysis
@@ -133,7 +169,8 @@ Both use Tier 1 (quick) + Tier 2 (full statistical) evaluation.
 - E2E tests community-suggested improvements (Tier 2)
 
 ### Runs On
-- Weekly on Sunday at 9 AM UTC
+- Manual trigger only (workflow_dispatch)
+- Schedule paused until roadmap items 15-22 complete
 
 ## Monthly Research Workflow (`monthly-research.yml`)
 
@@ -144,16 +181,26 @@ Both use Tier 1 (quick) + Tier 2 (full statistical) evaluation.
 - E2E tests research-suggested improvements (Tier 2)
 
 ### Runs On
-- 1st of month at 9 AM UTC
+- Manual trigger only (workflow_dispatch)
+- Schedule paused until roadmap items 15-22 complete
 
 ## CI Auto-Fix Workflow (`ci-autofix.yml`)
 
 ### What It Does
 
-Automated fix loop that responds to CI failures and PR review findings:
+Automated fix loop that responds to CI failures and PR review findings.
+
+**Review architecture:**
+```
+Solo:   Code → /code-review → Fix locally → Push → CI tests → Done
+Team:   Code → /code-review → Push → CI tests → CI PR Review → Team discusses
+        (optional: CI autofix addresses findings automatically)
+```
+
+**How it works:**
 
 1. **CI failure mode**: Downloads failure logs, Claude reads them, fixes code, commits, re-triggers CI
-2. **Review findings mode**: Fetches `claude-review` sticky comment, checks for critical findings, Claude fixes them
+2. **Review findings mode**: Fetches `claude-review` sticky comment, checks for findings (criticals + suggestions) based on `AUTOFIX_LEVEL`, Claude fixes them
 
 ### Loop Architecture
 
@@ -165,9 +212,9 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
     |                                                                              |
     |   <──────────────────────────────────────────────────────────────────────────┘
     |
-    └── PASS ──► PR Review ──► APPROVE, no criticals ──► DONE
+    └── PASS ──► PR Review ──► APPROVE, no findings at level ──► DONE
                       |
-                      └── has criticals ──► ci-autofix ──► Claude fixes ──► loop back
+                      └── has findings ──► ci-autofix ──► Claude fixes all ──► loop back
 ```
 
 ### Safety Measures
@@ -176,8 +223,9 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 |---------|---------|
 | `head_branch != 'main'` | Never auto-fix production |
 | `MAX_AUTOFIX_RETRIES: 3` | Prevent infinite loops (configurable) |
+| `AUTOFIX_LEVEL` | Controls what findings to act on (`ci-only`, `criticals` (default), `all-findings`) |
 | Restricted Claude tools | No git, no npm - only read/edit/write/test |
-| `--max-turns 20` | Limit Claude execution |
+| `--max-turns 30` | Limit Claude execution |
 | `[autofix N/M]` commits | Audit trail in git history |
 | Sticky PR comments | User always sees status |
 | Self-modification ban | Prompt forbids editing ci-autofix.yml |

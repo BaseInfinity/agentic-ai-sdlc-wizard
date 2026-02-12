@@ -12,6 +12,7 @@ permissions:
 
 env:
   MAX_AUTOFIX_RETRIES: 3
+  AUTOFIX_LEVEL: criticals
 
 jobs:
   autofix:
@@ -150,15 +151,57 @@ jobs:
             exit 0
           fi
 
-          # Check for APPROVE with no critical findings
-          if echo "$REVIEW_BODY" | grep -q "APPROVE"; then
-            if ! echo "$REVIEW_BODY" | grep -q "Critical (must fix)" || \
-               echo "$REVIEW_BODY" | grep -A 1 "Critical (must fix)" | grep -q "None\|No critical\|N/A"; then
-              echo "Review is APPROVE with no critical findings, nothing to fix"
-              echo "has_findings=false" >> $GITHUB_OUTPUT
-              exit 0
+          # AUTOFIX_LEVEL=ci-only skips all review findings regardless of verdict
+          if [ "$AUTOFIX_LEVEL" = "ci-only" ]; then
+            echo "AUTOFIX_LEVEL=ci-only: skipping all review findings"
+            echo "has_findings=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Parse review for findings
+          HAS_CRITICALS=false
+          HAS_SUGGESTIONS=false
+
+          if echo "$REVIEW_BODY" | grep -q "Critical (must fix)"; then
+            if ! echo "$REVIEW_BODY" | grep -A 1 "Critical (must fix)" | grep -q "None\|No critical\|N/A"; then
+              HAS_CRITICALS=true
             fi
           fi
+
+          if echo "$REVIEW_BODY" | grep -q "Suggestions (nice to have)"; then
+            if ! echo "$REVIEW_BODY" | grep -A 1 "Suggestions (nice to have)" | grep -q "None\|No suggestions\|N/A"; then
+              HAS_SUGGESTIONS=true
+            fi
+          fi
+
+          # Determine what to act on based on AUTOFIX_LEVEL
+          SKIP=false
+          case "$AUTOFIX_LEVEL" in
+            criticals)
+              if [ "$HAS_CRITICALS" = false ]; then
+                SKIP=true
+              fi
+              ;;
+            all-findings)
+              if [ "$HAS_CRITICALS" = false ] && [ "$HAS_SUGGESTIONS" = false ]; then
+                SKIP=true
+              fi
+              ;;
+            *)
+              echo "WARNING: Unknown AUTOFIX_LEVEL='$AUTOFIX_LEVEL' (valid: ci-only, criticals, all-findings), defaulting to criticals"
+              if [ "$HAS_CRITICALS" = false ]; then
+                SKIP=true
+              fi
+              ;;
+          esac
+
+          if [ "$SKIP" = true ]; then
+            echo "No findings to address at level=$AUTOFIX_LEVEL (criticals=$HAS_CRITICALS, suggestions=$HAS_SUGGESTIONS)"
+            echo "has_findings=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Review has findings: criticals=$HAS_CRITICALS, suggestions=$HAS_SUGGESTIONS (level=$AUTOFIX_LEVEL)"
 
           # Has findings that need fixing
           echo "has_findings=true" >> $GITHUB_OUTPUT
@@ -180,24 +223,34 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --max-turns 20
+            --max-turns 30
             --allowedTools "Read,Edit,Write,Bash(./tests/*),Bash(python3 *),Glob,Grep"
+          show_full_output: true
           prompt: |
-            You are fixing issues found by CI or code review. This is autofix attempt ${{ steps.count.outputs.attempt }}/${{ env.MAX_AUTOFIX_RETRIES }}.
+            You are fixing issues found by CI or code review.
+            This is autofix attempt ${{ steps.count.outputs.attempt }}/${{ env.MAX_AUTOFIX_RETRIES }}.
+            Trigger mode: ${{ steps.source.outputs.mode }}
 
             IMPORTANT RULES:
-            - Do NOT modify .github/workflows/ci-autofix.yml (self-modification ban)
+            - Do NOT modify .github/workflows/ci-autofix.yml
+            - Do NOT use EnterPlanMode or ExitPlanMode
+            - Use the Read tool to read files (NOT Bash with cat/find/ls)
+            - You do NOT have access to gh or git CLI
             - Focus only on fixing the reported issues
-            - Run relevant tests locally before declaring done
             - Keep changes minimal and focused
 
-            ${{ steps.source.outputs.mode == 'ci-failure' && '## CI Failure Context\n\nThe CI workflow failed. Read the failure logs from /tmp/ci-failure-context.txt to understand what went wrong.\n\nRead the logs carefully, identify the root cause, and fix the code.' || '' }}
+            ## What to fix
 
-            ${{ steps.source.outputs.mode == 'review-findings' && '## Code Review Findings\n\nThe PR code review found issues that need fixing. Read the review findings from /tmp/review-findings.md.\n\nAddress all critical findings.' || '' }}
+            If trigger mode is "ci-failure":
+            - Use the Read tool to read /tmp/ci-failure-context.txt
+            - Diagnose the root cause and fix the code
 
-            After fixing:
-            1. Run any relevant test scripts to verify your fixes
-            2. Summarize what you changed and why
+            If trigger mode is "review-findings":
+            - Use the Read tool to read /tmp/review-findings.md
+            - Address all findings — criticals first, then suggestions
+            - Summarize: Critical fixes: [list], Suggestion fixes: [list]
+
+            After fixing, run relevant test scripts to verify your fixes.
 
       # === COMMIT AND PUSH ===
       - name: Detect token approach

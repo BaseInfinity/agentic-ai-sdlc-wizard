@@ -163,6 +163,111 @@ test_score_range() {
     fi
 }
 
+# -----------------------------------------------
+# Per-criterion CUSUM tests (JSON-lines format)
+# -----------------------------------------------
+
+echo ""
+echo "--- Per-criterion CUSUM ---"
+
+# Test 12: Add JSON score with per-criterion breakdown
+test_add_json_score() {
+    "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
+    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode": 2, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
+
+    local history_file="$SCRIPT_DIR/e2e/score-history.jsonl"
+    if [ -f "$history_file" ] && [ -s "$history_file" ]; then
+        # Verify the JSON-lines file has valid JSON
+        if jq -e '.' "$history_file" > /dev/null 2>&1; then
+            pass "--add-json stores JSON score in history"
+        else
+            fail "--add-json should store valid JSON"
+        fi
+    else
+        fail "--add-json should create score-history.jsonl"
+    fi
+}
+
+# Test 13: Per-criterion CUSUM check
+test_per_criterion_check() {
+    "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
+    # plan_mode target is 2; add scores below target
+    "$CUSUM_SCRIPT" --add-json '{"total": 6.0, "plan_mode": 1, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1 || true
+    "$CUSUM_SCRIPT" --add-json '{"total": 6.0, "plan_mode": 1, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1 || true
+
+    local output
+    output=$("$CUSUM_SCRIPT" --check-criteria 2>/dev/null) || true
+    if echo "$output" | grep -q "plan_mode"; then
+        pass "--check-criteria reports per-criterion CUSUM"
+    else
+        fail "--check-criteria should report per-criterion CUSUM, got: $output"
+    fi
+}
+
+# Test 14: Per-criterion drift detection — plan_mode drifting
+test_per_criterion_drift() {
+    "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
+    # Add 4 scores where plan_mode is consistently 0 (target 2) — CUSUM should drift to -8
+    for i in 1 2 3 4; do
+        "$CUSUM_SCRIPT" --add-json '{"total": 5.0, "plan_mode": 0, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1 || true
+    done
+
+    local output
+    output=$("$CUSUM_SCRIPT" --check-criteria 2>/dev/null) || true
+    # plan_mode should show ALERT (CUSUM = -8, well past threshold)
+    if echo "$output" | grep -q "plan_mode.*ALERT"; then
+        pass "Per-criterion drift detected for plan_mode"
+    else
+        fail "plan_mode should show ALERT with persistent 0 scores, got: $output"
+    fi
+}
+
+# Test 15: Stable criterion shows NORMAL
+test_per_criterion_stable() {
+    "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
+    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode": 2, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
+
+    local output
+    output=$("$CUSUM_SCRIPT" --check-criteria 2>/dev/null) || true
+    if echo "$output" | grep -q "tdd_green.*NORMAL"; then
+        pass "Stable criterion tdd_green shows NORMAL"
+    else
+        fail "tdd_green at target should show NORMAL, got: $output"
+    fi
+}
+
+# Test 16: JSON-lines backward compatibility — total CUSUM still works
+test_jsonl_total_cusum() {
+    "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
+    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode": 2, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
+
+    local output
+    output=$("$CUSUM_SCRIPT" --check 2>/dev/null)
+    if echo "$output" | grep -qE "CUSUM=0\.00?"; then
+        pass "Total CUSUM still works with JSON-lines data"
+    else
+        fail "Total CUSUM should work with JSON-lines data, got: $output"
+    fi
+}
+
+# Test 17: Mixed format — old .txt scores + new .jsonl scores both supported
+test_mixed_format() {
+    "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
+    # Add old-style score
+    "$CUSUM_SCRIPT" --add 7.0 >/dev/null 2>&1
+    # Add new-style JSON score
+    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode": 2, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
+
+    # Total CUSUM should still work (reads both files)
+    local output
+    output=$("$CUSUM_SCRIPT" --check 2>/dev/null)
+    if echo "$output" | grep -q "CUSUM=0.00"; then
+        pass "Mixed old/new score formats supported for total CUSUM"
+    else
+        fail "Mixed formats should work for total CUSUM, got: $output"
+    fi
+}
+
 # Cleanup before tests
 cleanup() {
     "$CUSUM_SCRIPT" --reset >/dev/null 2>&1 || true
@@ -181,6 +286,14 @@ test_cusum_normal
 test_status
 test_invalid_score
 test_score_range
+
+# Per-criterion tests
+test_add_json_score
+test_per_criterion_check
+test_per_criterion_drift
+test_per_criterion_stable
+test_jsonl_total_cusum
+test_mixed_format
 cleanup
 
 echo ""

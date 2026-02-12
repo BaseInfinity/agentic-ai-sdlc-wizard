@@ -74,14 +74,36 @@ test_monthly_dispatch() {
     fi
 }
 
-# Test 4: Daily workflow has schedule trigger
-test_daily_schedule() {
+# Test 4: Daily workflow does NOT have active schedule trigger (paused until roadmap items 15-22 complete)
+test_daily_no_schedule() {
     WORKFLOW="$REPO_ROOT/.github/workflows/daily-update.yml"
 
-    if grep -q "schedule:" "$WORKFLOW" && grep -q "cron:" "$WORKFLOW"; then
-        pass "Daily workflow has schedule trigger with cron"
+    if grep -q "schedule:" "$WORKFLOW"; then
+        fail "Daily workflow has active schedule trigger (should be paused)"
     else
-        fail "Daily workflow missing schedule/cron trigger"
+        pass "Daily workflow schedule is paused (manual dispatch only)"
+    fi
+}
+
+# Test 35: Weekly workflow does NOT have active schedule trigger
+test_weekly_no_schedule() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/weekly-community.yml"
+
+    if grep -q "schedule:" "$WORKFLOW"; then
+        fail "Weekly workflow has active schedule trigger (should be paused)"
+    else
+        pass "Weekly workflow schedule is paused (manual dispatch only)"
+    fi
+}
+
+# Test 36: Monthly workflow does NOT have active schedule trigger
+test_monthly_no_schedule() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/monthly-research.yml"
+
+    if grep -q "schedule:" "$WORKFLOW"; then
+        fail "Monthly workflow has active schedule trigger (should be paused)"
+    else
+        pass "Monthly workflow schedule is paused (manual dispatch only)"
     fi
 }
 
@@ -589,7 +611,9 @@ test_ci_max_turns_sufficient() {
 test_daily_dispatch
 test_weekly_dispatch
 test_monthly_dispatch
-test_daily_schedule
+test_daily_no_schedule
+test_weekly_no_schedule
+test_monthly_no_schedule
 test_state_file_path
 test_state_file_roundtrip
 test_workflow_permissions
@@ -620,6 +644,112 @@ test_ci_autofix_reads_review
 test_ci_autofix_prompt_failure_file
 test_ci_autofix_prompt_review_file
 test_ci_max_turns_sufficient
+
+# ============================================
+# CI Autofix Suggestion Handling Tests
+# ============================================
+# These tests ensure ci-autofix addresses ALL review
+# findings (both criticals and suggestions), not just criticals.
+
+# Test 37: ci-autofix checks for suggestions (not just criticals)
+test_ci_autofix_checks_suggestions() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for suggestions test)"
+        return
+    fi
+
+    if grep -q "Suggestions (nice to have)" "$WORKFLOW"; then
+        pass "ci-autofix checks for suggestions (not just criticals)"
+    else
+        fail "ci-autofix only checks for criticals, ignores suggestions"
+    fi
+}
+
+# Test 38: ci-autofix prompt addresses all findings
+test_ci_autofix_prompt_all_findings() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for prompt test)"
+        return
+    fi
+
+    if grep -q "suggestions" "$WORKFLOW" && grep -q "critical" "$WORKFLOW"; then
+        pass "ci-autofix prompt addresses both criticals and suggestions"
+    else
+        fail "ci-autofix prompt only addresses criticals"
+    fi
+}
+
+# Test 39: ci-autofix prompt tells Claude to use Read tool (not Bash) for context files
+test_ci_autofix_prompt_read_tool() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for Read tool test)"
+        return
+    fi
+
+    if grep -q "Use the Read tool" "$WORKFLOW" && grep -q "NOT Bash" "$WORKFLOW"; then
+        pass "ci-autofix prompt steers Claude to Read tool (prevents wasted Bash denials)"
+    else
+        fail "ci-autofix prompt missing Read tool guidance (Claude will waste turns on denied Bash calls)"
+    fi
+}
+
+test_ci_autofix_checks_suggestions
+test_ci_autofix_prompt_all_findings
+test_ci_autofix_prompt_read_tool
+
+# ============================================
+# CI Autofix Max-Turns & Prompt Hygiene Tests
+# ============================================
+
+# Test 40: ci-autofix --max-turns >= 30
+test_ci_autofix_max_turns() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for max-turns test)"
+        return
+    fi
+
+    # Extract --max-turns value from ci-autofix.yml
+    TURNS=$(grep -oE '\-\-max-turns [0-9]+' "$WORKFLOW" | grep -oE '[0-9]+')
+
+    if [ -z "$TURNS" ]; then
+        fail "ci-autofix.yml missing --max-turns flag"
+        return
+    fi
+
+    if [ "$TURNS" -ge 30 ]; then
+        pass "ci-autofix --max-turns is >= 30 ($TURNS)"
+    else
+        fail "ci-autofix --max-turns is $TURNS (need >= 30 for complex fixes)"
+    fi
+}
+
+# Test 41: ci-autofix prompt has no literal \n ternary pattern
+test_ci_autofix_no_ternary_newlines() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml file not found (needed for ternary test)"
+        return
+    fi
+
+    # Check for the problematic pattern: ${{ expr && 'text\n' || '' }}
+    if grep -q "&&.*\\\\n.*||" "$WORKFLOW"; then
+        fail "ci-autofix prompt uses ternary with literal \\n (renders as literal backslash-n, not newline)"
+    else
+        pass "ci-autofix prompt has no ternary \\n pattern"
+    fi
+}
+
+test_ci_autofix_max_turns
+test_ci_autofix_no_ternary_newlines
 
 echo ""
 echo "=== Results ==="

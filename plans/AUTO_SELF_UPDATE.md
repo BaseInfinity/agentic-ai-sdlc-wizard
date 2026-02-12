@@ -52,19 +52,19 @@ Detect something new → Suggest changes → Test with E2E → Create PR with re
 ## What's Implemented
 
 ### Daily Update Check (`.github/workflows/daily-update.yml`)
-- **Trigger:** Daily at 9 AM UTC + manual dispatch
+- **Trigger:** Manual dispatch only (schedule paused until roadmap items 15-22 complete)
 - **Checks:** Claude Code GitHub releases
 - **Action:** Creates PR for ALL updates (relevance shown in title)
 - **E2E Testing:** Phase A (regression) + Phase B (improvement) with Tier 1 + 2
 
 ### Weekly Community Scan (`.github/workflows/weekly-community.yml`)
-- **Trigger:** Sundays at 9 AM UTC + manual dispatch
+- **Trigger:** Manual dispatch only (schedule paused until roadmap items 15-22 complete)
 - **Checks:** Reddit, HN, dev blogs, official channels
 - **Action:** Creates digest issue for notable findings
 - **E2E Testing:** Baseline vs with-changes comparison (Tier 2)
 
 ### Monthly Research Deep Dive (`.github/workflows/monthly-research.yml`)
-- **Trigger:** 1st of month at 9 AM UTC + manual dispatch
+- **Trigger:** Manual dispatch only (schedule paused until roadmap items 15-22 complete)
 - **Checks:** Academic papers, major announcements, deep community analysis
 - **Action:** Creates issue with trend report and recommendations
 - **E2E Testing:** Baseline vs with-changes comparison (Tier 2)
@@ -83,9 +83,9 @@ Detect something new → Suggest changes → Test with E2E → Create PR with re
 
 | Trigger | Workflow | What It Does |
 |---------|----------|--------------|
-| Daily 9AM | daily-update.yml | Check releases → Always PR |
-| Sundays | weekly-community.yml | Scan community → Issue |
-| 1st of month | monthly-research.yml | Deep research → Issue |
+| Manual only (schedule paused) | daily-update.yml | Check releases → Always PR |
+| Manual only (schedule paused) | weekly-community.yml | Scan community → Issue |
+| Manual only (schedule paused) | monthly-research.yml | Deep research → Issue |
 | On PR | ci.yml | Run tests + E2E eval |
 | On PR | pr-review.yml | AI code review |
 | On CI fail / review findings | ci-autofix.yml | Auto-fix loop |
@@ -147,13 +147,19 @@ tests/
     │   └── version-upgrade.md # Version testing scenario
     ├── lib/
     │   ├── stats.sh          # Statistical functions (CI, compare)
-    │   └── json-utils.sh     # JSON extraction utilities
+    │   ├── json-utils.sh     # JSON extraction utilities
+    │   ├── eval-criteria.sh  # Per-criterion prompts + aggregation (v3)
+    │   ├── eval-validation.sh # Schema/bounds validation + prompt version
+    │   └── deterministic-checks.sh # Grep-based scoring (free, fast)
     ├── run-simulation.sh     # Full E2E test runner
     ├── run-tier2-evaluation.sh # Shared 5-trial evaluation script
     ├── evaluate.sh           # AI-powered scoring (0-10)
     ├── check-compliance.sh   # Pattern-based checks
-    ├── cusum.sh              # CUSUM drift detection
-    ├── score-history.txt     # Historical scores for CUSUM
+    ├── cusum.sh              # CUSUM drift detection (total + per-criterion)
+    ├── score-history.txt     # Historical total scores (legacy format)
+    ├── score-history.jsonl   # Historical per-criterion scores (JSON-lines)
+    ├── golden-outputs/       # Saved outputs with verified expected scores
+    ├── golden-scores.json    # Expected score ranges per golden output
     └── baselines.json        # Baseline scores per scenario
 ```
 
@@ -695,9 +701,9 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
     |                                                                              |
     |   <──────────────────────────────────────────────────────────────────────────┘
     |
-    └── PASS ──► PR Review ──► APPROVE, no criticals ──► DONE
+    └── PASS ──► PR Review ──► APPROVE, no findings at level ──► DONE
                       |
-                      └── has criticals ──► ci-autofix ──► Claude reads review, fixes ──► loop
+                      └── has findings ──► ci-autofix ──► Claude reads review, fixes all ──► loop
 ```
 
 ### Two Modes
@@ -714,11 +720,13 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | `head_branch != 'main'` | Never auto-fix production |
 | `MAX_AUTOFIX_RETRIES: 3` | Prevent infinite loops (configurable env var) |
 | Restricted Claude tools | `Read,Edit,Write,Bash(./tests/*),Bash(python3 *),Glob,Grep` |
-| `--max-turns 20` | Limit Claude execution per attempt |
+| `--max-turns 30` | Limit Claude execution per attempt |
 | `[autofix N/M]` commits | Audit trail in git history |
 | Self-modification ban | Prompt forbids editing ci-autofix.yml |
 | Sticky PR comments | User always sees autofix status |
 | APPROVE detection | Loop exits when review is clean |
+| Suggestion handling | Autofix addresses ALL review findings, not just criticals |
+| `AUTOFIX_LEVEL` env var | 3 strictness levels: `ci-only`, `criticals` (default), `all-findings` (configurable per-repo) |
 
 ### Token Approach (Auto-Detected)
 
@@ -757,6 +765,8 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | 29 | Posts sticky PR comment |
 | 30 | ci.yml has `workflow_dispatch` trigger |
 | 31 | Reads review comment (`claude-review` header) |
+| 37 | Checks for suggestions (not just criticals) |
+| 38 | Prompt addresses both criticals and suggestions |
 
 ---
 
@@ -764,38 +774,56 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 
 | # | Item | Priority | Description | Status |
 |---|------|----------|-------------|--------|
-| 15 | Promptfoo/DeepEval adoption | HIGH | Richer evaluation metrics, structured eval framework | PLANNED |
-| 16 | Pairwise comparison | HIGH | LLM directly compares two outputs (more reliable than independent scoring) | PLANNED |
+| 15 | Eval framework improvements | HIGH | Multi-call LLM judge, golden output regression, per-criterion CUSUM | DONE |
+| 16 | Pairwise tiebreaker | HIGH | Tiebreaker-only pairwise with full swap when scores within 1.0 | DONE |
 | 17 | Multi-model evaluation | MED | Test with Sonnet vs Opus to validate robustness across models | PLANNED |
-| 18 | Deterministic pre-checks | MED | Pattern match for TodoWrite/test-first before LLM judge (cheaper, faster) | PLANNED |
+| 18 | Deterministic pre-checks | MED | Pattern match for TodoWrite/test-first before LLM judge (cheaper, faster) | DONE |
 | 19 | Real-world scenarios | MED | Extract from public repos like SWE-bench for realistic E2E testing | PLANNED |
 | 20 | Observability/tracing | LOW | Structured logging for debugging score changes across runs | PLANNED |
 | 21 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. | PLANNED |
 | 22 | Color-coded PR comments | LOW | Add visual indicators to E2E scoring PR comments - green/red/yellow emoji or status badges for PASS/WARN/FAIL per criterion. Makes it easier to scan results at a glance instead of reading raw numbers. | PLANNED |
+| 23 | Phased workflow re-enablement | HIGH | Re-enable daily → weekly → monthly schedules after roadmap complete + audit. Phase 1: daily (most critical, tracks CC releases). Phase 2: weekly (after daily stable 1 week). Phase 3: monthly (lowest urgency). Gate: all items 15-22 addressed, Tier 2 E2E passes, workflow audit. | PLANNED |
 
-### Item 15: Promptfoo/DeepEval Adoption
+### Item 15: Eval Framework Improvements (Targeted, Not Framework Adoption)
 
-**Problem:** Our evaluation is a single Claude call scoring 0-10. No structured rubrics, no multi-criteria breakdowns, no eval framework.
+**Decision:** Don't adopt Promptfoo/DeepEval. Items 10-14 already solved most of what Item 15 originally described. Adding a Python/Node framework violates the bash-only project philosophy for marginal gain.
 
-**Solution:** Integrate Promptfoo or DeepEval for:
-- Structured rubric evaluation (each criterion scored independently)
-- Built-in statistical analysis (no custom stats.sh needed)
-- Evaluation dataset management
-- Regression testing across prompt versions
+**What we did instead:**
 
-**Why HIGH priority:** This replaces the most fragile part of our system (single-call AI judge) with an established framework.
+| Improvement | Description | Files |
+|-------------|-------------|-------|
+| **Multi-call LLM judge** | Each subjective criterion scored by its own focused API call with dedicated calibration examples. Reduces variance vs monolithic single-call. | `lib/eval-criteria.sh`, `evaluate.sh` |
+| **Golden output regression** | 3 golden outputs (high/medium/low) with manually verified expected score ranges. Catches prompt drift when eval prompt changes. | `golden-outputs/`, `golden-scores.json`, `test-eval-prompt-regression.sh` |
+| **Per-criterion CUSUM** | JSON-lines history tracks individual criterion drift, not just total. Catches masked regressions (e.g., plan_mode declining while clean_code improves). | `cusum.sh`, `score-history.jsonl` |
+| **Prompt version v3** | Bumped `EVAL_PROMPT_VERSION` to track the multi-call refactor. | `lib/eval-validation.sh` |
 
-### Item 16: Pairwise Comparison
+**Cost impact:** 4 smaller API calls instead of 1 large one. Net tokens similar (calibration examples split across calls).
 
-**Problem:** Independent scoring (score A, score B, compare) is less reliable than direct comparison.
+**Test coverage:**
+- `test-multi-call-eval.sh` — 22 tests for per-criterion prompts + aggregation
+- `test-eval-prompt-regression.sh` — 8 tests for golden output validation (deterministic + API-backed)
+- `test-cusum.sh` — 17 tests (11 original + 6 new per-criterion)
 
-**Solution:** Have Claude directly compare two outputs:
-- "Which output better follows SDLC? A or B?"
-- More reliable than scoring each independently
-- Handles scale drift (AI judges tend to cluster around certain scores)
-- Can use ELO-style ranking over multiple comparisons
+### Item 16: Pairwise Tiebreaker ✅ DONE
 
-**Why HIGH priority:** Direct comparison is a known-better methodology from LLM evaluation research.
+**Problem:** Independent scoring (score A, score B, compare) is less reliable than direct comparison when scores are close.
+
+**Solution:** Lightweight tiebreaker-only pairwise comparison:
+- Only triggers when |scoreA - scoreB| <= 1.0 (configurable threshold)
+- Holistic "which output better follows SDLC?" comparison (not per-criterion)
+- Full swap: both orderings (A,B) and (B,A) evaluated — only consistent wins count
+- Binary output (A/B/TIE) — more reliable than numeric pairwise scores
+- Pointwise per-criterion scoring (Item 15) remains the primary signal
+
+**Why tiebreaker-only:** Research (2025-2026) shows pointwise is better for instruction-following tasks like SDLC compliance (r=0.78 vs r=0.35 for holistic). Pairwise adds value only for close-call tiebreaking where scale drift could mislead.
+
+**Files:**
+- `tests/e2e/lib/eval-criteria.sh` — 4 functions: `should_run_pairwise`, `build_holistic_pairwise_prompt`, `validate_pairwise_result`, `compute_pairwise_verdict`
+- `tests/e2e/pairwise-compare.sh` — Main script with `--no-api` mode for testing
+- `tests/e2e/test-pairwise-compare.sh` — 26 tests
+
+**Test coverage:**
+- `test-pairwise-compare.sh` — 26 tests for threshold gating, prompt construction, validation, verdict logic, integration
 
 ### Item 17: Multi-Model Evaluation
 
@@ -807,18 +835,9 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 - Flag if wizard only works well with one model
 - Validates robustness beyond SDP's external benchmark approach
 
-### Item 18: Deterministic Pre-Checks
+### Item 18: Deterministic Pre-Checks (Already Implemented)
 
-**Problem:** Using an LLM judge to check "did the output contain TodoWrite?" is expensive and stochastic when a grep would work.
-
-**Solution:**
-- Pattern match for deterministic criteria before calling LLM judge
-- TodoWrite/TaskCreate: grep the output
-- Confidence stated: grep for HIGH/MEDIUM/LOW
-- Test file created: check filesystem
-- Only use LLM judge for genuinely subjective criteria (plan quality, code quality)
-
-**Benefit:** Cheaper, faster, more reproducible for 60% of scoring.
+**Status:** Already done as part of Items 10-14. `lib/deterministic-checks.sh` provides grep-based scoring for task_tracking, confidence, and tdd_red. The LLM judge only scores subjective criteria (plan_mode, tdd_green, self_review, clean_code, design_system). Marked DONE.
 
 ### Item 19: Real-World Scenarios
 

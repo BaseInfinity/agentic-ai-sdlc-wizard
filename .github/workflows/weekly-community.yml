@@ -1,9 +1,7 @@
 name: Weekly Community Scan
 
 on:
-  schedule:
-    - cron: '0 9 * * 0'  # Sundays at 9 AM UTC
-  workflow_dispatch:  # Manual trigger for testing
+  workflow_dispatch:  # Auto-schedule disabled until roadmap items 15-22 complete
 
 permissions:
   contents: write
