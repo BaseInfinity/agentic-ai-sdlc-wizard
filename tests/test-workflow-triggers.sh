@@ -941,6 +941,33 @@ else:
 
 test_full_eval_deps_run_on_labeled
 
+# ============================================
+# PR Review Prompt Hygiene Tests
+# ============================================
+# Ensure the review prompt doesn't contain shell
+# constructs that won't expand in YAML strings.
+
+# Test 48: pr-review prompt must not use $(cat ...) in YAML prompt field
+test_review_prompt_no_shell_subst() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/pr-review.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "pr-review.yml file not found"
+        return
+    fi
+
+    # $(cat ...) in a YAML 'prompt: |' field is dead code —
+    # YAML strings don't execute shell commands.
+    # claude-code-action provides comments through its own mechanism.
+    if grep -E '\$\(cat ' "$WORKFLOW"; then
+        fail "pr-review.yml prompt contains \$(cat ...) — won't expand in YAML string (dead code)"
+    else
+        pass "pr-review.yml prompt has no shell command substitution in YAML strings"
+    fi
+}
+
+test_review_prompt_no_shell_subst
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
