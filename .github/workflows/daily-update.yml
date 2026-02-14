@@ -141,35 +141,72 @@ jobs:
             exit 0
           fi
 
-          # Extract Claude's text response from the execution output
-          # Format is a direct object with .result or .output field (same as pr-review.yml)
-          RESPONSE_TEXT=$(jq -r '.result // .output // empty' "$OUTPUT_FILE" 2>/dev/null || echo "")
+          # The execution output format varies:
+          # - Array: [{role:"assistant",content:[{type:"text",text:"..."}]}, ...]
+          # - Object: {result:"...", output:"...", ...}
+          IS_ARRAY=$(jq -r 'if type == "array" then "true" else "false" end' "$OUTPUT_FILE" 2>/dev/null || echo "false")
+          echo "Output format: is_array=$IS_ARRAY"
+
+          if [ "$IS_ARRAY" = "true" ]; then
+            # Array of conversation messages — find the last assistant text
+            RESPONSE_TEXT=$(jq -r '
+              [.[] | select(type == "object")] |
+              [.[] | select(.role == "assistant" or .type == "result")] |
+              last |
+              if .content then
+                (if (.content | type) == "array" then
+                  [.content[] | select(.type == "text") | .text] | join("")
+                else
+                  .content
+                end)
+              elif .text then .text
+              elif .result then .result
+              else empty
+              end
+            ' "$OUTPUT_FILE" 2>/dev/null || echo "")
+          else
+            # Direct object with .result or .output
+            RESPONSE_TEXT=$(jq -r '.result // .output // empty' "$OUTPUT_FILE" 2>/dev/null || echo "")
+          fi
 
           if [ -z "$RESPONSE_TEXT" ]; then
-            echo "::warning::Could not extract text from execution output"
-            echo "Keys found: $(jq -r 'keys | join(", ")' "$OUTPUT_FILE" 2>/dev/null || echo "unknown")"
+            echo "::warning::Could not extract text (is_array=$IS_ARRAY)"
+            echo "::warning::First 3 items: $(jq -c '.[0:3] | [.[] | keys]' "$OUTPUT_FILE" 2>/dev/null || echo "N/A")"
             echo '{"relevance":"LOW","summary":"Analysis extraction failed"}' > /tmp/analysis.json
             exit 0
           fi
 
+          echo "Response text length: ${#RESPONSE_TEXT}"
+
           # The response text contains JSON (possibly wrapped in markdown code blocks)
-          # Try extracting from ```json ... ``` block first
           echo "$RESPONSE_TEXT" | sed -n '/^```json/,/^```$/p' | sed '1d;$d' > /tmp/analysis.json 2>/dev/null
 
-          # If no code block found, try the raw text as JSON
+          # If no code block, try raw text as JSON
           if [ ! -s /tmp/analysis.json ]; then
             echo "$RESPONSE_TEXT" > /tmp/analysis.json
           fi
 
           # Validate it's parseable JSON
           if ! jq empty /tmp/analysis.json 2>/dev/null; then
-            echo "::warning::Analysis output is not valid JSON, trying to extract JSON object"
-            # Last resort: grep out a JSON object from the text
-            echo "$RESPONSE_TEXT" | grep -o '{.*}' | tail -1 > /tmp/analysis.json 2>/dev/null
-            if ! jq empty /tmp/analysis.json 2>/dev/null; then
-              echo "::warning::Could not find valid JSON in analysis response"
-              echo '{"relevance":"LOW","summary":"Analysis produced non-JSON output"}' > /tmp/analysis.json
-            fi
+            echo "::warning::Not valid JSON, extracting JSON object from text"
+            # Find a line containing a JSON object with relevance key
+            echo "$RESPONSE_TEXT" | python3 -c "
+          import sys, json, re
+          text = sys.stdin.read()
+          # Try to find JSON block in text
+          match = re.search(r'\{[^{}]*\"relevance\"[^{}]*\}', text, re.DOTALL)
+          if not match:
+              # Try multi-line JSON
+              match = re.search(r'\{.*?\"relevance\".*?\}', text, re.DOTALL)
+          if match:
+              try:
+                  obj = json.loads(match.group())
+                  print(json.dumps(obj))
+              except:
+                  print(json.dumps({'relevance':'LOW','summary':'JSON parse failed'}))
+          else:
+              print(json.dumps({'relevance':'LOW','summary':'No JSON found in response'}))
+          " > /tmp/analysis.json
           fi
 
           echo "Analysis extracted successfully"
