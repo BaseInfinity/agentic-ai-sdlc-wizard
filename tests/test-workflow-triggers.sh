@@ -1121,8 +1121,8 @@ if 'outputs.response' in content:
     fi
 }
 
-# Test 54: daily-update analysis step must use --json-schema for structured output
-test_daily_analysis_has_json_schema() {
+# Test 54: daily-update must extract analysis from execution output file
+test_daily_extracts_from_output_file() {
     WORKFLOW="$REPO_ROOT/.github/workflows/daily-update.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
@@ -1130,34 +1130,28 @@ test_daily_analysis_has_json_schema() {
         return
     fi
 
-    # The analysis step needs --json-schema in claude_args for
-    # structured_output to contain validated JSON
+    # The analysis result must be extracted from claude-execution-output.json
+    # (not from outputs.response or outputs.structured_output which don't exist)
     python3 -c "
 import yaml
 with open('$WORKFLOW') as f:
     wf = yaml.safe_load(f)
 for job_name, job in wf.get('jobs', {}).items():
     for step in job.get('steps', []):
-        name = step.get('name', '')
-        if 'Analyze release' in name:
-            args = step.get('with', {}).get('claude_args', '')
-            if '--json-schema' in args or '--output-format' in args:
-                print('HAS_SCHEMA')
-            else:
-                print('MISSING_SCHEMA')
-" > /tmp/json_schema_check.txt 2>&1
+        run = step.get('run', '')
+        if 'claude-execution-output.json' in run and 'analysis' in step.get('name', '').lower():
+            print('READS_OUTPUT_FILE')
+" > /tmp/output_file_check.txt 2>&1
 
-    if grep -q "HAS_SCHEMA" /tmp/json_schema_check.txt; then
-        pass "daily-update analysis step uses --json-schema for structured output"
-    elif grep -q "MISSING_SCHEMA" /tmp/json_schema_check.txt; then
-        fail "daily-update analysis step missing --json-schema in claude_args (structured_output will be empty)"
+    if grep -q "READS_OUTPUT_FILE" /tmp/output_file_check.txt; then
+        pass "daily-update extracts analysis from execution output file"
     else
-        pass "daily-update analysis step not found (may have been refactored)"
+        fail "daily-update does not read claude-execution-output.json for analysis (result will be empty)"
     fi
 }
 
 test_daily_no_outputs_response
-test_daily_analysis_has_json_schema
+test_daily_extracts_from_output_file
 
 echo ""
 echo "=== Results ==="

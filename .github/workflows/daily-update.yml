@@ -128,18 +128,50 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: ${{ steps.build-prompt.outputs.prompt }}
-          claude_args: |
-            --output-format json
-            --json-schema '{"type":"object","properties":{"version":{"type":"string"},"relevance":{"type":"string","enum":["HIGH","MEDIUM","LOW"]},"summary":{"type":"string"},"wizard_impact":{"type":"array","items":{"type":"object","properties":{"area":{"type":"string"},"description":{"type":"string"},"suggested_action":{"type":"string"},"files_affected":{"type":"array","items":{"type":"string"}}}}},"plugin_check":{"type":"object","properties":{"new_official_plugins":{"type":"array","items":{"type":"string"}},"replaces_custom":{"type":"array","items":{"type":"string"}}}},"reasoning":{"type":"string"}},"required":["version","relevance","summary","reasoning"]}'
 
-      - name: Save analysis to file
+      - name: Extract analysis from execution output
         if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
-        env:
-          # Use env to safely pass potentially malicious content
-          ANALYSIS_OUTPUT: ${{ steps.analyze.outputs.structured_output }}
         run: |
-          # Write to file via env var (safe from injection)
-          printf '%s' "$ANALYSIS_OUTPUT" > /tmp/analysis.json
+          # claude-code-action saves Claude's response to this file
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "::warning::No execution output file found"
+            echo '{"relevance":"LOW","summary":"Analysis unavailable"}' > /tmp/analysis.json
+            exit 0
+          fi
+
+          # Extract the last assistant text message which contains the JSON analysis
+          # The execution output is a JSON array of conversation messages
+          LAST_TEXT=$(jq -r '[.[] | select(.type == "text")] | last | .text // empty' "$OUTPUT_FILE" 2>/dev/null || echo "")
+
+          if [ -z "$LAST_TEXT" ]; then
+            # Try alternate format: array of role/content messages
+            LAST_TEXT=$(jq -r '[.[] | select(.role == "assistant")] | last | .content | if type == "array" then [.[] | select(.type == "text") | .text] | join("") else . end // empty' "$OUTPUT_FILE" 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$LAST_TEXT" ]; then
+            echo "::warning::Could not extract text from execution output"
+            echo '{"relevance":"LOW","summary":"Analysis extraction failed"}' > /tmp/analysis.json
+            exit 0
+          fi
+
+          # Extract JSON from the text (may be wrapped in markdown code blocks)
+          echo "$LAST_TEXT" | sed -n '/^```json/,/^```$/p' | sed '1d;$d' > /tmp/analysis.json 2>/dev/null
+
+          # If no code block found, try the raw text as JSON
+          if [ ! -s /tmp/analysis.json ]; then
+            echo "$LAST_TEXT" > /tmp/analysis.json
+          fi
+
+          # Validate it's parseable JSON
+          if ! jq empty /tmp/analysis.json 2>/dev/null; then
+            echo "::warning::Analysis output is not valid JSON"
+            echo '{"relevance":"LOW","summary":"Analysis produced non-JSON output"}' > /tmp/analysis.json
+          fi
+
+          echo "Analysis extracted successfully"
+          jq -r '.relevance // "unknown"' /tmp/analysis.json
 
       - name: Parse analysis result
         if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
