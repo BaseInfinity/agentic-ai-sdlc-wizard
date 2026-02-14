@@ -173,7 +173,7 @@ echo "--- Per-criterion CUSUM ---"
 # Test 12: Add JSON score with per-criterion breakdown
 test_add_json_score() {
     "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
-    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode": 2, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
+    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode_outline": 1, "plan_mode_tool": 1, "tdd_green_ran": 1, "tdd_green_pass": 1, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
 
     local history_file="$SCRIPT_DIR/e2e/score-history.jsonl"
     if [ -f "$history_file" ] && [ -s "$history_file" ]; then
@@ -191,55 +191,55 @@ test_add_json_score() {
 # Test 13: Per-criterion CUSUM check
 test_per_criterion_check() {
     "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
-    # plan_mode target is 2; add scores below target
-    "$CUSUM_SCRIPT" --add-json '{"total": 6.0, "plan_mode": 1, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1 || true
-    "$CUSUM_SCRIPT" --add-json '{"total": 6.0, "plan_mode": 1, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1 || true
+    # plan_mode_outline target is 1; add scores below target (0)
+    "$CUSUM_SCRIPT" --add-json '{"total": 5.0, "plan_mode_outline": 0, "plan_mode_tool": 1, "tdd_green_ran": 1, "tdd_green_pass": 1, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1 || true
+    "$CUSUM_SCRIPT" --add-json '{"total": 5.0, "plan_mode_outline": 0, "plan_mode_tool": 1, "tdd_green_ran": 1, "tdd_green_pass": 1, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1 || true
 
     local output
     output=$("$CUSUM_SCRIPT" --check-criteria 2>/dev/null) || true
-    if echo "$output" | grep -q "plan_mode"; then
+    if echo "$output" | grep -q "plan_mode_outline"; then
         pass "--check-criteria reports per-criterion CUSUM"
     else
         fail "--check-criteria should report per-criterion CUSUM, got: $output"
     fi
 }
 
-# Test 14: Per-criterion drift detection — plan_mode drifting
+# Test 14: Per-criterion drift detection — plan_mode_outline drifting
 test_per_criterion_drift() {
     "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
-    # Add 4 scores where plan_mode is consistently 0 (target 2) — CUSUM should drift to -8
+    # Add 4 scores where plan_mode_outline is consistently 0 (target 1) — CUSUM should drift to -4
     for i in 1 2 3 4; do
-        "$CUSUM_SCRIPT" --add-json '{"total": 5.0, "plan_mode": 0, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1 || true
+        "$CUSUM_SCRIPT" --add-json '{"total": 4.0, "plan_mode_outline": 0, "plan_mode_tool": 0, "tdd_green_ran": 1, "tdd_green_pass": 1, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1 || true
     done
 
     local output
     output=$("$CUSUM_SCRIPT" --check-criteria 2>/dev/null) || true
-    # plan_mode should show ALERT (CUSUM = -8, well past threshold)
-    if echo "$output" | grep -q "plan_mode.*ALERT"; then
-        pass "Per-criterion drift detected for plan_mode"
+    # plan_mode_outline should show ALERT (CUSUM = -4, past threshold of 3)
+    if echo "$output" | grep -q "plan_mode_outline.*ALERT"; then
+        pass "Per-criterion drift detected for plan_mode_outline"
     else
-        fail "plan_mode should show ALERT with persistent 0 scores, got: $output"
+        fail "plan_mode_outline should show ALERT with persistent 0 scores, got: $output"
     fi
 }
 
 # Test 15: Stable criterion shows NORMAL
 test_per_criterion_stable() {
     "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
-    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode": 2, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
+    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode_outline": 1, "plan_mode_tool": 1, "tdd_green_ran": 1, "tdd_green_pass": 1, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
 
     local output
     output=$("$CUSUM_SCRIPT" --check-criteria 2>/dev/null) || true
-    if echo "$output" | grep -q "tdd_green.*NORMAL"; then
-        pass "Stable criterion tdd_green shows NORMAL"
+    if echo "$output" | grep -q "tdd_green_ran.*NORMAL"; then
+        pass "Stable criterion tdd_green_ran shows NORMAL"
     else
-        fail "tdd_green at target should show NORMAL, got: $output"
+        fail "tdd_green_ran at target should show NORMAL, got: $output"
     fi
 }
 
 # Test 16: JSON-lines backward compatibility — total CUSUM still works
 test_jsonl_total_cusum() {
     "$CUSUM_SCRIPT" --reset >/dev/null 2>&1
-    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode": 2, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
+    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode_outline": 1, "plan_mode_tool": 1, "tdd_green_ran": 1, "tdd_green_pass": 1, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
 
     local output
     output=$("$CUSUM_SCRIPT" --check 2>/dev/null)
@@ -256,7 +256,7 @@ test_mixed_format() {
     # Add old-style score
     "$CUSUM_SCRIPT" --add 7.0 >/dev/null 2>&1
     # Add new-style JSON score
-    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode": 2, "tdd_green": 2, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
+    "$CUSUM_SCRIPT" --add-json '{"total": 7.0, "plan_mode_outline": 1, "plan_mode_tool": 1, "tdd_green_ran": 1, "tdd_green_pass": 1, "self_review": 1, "clean_code": 1, "task_tracking": 0, "confidence": 1, "tdd_red": 0}' >/dev/null 2>&1
 
     # Total CUSUM should still work (reads both files)
     local output

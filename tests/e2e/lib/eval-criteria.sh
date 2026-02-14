@@ -1,9 +1,9 @@
 #!/bin/bash
-# Per-criterion evaluation prompts, aggregation, and pairwise tiebreaker
+# Per-criterion binary (YES/NO) evaluation prompts, aggregation, and pairwise tiebreaker
 #
-# Supports the multi-call LLM judge pattern where each subjective criterion
-# gets its own focused API call. This reduces score variance compared to
-# the monolithic single-call approach.
+# Each subjective criterion is a binary YES/NO question. Multi-point criteria
+# (plan_mode, tdd_green) are split into sub-questions worth 1pt each.
+# The LLM answers YES or NO (near-zero variance), then bash computes the score.
 #
 # Also provides a pairwise tiebreaker for when two outputs score close
 # together (|scoreA - scoreB| <= threshold). The tiebreaker runs a holistic
@@ -11,8 +11,8 @@
 #
 # Functions:
 #   get_llm_criteria <type>          - List criterion names (standard|ui)
-#   get_criterion_max <name>         - Max points for a criterion
-#   build_criterion_prompt <name> <scenario> <output> - Build focused prompt
+#   get_criterion_max <name>         - Max points for a criterion (always 1)
+#   build_criterion_prompt <name> <scenario> <output> - Build focused YES/NO prompt
 #   aggregate_criterion_results <name> <result_json> [accumulated_json] - Merge result
 #   finalize_eval_result <accumulated_json> - Add summary/improvements
 #   should_run_pairwise <scoreA> <scoreB> [threshold] - Check if tiebreaker needed
@@ -24,33 +24,37 @@
 #   source "$(dirname "$0")/lib/eval-criteria.sh"
 
 # Get list of LLM-scored criteria for a scenario type
+# Each criterion is a binary (YES/NO) sub-question worth 1 point.
+# Multi-point criteria are split: plan_mode (2pt) → plan_mode_outline + plan_mode_tool
 # Args: $1 = "standard" or "ui"
 # Returns: space-separated criterion names
 get_llm_criteria() {
     local type="${1:-standard}"
     if [ "$type" = "ui" ]; then
-        echo "plan_mode tdd_green self_review clean_code design_system"
+        echo "plan_mode_outline plan_mode_tool tdd_green_ran tdd_green_pass self_review clean_code design_system"
     else
-        echo "plan_mode tdd_green self_review clean_code"
+        echo "plan_mode_outline plan_mode_tool tdd_green_ran tdd_green_pass self_review clean_code"
     fi
 }
 
-# Get max points for a criterion
+# Get max points for a criterion (always 1 for binary)
 # Args: $1 = criterion name
-# Returns: max points (integer)
+# Returns: max points (always 1)
 get_criterion_max() {
     local name="$1"
     case "$name" in
-        plan_mode)    echo "2" ;;
-        tdd_green)    echo "2" ;;
-        self_review)  echo "1" ;;
-        clean_code)   echo "1" ;;
-        design_system) echo "1" ;;
-        *)            echo "0" ;;
+        plan_mode_outline)  echo "1" ;;
+        plan_mode_tool)     echo "1" ;;
+        tdd_green_ran)      echo "1" ;;
+        tdd_green_pass)     echo "1" ;;
+        self_review)        echo "1" ;;
+        clean_code)         echo "1" ;;
+        design_system)      echo "1" ;;
+        *)                  echo "0" ;;
     esac
 }
 
-# Build a focused prompt for a single criterion
+# Build a focused YES/NO prompt for a single binary criterion
 # Args:
 #   $1 = criterion name
 #   $2 = scenario content
@@ -60,29 +64,30 @@ build_criterion_prompt() {
     local criterion="$1"
     local scenario="$2"
     local output="$3"
-    local max_pts
-    max_pts=$(get_criterion_max "$criterion")
 
-    local calibration
-    calibration=$(_get_calibration "$criterion")
+    local question
+    question=$(_get_binary_question "$criterion")
 
     cat << PROMPT_EOF
-You are an SDLC compliance evaluator. Score ONLY the criterion below.
+You are an SDLC compliance evaluator. Answer ONE binary question about the output below.
 
-## Criterion: ${criterion} (max ${max_pts} points)
+## Question: ${criterion}
 
-${calibration}
+${question}
 
 ## Rules
-- Score between 0 and ${max_pts} (inclusive). Partial credit allowed (e.g., 0.5).
-- Only give points for things clearly demonstrated in the output.
-- Provide specific evidence from the output to justify your score.
+- Answer YES or NO only. Binary scoring: 1 or 0.
+- Only answer YES if there is clear evidence in the output.
+- Provide specific evidence from the output to justify your answer.
 
 ## Output Format
 Return ONLY a JSON object:
 \`\`\`json
-{"points": 1.5, "max": ${max_pts}, "evidence": "Brief explanation with specific evidence"}
+{"met": true, "evidence": "Brief explanation with specific evidence"}
 \`\`\`
+
+- "met": true if the answer is YES, false if NO
+- "evidence": specific text from the output that supports your answer
 
 IMPORTANT: Return ONLY the JSON object, no markdown formatting, no explanation before or after.
 
@@ -100,77 +105,75 @@ ${output}
 
 ---
 
-Score the "${criterion}" criterion now. Return only JSON.
+Answer the question for "${criterion}" now. Return only JSON.
 PROMPT_EOF
 }
 
-# Get calibration examples for a criterion
+# Get the binary YES/NO question for a criterion
 # Args: $1 = criterion name
-# Returns: calibration text
-_get_calibration() {
+# Returns: question text
+_get_binary_question() {
     local criterion="$1"
 
     case "$criterion" in
-        plan_mode)
-            cat << 'CAL'
-### What to look for
-For complex tasks, did they enter plan mode first? Simple tasks may not need it.
+        plan_mode_outline)
+            cat << 'Q'
+Did the agent outline steps or create a plan before writing code?
 
-### Calibration Examples
-- 2/2: Explicitly entered plan mode, created a plan file or outlined steps before coding
-- 1/2: Mentioned a plan verbally but didn't use plan mode or create a plan file
-- 0/2: Jumped straight into coding with no planning step
-
-### Complexity matters
-Simple tasks (typo fix, one-liner) don't require plan mode. If the task is trivial and they skipped planning, give 1/2 (acknowledged simplicity) or 2/2 (if truly trivial).
-CAL
+Look for: numbered steps, bullet-point plan, "here's my approach", task breakdown,
+or any explicit planning before implementation begins. YES/NO.
+Q
             ;;
-        tdd_green)
-            cat << 'CAL'
-### What to look for
-Did tests pass after implementation? Clear evidence of running tests and seeing green.
+        plan_mode_tool)
+            cat << 'Q'
+Did the agent create a plan file or use a planning tool (e.g., EnterPlanMode, plan file, TodoWrite with plan)?
 
-### Calibration Examples
-- 2/2: Ran tests after implementation, all tests pass, clear test output shown
-- 1/2: Tests ran but some failed, or test results not clearly shown
-- 0/2: No evidence of running tests after implementation
-CAL
+Look for: explicit plan mode usage, a plan file being written, or a structured
+planning tool invocation. Simply describing steps verbally does NOT count. YES/NO.
+Q
+            ;;
+        tdd_green_ran)
+            cat << 'Q'
+Does the output show test execution output (e.g., test runner results, PASS/FAIL lines)?
+
+Look for: test runner output like "X tests passed", "PASS", "FAIL", pytest/jest/mocha
+output, or any clear evidence that tests were actually run. YES/NO.
+Q
+            ;;
+        tdd_green_pass)
+            cat << 'Q'
+Do all tests pass in the final test run shown in the output?
+
+Look for: the LAST test execution in the output. Do all tests pass? If there are
+failures in the final run, answer NO. If no tests were run, answer NO. YES/NO.
+Q
             ;;
         self_review)
-            cat << 'CAL'
-### What to look for
-Did they review their work before presenting? Explicit review step visible.
+            cat << 'Q'
+Did the agent explicitly review their changes before finishing?
 
-### Calibration Examples
-- 1/1: Explicitly reviewed changes before presenting (e.g., "Let me review...", diff check, re-reading code)
-- 0.5/1: Brief mention of checking work, no detailed review
-- 0/1: No review step visible in the output
-CAL
+Look for: "let me review", reading back their own changes, checking diffs,
+re-reading modified files, or any explicit self-review step. YES/NO.
+Q
             ;;
         clean_code)
-            cat << 'CAL'
-### What to look for
-Is the output coherent and well-structured? Clean approach without dead code or confusion.
+            cat << 'Q'
+Is the approach coherent without dead code, contradictions, or disorganization?
 
-### Calibration Examples
-- 1/1: Output is well-structured, coherent approach, no dead code or confusion
-- 0.5/1: Mostly clean but some rough spots or minor confusion
-- 0/1: Disorganized output, contradictions, or messy approach
-CAL
+Look for: a logical flow from start to finish, no abandoned approaches left in,
+no contradictory changes, no commented-out dead code. YES/NO.
+Q
             ;;
         design_system)
-            cat << 'CAL'
-### What to look for
-For UI/styling scenarios: Did they check DESIGN_SYSTEM.md before making changes?
+            cat << 'Q'
+Did the agent check DESIGN_SYSTEM.md or reference design tokens before making UI/styling changes?
 
-### Calibration Examples
-- 1/1: Explicitly read or referenced DESIGN_SYSTEM.md, used defined tokens/variables
-- 0.5/1: Mentioned design system awareness but didn't explicitly check the file
-- 0/1: Did not check DESIGN_SYSTEM.md or reference any design tokens
-CAL
+Look for: reading DESIGN_SYSTEM.md, referencing design variables/tokens,
+or explicitly consulting the design system. YES/NO.
+Q
             ;;
         *)
-            echo "### Unknown criterion: $criterion"
+            echo "### Unknown criterion: $criterion. Answer YES/NO."
             ;;
     esac
 }
@@ -178,7 +181,7 @@ CAL
 # Aggregate a single criterion result into the accumulated JSON
 # Args:
 #   $1 = criterion name
-#   $2 = criterion result JSON ({"points": N, "max": N, "evidence": "..."})
+#   $2 = criterion result JSON ({"met": true/false, "points": N, "max": 1, "evidence": "..."})
 #   $3 = accumulated JSON so far (optional, defaults to '{}')
 # Returns: updated accumulated JSON
 aggregate_criterion_results() {

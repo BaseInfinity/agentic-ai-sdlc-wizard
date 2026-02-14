@@ -144,7 +144,7 @@ JSONEOF
     echo "$raw_text"
 }
 
-# Score each criterion independently
+# Score each criterion independently (binary YES/NO)
 ACCUMULATED_RESULT="{}"
 FAILED_CRITERIA=""
 
@@ -156,8 +156,7 @@ for criterion in $LLM_CRITERIA; do
 
     if [ -z "$RAW_RESULT" ]; then
         echo "  Warning: API call failed for $criterion, using 0 score" >&2
-        max_pts=$(get_criterion_max "$criterion")
-        RAW_RESULT="{\"points\": 0, \"max\": $max_pts, \"evidence\": \"API call failed\"}"
+        RAW_RESULT='{"met": false, "evidence": "API call failed"}'
         FAILED_CRITERIA="$FAILED_CRITERIA $criterion"
     fi
 
@@ -167,31 +166,35 @@ for criterion in $LLM_CRITERIA; do
     # Validate and fix if needed
     if ! is_valid_json "$CRITERION_JSON"; then
         echo "  Warning: Invalid JSON for $criterion, using 0 score" >&2
-        max_pts=$(get_criterion_max "$criterion")
-        CRITERION_JSON="{\"points\": 0, \"max\": $max_pts, \"evidence\": \"Invalid JSON response\"}"
+        CRITERION_JSON='{"met": false, "evidence": "Invalid JSON response"}'
         FAILED_CRITERIA="$FAILED_CRITERIA $criterion"
     fi
 
-    # Ensure required fields exist
-    if ! echo "$CRITERION_JSON" | jq -e 'has("points") and has("max") and has("evidence")' > /dev/null 2>&1; then
+    # Ensure required fields exist (binary format: met + evidence)
+    if ! echo "$CRITERION_JSON" | jq -e 'has("met") and has("evidence")' > /dev/null 2>&1; then
         echo "  Warning: Missing fields for $criterion, using 0 score" >&2
-        max_pts=$(get_criterion_max "$criterion")
-        CRITERION_JSON="{\"points\": 0, \"max\": $max_pts, \"evidence\": \"Missing required fields\"}"
+        CRITERION_JSON='{"met": false, "evidence": "Missing required fields"}'
         FAILED_CRITERIA="$FAILED_CRITERIA $criterion"
     fi
 
-    # Clamp points to valid range
-    local_max=$(echo "$CRITERION_JSON" | jq '.max')
-    local_pts=$(echo "$CRITERION_JSON" | jq '.points')
-    if echo "$local_pts $local_max" | awk '{exit !($1 < 0 || $1 > $2)}'; then
-        echo "  Warning: Clamping $criterion score ($local_pts -> [0, $local_max])" >&2
-        CRITERION_JSON=$(echo "$CRITERION_JSON" | jq '
-            .points = (if .points < 0 then 0 elif .points > .max then .max else .points end)
-        ')
+    # Convert binary met → points (bash computes score, not LLM)
+    MET_VALUE=$(echo "$CRITERION_JSON" | jq -r '.met')
+    EVIDENCE=$(echo "$CRITERION_JSON" | jq -r '.evidence')
+    if [ "$MET_VALUE" = "true" ]; then
+        POINTS=1
+    else
+        POINTS=0
     fi
+
+    # Build the scored criterion JSON
+    CRITERION_JSON=$(jq -n \
+        --argjson met "$MET_VALUE" \
+        --argjson points "$POINTS" \
+        --arg evidence "$EVIDENCE" \
+        '{met: $met, points: $points, max: 1, evidence: $evidence}')
 
     ACCUMULATED_RESULT=$(aggregate_criterion_results "$criterion" "$CRITERION_JSON" "$ACCUMULATED_RESULT")
-    echo "  $criterion: $(echo "$CRITERION_JSON" | jq -r '"\(.points)/\(.max)"')" >&2
+    echo "  $criterion: $POINTS/1 (met=$MET_VALUE)" >&2
 done
 
 # Finalize LLM results (adds summary + improvements)

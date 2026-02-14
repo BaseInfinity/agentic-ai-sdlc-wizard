@@ -220,8 +220,10 @@ if [ "$REPORT_MODE" = true ]; then
             clean_code)   echo "- Focus on code quality: consistent naming, no unused variables, clear logic" ;;
             self_review)  echo "- Always perform a self-review pass before finishing" ;;
             tdd_red)      echo "- Write failing tests BEFORE implementation" ;;
-            tdd_green)    echo "- Ensure all tests pass after implementation" ;;
-            plan_mode)    echo "- Use plan mode for medium/hard tasks before coding" ;;
+            tdd_green_ran)    echo "- Run tests during implementation" ;;
+            tdd_green_pass)   echo "- Ensure all tests pass after implementation" ;;
+            plan_mode_outline) echo "- Outline steps before writing code" ;;
+            plan_mode_tool)    echo "- Use plan mode tool for medium/hard tasks" ;;
             confidence)   echo "- Always state confidence level explicitly" ;;
             task_tracking) echo "- Use TodoWrite or TaskCreate to track work" ;;
             *)            echo "- Review SDLC practices for $WEAKEST_NAME" ;;

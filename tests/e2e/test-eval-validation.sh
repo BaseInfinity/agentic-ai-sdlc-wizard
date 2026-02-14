@@ -37,8 +37,10 @@ fail() {
 
 VALID_STANDARD='{
     "criteria": {
-        "plan_mode": {"points": 2, "max": 2, "evidence": "Used plan mode"},
-        "tdd_green": {"points": 1, "max": 2, "evidence": "Tests pass"},
+        "plan_mode_outline": {"points": 1, "max": 1, "evidence": "Outlined steps"},
+        "plan_mode_tool": {"points": 1, "max": 1, "evidence": "Used plan mode tool"},
+        "tdd_green_ran": {"points": 1, "max": 1, "evidence": "Tests ran"},
+        "tdd_green_pass": {"points": 0, "max": 1, "evidence": "Tests not all passing"},
         "self_review": {"points": 1, "max": 1, "evidence": "Reviewed"},
         "clean_code": {"points": 1, "max": 1, "evidence": "Clean"}
     },
@@ -48,8 +50,10 @@ VALID_STANDARD='{
 
 VALID_UI='{
     "criteria": {
-        "plan_mode": {"points": 2, "max": 2, "evidence": "Used plan mode"},
-        "tdd_green": {"points": 2, "max": 2, "evidence": "Tests pass"},
+        "plan_mode_outline": {"points": 1, "max": 1, "evidence": "Outlined steps"},
+        "plan_mode_tool": {"points": 1, "max": 1, "evidence": "Used plan mode tool"},
+        "tdd_green_ran": {"points": 1, "max": 1, "evidence": "Tests ran"},
+        "tdd_green_pass": {"points": 1, "max": 1, "evidence": "Tests pass"},
         "self_review": {"points": 1, "max": 1, "evidence": "Reviewed"},
         "clean_code": {"points": 1, "max": 1, "evidence": "Clean"},
         "design_system": {"points": 1, "max": 1, "evidence": "Checked DESIGN_SYSTEM.md"}
@@ -60,9 +64,11 @@ VALID_UI='{
 
 VALID_FULL_STANDARD='{
     "criteria": {
-        "plan_mode": {"points": 2, "max": 2, "evidence": "Used plan mode"},
-        "tdd_green": {"points": 1.5, "max": 2, "evidence": "Tests pass late"},
-        "self_review": {"points": 0.5, "max": 1, "evidence": "Brief"},
+        "plan_mode_outline": {"points": 1, "max": 1, "evidence": "Outlined steps"},
+        "plan_mode_tool": {"points": 1, "max": 1, "evidence": "Used plan mode tool"},
+        "tdd_green_ran": {"points": 1, "max": 1, "evidence": "Tests ran"},
+        "tdd_green_pass": {"points": 0, "max": 1, "evidence": "Tests pass late"},
+        "self_review": {"points": 0, "max": 1, "evidence": "Brief"},
         "clean_code": {"points": 1, "max": 1, "evidence": "Clean"},
         "task_tracking": {"points": 1, "max": 1, "evidence": "Found TaskCreate"},
         "confidence": {"points": 1, "max": 1, "evidence": "Stated HIGH"},
@@ -74,8 +80,10 @@ VALID_FULL_STANDARD='{
 
 VALID_FULL_UI='{
     "criteria": {
-        "plan_mode": {"points": 2, "max": 2, "evidence": "ok"},
-        "tdd_green": {"points": 2, "max": 2, "evidence": "ok"},
+        "plan_mode_outline": {"points": 1, "max": 1, "evidence": "ok"},
+        "plan_mode_tool": {"points": 1, "max": 1, "evidence": "ok"},
+        "tdd_green_ran": {"points": 1, "max": 1, "evidence": "ok"},
+        "tdd_green_pass": {"points": 1, "max": 1, "evidence": "ok"},
         "self_review": {"points": 1, "max": 1, "evidence": "ok"},
         "clean_code": {"points": 1, "max": 1, "evidence": "ok"},
         "design_system": {"points": 1, "max": 1, "evidence": "ok"},

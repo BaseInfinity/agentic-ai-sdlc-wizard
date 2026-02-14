@@ -109,9 +109,11 @@ test_extraction "7. Full nested criteria structure" \
   "criteria": {
     "task_tracking": {"points": 1, "max": 1, "evidence": "Created TodoWrite"},
     "confidence": {"points": 1, "max": 1, "evidence": "Stated HIGH"},
-    "plan_mode": {"points": 2, "max": 2, "evidence": "Entered plan mode"},
+    "plan_mode_outline": {"points": 1, "max": 1, "evidence": "Outlined steps"},
+    "plan_mode_tool": {"points": 1, "max": 1, "evidence": "Entered plan mode"},
     "tdd_red": {"points": 2, "max": 2, "evidence": "Wrote test first"},
-    "tdd_green": {"points": 1.5, "max": 2, "evidence": "Tests pass"},
+    "tdd_green_ran": {"points": 1, "max": 1, "evidence": "Tests ran"},
+    "tdd_green_pass": {"points": 1, "max": 1, "evidence": "Tests pass"},
     "self_review": {"points": 0.5, "max": 1, "evidence": "Brief review"},
     "clean_code": {"points": 0.5, "max": 1, "evidence": "Clean"}
   },

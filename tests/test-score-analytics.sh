@@ -61,7 +61,7 @@ test_empty_history() {
 test_single_entry() {
     local single_file="$TMPDIR/single.jsonl"
     cat > "$single_file" << 'ENTRY'
-{"timestamp":"2026-02-10T10:00:00Z","scenario":"add-feature","score":7.0,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode":{"points":2,"max":2},"tdd_red":{"points":1,"max":2},"tdd_green":{"points":1,"max":2},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}
+{"timestamp":"2026-02-10T10:00:00Z","scenario":"add-feature","score":7.0,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode_outline":{"points":1,"max":1},"plan_mode_tool":{"points":1,"max":1},"tdd_red":{"points":1,"max":2},"tdd_green_ran":{"points":1,"max":1},"tdd_green_pass":{"points":0,"max":1},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}
 ENTRY
     local output
     output=$("$ANALYTICS" --history "$single_file" 2>&1)
@@ -76,9 +76,9 @@ ENTRY
 test_multiple_entries_average() {
     local multi_file="$TMPDIR/multi.jsonl"
     cat > "$multi_file" << 'ENTRIES'
-{"timestamp":"2026-02-08T10:00:00Z","scenario":"add-feature","score":6.0,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode":{"points":1,"max":2},"tdd_red":{"points":1,"max":2},"tdd_green":{"points":1,"max":2},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}
-{"timestamp":"2026-02-09T10:00:00Z","scenario":"fix-bug","score":8.0,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode":{"points":2,"max":2},"tdd_red":{"points":2,"max":2},"tdd_green":{"points":1,"max":2},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}
-{"timestamp":"2026-02-10T10:00:00Z","scenario":"refactor","score":7.0,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode":{"points":2,"max":2},"tdd_red":{"points":1,"max":2},"tdd_green":{"points":1,"max":2},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}
+{"timestamp":"2026-02-08T10:00:00Z","scenario":"add-feature","score":6.0,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode_outline":{"points":1,"max":1},"plan_mode_tool":{"points":0,"max":1},"tdd_red":{"points":1,"max":2},"tdd_green_ran":{"points":1,"max":1},"tdd_green_pass":{"points":0,"max":1},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}
+{"timestamp":"2026-02-09T10:00:00Z","scenario":"fix-bug","score":8.0,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode_outline":{"points":1,"max":1},"plan_mode_tool":{"points":1,"max":1},"tdd_red":{"points":2,"max":2},"tdd_green_ran":{"points":1,"max":1},"tdd_green_pass":{"points":0,"max":1},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}
+{"timestamp":"2026-02-10T10:00:00Z","scenario":"refactor","score":7.0,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode_outline":{"points":1,"max":1},"plan_mode_tool":{"points":1,"max":1},"tdd_red":{"points":1,"max":2},"tdd_green_ran":{"points":1,"max":1},"tdd_green_pass":{"points":0,"max":1},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}
 ENTRIES
     local output
     output=$("$ANALYTICS" --history "$multi_file" 2>&1)
@@ -133,7 +133,7 @@ test_trend_calculation() {
     # Create 10 entries with improving scores
     for i in $(seq 1 10); do
         score=$(echo "5.0 + $i * 0.3" | bc -l)
-        printf '{"timestamp":"2026-02-%02dT10:00:00Z","scenario":"add-feature","score":%s,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode":{"points":1,"max":2},"tdd_red":{"points":1,"max":2},"tdd_green":{"points":1,"max":2},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}\n' "$i" "$score" >> "$trend_file"
+        printf '{"timestamp":"2026-02-%02dT10:00:00Z","scenario":"add-feature","score":%s,"max_score":10,"criteria":{"task_tracking":{"points":1,"max":1},"confidence":{"points":1,"max":1},"plan_mode_outline":{"points":1,"max":1},"plan_mode_tool":{"points":0,"max":1},"tdd_red":{"points":1,"max":2},"tdd_green_ran":{"points":1,"max":1},"tdd_green_pass":{"points":0,"max":1},"self_review":{"points":1,"max":1},"clean_code":{"points":0,"max":1}}}\n' "$i" "$score" >> "$trend_file"
     done
     local output
     output=$("$ANALYTICS" --history "$trend_file" 2>&1)

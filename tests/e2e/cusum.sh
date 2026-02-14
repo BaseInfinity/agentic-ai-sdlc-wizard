@@ -36,7 +36,7 @@ WARNING_THRESHOLD=2.0    # CUSUM threshold for warning
 
 # Per-criterion targets (max points for each)
 # Used when calculating per-criterion CUSUM drift
-CRITERION_TARGETS="plan_mode:2 tdd_green:2 self_review:1 clean_code:1 task_tracking:1 confidence:1 tdd_red:2"
+CRITERION_TARGETS="plan_mode_outline:1 plan_mode_tool:1 tdd_green_ran:1 tdd_green_pass:1 self_review:1 clean_code:1 task_tracking:1 confidence:1 tdd_red:2"
 
 # Colors
 RED='\033[0;31m'
