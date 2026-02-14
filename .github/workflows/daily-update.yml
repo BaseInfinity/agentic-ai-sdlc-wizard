@@ -128,15 +128,18 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: ${{ steps.build-prompt.outputs.prompt }}
+          claude_args: |
+            --output-format json
+            --json-schema '{"type":"object","properties":{"version":{"type":"string"},"relevance":{"type":"string","enum":["HIGH","MEDIUM","LOW"]},"summary":{"type":"string"},"wizard_impact":{"type":"array","items":{"type":"object","properties":{"area":{"type":"string"},"description":{"type":"string"},"suggested_action":{"type":"string"},"files_affected":{"type":"array","items":{"type":"string"}}}}},"plugin_check":{"type":"object","properties":{"new_official_plugins":{"type":"array","items":{"type":"string"}},"replaces_custom":{"type":"array","items":{"type":"string"}}}},"reasoning":{"type":"string"}},"required":["version","relevance","summary","reasoning"]}'
 
       - name: Save analysis to file
         if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'
         env:
           # Use env to safely pass potentially malicious content
-          ANALYSIS_RESPONSE: ${{ steps.analyze.outputs.response }}
+          ANALYSIS_OUTPUT: ${{ steps.analyze.outputs.structured_output }}
         run: |
           # Write to file via env var (safe from injection)
-          printf '%s' "$ANALYSIS_RESPONSE" > /tmp/analysis.json
+          printf '%s' "$ANALYSIS_OUTPUT" > /tmp/analysis.json
 
       - name: Parse analysis result
         if: steps.check-update.outputs.needs_update == 'true' && steps.existing-pr.outputs.skip != 'true'

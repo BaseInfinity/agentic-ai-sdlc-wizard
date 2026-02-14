@@ -1095,6 +1095,70 @@ test_daily_no_direct_prompt_input
 test_daily_no_model_input
 test_daily_no_stderr_mixing_in_eval
 
+# Test 53: daily-update must NOT reference outputs.response (doesn't exist in claude-code-action@v1)
+test_daily_no_outputs_response() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/daily-update.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "daily-update.yml not found"
+        return
+    fi
+
+    # claude-code-action@v1 exposes 'structured_output', not 'response'
+    # Any reference to outputs.response will always be empty
+    python3 -c "
+import yaml
+with open('$WORKFLOW') as f:
+    content = f.read()
+if 'outputs.response' in content:
+    print('FOUND')
+" > /tmp/outputs_response_check.txt 2>&1
+
+    if grep -q "FOUND" /tmp/outputs_response_check.txt; then
+        fail "daily-update references 'outputs.response' — claude-code-action@v1 uses 'outputs.structured_output' instead"
+    else
+        pass "daily-update does not reference non-existent 'outputs.response'"
+    fi
+}
+
+# Test 54: daily-update analysis step must use --json-schema for structured output
+test_daily_analysis_has_json_schema() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/daily-update.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "daily-update.yml not found"
+        return
+    fi
+
+    # The analysis step needs --json-schema in claude_args for
+    # structured_output to contain validated JSON
+    python3 -c "
+import yaml
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+for job_name, job in wf.get('jobs', {}).items():
+    for step in job.get('steps', []):
+        name = step.get('name', '')
+        if 'Analyze release' in name:
+            args = step.get('with', {}).get('claude_args', '')
+            if '--json-schema' in args or '--output-format' in args:
+                print('HAS_SCHEMA')
+            else:
+                print('MISSING_SCHEMA')
+" > /tmp/json_schema_check.txt 2>&1
+
+    if grep -q "HAS_SCHEMA" /tmp/json_schema_check.txt; then
+        pass "daily-update analysis step uses --json-schema for structured output"
+    elif grep -q "MISSING_SCHEMA" /tmp/json_schema_check.txt; then
+        fail "daily-update analysis step missing --json-schema in claude_args (structured_output will be empty)"
+    else
+        pass "daily-update analysis step not found (may have been refactored)"
+    fi
+}
+
+test_daily_no_outputs_response
+test_daily_analysis_has_json_schema
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
