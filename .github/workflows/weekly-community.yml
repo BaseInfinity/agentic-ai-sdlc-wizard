@@ -40,10 +40,35 @@ jobs:
           echo "current_date=$CURRENT_DATE" >> $GITHUB_OUTPUT
           echo "Current date: $CURRENT_DATE"
 
-      - name: Read analysis prompt
+      - name: Build scan prompt
+        id: build-prompt
         run: |
-          # Store prompt in file to avoid shell escaping issues
-          cat .github/prompts/analyze-community.md > /tmp/community_prompt.md
+          # Assemble prompt from template + scan parameters
+          {
+            cat .github/prompts/analyze-community.md
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Scan Parameters"
+            echo ""
+            echo "**Scan Period:** ${{ steps.last-scan.outputs.last_scan }} to ${{ steps.current-date.outputs.current_date }}"
+            echo ""
+            echo "Please search for and analyze Claude Code discussions from this time period across:"
+            echo "- Reddit (r/ClaudeAI, r/programming)"
+            echo "- Hacker News"
+            echo "- Popular dev blogs"
+            echo "- Official Anthropic community channels"
+            echo ""
+            echo "Focus on finding actionable insights that could improve the SDLC Wizard."
+            echo "Most content will be noise - that's expected. Only report genuinely useful findings."
+          } > /tmp/community_prompt.md
+
+          # Pass assembled prompt as multi-line output
+          {
+            echo "prompt<<PROMPT_EOF"
+            cat /tmp/community_prompt.md
+            echo "PROMPT_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Scan community with Claude
         id: scan
@@ -51,33 +76,68 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt_file: /tmp/community_prompt.md
-          prompt: |
-            ---
-
-            ## Scan Parameters
-
-            **Scan Period:** ${{ steps.last-scan.outputs.last_scan }} to ${{ steps.current-date.outputs.current_date }}
-
-            Please search for and analyze Claude Code discussions from this time period across:
-            - Reddit (r/ClaudeAI, r/programming)
-            - Hacker News
-            - Popular dev blogs
-            - Official Anthropic community channels
-
-            Focus on finding actionable insights that could improve the SDLC Wizard.
-            Most content will be noise - that's expected. Only report genuinely useful findings.
-          direct_prompt: true
-          model: claude-sonnet-4-20250514
-          allowed_tools: "WebSearch,WebFetch"
+          prompt: ${{ steps.build-prompt.outputs.prompt }}
+          claude_args: |
+            --allowedTools "WebSearch,WebFetch"
 
       - name: Save scan result to file
-        env:
-          # Use env to safely pass potentially malicious content
-          SCAN_RESPONSE: ${{ steps.scan.outputs.response }}
         run: |
-          # Write to file via env var (safe from injection)
-          printf '%s' "$SCAN_RESPONSE" > /tmp/scan_result.json
+          # claude-code-action saves Claude's response to this file
+          OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
+
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "::warning::No execution output file found"
+            echo '{"nothing_notable":true}' > /tmp/scan_result.json
+            exit 0
+          fi
+
+          # Extract response text (format varies: array or object)
+          IS_ARRAY=$(jq -r 'if type == "array" then "true" else "false" end' "$OUTPUT_FILE" 2>/dev/null || echo "false")
+          echo "Output format: is_array=$IS_ARRAY"
+
+          if [ "$IS_ARRAY" = "true" ]; then
+            RESPONSE_TEXT=$(jq -r '
+              [.[] | select(type == "object")] |
+              [.[] | select(.role == "assistant" or .type == "result")] |
+              last |
+              if .content then
+                (if (.content | type) == "array" then
+                  [.content[] | select(.type == "text") | .text] | join("")
+                else
+                  .content
+                end)
+              elif .text then .text
+              elif .result then .result
+              else empty
+              end
+            ' "$OUTPUT_FILE" 2>/dev/null || echo "")
+          else
+            RESPONSE_TEXT=$(jq -r '.result // .output // empty' "$OUTPUT_FILE" 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$RESPONSE_TEXT" ]; then
+            echo "::warning::Could not extract text from execution output"
+            echo '{"nothing_notable":true}' > /tmp/scan_result.json
+            exit 0
+          fi
+
+          echo "Response text length: ${#RESPONSE_TEXT}"
+
+          # Extract JSON from response (may be wrapped in markdown code blocks)
+          echo "$RESPONSE_TEXT" | sed -n '/^```json/,/^```$/p' | sed '1d;$d' > /tmp/scan_result.json 2>/dev/null
+
+          # If no code block, try raw text as JSON
+          if [ ! -s /tmp/scan_result.json ]; then
+            echo "$RESPONSE_TEXT" > /tmp/scan_result.json
+          fi
+
+          # Validate it's parseable JSON
+          if ! jq empty /tmp/scan_result.json 2>/dev/null; then
+            echo "::warning::Not valid JSON, using fallback"
+            echo '{"nothing_notable":true}' > /tmp/scan_result.json
+          fi
+
+          echo "Scan result extracted successfully"
 
       - name: Parse scan result
         id: parse
@@ -219,7 +279,6 @@ jobs:
             3. Return results as JSON with score
 
             After execution, output a summary of what you did and whether SDLC was followed.
-          model: claude-sonnet-4-20250514
 
       - name: Baseline - Current SDLC (Tier 2)
         id: baseline
@@ -269,8 +328,6 @@ jobs:
             - Only apply changes that directly improve SDLC enforcement
             - Keep changes minimal and focused
             - Don't rewrite entire sections
-          direct_prompt: true
-          model: claude-sonnet-4-20250514
 
       - name: Reset test fixture for candidate
         run: |
@@ -299,7 +356,6 @@ jobs:
             3. Return results as JSON with score
 
             After execution, output a summary of what you did and whether SDLC was followed.
-          model: claude-sonnet-4-20250514
 
       - name: Candidate - With Improvements (Tier 2)
         id: candidate

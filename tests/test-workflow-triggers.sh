@@ -1153,6 +1153,183 @@ for job_name, job in wf.get('jobs', {}).items():
 test_daily_no_outputs_response
 test_daily_extracts_from_output_file
 
+# ============================================
+# Weekly-Community Workflow Input Validation Tests
+# ============================================
+# Same class of bugs as daily-update: invalid claude-code-action inputs.
+
+# Test 55: weekly-community must NOT use 'prompt_file' (not a valid action input)
+test_weekly_no_prompt_file_input() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/weekly-community.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "weekly-community.yml not found"
+        return
+    fi
+
+    python3 -c "
+import yaml
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+for job_name, job in wf.get('jobs', {}).items():
+    for step in job.get('steps', []):
+        with_block = step.get('with', {})
+        if 'prompt_file' in with_block:
+            print('FOUND:' + step.get('name', 'unnamed'))
+" > /tmp/weekly_prompt_file_check.txt 2>&1
+
+    if grep -q "FOUND:" /tmp/weekly_prompt_file_check.txt; then
+        STEP=$(grep "FOUND:" /tmp/weekly_prompt_file_check.txt | head -1 | sed 's/FOUND://')
+        fail "weekly-community uses 'prompt_file' input in step '$STEP' — not a valid claude-code-action input"
+    else
+        pass "weekly-community does not use invalid 'prompt_file' input"
+    fi
+}
+
+# Test 56: weekly-community must NOT use 'direct_prompt' (not a valid action input)
+test_weekly_no_direct_prompt_input() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/weekly-community.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "weekly-community.yml not found"
+        return
+    fi
+
+    python3 -c "
+import yaml
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+for job_name, job in wf.get('jobs', {}).items():
+    for step in job.get('steps', []):
+        with_block = step.get('with', {})
+        if 'direct_prompt' in with_block:
+            print('FOUND:' + step.get('name', 'unnamed'))
+" > /tmp/weekly_direct_prompt_check.txt 2>&1
+
+    if grep -q "FOUND:" /tmp/weekly_direct_prompt_check.txt; then
+        STEP=$(grep "FOUND:" /tmp/weekly_direct_prompt_check.txt | head -1 | sed 's/FOUND://')
+        fail "weekly-community uses 'direct_prompt' input in step '$STEP' — not a valid claude-code-action input"
+    else
+        pass "weekly-community does not use invalid 'direct_prompt' input"
+    fi
+}
+
+# Test 57: weekly-community must NOT use 'model' as a top-level action input
+test_weekly_no_model_input() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/weekly-community.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "weekly-community.yml not found"
+        return
+    fi
+
+    python3 -c "
+import yaml
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+for job_name, job in wf.get('jobs', {}).items():
+    for step in job.get('steps', []):
+        uses = step.get('uses', '')
+        with_block = step.get('with', {})
+        if 'claude-code-action' in uses and 'model' in with_block:
+            print('FOUND:' + step.get('name', 'unnamed'))
+" > /tmp/weekly_model_check.txt 2>&1
+
+    if grep -q "FOUND:" /tmp/weekly_model_check.txt; then
+        STEP=$(grep "FOUND:" /tmp/weekly_model_check.txt | head -1 | sed 's/FOUND://')
+        fail "weekly-community uses 'model' as action input in step '$STEP' — not a valid claude-code-action input"
+    else
+        pass "weekly-community does not use invalid 'model' action input"
+    fi
+}
+
+# Test 58: weekly-community must NOT use 'allowed_tools' as action input (use claude_args)
+test_weekly_no_allowed_tools_input() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/weekly-community.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "weekly-community.yml not found"
+        return
+    fi
+
+    python3 -c "
+import yaml
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+for job_name, job in wf.get('jobs', {}).items():
+    for step in job.get('steps', []):
+        with_block = step.get('with', {})
+        if 'allowed_tools' in with_block:
+            print('FOUND:' + step.get('name', 'unnamed'))
+" > /tmp/weekly_allowed_tools_check.txt 2>&1
+
+    if grep -q "FOUND:" /tmp/weekly_allowed_tools_check.txt; then
+        STEP=$(grep "FOUND:" /tmp/weekly_allowed_tools_check.txt | head -1 | sed 's/FOUND://')
+        fail "weekly-community uses 'allowed_tools' input in step '$STEP' — use claude_args --allowedTools instead"
+    else
+        pass "weekly-community does not use invalid 'allowed_tools' input"
+    fi
+}
+
+# Test 59: weekly-community must NOT reference outputs.response
+test_weekly_no_outputs_response() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/weekly-community.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "weekly-community.yml not found"
+        return
+    fi
+
+    python3 -c "
+import yaml
+with open('$WORKFLOW') as f:
+    content = f.read()
+if 'outputs.response' in content:
+    print('FOUND')
+" > /tmp/weekly_outputs_response_check.txt 2>&1
+
+    if grep -q "FOUND" /tmp/weekly_outputs_response_check.txt; then
+        fail "weekly-community references 'outputs.response' — claude-code-action@v1 has no response output"
+    else
+        pass "weekly-community does not reference non-existent 'outputs.response'"
+    fi
+}
+
+# Test 60: weekly-community must extract scan result from execution output file
+test_weekly_extracts_from_output_file() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/weekly-community.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "weekly-community.yml not found"
+        return
+    fi
+
+    python3 -c "
+import yaml
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+for job_name, job in wf.get('jobs', {}).items():
+    for step in job.get('steps', []):
+        run = step.get('run', '')
+        name = step.get('name', '').lower()
+        if 'claude-execution-output.json' in run and ('scan' in name or 'extract' in name or 'save' in name):
+            print('READS_OUTPUT_FILE')
+" > /tmp/weekly_output_file_check.txt 2>&1
+
+    if grep -q "READS_OUTPUT_FILE" /tmp/weekly_output_file_check.txt; then
+        pass "weekly-community extracts scan result from execution output file"
+    else
+        fail "weekly-community does not read claude-execution-output.json for scan result"
+    fi
+}
+
+test_weekly_no_prompt_file_input
+test_weekly_no_direct_prompt_input
+test_weekly_no_model_input
+test_weekly_no_allowed_tools_input
+test_weekly_no_outputs_response
+test_weekly_extracts_from_output_file
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
