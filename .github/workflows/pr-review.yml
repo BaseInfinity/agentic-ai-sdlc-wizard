@@ -175,14 +175,8 @@ jobs:
 
             ## Existing PR Comments to Address
 
-            If there are existing comments, address them in your review:
-
-            Review comments (on specific lines):
-            $(cat /tmp/review-comments.json 2>/dev/null || echo "[]")
-
-            General PR comments:
-            $(cat /tmp/issue-comments.json 2>/dev/null || echo "[]")
-
+            Claude Code Action provides existing PR comments in context automatically.
+            If there are existing comments, address them in your review.
             When addressing comments, reference them: "Regarding @user's question about X: ..."
 
             ## Review Focus Areas

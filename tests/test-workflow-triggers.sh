@@ -808,9 +808,165 @@ test_fail_on_regression_no_continue_on_error() {
     fi
 }
 
+# ============================================
+# CI Comment Safety Tests
+# ============================================
+# These tests ensure untrusted LLM output (criteria evidence)
+# is NOT assigned via ${{ }} inline in bash (backtick injection).
+
+# Test 45: CRITERIA is passed via env block, not inline ${{ }} in bash
+test_criteria_not_inline_expanded() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found (needed for criteria safety test)"
+        return
+    fi
+
+    # Check that CRITERIA is NOT set via inline ${{ }} in a bash variable assignment
+    # Bad:  CRITERIA="${{ steps.eval-candidate.outputs.criteria }}"
+    # Good: env: CRITERIA: ${{ steps.eval-candidate.outputs.criteria }}
+    if grep -E 'CRITERIA="\$\{\{' "$WORKFLOW"; then
+        fail "CRITERIA uses inline \${{ }} expansion (backticks in LLM evidence text execute as commands)"
+    else
+        pass "CRITERIA is not inline-expanded in bash (safe from backtick injection)"
+    fi
+}
+
+# Test 46: Comment-building steps use env block for untrusted outputs
+test_comment_steps_use_env_block() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found (needed for env block test)"
+        return
+    fi
+
+    # Both "Build quick check comment message" and "Build full evaluation comment message"
+    # should have an env: block that includes CRITERIA
+    QUICK_HAS_ENV=false
+    FULL_HAS_ENV=false
+
+    # Use python for reliable multi-line YAML parsing
+    python3 -c "
+import yaml, sys
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+for job_name, job in wf.get('jobs', {}).items():
+    for step in job.get('steps', []):
+        name = step.get('name', '')
+        env = step.get('env', {})
+        if 'Build quick check comment message' in name:
+            if 'CRITERIA' in env:
+                print('QUICK_ENV_OK')
+        if 'Build full evaluation comment message' in name:
+            if 'CRITERIA' in env:
+                print('FULL_ENV_OK')
+" > /tmp/env_check_result.txt 2>&1
+
+    if grep -q "QUICK_ENV_OK" /tmp/env_check_result.txt; then
+        QUICK_HAS_ENV=true
+    fi
+    if grep -q "FULL_ENV_OK" /tmp/env_check_result.txt; then
+        FULL_HAS_ENV=true
+    fi
+
+    if [ "$QUICK_HAS_ENV" = true ] && [ "$FULL_HAS_ENV" = true ]; then
+        pass "Both comment-building steps pass CRITERIA via env block (safe)"
+    else
+        if [ "$QUICK_HAS_ENV" = false ]; then
+            fail "Quick check comment step missing CRITERIA in env block"
+        fi
+        if [ "$FULL_HAS_ENV" = false ]; then
+            fail "Full evaluation comment step missing CRITERIA in env block"
+        fi
+    fi
+}
+
+test_criteria_not_inline_expanded
+test_comment_steps_use_env_block
+
 test_quick_check_comment_continue_on_error
 test_quick_check_post_comment_continue_on_error
 test_fail_on_regression_no_continue_on_error
+
+# ============================================
+# Full E2E Dependency Compatibility Tests
+# ============================================
+# These tests ensure the e2e-full-evaluation job can actually run
+# when triggered by the 'labeled' event (merge-ready label).
+
+# Test 47: e2e-full-evaluation must not depend on jobs that skip on 'labeled' events
+test_full_eval_deps_run_on_labeled() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found"
+        return
+    fi
+
+    # Parse the workflow to check that every job in e2e-full-evaluation's 'needs'
+    # does NOT have a condition that excludes 'labeled' events
+    python3 -c "
+import yaml, sys
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+jobs = wf.get('jobs', {})
+full_eval = jobs.get('e2e-full-evaluation', {})
+needs = full_eval.get('needs', [])
+if isinstance(needs, str):
+    needs = [needs]
+
+blocked = []
+for dep in needs:
+    dep_job = jobs.get(dep, {})
+    condition = str(dep_job.get('if', ''))
+    # If the dependency skips on 'labeled' events, full-eval can never run
+    if \"event.action != 'labeled'\" in condition:
+        blocked.append(dep)
+
+if blocked:
+    print('BLOCKED_BY:' + ','.join(blocked))
+else:
+    print('DEPS_OK')
+" > /tmp/full_eval_deps.txt 2>&1
+
+    if grep -q "DEPS_OK" /tmp/full_eval_deps.txt; then
+        pass "e2e-full-evaluation dependencies all run on 'labeled' events"
+    else
+        BLOCKERS=$(grep "BLOCKED_BY:" /tmp/full_eval_deps.txt | sed 's/BLOCKED_BY://')
+        fail "e2e-full-evaluation depends on jobs that skip on 'labeled': $BLOCKERS (full eval can never run)"
+    fi
+}
+
+test_full_eval_deps_run_on_labeled
+
+# ============================================
+# PR Review Prompt Hygiene Tests
+# ============================================
+# Ensure the review prompt doesn't contain shell
+# constructs that won't expand in YAML strings.
+
+# Test 48: pr-review prompt must not use $(cat ...) in YAML prompt field
+test_review_prompt_no_shell_subst() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/pr-review.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "pr-review.yml file not found"
+        return
+    fi
+
+    # $(cat ...) in a YAML 'prompt: |' field is dead code —
+    # YAML strings don't execute shell commands.
+    # claude-code-action provides comments through its own mechanism.
+    if grep -E '\$\(cat ' "$WORKFLOW"; then
+        fail "pr-review.yml prompt contains \$(cat ...) — won't expand in YAML string (dead code)"
+    else
+        pass "pr-review.yml prompt has no shell command substitution in YAML strings"
+    fi
+}
+
+test_review_prompt_no_shell_subst
 
 echo ""
 echo "=== Results ==="

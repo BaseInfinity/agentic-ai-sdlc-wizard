@@ -635,6 +635,12 @@ jobs:
       - name: Build quick check comment message
         id: build-quick-message
         continue-on-error: true   # Comment is cosmetic — don't fail the job
+        env:
+          # CRITERIA and HISTORICAL_CONTEXT passed via env block to avoid
+          # backtick command substitution — LLM evidence text contains
+          # `npm test`, `git diff` etc. which bash executes if inline-expanded
+          CRITERIA: ${{ steps.eval-candidate.outputs.criteria }}
+          HISTORICAL_CONTEXT: ${{ steps.historical.outputs.context }}
         run: |
           IS_BOOTSTRAPPING="${{ steps.compare.outputs.is_bootstrapping }}"
           BASELINE="${{ steps.compare.outputs.baseline }}"
@@ -654,9 +660,7 @@ jobs:
           TOTAL_TOKENS="${{ steps.eval-candidate.outputs.total_tokens }}"
           EST_COST="${{ steps.eval-candidate.outputs.est_cost }}"
           TOKENS_PER_POINT="${{ steps.eval-candidate.outputs.tokens_per_point }}"
-          CRITERIA="${{ steps.eval-candidate.outputs.criteria }}"
           SCENARIO_NAME="${{ steps.select-scenario.outputs.scenario_name }}"
-          HISTORICAL_CONTEXT="${{ steps.historical.outputs.context }}"
 
           # N/A-aware metric formatting (prevents "N/As" display bug)
           format_metric() {
@@ -855,7 +859,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' &&
       contains(github.event.pull_request.labels.*.name, 'merge-ready')
-    needs: [validate, cleanup-old-comments]
+    needs: [validate]
 
     steps:
       - name: Checkout PR branch
@@ -1394,6 +1398,12 @@ jobs:
 
       - name: Build full evaluation comment message
         id: build-full-message
+        env:
+          # CRITERIA and HISTORICAL_CONTEXT passed via env block to avoid
+          # backtick command substitution — LLM evidence text contains
+          # `npm test`, `git diff` etc. which bash executes if inline-expanded
+          CRITERIA: ${{ steps.eval-candidate.outputs.criteria }}
+          HISTORICAL_CONTEXT: ${{ steps.historical.outputs.context }}
         run: |
           IS_BOOTSTRAPPING="${{ steps.compare.outputs.is_bootstrapping }}"
           BASELINE="${{ steps.compare.outputs.baseline }}"
@@ -1410,14 +1420,12 @@ jobs:
           STATUS="${{ steps.compare.outputs.status }}"
           EMOJI="${{ steps.compare.outputs.emoji }}"
           VERDICT="${{ steps.compare.outputs.verdict }}"
-          CRITERIA="${{ steps.eval-candidate.outputs.criteria }}"
           SDP_SCORE="${{ steps.eval-candidate.outputs.sdp_score }}"
           SDP_EXTERNAL="${{ steps.eval-candidate.outputs.sdp_external }}"
           SDP_EXTERNAL_CHANGE="${{ steps.eval-candidate.outputs.sdp_external_change }}"
           SDP_ROBUSTNESS="${{ steps.eval-candidate.outputs.sdp_robustness }}"
           SDP_INTERPRETATION="${{ steps.eval-candidate.outputs.sdp_interpretation }}"
           SCENARIO_NAME="${{ steps.select-scenario.outputs.scenario_name }}"
-          HISTORICAL_CONTEXT="${{ steps.historical.outputs.context }}"
 
           if [ "$IS_BOOTSTRAPPING" = "true" ]; then
             {

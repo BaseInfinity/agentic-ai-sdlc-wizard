@@ -17,6 +17,11 @@ This is a **meta-repository** - it contains the SDLC Wizard documentation and au
 - No package dependencies to install
 - No traditional unit tests (bash scripts only)
 
+### Test Dependencies
+- `bash` (3.x+ on macOS, 4.x+ on Linux)
+- `python3` with `yaml` module (used for YAML parsing in tests)
+- `jq` (used for JSON processing in tests and workflows)
+
 ## Commands
 
 | Command | Purpose |
