@@ -607,6 +607,8 @@ PR comments now show:
 - Track tokens/point efficiency metric
 - Track but don't score yet (need baseline data first)
 
+**BUG (2026-02-14): All metrics show N/A.** The extraction logic has 3-level fallback chains (`.usage.input_tokens`, `.token_usage.input_tokens`, top-level `.input_tokens`, `.duration`, `.tool_uses`, `.total_tokens`) but `claude-code-action@v1` does NOT include any of these fields in its execution output file (`claude-execution-output.json`). The file only contains conversation messages (array) or result text (object). All fields silently fall through to `N/A`. Fix requires either: (a) finding where claude-code-action actually exposes usage stats, or (b) extracting from GitHub Actions billing API, or (c) parsing from claude-code-action logs. **Status: KNOWN BUG — not blocking but cost visibility is zero.**
+
 **Why Measure But Not Score (Yet):**
 
 | Reason | Explanation |
