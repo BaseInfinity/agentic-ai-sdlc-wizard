@@ -1674,6 +1674,49 @@ test_ci_autofix_has_workflows_write() {
     fi
 }
 
+# Test 74: ci.yml initializes git in workspace root before claude-code-action
+test_ci_workspace_git_init() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found"
+        return
+    fi
+
+    # actions/checkout with path: creates subdirectories, leaving workspace root as non-git.
+    # claude-code-action@v1 configureGitAuth runs git config in workspace root and crashes.
+    # Fix: git init in workspace root before the first simulation step.
+    if grep -q 'git init' "$WORKFLOW"; then
+        pass "ci.yml initializes git in workspace root (prevents configureGitAuth crash)"
+    else
+        fail "ci.yml missing git init for workspace root (configureGitAuth will crash)"
+    fi
+}
+
+# Test 75: ci.yml max-turns is sufficient for hard scenarios (>= 50)
+test_ci_max_turns_sufficient() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found"
+        return
+    fi
+
+    # Hard scenarios (refactor) need more than 45 turns.
+    # error_max_turns causes action failure even with is_error: false.
+    MAX_TURNS=$(grep 'max-turns' "$WORKFLOW" | head -1 | sed 's/.*max-turns //' | sed 's/[^0-9].*//')
+    if [ -z "$MAX_TURNS" ]; then
+        fail "Could not find max-turns in ci.yml"
+        return
+    fi
+
+    if [ "$MAX_TURNS" -ge 50 ]; then
+        pass "ci.yml max-turns ($MAX_TURNS) is sufficient for hard scenarios"
+    else
+        fail "ci.yml max-turns ($MAX_TURNS) is too low for hard scenarios (need >= 50)"
+    fi
+}
+
 test_ci_no_dead_token_extraction
 test_ci_score_history_committed
 test_ci_autofix_no_show_full_output
@@ -1681,6 +1724,8 @@ test_weekly_e2e_triggers_on_findings
 test_monthly_e2e_triggers_on_notable
 test_ci_score_history_push_explicit_ref
 test_ci_autofix_has_workflows_write
+test_ci_workspace_git_init
+test_ci_max_turns_sufficient
 
 echo ""
 echo "=== Results ==="

@@ -156,6 +156,12 @@ jobs:
           echo "Baseline wizard installed:"
           ls -la pr-branch/tests/e2e/fixtures/test-repo/.claude/ || echo "No .claude directory"
 
+      - name: Initialize workspace git directory
+        run: |
+          # actions/checkout with path: leaves workspace root as non-git.
+          # claude-code-action@v1 configureGitAuth runs git config here and crashes without this.
+          git init .
+
       - name: Record baseline simulation start time
         if: steps.check-baseline.outputs.has_baseline == 'true'
         run: echo "BASELINE_START=$(date +%s)" >> $GITHUB_ENV
@@ -168,7 +174,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --max-turns 45
+            --max-turns 55
             --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,TodoWrite,TaskCreate,Task"
             --add-dir pr-branch/tests/e2e
           prompt: |
@@ -310,7 +316,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --max-turns 45
+            --max-turns 55
             --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,TodoWrite,TaskCreate,Task"
             --add-dir pr-branch/tests/e2e
           prompt: |
@@ -819,6 +825,12 @@ jobs:
           cp -r main-branch/.claude/skills pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
           cp main-branch/.claude/settings.json pr-branch/tests/e2e/fixtures/test-repo/.claude/ 2>/dev/null || true
 
+      - name: Initialize workspace git directory (Tier 2)
+        run: |
+          # actions/checkout with path: leaves workspace root as non-git.
+          # claude-code-action@v1 configureGitAuth runs git config here and crashes without this.
+          git init .
+
       - name: Record baseline simulation start time (Tier 2)
         if: steps.check-baseline.outputs.has_baseline == 'true'
         run: echo "BASELINE_START_T2=$(date +%s)" >> $GITHUB_ENV
@@ -831,7 +843,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --max-turns 45
+            --max-turns 55
             --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,TodoWrite,TaskCreate,Task"
             --add-dir pr-branch/tests/e2e
           prompt: |
@@ -987,7 +999,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --max-turns 45
+            --max-turns 55
             --allowedTools "Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,TodoWrite,TaskCreate,Task"
             --add-dir pr-branch/tests/e2e
           prompt: |

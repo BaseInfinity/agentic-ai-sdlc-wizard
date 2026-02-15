@@ -966,6 +966,8 @@ Comprehensive audit found multiple features that silently produce no data. Tests
 | 4 | External benchmark cache useless | external-benchmark.sh | Cache dir is on ephemeral runner — always cache miss | ACCEPTED — Fresh fetch each run works fine, falls back to 75.0 |
 | 5 | `show_full_output` invalid input | ci-autofix.yml | Not a valid `claude-code-action@v1` input, silently ignored | **FIXED** — Deleted invalid input |
 | 9 | Autofix can't push workflow files | ci-autofix.yml | Missing `workflows: write` permission — git push rejected for `.github/workflows/` changes | **FIXED** — Added `workflows: write` to permissions block |
+| 10 | `configureGitAuth` crash in CI | ci.yml | `actions/checkout` with `path:` leaves workspace root as non-git — `claude-code-action@v1` crashes on `git config` | **FIXED** — Added `git init .` step before simulation in both Tier 1 and Tier 2 |
+| 11 | `error_max_turns` on hard scenarios | ci.yml | 45 turns too tight for hard scenarios (refactor used 46) — action treats as failure | **FIXED** — Bumped max-turns from 45 to 55 |
 
 ### HIGH — Features That May Not Work Correctly
 
