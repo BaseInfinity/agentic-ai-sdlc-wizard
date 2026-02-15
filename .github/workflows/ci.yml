@@ -496,7 +496,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add tests/e2e/score-history.jsonl
           git diff --staged --quiet || git commit -m "chore: record e2e score for ${{ steps.select-scenario.outputs.scenario_name }}"
-          git push || echo "Nothing to push"
+          # Push to PR branch explicitly — checkout is detached HEAD (refs/pull/N/merge)
+          git push origin HEAD:refs/heads/${{ github.event.pull_request.head.ref }} || echo "Nothing to push"
 
       - name: Generate score trends report
         continue-on-error: true
@@ -1189,7 +1190,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add tests/e2e/score-history.jsonl
           git diff --staged --quiet || git commit -m "chore: record e2e score for ${{ steps.select-scenario.outputs.scenario_name }}"
-          git push || echo "Nothing to push"
+          # Push to PR branch explicitly — checkout is detached HEAD (refs/pull/N/merge)
+          git push origin HEAD:refs/heads/${{ github.event.pull_request.head.ref }} || echo "Nothing to push"
 
       - name: Generate score trends report (Tier 2)
         continue-on-error: true

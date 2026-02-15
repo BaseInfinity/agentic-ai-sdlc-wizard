@@ -1637,11 +1637,31 @@ else:
     fi
 }
 
+# Test 72: ci.yml score history push uses explicit branch ref (not bare git push)
+test_ci_score_history_push_explicit_ref() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found"
+        return
+    fi
+
+    # On pull_request events, actions/checkout checks out refs/pull/N/merge (detached HEAD).
+    # Bare `git push` on detached HEAD fails silently with continue-on-error.
+    # Must use explicit ref: git push origin HEAD:refs/heads/<branch>
+    if grep -A 10 'Commit score history' "$WORKFLOW" | grep -q 'git push origin HEAD:refs/heads/'; then
+        pass "ci.yml score history push uses explicit branch ref (detached HEAD safe)"
+    else
+        fail "ci.yml score history push uses bare 'git push' (fails silently on detached HEAD)"
+    fi
+}
+
 test_ci_no_dead_token_extraction
 test_ci_score_history_committed
 test_ci_autofix_no_show_full_output
 test_weekly_e2e_triggers_on_findings
 test_monthly_e2e_triggers_on_notable
+test_ci_score_history_push_explicit_ref
 
 echo ""
 echo "=== Results ==="
