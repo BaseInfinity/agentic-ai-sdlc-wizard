@@ -116,17 +116,11 @@ Every simulation has automated integrity checks:
 | JSON structure valid | Malformed responses |
 | Score bounds [0-11] | Parse errors |
 
-### Native Task Metrics
+### Token / Resource Metrics
 
-PR comments include resource usage (collapsed):
+Token and cost tracking was removed in PR #33. `claude-code-action@v1` does not expose usage data in its execution output file. All extracted values were N/A.
 
-| Metric | Description |
-|--------|-------------|
-| Duration | Simulation time in seconds |
-| Tool uses | Number of tool calls |
-| Input/Output tokens | Token consumption |
-| Est. cost | API cost estimate |
-| Tokens/point | Efficiency metric |
+Token tracking can be re-enabled when the action starts exposing usage fields (`duration`, `input_tokens`, `output_tokens`, etc.).
 
 ### Runs On
 - Every pull request (Tier 1)
@@ -277,23 +271,12 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 
 ## Testing Workflows Locally
 
-### Prerequisites
-- Install [act](https://github.com/nektos/act): `brew install act`
-- Create `.env.test` with required secrets:
-  ```
-  ANTHROPIC_API_KEY=sk-ant-xxx
-  ```
+Workflows require the GitHub Actions environment (secrets, runner context, `claude-code-action@v1`). They cannot be tested locally with `act` or similar tools.
 
-### Running Workflows
-
-```bash
-# Test CI workflow (no secrets needed)
-act pull_request -W .github/workflows/ci.yml
-
-# Test daily update workflow
-act workflow_dispatch -W .github/workflows/daily-update.yml \
-    --secret-file .env.test
-```
+**What you can test locally:**
+- YAML syntax: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"`
+- Shell script logic: `./tests/test-workflow-triggers.sh`
+- E2E simulation (with API key): `ANTHROPIC_API_KEY=xxx ./tests/e2e/run-simulation.sh`
 
 ## Secrets Required
 

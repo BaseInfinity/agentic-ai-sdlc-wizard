@@ -4,8 +4,8 @@
 
 | Property | Value |
 |----------|-------|
-| Wizard Version | 1.6.0 |
-| Last Updated | 2026-02-06 |
+| Wizard Version | 1.7.0 |
+| Last Updated | 2026-02-15 |
 | Claude Code Baseline | v2.1.15+ |
 
 ## SDLC Enforcement

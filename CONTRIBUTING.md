@@ -13,7 +13,8 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-workflow-triggers.sh && ./tests/test-cusum.sh && \
    ./tests/test-stats.sh && ./tests/test-hooks.sh && \
    ./tests/test-compliance.sh && ./tests/test-sdp-calculation.sh && \
-   ./tests/test-external-benchmark.sh
+   ./tests/test-external-benchmark.sh && ./tests/test-evaluate-bugs.sh && \
+   ./tests/test-score-analytics.sh
    ```
 5. Submit a PR
 
@@ -127,6 +128,8 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/daily-update.yml
 ./tests/test-compliance.sh
 ./tests/test-sdp-calculation.sh
 ./tests/test-external-benchmark.sh
+./tests/test-evaluate-bugs.sh
+./tests/test-score-analytics.sh
 
 # Run E2E validation (no API key needed)
 ./tests/e2e/run-simulation.sh --validate

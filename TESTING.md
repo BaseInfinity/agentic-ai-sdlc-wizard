@@ -46,6 +46,8 @@ This is a **meta-project** - it's a wizard that sets up other projects. Traditio
 | `tests/test-stats.sh` | Statistical functions | CI calculation, n=1 handling, compare_ci |
 | `tests/test-hooks.sh` | Hook scripts | Output keywords, JSON format, TDD checks |
 | `tests/test-compliance.sh` | Compliance checker | Complexity extraction, pattern matching |
+| `tests/test-evaluate-bugs.sh` | Evaluate bug regression | Regression tests for evaluate.sh bugs |
+| `tests/test-score-analytics.sh` | Score analytics | History parsing, trends, reports |
 
 **How to run:**
 ```bash
@@ -56,6 +58,8 @@ This is a **meta-project** - it's a wizard that sets up other projects. Traditio
 ./tests/test-stats.sh
 ./tests/test-hooks.sh
 ./tests/test-compliance.sh
+./tests/test-evaluate-bugs.sh
+./tests/test-score-analytics.sh
 ```
 
 ### Layer 2: Fixture Validation
@@ -101,14 +105,30 @@ These validate the model-adjusted scoring that distinguishes "model issues" from
 ./tests/test-external-benchmark.sh
 ```
 
-### Layer 5: E2E JSON Extraction
+### Layer 5: E2E Tests
 
-**Location**: `tests/e2e/test-json-extraction.sh`
+**Location**: `tests/e2e/`
 
-Tests JSON parsing utilities used in E2E evaluation.
+| Test File | What It Covers |
+|-----------|----------------|
+| `tests/e2e/test-json-extraction.sh` | JSON parsing utilities |
+| `tests/e2e/test-multi-call-eval.sh` | Per-criterion prompts + aggregation |
+| `tests/e2e/test-eval-prompt-regression.sh` | Golden output validation |
+| `tests/e2e/test-eval-validation.sh` | Schema/bounds validation |
+| `tests/e2e/test-deterministic-checks.sh` | Grep-based scoring checks |
+| `tests/e2e/test-pairwise-compare.sh` | Pairwise tiebreaker logic |
+| `tests/e2e/test-scenario-rotation.sh` | Scenario selection/rotation |
+| `tests/e2e/test-simulation-prompt.sh` | Simulation prompt construction |
 
 ```bash
 ./tests/e2e/test-json-extraction.sh
+./tests/e2e/test-multi-call-eval.sh
+./tests/e2e/test-eval-prompt-regression.sh
+./tests/e2e/test-eval-validation.sh
+./tests/e2e/test-deterministic-checks.sh
+./tests/e2e/test-pairwise-compare.sh
+./tests/e2e/test-scenario-rotation.sh
+./tests/e2e/test-simulation-prompt.sh
 ```
 
 ## E2E Library Scripts
@@ -121,23 +141,35 @@ These are sourced by tests and workflows, not run directly:
 | `tests/e2e/lib/json-utils.sh` | JSON extraction from Claude output |
 | `tests/e2e/lib/external-benchmark.sh` | Multi-source benchmark fetcher |
 | `tests/e2e/lib/sdp-score.sh` | SDP calculation logic |
+| `tests/e2e/lib/eval-criteria.sh` | Per-criterion prompts + aggregation (v3) |
+| `tests/e2e/lib/eval-validation.sh` | Schema/bounds validation + prompt version |
+| `tests/e2e/lib/deterministic-checks.sh` | Grep-based scoring (task_tracking, confidence, tdd_red) |
+| `tests/e2e/lib/scenario-selector.sh` | Scenario auto-discovery and rotation |
 | `tests/e2e/evaluate.sh` | AI-powered SDLC scoring (0-10) |
 | `tests/e2e/check-compliance.sh` | Pattern-based compliance checks |
-| `tests/e2e/cusum.sh` | CUSUM drift detection |
+| `tests/e2e/cusum.sh` | CUSUM drift detection (total + per-criterion) |
 | `tests/e2e/run-simulation.sh` | E2E test runner |
 | `tests/e2e/run-tier2-evaluation.sh` | 5-trial statistical evaluation |
+| `tests/e2e/pairwise-compare.sh` | Pairwise tiebreaker comparison |
+| `tests/e2e/score-analytics.sh` | Score history analytics and trends |
 
 ## Test Scenarios
 
 | Scenario | Complexity | File |
 |----------|-----------|------|
 | Typo Fix | Simple | `tests/e2e/scenarios/simple-typo-fix.md` |
-| Add Feature | Medium | `tests/e2e/scenarios/medium-add-feature.md` |
-| Refactor | Hard | `tests/e2e/scenarios/hard-refactor.md` |
+| Add Feature (original) | Medium | `tests/e2e/scenarios/add-feature.md` |
+| Add Feature (medium) | Medium | `tests/e2e/scenarios/medium-add-feature.md` |
+| Fix Bug | Medium | `tests/e2e/scenarios/fix-bug.md` |
+| Refactor (original) | Medium | `tests/e2e/scenarios/refactor.md` |
+| Refactor (hard) | Hard | `tests/e2e/scenarios/hard-refactor.md` |
 | Version Upgrade | Medium | `tests/e2e/scenarios/version-upgrade.md` |
 | UI Styling | Medium | `tests/e2e/scenarios/ui-styling-change.md` |
 | UI Component | Medium | `tests/e2e/scenarios/add-ui-component.md` |
 | Tool Permissions | Medium | `tests/e2e/scenarios/tool-permissions.md` |
+| Multi-File API Endpoint | Medium | `tests/e2e/scenarios/multi-file-api-endpoint.md` |
+| Production Bug Investigation | Hard | `tests/e2e/scenarios/production-bug-investigation.md` |
+| Technical Debt Cleanup | Medium | `tests/e2e/scenarios/technical-debt-cleanup.md` |
 
 ## CI Integration
 
@@ -157,15 +189,18 @@ CI runs:
 
 ## Manual Testing
 
-For workflow changes, test locally with `act`:
+Workflows require the GitHub Actions environment (secrets, runner context, `claude-code-action@v1`). They cannot be tested locally with `act`.
 
+**What you can test locally:**
 ```bash
-# Test daily update workflow
-act workflow_dispatch -W .github/workflows/daily-update.yml \
-    --secret-file .env.test
+# YAML syntax validation
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 
-# Test CI workflow
-act pull_request -W .github/workflows/ci.yml
+# All script-based tests (no API key needed)
+./tests/test-version-logic.sh && ./tests/test-analysis-schema.sh
+
+# E2E simulation (requires ANTHROPIC_API_KEY)
+ANTHROPIC_API_KEY=xxx ./tests/e2e/run-simulation.sh
 ```
 
 ## Known Gaps

@@ -73,9 +73,7 @@ daily-update.yml
        │         │
        │         └─→ Output: { relevance, summary, impact }
        │
-       ├─→ If HIGH/MEDIUM: Create PR
-       │
-       └─→ If LOW: Direct commit (no PR needed)
+       └─→ Create PR (all updates, relevance shown in title)
 ```
 
 ## Data Flow
@@ -116,12 +114,12 @@ GitHub Scheduled Trigger (9 AM UTC)
 │  (relevance level)  │
 └─────────────────────┘
          │
-    ┌────┴────┐
-    ▼         ▼
-HIGH/MED     LOW
-    │         │
-    ▼         ▼
-Create PR   Commit directly
+         ▼
+┌─────────────────────┐
+│  Create PR          │
+│  (relevance in      │
+│   title)            │
+└─────────────────────┘
 ```
 
 ### Hook Execution Flow
@@ -177,8 +175,12 @@ sdlc-wizard/
 ├── TESTING.md                     # Testing strategy
 ├── ARCHITECTURE.md                # This file
 ├── CI_CD.md                       # CI/CD documentation
+├── CONTRIBUTING.md                # Contributor guide
 ├── README.md                      # Project introduction
 ├── CHANGELOG.md                   # Version history
+│
+├── plans/
+│   └── AUTO_SELF_UPDATE.md        # Auto-update roadmap & design
 │
 ├── .claude/
 │   ├── settings.json              # Hook configuration
@@ -196,6 +198,7 @@ sdlc-wizard/
 │   │   ├── ci-autofix.yml         # Auto-fix loop (CI + review)
 │   │   ├── daily-update.yml       # Auto-update check
 │   │   ├── weekly-community.yml   # Community scan
+│   │   ├── monthly-research.yml   # Deep research & trends
 │   │   └── pr-review.yml          # AI code review
 │   ├── prompts/
 │   │   ├── analyze-release.md     # Release analysis prompt
@@ -206,11 +209,35 @@ sdlc-wizard/
 └── tests/
     ├── test-version-logic.sh      # Version comparison tests
     ├── test-analysis-schema.sh    # Schema validation tests
+    ├── test-workflow-triggers.sh   # Workflow trigger tests
+    ├── test-cusum.sh              # CUSUM drift detection tests
+    ├── test-stats.sh              # Statistical functions tests
+    ├── test-hooks.sh              # Hook script tests
+    ├── test-compliance.sh         # Compliance checker tests
+    ├── test-sdp-calculation.sh    # SDP scoring tests
+    ├── test-external-benchmark.sh # External benchmark tests
+    ├── test-evaluate-bugs.sh      # Evaluate bug regression tests
+    ├── test-score-analytics.sh    # Score analytics tests
     ├── fixtures/
     │   └── releases/              # Golden test fixtures
     └── e2e/
-        ├── fixtures/test-repo/    # Template for simulations
-        ├── scenarios/             # Test scenario definitions
+        ├── evaluate.sh            # AI-powered SDLC scoring
+        ├── check-compliance.sh    # Pattern-based compliance
         ├── run-simulation.sh      # Main E2E runner
-        └── check-compliance.sh    # SDLC compliance checker
+        ├── run-tier2-evaluation.sh # 5-trial statistical evaluation
+        ├── cusum.sh               # CUSUM drift detection
+        ├── pairwise-compare.sh    # Pairwise tiebreaker
+        ├── score-analytics.sh     # Score history analytics
+        ├── lib/
+        │   ├── stats.sh           # 95% CI, t-distribution
+        │   ├── json-utils.sh      # JSON extraction
+        │   ├── eval-criteria.sh   # Per-criterion prompts (v3)
+        │   ├── eval-validation.sh # Schema/bounds validation
+        │   ├── deterministic-checks.sh # Grep-based scoring
+        │   ├── scenario-selector.sh    # Scenario auto-discovery
+        │   ├── external-benchmark.sh   # Benchmark fetcher
+        │   └── sdp-score.sh       # SDP calculation
+        ├── scenarios/             # 13 test scenarios
+        ├── golden-outputs/        # Verified expected scores
+        └── fixtures/test-repo/    # Template for simulations
 ```

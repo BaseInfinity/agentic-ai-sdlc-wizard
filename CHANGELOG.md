@@ -4,6 +4,40 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.7.0] - 2026-02-15
+
+### Added
+- CI Auto-Fix Loop (`ci-autofix.yml`) — automated fix cycle for CI failures and PR review findings
+- Multi-call LLM judge (v3) — per-criterion API calls with dedicated calibration examples
+- Golden output regression — 3 saved outputs with verified expected score ranges catch prompt drift
+- Per-criterion CUSUM — tracks individual criterion drift, not just total score
+- Pairwise tiebreaker (v3.1) — holistic comparison with full swap when scores within 1.0
+- Deterministic pre-checks — grep-based scoring for task_tracking, confidence, tdd_red (free, fast)
+- 3 real-world scenarios: multi-file-api-endpoint, production-bug-investigation, technical-debt-cleanup
+- Score analytics (`score-analytics.sh`) — history parsing, trends, per-criterion averages, reports
+- Score history persistence — results committed back to repo after each E2E evaluation
+- Historical context in PR comments — scenario average and weakest criterion
+- Color-coded PR comments — emoji indicators for PASS/WARN/FAIL per criterion
+- Binary sub-criteria scoring with workflow input validation (PR #32)
+- Evaluate bug regression tests (`test-evaluate-bugs.sh`)
+- Score analytics tests (`test-score-analytics.sh`)
+
+### Fixed
+- Silent zero scores from `2>&1` mixing stderr into stdout (PR #33)
+- Token/cost metrics always N/A — removed dead extraction code (action doesn't expose usage data)
+- Score history never persisting (ephemeral runner) — added git commit step
+- `show_full_output` invalid action input — deleted
+- `configureGitAuth` crash — added `git init` before simulation
+- `error_max_turns` on hard scenarios — bumped from 45 to 55
+- Autofix can't push workflow files — added `workflows: write` permission
+- Workflow input validation audit — removed `prompt_file`, `direct_prompt`, `model` invalid inputs across all 3 auto-update workflows
+- `outputs.response` doesn't exist — read from execution output file instead
+
+### Changed
+- All auto-update workflows create PRs (removed "LOW → direct commit" path)
+- Evaluation uses `claude-opus-4-6` model (was hardcoded to `claude-sonnet-4`)
+- E2E scenarios expanded from 10 to 13
+
 ## [1.6.0] - 2026-02-06
 
 ### Added
