@@ -23,6 +23,7 @@ All notable changes to the SDLC Wizard.
 - Score analytics tests (`test-score-analytics.sh`)
 
 ### Fixed
+- Tier 1 E2E flakiness — regression threshold widened from -0.5 to -1.5 (absorbs ±1 LLM noise)
 - Silent zero scores from `2>&1` mixing stderr into stdout (PR #33)
 - Token/cost metrics always N/A — removed dead extraction code (action doesn't expose usage data)
 - Score history never persisting (ephemeral runner) — added git commit step

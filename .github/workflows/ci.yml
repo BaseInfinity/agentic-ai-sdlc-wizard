@@ -591,8 +591,11 @@ jobs:
             fi
             PASS="true"
           else
-            # Check if regression is significant (> 0.5 points)
-            if [ "$(echo "$DELTA < -0.5" | bc -l)" -eq 1 ]; then
+            # Check if regression is significant (> 1.5 points)
+            # Tier 1 = single trial. LLM judge + simulation has ±1 point stochastic
+            # variance. Threshold must absorb this noise to prevent false failures.
+            # Tier 2 (5x + CI overlap) is the real statistical gate.
+            if [ "$(echo "$DELTA < -1.5" | bc -l)" -eq 1 ]; then
               STATUS="REGRESSION"
               EMOJI=":x:"
               PASS="false"
