@@ -5,7 +5,7 @@
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `ci.yml` | PR, push to main | Validation, tests, E2E evaluation |
-| `daily-update.yml` | Manual only (schedule paused) | Check for Claude Code updates |
+| `daily-update.yml` | Daily (9 AM UTC) + manual | Check for Claude Code updates |
 | `weekly-community.yml` | Manual only (schedule paused) | Scan community for patterns |
 | `monthly-research.yml` | Manual only (schedule paused) | Deep research and trends |
 | `ci-autofix.yml` | CI fail / review findings | Auto-fix loop |
@@ -80,8 +80,10 @@ When two outputs have close pointwise scores (|scoreA - scoreB| <= 1.0), a pairw
 
 | Tier | Runs | Statistical Power | When |
 |------|------|-------------------|------|
-| **Tier 1 (Quick)** | 1x each | Low (directional) | Every PR commit |
+| **Tier 1 (Quick)** | 1x each | Low (directional, -1.5 threshold) | Every PR commit |
 | **Tier 2 (Full)** | 5x each | High (95% CI) | `merge-ready` label |
+
+**Tier 1 regression threshold:** Delta must be worse than -1.5 to fail. Single-trial LLM scoring has ~±1 point stochastic variance, so deltas of -1 are noise, not regressions. Tier 2 is the real statistical gate.
 
 ### SDP (Model Degradation Tracking)
 
@@ -147,8 +149,8 @@ Token tracking can be re-enabled when the action starts exposing usage fields (`
 Both use Tier 1 (quick) + Tier 2 (full statistical) evaluation.
 
 ### Runs On
-- Manual trigger only (workflow_dispatch)
-- Schedule paused until roadmap items 15-22 complete (see `plans/AUTO_SELF_UPDATE.md`)
+- Daily schedule: 9 AM UTC (`cron: '0 9 * * *'`)
+- Manual trigger also available (workflow_dispatch)
 
 ### Required Secrets
 - `ANTHROPIC_API_KEY`: For Claude analysis

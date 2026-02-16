@@ -1,7 +1,9 @@
 name: Daily Claude Code Update Check
 
 on:
-  workflow_dispatch:  # Auto-schedule disabled until roadmap items 15-22 complete
+  schedule:
+    - cron: '0 9 * * *'  # 9 AM UTC daily
+  workflow_dispatch:
 
 permissions:
   contents: write

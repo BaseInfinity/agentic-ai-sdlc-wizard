@@ -74,14 +74,14 @@ test_monthly_dispatch() {
     fi
 }
 
-# Test 4: Daily workflow does NOT have active schedule trigger (paused until roadmap items 15-22 complete)
-test_daily_no_schedule() {
+# Test 4: Daily workflow has active schedule trigger (Item 23 Phase 1)
+test_daily_has_schedule() {
     WORKFLOW="$REPO_ROOT/.github/workflows/daily-update.yml"
 
-    if grep -q "schedule:" "$WORKFLOW"; then
-        fail "Daily workflow has active schedule trigger (should be paused)"
+    if grep -q "schedule:" "$WORKFLOW" && grep -q "cron:" "$WORKFLOW"; then
+        pass "Daily workflow has active schedule with cron trigger"
     else
-        pass "Daily workflow schedule is paused (manual dispatch only)"
+        fail "Daily workflow missing schedule trigger (should have cron for Item 23)"
     fi
 }
 
@@ -611,7 +611,7 @@ test_ci_max_turns_sufficient() {
 test_daily_dispatch
 test_weekly_dispatch
 test_monthly_dispatch
-test_daily_no_schedule
+test_daily_has_schedule
 test_weekly_no_schedule
 test_monthly_no_schedule
 test_state_file_path
@@ -1717,6 +1717,35 @@ test_ci_max_turns_sufficient() {
     fi
 }
 
+# Test 76: Tier 1 regression threshold must be >= 1.5 (absorbs ±1 LLM noise)
+test_tier1_regression_threshold() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "CI workflow file not found"
+        return
+    fi
+
+    # Tier 1 uses single-trial comparison. LLM judge + simulation has ±1 point
+    # stochastic variance. A threshold < 1.5 causes false REGRESSION failures.
+    # Extract the threshold from the "Compare scores" step's bc comparison.
+    # Pattern: DELTA < -X.X where X.X is the threshold
+    THRESHOLD=$(grep -oE 'DELTA < -[0-9]+\.?[0-9]*' "$WORKFLOW" | head -1 | grep -oE '[0-9]+\.?[0-9]*')
+
+    if [ -z "$THRESHOLD" ]; then
+        fail "Could not find Tier 1 regression threshold in ci.yml"
+        return
+    fi
+
+    # Compare using bc: threshold must be >= 1.5
+    if [ "$(echo "$THRESHOLD >= 1.5" | bc -l)" -eq 1 ]; then
+        pass "Tier 1 regression threshold is $THRESHOLD (absorbs LLM noise)"
+    else
+        fail "Tier 1 regression threshold is $THRESHOLD (too tight — causes false regressions from ±1 LLM noise, need >= 1.5)"
+    fi
+}
+
+test_tier1_regression_threshold
 test_ci_no_dead_token_extraction
 test_ci_score_history_committed
 test_ci_autofix_no_show_full_output

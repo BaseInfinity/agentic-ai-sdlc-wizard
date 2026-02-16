@@ -52,7 +52,7 @@ Detect something new → Suggest changes → Test with E2E → Create PR with re
 ## What's Implemented
 
 ### Daily Update Check (`.github/workflows/daily-update.yml`)
-- **Trigger:** Manual dispatch only (schedule paused until roadmap items 15-22 complete)
+- **Trigger:** Daily schedule (9 AM UTC) + manual dispatch
 - **Checks:** Claude Code GitHub releases
 - **Action:** Creates PR for ALL updates (relevance shown in title)
 - **E2E Testing:** Phase A (regression) + Phase B (improvement) with Tier 1 + 2
@@ -83,7 +83,7 @@ Detect something new → Suggest changes → Test with E2E → Create PR with re
 
 | Trigger | Workflow | What It Does |
 |---------|----------|--------------|
-| Manual only (schedule paused) | daily-update.yml | Check releases → Always PR |
+| Daily (9 AM UTC) | daily-update.yml | Check releases → Always PR |
 | Manual only (schedule paused) | weekly-community.yml | Scan community → Issue |
 | Manual only (schedule paused) | monthly-research.yml | Deep research → Issue |
 | On PR | ci.yml | Run tests + E2E eval |
@@ -782,9 +782,11 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | 18 | Deterministic pre-checks | MED | Pattern match for TodoWrite/test-first before LLM judge (cheaper, faster) | DONE |
 | 19 | Real-world scenarios | MED | Extract from public repos like SWE-bench for realistic E2E testing | DONE |
 | 20 | Observability/tracing | LOW | Structured logging for debugging score changes across runs | DONE |
-| 21 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. | DEFERRED — deep research required before implementation |
 | 22 | Color-coded PR comments | LOW | Add visual indicators to E2E scoring PR comments - green/red/yellow emoji or status badges for PASS/WARN/FAIL per criterion. Makes it easier to scan results at a glance instead of reading raw numbers. | DONE — emoji indicators in ci.yml |
-| 23 | Phased workflow re-enablement | HIGH | Re-enable daily → weekly → monthly schedules after roadmap complete + audit. Phase 1: daily (most critical, tracks CC releases). Phase 2: weekly (after daily stable 1 week). Phase 3: monthly (lowest urgency). Gate: all items 15-22 addressed, Tier 2 E2E passes, workflow audit. | PLANNED |
+| 23 | Phased workflow re-enablement | HIGH | Re-enable daily → weekly → monthly schedules after roadmap complete + audit. Phase 1: daily (most critical, tracks CC releases). Phase 2: weekly (after daily stable 1 week). Phase 3: monthly (lowest urgency). Gate: all items 15-22 addressed, Tier 2 E2E passes, workflow audit. | IN PROGRESS — Phase 1 (daily) enabled |
+| 24 | Tier 2 E2E full suite audit | HIGH | Run full Tier 2 evaluation (`merge-ready` label) end-to-end. Verify 5-trial statistical evaluation, 95% CI, pairwise tiebreaker, CUSUM, SDP, score history persistence, and PR comment formatting all work correctly in CI. This is the final validation gate before mutation testing. | PLANNED |
+| 25 | Full system audit | HIGH | Comprehensive audit of all workflows, tests, scripts, and docs after Tier 2 passes. Verify every feature works as documented. Catch any remaining silent failures or stale assumptions. Establish as recurring practice — audit on every PR going forward (lightweight version via PR review workflow, thorough version periodically). | PLANNED |
+| 21 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. Gate: Items 24-25 must pass first. | PLANNED — last in execution order, after 24-25 |
 
 ### Item 15: Eval Framework Improvements (Targeted, Not Framework Adoption)
 
@@ -1001,9 +1003,11 @@ _Updated: 2026-02-15_
 | Deterministic pre-checks | 18 | DONE |
 | Real-world scenarios | 19 | DONE |
 | Observability & score trends | 20 | DONE |
-| Mutation testing | 21 | DEFERRED — deep research required |
+| Mutation testing | 21 | PLANNED — after Items 24-25 |
 | Color-coded PR comments | 22 | DONE |
 
-**Summary:** 6/8 items DONE, 1 SKIPPED (by design), 1 DEFERRED (research needed).
+**Summary:** 6/8 items DONE, 1 SKIPPED (by design), 1 PLANNED (last in order).
 
-**Item 23 decision (updated 2026-02-15):** Silent failure audit resolved. Bugs #1-6 fixed, #7-8 confirmed false alarms, #4 accepted (cache miss is fine). Remaining gate: manual validation of daily → weekly → monthly schedule re-enablement. Mutation testing (Item 21) remains deferred and does not block re-enablement.
+**Item 23 decision (updated 2026-02-15):** Silent failure audit resolved. Bugs #1-6 fixed, #7-8 confirmed false alarms, #4 accepted (cache miss is fine). Remaining gate: manual validation of daily → weekly → monthly schedule re-enablement. Mutation testing (Item 21) is planned last, after Items 24-25 pass.
+
+**Execution order (updated 2026-02-15):** Item 23 (phased schedules) → Item 24 (Tier 2 full suite audit) → Item 25 (full system audit, then recurring per-PR) → Item 21 (mutation testing, last).
