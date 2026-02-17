@@ -1011,3 +1011,24 @@ _Updated: 2026-02-15_
 **Item 23 decision (updated 2026-02-16):** All 3 schedules enabled — daily (PR #35), weekly (PR #37), monthly (PR #38). System is fully live. Ready for audit.
 
 **Execution order (updated 2026-02-16):** Item 23 DONE → Item 24 (Tier 2 full suite audit) → Item 25 (full system audit) → Item 21 (mutation testing, last). Rationale: audit after all schedules are live so nothing is missed.
+
+---
+
+## Bugs Found & Fixed (2026-02-16) — ci-autofix `workflow_run` Registry
+
+### Bug: `workflow_run` stopped firing for ci-autofix (Feb 15)
+
+**Symptom:** After commit `208ecdb` (Feb 15 11:06Z), no `workflow_run` events triggered ci-autofix. Only ghost `push`-triggered artifacts appeared (0s duration, "workflow file issue", no jobs).
+
+**Root cause:** Modifying `ci-autofix.yml` caused GitHub's workflow registry to lose the `name: CI Auto-Fix` identity. The API showed `name: ".github/workflows/ci-autofix.yml"` (file path) instead of the declared name. Since other workflows reference `"CI Auto-Fix"` by name in their `workflow_run` triggers, the events silently stopped matching.
+
+**Investigation:**
+- YAML was valid, `name: CI Auto-Fix` was correctly declared in the file
+- Disable + re-enable via GitHub API did not restore the name
+- The registry only re-reads the `name:` field when the workflow file changes on the **default branch**
+
+**Fix:** Pushed a trivial comment addition to `ci-autofix.yml` on main (via PR), forcing GitHub to re-parse and re-register the correct `name:` field.
+
+**Regression test:** Test 78 in `test-workflow-triggers.sh` — validates ci-autofix.yml has the correct `name: CI Auto-Fix` field via YAML parsing.
+
+**Lesson:** Modifying a `workflow_run`-only workflow can break GitHub's internal registry mapping between the declared `name:` field and the workflow identity. The API disable/re-enable cycle does NOT fix this — only a file change merged to the default branch forces re-registration.

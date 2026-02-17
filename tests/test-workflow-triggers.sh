@@ -1767,6 +1767,35 @@ test_monthly_has_pr_write_permission() {
     fi
 }
 
+# Test 78: ci-autofix.yml has name: field (required for workflow_run registry)
+test_ci_autofix_has_name_field() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-autofix.yml not found"
+        return
+    fi
+
+    # GitHub's workflow registry uses the name: field to match workflow_run triggers.
+    # If the name: field is missing or doesn't match what other workflows reference,
+    # workflow_run events silently stop firing.
+    YAML_NAME=$(python3 -c "
+import yaml
+with open('$WORKFLOW') as f:
+    wf = yaml.safe_load(f)
+print(wf.get('name', ''))
+")
+
+    if [ "$YAML_NAME" = "CI Auto-Fix" ]; then
+        pass "ci-autofix.yml has correct name: field ('CI Auto-Fix')"
+    elif [ -n "$YAML_NAME" ]; then
+        fail "ci-autofix.yml name: field is '$YAML_NAME' (expected 'CI Auto-Fix')"
+    else
+        fail "ci-autofix.yml missing name: field (workflow_run registry will use file path instead)"
+    fi
+}
+
+test_ci_autofix_has_name_field
 test_monthly_has_pr_write_permission
 test_tier1_regression_threshold
 test_ci_no_dead_token_extraction
