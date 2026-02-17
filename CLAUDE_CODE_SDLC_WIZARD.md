@@ -24,6 +24,28 @@ You set it up, Claude follows it. The magic is that structured human engineering
 
 ---
 
+## The Vision
+
+**Think Iron Man:** Jarvis is nothing without Tony Stark. Tony Stark is still Tony Stark. But together? They make Iron Man. This SDLC is your suit - you build it over time, improve it for your needs, and it makes you both better.
+
+**This wizard is designed to make itself unnecessary.**
+
+As Claude Code improves, the wizard absorbs those improvements and removes its own scaffolding. Built-in TDD enforcement? Delete our hook. Native confidence tracking? Remove our guidance. Official code review plugin? Use theirs, delete ours. Every Claude Code release is an opportunity to simplify.
+
+**The end goal:** This entire wizard becomes part of Claude Code itself. The patterns here — planning before coding, TDD enforcement, confidence levels, self-review — are exactly what every AI agent needs. Until Anthropic builds them in natively, this wizard bridges the gap.
+
+**But here's the key:** This isn't a one-size-fits-all answer. It's a starting point that helps you find YOUR answer. Every project is different. The self-evaluating loop (plan → build → test → review → improve) needs to be tuned to your codebase, your team, your standards. The wizard gives you the framework — you shape it into something bespoke.
+
+**The living system:**
+- Claude proposes improvements based on friction encountered
+- You approve changes to the process
+- Both sides learn over time
+- The system improves the system (recursive improvement)
+
+**This is a partnership, not a rulebook.**
+
+---
+
 ## KISS: Keep It Simple, Stupid
 
 **A core principle of this SDLC - not just for coding, but for the entire development process.**
@@ -2946,15 +2968,7 @@ The wizard provides generic starting principles, then:
 
 ### The Living System
 
-- **Claude proposes improvements** based on friction encountered
-- **Human approves changes** to the process
-- **Both sides learn** over time
-- **Organic growth** - shaped by actual use, not theoretical ideals
-- **Recursive improvement** - the system improves the system
-
-**This is a partnership, not a rulebook.**
-
-**Think Iron Man:** Jarvis is nothing without Tony Stark. Tony Stark is still Tony Stark. But together? They make Iron Man. This SDLC is your suit - you build it over time, improve it for your needs, and it makes you both better.
+> See **The Vision** at the top of this document for the full philosophy — including planned obsolescence, the Iron Man analogy, and tuning to your project.
 
 ### Evolving with Claude Code
 
