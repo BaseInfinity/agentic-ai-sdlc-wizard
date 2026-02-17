@@ -1014,21 +1014,28 @@ _Updated: 2026-02-15_
 
 ---
 
-## Bugs Found & Fixed (2026-02-16) — ci-autofix `workflow_run` Registry
+## Bugs Found & Fixed (2026-02-16) — ci-autofix `workflow_run` Dead
 
 ### Bug: `workflow_run` stopped firing for ci-autofix (Feb 15)
 
-**Symptom:** After commit `208ecdb` (Feb 15 11:06Z), no `workflow_run` events triggered ci-autofix. Only ghost `push`-triggered artifacts appeared (0s duration, "workflow file issue", no jobs).
+**Symptom:** After commit `208ecdb` (Feb 15), no `workflow_run` events triggered ci-autofix. Only ghost `push`-triggered artifacts appeared (0s duration, 0 jobs). Self-healing loop completely dead.
 
-**Root cause:** Modifying `ci-autofix.yml` caused GitHub's workflow registry to lose the `name: CI Auto-Fix` identity. The API showed `name: ".github/workflows/ci-autofix.yml"` (file path) instead of the declared name. Since other workflows reference `"CI Auto-Fix"` by name in their `workflow_run` triggers, the events silently stopped matching.
+**Root cause:** `workflows: write` in the YAML `permissions:` block. `workflows` is NOT a valid GitHub Actions permission scope (confirmed by `actionlint`). GitHub's parser silently failed on the entire file, causing:
+1. Workflow name registered as file path instead of `name:` field value
+2. `on: workflow_run` trigger ignored, treated as `on: push` (ghost runs)
+3. No `workflow_run` events generated for this workflow
 
-**Investigation:**
-- YAML was valid, `name: CI Auto-Fix` was correctly declared in the file
-- Disable + re-enable via GitHub API did not restore the name
-- The registry only re-reads the `name:` field when the workflow file changes on the **default branch**
+The `workflows: write` permission was added in commit `208ecdb` to allow pushing fixes to `.github/workflows/` files, but this scope only exists at the GitHub App/PAT level, not in YAML `permissions:`.
 
-**Fix:** Pushed a trivial comment addition to `ci-autofix.yml` on main (via PR), forcing GitHub to re-parse and re-register the correct `name:` field.
+**Investigation (PRs #39-47):**
+- Tried: API disable/re-enable, file modification, delete+recreate, file rename — none worked
+- Diagnostic: minimal 10-line file (no `workflows: write`) registered correctly and received events immediately
+- `actionlint` confirmed: `workflows` is not a valid permission scope
 
-**Regression test:** Test 78 in `test-workflow-triggers.sh` — validates ci-autofix.yml has the correct `name: CI Auto-Fix` field via YAML parsing.
+**Fix:** Removed `workflows: write` from permissions block. Renamed file to `ci-self-heal.yml` (fresh workflow ID). Result: name registered correctly, `workflow_run` events firing.
 
-**Lesson:** Modifying a `workflow_run`-only workflow can break GitHub's internal registry mapping between the declared `name:` field and the workflow identity. The API disable/re-enable cycle does NOT fix this — only a file change merged to the default branch forces re-registration.
+**Regression tests:**
+- Test 73: verifies `workflows: write` is NOT present (inverted from original)
+- Test 78: validates correct `name: CI Auto-Fix` field via YAML parsing
+
+**Lesson:** `workflows` is NOT a valid YAML permission scope in GitHub Actions. Including it causes GitHub's parser to silently fail on the entire workflow file, breaking trigger registration. Always validate with `actionlint` before adding permissions. Pushing workflow files requires PAT with `workflow` scope or GitHub App token — not YAML permissions.

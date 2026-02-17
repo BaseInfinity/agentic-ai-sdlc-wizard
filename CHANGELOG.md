@@ -7,7 +7,7 @@ All notable changes to the SDLC Wizard.
 ## [1.7.0] - 2026-02-15
 
 ### Added
-- CI Auto-Fix Loop (`ci-autofix.yml`) — automated fix cycle for CI failures and PR review findings
+- CI Auto-Fix Loop (`ci-self-heal.yml`) — automated fix cycle for CI failures and PR review findings
 - Multi-call LLM judge (v3) — per-criterion API calls with dedicated calibration examples
 - Golden output regression — 3 saved outputs with verified expected score ranges catch prompt drift
 - Per-criterion CUSUM — tracks individual criterion drift, not just total score
@@ -23,7 +23,7 @@ All notable changes to the SDLC Wizard.
 - Score analytics tests (`test-score-analytics.sh`)
 
 ### Fixed
-- `workflow_run` trigger dead for ci-autofix — GitHub registry lost `name:` field after file modification, forced re-registration via file change on default branch
+- `workflow_run` trigger dead for ci-autofix — invalid `workflows: write` permission scope caused GitHub parser to silently fail; removed it + renamed to `ci-self-heal.yml`
 - Tier 1 E2E flakiness — regression threshold widened from -0.5 to -1.5 (absorbs ±1 LLM noise)
 - Silent zero scores from `2>&1` mixing stderr into stdout (PR #33)
 - Token/cost metrics always N/A — removed dead extraction code (action doesn't expose usage data)
