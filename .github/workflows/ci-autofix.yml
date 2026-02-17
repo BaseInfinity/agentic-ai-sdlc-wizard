@@ -1,4 +1,5 @@
 name: CI Auto-Fix
+# Self-healing loop: CI/Review fails → Claude fixes → re-triggers → validates
 
 on:
   workflow_run:
