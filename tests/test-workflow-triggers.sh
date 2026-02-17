@@ -96,14 +96,14 @@ test_weekly_has_schedule() {
     fi
 }
 
-# Test 36: Monthly workflow does NOT have active schedule trigger
-test_monthly_no_schedule() {
+# Test 36: Monthly workflow has active schedule trigger (Item 23 Phase 3)
+test_monthly_has_schedule() {
     WORKFLOW="$REPO_ROOT/.github/workflows/monthly-research.yml"
 
-    if grep -q "schedule:" "$WORKFLOW"; then
-        fail "Monthly workflow has active schedule trigger (should be paused)"
+    if grep -q "schedule:" "$WORKFLOW" && grep -q "cron:" "$WORKFLOW"; then
+        pass "Monthly workflow has active schedule with cron trigger"
     else
-        pass "Monthly workflow schedule is paused (manual dispatch only)"
+        fail "Monthly workflow missing schedule trigger (should have cron for Item 23)"
     fi
 }
 
@@ -613,7 +613,7 @@ test_weekly_dispatch
 test_monthly_dispatch
 test_daily_has_schedule
 test_weekly_has_schedule
-test_monthly_no_schedule
+test_monthly_has_schedule
 test_state_file_path
 test_state_file_roundtrip
 test_workflow_permissions
@@ -1745,6 +1745,29 @@ test_tier1_regression_threshold() {
     fi
 }
 
+# ============================================
+# Monthly-Research Permission Tests
+# ============================================
+# Ensure monthly-research has the permissions its
+# e2e-test job needs (creates PRs via peter-evans/create-pull-request).
+
+# Test 77: monthly-research has pull-requests: write permission
+test_monthly_has_pr_write_permission() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/monthly-research.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "monthly-research.yml not found"
+        return
+    fi
+
+    if grep -q 'pull-requests: write' "$WORKFLOW"; then
+        pass "monthly-research has pull-requests: write permission"
+    else
+        fail "monthly-research missing pull-requests: write permission (e2e-test creates PRs)"
+    fi
+}
+
+test_monthly_has_pr_write_permission
 test_tier1_regression_threshold
 test_ci_no_dead_token_extraction
 test_ci_score_history_committed

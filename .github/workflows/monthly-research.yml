@@ -1,10 +1,13 @@
 name: Monthly Research Deep Dive
 
 on:
-  workflow_dispatch:  # Auto-schedule disabled until roadmap items 15-22 complete
+  schedule:
+    - cron: '0 11 1 * *'  # 11 AM UTC on the 1st of each month
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pull-requests: write
   issues: write
   id-token: write
 
