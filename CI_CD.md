@@ -8,7 +8,7 @@
 | `daily-update.yml` | Daily (9 AM UTC) + manual | Check for Claude Code updates |
 | `weekly-community.yml` | Weekly (Mondays 10 AM UTC) + manual | Scan community for patterns |
 | `monthly-research.yml` | Monthly (1st, 11 AM UTC) + manual | Deep research and trends |
-| `ci-autofix.yml` | CI fail / review findings | Auto-fix loop |
+| `ci-self-heal.yml` | CI fail / review findings | Auto-fix loop |
 | `pr-review.yml` | PR opened/ready/labeled | AI code review |
 
 ## CI Workflow (`ci.yml`)
@@ -180,7 +180,7 @@ Both use Tier 1 (quick) + Tier 2 (full statistical) evaluation.
 - Monthly schedule: 11 AM UTC on the 1st (`cron: '0 11 1 * *'`)
 - Manual trigger also available (workflow_dispatch)
 
-## CI Auto-Fix Workflow (`ci-autofix.yml`)
+## CI Auto-Fix Workflow (`ci-self-heal.yml`)
 
 ### What It Does
 
@@ -224,7 +224,7 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | `--max-turns 30` | Limit Claude execution |
 | `[autofix N/M]` commits | Audit trail in git history |
 | Sticky PR comments | User always sees status |
-| Self-modification ban | Prompt forbids editing ci-autofix.yml |
+| Self-modification ban | Prompt forbids editing ci-self-heal.yml |
 
 ### Token Approaches
 
@@ -284,10 +284,10 @@ Workflows require the GitHub Actions environment (secrets, runner context, `clau
 
 | Secret | Used By | Purpose |
 |--------|---------|---------|
-| `ANTHROPIC_API_KEY` | daily-update, weekly-community, monthly-research, ci, pr-review, ci-autofix | Claude API access |
+| `ANTHROPIC_API_KEY` | daily-update, weekly-community, monthly-research, ci, pr-review, ci-self-heal | Claude API access |
 | `GITHUB_TOKEN` | All workflows | Auto-provided by GitHub |
-| `CI_AUTOFIX_APP_ID` | ci-autofix (optional) | GitHub App ID for token generation |
-| `CI_AUTOFIX_PRIVATE_KEY` | ci-autofix (optional) | GitHub App private key |
+| `CI_AUTOFIX_APP_ID` | ci-self-heal (optional) | GitHub App ID for token generation |
+| `CI_AUTOFIX_PRIVATE_KEY` | ci-self-heal (optional) | GitHub App private key |
 
 ## Workflow Permissions
 
