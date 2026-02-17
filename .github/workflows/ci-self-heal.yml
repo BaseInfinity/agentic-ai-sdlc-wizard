@@ -9,11 +9,12 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
   id-token: write
 
 env:
   MAX_AUTOFIX_RETRIES: 3
-  AUTOFIX_LEVEL: criticals
+  AUTOFIX_LEVEL: all-findings
 
 jobs:
   autofix:
@@ -78,7 +79,7 @@ jobs:
         if: steps.pr.outputs.skip != 'true'
         id: count
         run: |
-          AUTOFIX_COUNT=$(git log origin/main..HEAD --oneline --grep='\[autofix' | wc -l | tr -d ' ')
+          AUTOFIX_COUNT=$(git log origin/main..HEAD --oneline --grep='^\[autofix [0-9]' | wc -l | tr -d ' ')
           echo "count=$AUTOFIX_COUNT" >> $GITHUB_OUTPUT
           echo "Previous autofix attempts: $AUTOFIX_COUNT / $MAX_AUTOFIX_RETRIES"
 
@@ -101,17 +102,21 @@ jobs:
           number: ${{ steps.pr.outputs.pr_number }}
           header: ci-autofix
           message: |
-            ## CI Auto-Fix: Max Retries Reached
+            ## CI Auto-Fix: Max Retries Reached ❌
 
-            Auto-fix has been attempted **${{ steps.count.outputs.count }}/${{ env.MAX_AUTOFIX_RETRIES }}** times without resolving all issues.
+            CI failed → Claude attempted ${{ steps.count.outputs.count }}/${{ env.MAX_AUTOFIX_RETRIES }} fixes → still failing → manual intervention needed
 
-            **Manual intervention required.** Please review the failures and fix them manually.
+            <details>
+            <summary>What happened</summary>
 
-            | Detail | Value |
-            |--------|-------|
-            | Source | ${{ steps.source.outputs.workflow_name }} |
-            | Branch | `${{ steps.source.outputs.head_branch }}` |
-            | Last Run | ${{ steps.source.outputs.run_id }} |
+            **Trigger:** ${{ steps.source.outputs.mode }} (run #${{ steps.source.outputs.run_id }})
+            **Branch:** `${{ steps.source.outputs.head_branch }}`
+            **Status:** All ${{ env.MAX_AUTOFIX_RETRIES }} auto-fix attempts exhausted without resolving the issue.
+
+            </details>
+
+            ---
+            _Auto-fix by Claude Code. Max ${{ env.MAX_AUTOFIX_RETRIES }} attempts._
 
       # === CI FAILURE MODE ===
       - name: Download CI failure logs
@@ -129,6 +134,13 @@ jobs:
           # Truncate to last 200 lines to stay within prompt limits
           tail -200 /tmp/ci-failure-logs.txt > /tmp/ci-failure-context.txt
           echo "Captured $(wc -l < /tmp/ci-failure-context.txt) lines of failure context"
+
+          # Extract first error/fail line for the PR comment
+          ERROR_SUMMARY=$(grep -iE '(FAIL|ERROR)' /tmp/ci-failure-context.txt | head -1 | sed 's/.*\(FAIL\)/FAIL/' | cut -c1-120)
+          if [ -z "$ERROR_SUMMARY" ]; then
+            ERROR_SUMMARY="CI failed (see logs for details)"
+          fi
+          echo "error_summary=$ERROR_SUMMARY" >> $GITHUB_OUTPUT
 
       # === REVIEW FINDINGS MODE ===
       - name: Fetch review findings
@@ -283,6 +295,7 @@ jobs:
           private-key: ${{ secrets.CI_AUTOFIX_PRIVATE_KEY }}
 
       - name: Commit and push fixes
+        id: commit
         if: |
           steps.pr.outputs.skip != 'true' &&
           steps.count.outputs.exceeded != 'true' &&
@@ -310,6 +323,12 @@ jobs:
           git add -A
           git commit -m "[autofix ${ATTEMPT}/${MAX_AUTOFIX_RETRIES}] fix: auto-fix from ${{ steps.source.outputs.mode }}"
 
+          # Capture diff stat for PR comment
+          DIFF_STAT=$(git diff --stat HEAD~1 | tail -5)
+          echo "diff_stat<<EOF" >> $GITHUB_OUTPUT
+          echo "$DIFF_STAT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
           # Push using token
           git remote set-url origin "https://x-access-token:${GIT_TOKEN}@github.com/${{ github.repository }}.git"
           git push origin HEAD:${{ steps.source.outputs.head_branch }}
@@ -330,6 +349,61 @@ jobs:
           gh workflow run ci.yml --ref ${{ steps.source.outputs.head_branch }} || true
 
       # === STATUS COMMENT ===
+      - name: Build autofix status comment
+        if: |
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded != 'true'
+        id: comment
+        env:
+          COMMITTED: ${{ steps.commit.outputs.committed }}
+          ATTEMPT: ${{ steps.count.outputs.attempt }}
+          MAX_RETRIES: ${{ env.MAX_AUTOFIX_RETRIES }}
+          MODE: ${{ steps.source.outputs.mode }}
+          RUN_ID: ${{ steps.source.outputs.run_id }}
+          ERROR_SUMMARY: ${{ steps.ci-logs.outputs.error_summary }}
+          DIFF_STAT: ${{ steps.commit.outputs.diff_stat }}
+        run: |
+          if [ "$COMMITTED" = "true" ]; then
+            EMOJI="✅"
+            STORY="CI failed → Claude fixed → pushed → CI re-triggered"
+            STATUS_LINE="Fix pushed, CI re-triggered. Waiting for re-run."
+          else
+            EMOJI="⚠️"
+            STORY="CI failed → Claude found no fix to apply"
+            STATUS_LINE="No changes committed. Manual intervention may be needed."
+          fi
+
+          # Build the message
+          {
+            echo "## CI Auto-Fix: Attempt ${ATTEMPT}/${MAX_RETRIES} ${EMOJI}"
+            echo ""
+            echo "${STORY}"
+            echo ""
+            echo "<details>"
+            echo "<summary>What happened</summary>"
+            echo ""
+            echo "**Trigger:** ${MODE} (run #${RUN_ID})"
+            if [ -n "$ERROR_SUMMARY" ]; then
+              echo "**Error:** ${ERROR_SUMMARY}"
+            fi
+            if [ -n "$DIFF_STAT" ] && [ "$COMMITTED" = "true" ]; then
+              echo "**Changed:**"
+              echo '```'
+              echo "$DIFF_STAT"
+              echo '```'
+            fi
+            echo ""
+            echo "</details>"
+            echo ""
+            echo "---"
+            echo "_Auto-fix by Claude Code. Max ${MAX_RETRIES} attempts._"
+          } > /tmp/autofix-comment.md
+
+          # Set as multiline output
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/autofix-comment.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Post autofix status comment
         if: |
           steps.pr.outputs.skip != 'true' &&
@@ -338,17 +412,4 @@ jobs:
         with:
           number: ${{ steps.pr.outputs.pr_number }}
           header: ci-autofix
-          message: |
-            ## CI Auto-Fix: Attempt ${{ steps.count.outputs.attempt }}/${{ env.MAX_AUTOFIX_RETRIES }}
-
-            | Detail | Value |
-            |--------|-------|
-            | Source | ${{ steps.source.outputs.workflow_name }} (${{ steps.source.outputs.mode }}) |
-            | Branch | `${{ steps.source.outputs.head_branch }}` |
-            | Trigger Run | ${{ steps.source.outputs.run_id }} |
-            | Status | Fix pushed, CI re-triggered |
-
-            Waiting for CI to re-run. If all checks pass and review approves, this loop is complete.
-
-            ---
-            _Auto-fix powered by Claude Code. Max ${{ env.MAX_AUTOFIX_RETRIES }} attempts._
+          message: ${{ steps.comment.outputs.body }}

@@ -21,6 +21,8 @@ All notable changes to the SDLC Wizard.
 - Binary sub-criteria scoring with workflow input validation (PR #32)
 - Evaluate bug regression tests (`test-evaluate-bugs.sh`)
 - Score analytics tests (`test-score-analytics.sh`)
+- Self-heal simulation tests (25 tests) — retry counting, AUTOFIX_LEVEL filtering, findings parsing, branch safety
+- Self-heal live fire test procedure — validated full workflow_run → Claude fix → commit cycle (PR #52)
 
 ### Fixed
 - `workflow_run` trigger dead for ci-autofix — invalid `workflows: write` permission scope caused GitHub parser to silently fail; removed it + renamed to `ci-self-heal.yml`
@@ -31,11 +33,12 @@ All notable changes to the SDLC Wizard.
 - `show_full_output` invalid action input — deleted
 - `configureGitAuth` crash — added `git init` before simulation
 - `error_max_turns` on hard scenarios — bumped from 45 to 55
-- Autofix can't push workflow files — added `workflows: write` permission
+- Autofix can't push workflow files — requires PAT with `workflow` scope or GitHub App (not YAML permissions)
 - `git push` silent error swallowing in `weekly-community.yml` — removed `|| echo` fallback
 - Missing `pull-requests: write` permission in `monthly-research.yml` — e2e-test job creates PRs but permission wasn't declared
 - Workflow input validation audit — removed `prompt_file`, `direct_prompt`, `model` invalid inputs across all 3 auto-update workflows
 - `outputs.response` doesn't exist — read from execution output file instead
+- CI re-trigger 403 in self-heal loop — missing `actions: write` permission for `gh workflow run` dispatch
 
 ### Changed
 - `monthly-research.yml` schedule enabled (1st of month, 11 AM UTC) — Item 23 Phase 3

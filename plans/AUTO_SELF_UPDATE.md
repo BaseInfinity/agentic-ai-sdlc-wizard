@@ -88,7 +88,7 @@ Detect something new → Suggest changes → Test with E2E → Create PR with re
 | Monthly (1st, 11 AM UTC) | monthly-research.yml | Deep research → Issue |
 | On PR | ci.yml | Run tests + E2E eval |
 | On PR | pr-review.yml | AI code review |
-| On CI fail / review findings | ci-autofix.yml | Auto-fix loop |
+| On CI fail / review findings | ci-self-heal.yml | Auto-fix loop |
 
 ## Who Gets What on PR
 
@@ -120,7 +120,7 @@ Detect something new → Suggest changes → Test with E2E → Create PR with re
 │   ├── weekly-community.yml  # Community discussion scanning
 │   ├── monthly-research.yml  # Deep research and trends
 │   ├── ci.yml                # Tests + E2E evaluation
-│   ├── ci-autofix.yml         # Auto-fix loop (CI + review)
+│   ├── ci-self-heal.yml         # Auto-fix loop (CI + review)
 │   └── pr-review.yml         # AI code review
 ├── prompts/
 │   ├── analyze-release.md    # Claude prompt for release analysis
@@ -724,11 +724,11 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | Restricted Claude tools | `Read,Edit,Write,Bash(./tests/*),Bash(python3 *),Glob,Grep` |
 | `--max-turns 30` | Limit Claude execution per attempt |
 | `[autofix N/M]` commits | Audit trail in git history |
-| Self-modification ban | Prompt forbids editing ci-autofix.yml |
+| Self-modification ban | Prompt forbids editing ci-self-heal.yml |
 | Sticky PR comments | User always sees autofix status |
 | APPROVE detection | Loop exits when review is clean |
 | Suggestion handling | Autofix addresses ALL review findings, not just criticals |
-| `AUTOFIX_LEVEL` env var | 3 strictness levels: `ci-only`, `criticals` (default), `all-findings` (configurable per-repo) |
+| `AUTOFIX_LEVEL` env var | 3 strictness levels: `ci-only`, `criticals`, `all-findings` (current default, configurable per-repo) |
 
 ### Token Approach (Auto-Detected)
 
@@ -745,7 +745,7 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 
 | File | Action | Purpose |
 |------|--------|---------|
-| `.github/workflows/ci-autofix.yml` | CREATE | Core auto-fix workflow |
+| `.github/workflows/ci-self-heal.yml` | CREATE | Core auto-fix workflow |
 | `.github/workflows/ci.yml` | MODIFY | Added `workflow_dispatch` trigger for re-triggering |
 | `tests/test-workflow-triggers.sh` | MODIFY | Added 10 tests (22-31) for ci-autofix |
 | `CI_CD.md` | MODIFY | Documented ci-autofix workflow + secrets |
@@ -757,7 +757,7 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 
 | Test # | What It Checks |
 |--------|---------------|
-| 22 | `ci-autofix.yml` file exists |
+| 22 | `ci-self-heal.yml` file exists |
 | 23 | Triggers on `workflow_run` |
 | 24 | Watches both `"CI"` and `"PR Code Review"` workflows |
 | 25 | Has `MAX_AUTOFIX_RETRIES` config |
@@ -786,7 +786,9 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | 23 | Phased workflow re-enablement | HIGH | Re-enable daily → weekly → monthly schedules. Phase 1: daily (PR #35). Phase 2: weekly (PR #37). Phase 3: monthly (PR #38). All schedules enabled before Tier 2 audit so audit covers full system. | DONE — all 3 schedules enabled |
 | 24 | Tier 2 E2E full suite audit | HIGH | Run full Tier 2 evaluation (`merge-ready` label) end-to-end. Verify 5-trial statistical evaluation, 95% CI, pairwise tiebreaker, CUSUM, SDP, score history persistence, and PR comment formatting all work correctly in CI. This is the final validation gate before mutation testing. | PLANNED |
 | 25 | Full system audit | HIGH | Comprehensive audit of all workflows, tests, scripts, and docs after Tier 2 passes. Verify every feature works as documented. Catch any remaining silent failures or stale assumptions. Known bug: E2E "apply" step in daily/weekly/monthly doesn't propagate changes to test fixture — baseline vs candidate always tests same code, verdict always STABLE (useless comparison). Fix in this audit. | PLANNED |
-| 21 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. Gate: Items 24-25 must pass first. | PLANNED — last in execution order, after 24-25 |
+| 21 | Mutation testing | MED | Two tracks: (a) Wizard recommendation - detect stack and offer mutation testing setup (Stryker for JS/TS, mutmut for Python, pitest for Java, cargo-mutants for Rust). (b) Our own CI - explore "SDLC document mutation testing": mutate wizard doc sections, run E2E, verify score drops to prove which sections are load-bearing. Gate: Items 24-25 must pass first. | PLANNED — after 24-25 |
+| 26 | Add auto-self-update to wizard | MED | Package the proven self-healing CI loop into the wizard document so users can install it in their own repos. Gate: Item 25 (full system audit) must pass first — we only recommend what we've proven works. | PLANNED — final item |
+| 27 | Verify `all-findings` self-heal loop | HIGH | After PR #51 merges to main, push a new PR and verify self-heal triggers on review suggestions (not just criticals). `workflow_run` reads from default branch — change is invisible until merged. Verify: self-heal triggers, Claude fixes suggestions, `[autofix 1/3]` commit pushed, CI re-triggered. | PLANNED — post-merge verification |
 
 ### Item 15: Eval Framework Improvements (Targeted, Not Framework Adoption)
 
@@ -966,8 +968,8 @@ Comprehensive audit found multiple features that silently produce no data. Tests
 | 2 | Score history never persists | ci.yml | Appends to `score-history.jsonl` on ephemeral runner, never committed back | **FIXED** — Added git commit step after score recording (both Tier 1 and Tier 2) |
 | 3 | Historical context never populated | ci.yml | Depends on #2. Always shows "First run for this scenario" | **FIXED** — Fixed by #2 (score history now persists) |
 | 4 | External benchmark cache useless | external-benchmark.sh | Cache dir is on ephemeral runner — always cache miss | ACCEPTED — Fresh fetch each run works fine, falls back to 75.0 |
-| 5 | `show_full_output` invalid input | ci-autofix.yml | Not a valid `claude-code-action@v1` input, silently ignored | **FIXED** — Deleted invalid input |
-| 9 | Autofix can't push workflow files | ci-autofix.yml | Missing `workflows: write` permission — git push rejected for `.github/workflows/` changes | **FIXED** — Added `workflows: write` to permissions block |
+| 5 | `show_full_output` invalid input | ci-self-heal.yml | Not a valid `claude-code-action@v1` input, silently ignored | **FIXED** — Deleted invalid input |
+| 9 | Autofix can't push workflow files | ci-self-heal.yml | YAML `workflows: write` permission is invalid (breaks parser) — requires PAT with `workflow` scope or GitHub App | **FIXED** — Removed invalid permission; workflow file pushes need PAT/App, not YAML permissions |
 | 10 | `configureGitAuth` crash in CI | ci.yml | `actions/checkout` with `path:` leaves workspace root as non-git — `claude-code-action@v1` crashes on `git config` | **FIXED** — Added `git init .` step before simulation in both Tier 1 and Tier 2 |
 | 11 | `error_max_turns` on hard scenarios | ci.yml | 45 turns too tight for hard scenarios (refactor used 46) — action treats as failure | **FIXED** — Bumped max-turns from 45 to 55 |
 
@@ -1010,7 +1012,7 @@ _Updated: 2026-02-15_
 
 **Item 23 decision (updated 2026-02-16):** All 3 schedules enabled — daily (PR #35), weekly (PR #37), monthly (PR #38). System is fully live. Ready for audit.
 
-**Execution order (updated 2026-02-16):** Item 23 DONE → Item 24 (Tier 2 full suite audit) → Item 25 (full system audit) → Item 21 (mutation testing, last). Rationale: audit after all schedules are live so nothing is missed.
+**Execution order (updated 2026-02-16):** Item 23 DONE → Item 24 (Tier 2 full suite audit) → Item 25 (full system audit) → Item 21 (mutation testing) → Item 26 (add self-update to wizard, final). Rationale: prove it works end-to-end before recommending it to users.
 
 ---
 

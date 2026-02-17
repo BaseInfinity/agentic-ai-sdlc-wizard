@@ -8,7 +8,7 @@
 | `daily-update.yml` | Daily (9 AM UTC) + manual | Check for Claude Code updates |
 | `weekly-community.yml` | Weekly (Mondays 10 AM UTC) + manual | Scan community for patterns |
 | `monthly-research.yml` | Monthly (1st, 11 AM UTC) + manual | Deep research and trends |
-| `ci-autofix.yml` | CI fail / review findings | Auto-fix loop |
+| `ci-self-heal.yml` | CI fail / review findings | Auto-fix loop |
 | `pr-review.yml` | PR opened/ready/labeled | AI code review |
 
 ## CI Workflow (`ci.yml`)
@@ -180,7 +180,7 @@ Both use Tier 1 (quick) + Tier 2 (full statistical) evaluation.
 - Monthly schedule: 11 AM UTC on the 1st (`cron: '0 11 1 * *'`)
 - Manual trigger also available (workflow_dispatch)
 
-## CI Auto-Fix Workflow (`ci-autofix.yml`)
+## CI Auto-Fix Workflow (`ci-self-heal.yml`)
 
 ### What It Does
 
@@ -204,13 +204,13 @@ Team:   Code → /code-review → Push → CI tests → CI PR Review → Team di
 Push to PR
     |
     v
-CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► commit [autofix N/M] ──► re-trigger CI
-    |                                                                              |
-    |   <──────────────────────────────────────────────────────────────────────────┘
+CI runs ──► FAIL ──► ci-self-heal ──► Claude fixes ──► commit [autofix N/M] ──► re-trigger CI
+    |                                                                                 |
+    |   <─────────────────────────────────────────────────────────────────────────────┘
     |
     └── PASS ──► PR Review ──► APPROVE, no findings at level ──► DONE
                       |
-                      └── has findings ──► ci-autofix ──► Claude fixes all ──► loop back
+                      └── has findings ──► ci-self-heal ──► Claude fixes all ──► loop back
 ```
 
 ### Safety Measures
@@ -224,14 +224,16 @@ CI runs ──► FAIL ──► ci-autofix ──► Claude fixes ──► com
 | `--max-turns 30` | Limit Claude execution |
 | `[autofix N/M]` commits | Audit trail in git history |
 | Sticky PR comments | User always sees status |
-| Self-modification ban | Prompt forbids editing ci-autofix.yml |
+| Self-modification ban | Prompt forbids editing ci-self-heal.yml |
 
 ### Token Approaches
 
 | Approach | When | How |
 |----------|------|-----|
-| **GITHUB_TOKEN** (default) | No app secrets | Commit + `gh workflow run ci.yml` to re-trigger |
+| **GITHUB_TOKEN** (default) | No app secrets | Commit + `gh workflow run ci.yml` to re-trigger (needs `actions: write`) |
 | **GitHub App** | `CI_AUTOFIX_APP_ID` secret exists | `actions/create-github-app-token` → push triggers `synchronize` |
+
+**Why `gh workflow run`?** GITHUB_TOKEN pushes do NOT trigger workflow events (GitHub's anti-infinite-loop protection). The explicit dispatch is the workaround.
 
 ### Runs On
 - `workflow_run` completion of CI (on failure)
@@ -284,18 +286,22 @@ Workflows require the GitHub Actions environment (secrets, runner context, `clau
 
 | Secret | Used By | Purpose |
 |--------|---------|---------|
-| `ANTHROPIC_API_KEY` | daily-update, weekly-community, monthly-research, ci, pr-review, ci-autofix | Claude API access |
+| `ANTHROPIC_API_KEY` | daily-update, weekly-community, monthly-research, ci, pr-review, ci-self-heal | Claude API access |
 | `GITHUB_TOKEN` | All workflows | Auto-provided by GitHub |
-| `CI_AUTOFIX_APP_ID` | ci-autofix (optional) | GitHub App ID for token generation |
-| `CI_AUTOFIX_PRIVATE_KEY` | ci-autofix (optional) | GitHub App private key |
+| `CI_AUTOFIX_APP_ID` | ci-self-heal (optional) | GitHub App ID for token generation |
+| `CI_AUTOFIX_PRIVATE_KEY` | ci-self-heal (optional) | GitHub App private key |
 
 ## Workflow Permissions
 
 ```yaml
+# Most workflows
 permissions:
   contents: write      # For commits
   pull-requests: write # For PR creation/comments
   id-token: write      # For OIDC authentication
+
+# ci-self-heal.yml additionally needs:
+  actions: write       # For gh workflow run (CI re-trigger)
 ```
 
 ## Troubleshooting

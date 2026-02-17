@@ -1797,8 +1797,45 @@ print(wf.get('name', ''))
     fi
 }
 
+# Test 79: ci-self-heal.yml has actions: write permission (needed for gh workflow run dispatch)
+test_ci_autofix_has_actions_write() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-self-heal.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-self-heal.yml not found"
+        return
+    fi
+
+    # GITHUB_TOKEN pushes don't trigger workflow events (anti-loop protection).
+    # The workaround is `gh workflow run ci.yml` to re-trigger CI after fixing.
+    # This requires `actions: write` permission, otherwise: HTTP 403.
+    if grep -q 'actions: write' "$WORKFLOW"; then
+        pass "ci-self-heal.yml has actions: write permission (needed for CI re-trigger)"
+    else
+        fail "ci-self-heal.yml missing actions: write permission (gh workflow run returns 403)"
+    fi
+}
+
+# Test 80: ci-self-heal.yml comment includes collapsible <details> section
+test_ci_autofix_comment_has_details() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-self-heal.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-self-heal.yml not found (needed for comment format test)"
+        return
+    fi
+
+    if grep -q '<details>' "$WORKFLOW" && grep -q '</details>' "$WORKFLOW"; then
+        pass "ci-self-heal.yml comment includes collapsible <details> section"
+    else
+        fail "ci-self-heal.yml comment missing <details> section (flat format is not scannable)"
+    fi
+}
+
+test_ci_autofix_comment_has_details
 test_ci_autofix_has_name_field
 test_monthly_has_pr_write_permission
+test_ci_autofix_has_actions_write
 test_tier1_regression_threshold
 test_ci_no_dead_token_extraction
 test_ci_score_history_committed
