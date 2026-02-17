@@ -1,10 +1,354 @@
 name: CI Auto-Fix
+# Self-healing loop: CI/Review fails -> Claude fixes -> re-triggers -> validates
+
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["CI", "PR Code Review"]
     types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+env:
+  MAX_AUTOFIX_RETRIES: 3
+  AUTOFIX_LEVEL: criticals
+
 jobs:
-  test:
+  autofix:
     runs-on: ubuntu-latest
+    # Only run on PR branches (never main), only on failure or review findings
+    if: |
+      github.event.workflow_run.head_branch != 'main' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      (
+        (github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'failure') ||
+        (github.event.workflow_run.name == 'PR Code Review' && github.event.workflow_run.conclusion == 'success')
+      )
+
     steps:
-      - run: echo "workflow_run event received"
+      - name: Determine trigger source
+        id: source
+        run: |
+          echo "workflow_name=${{ github.event.workflow_run.name }}" >> $GITHUB_OUTPUT
+          echo "conclusion=${{ github.event.workflow_run.conclusion }}" >> $GITHUB_OUTPUT
+          echo "head_branch=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
+          echo "head_sha=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
+          echo "run_id=${{ github.event.workflow_run.id }}" >> $GITHUB_OUTPUT
+
+          if [ "${{ github.event.workflow_run.name }}" = "CI" ]; then
+            echo "mode=ci-failure" >> $GITHUB_OUTPUT
+            echo "Triggered by CI failure on branch ${{ github.event.workflow_run.head_branch }}"
+          else
+            echo "mode=review-findings" >> $GITHUB_OUTPUT
+            echo "Triggered by PR Code Review on branch ${{ github.event.workflow_run.head_branch }}"
+          fi
+
+      # Get the PR number from the triggering workflow run
+      - name: Get PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Find PR for this branch
+          PR_NUMBER=$(gh api "repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${{ steps.source.outputs.head_branch }}&state=open" \
+            --jq '.[0].number // empty' 2>/dev/null || echo "")
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open PR found for branch ${{ steps.source.outputs.head_branch }}, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "Found PR #$PR_NUMBER"
+
+      # Check retry count from git history
+      - name: Check retry count
+        if: steps.pr.outputs.skip != 'true'
+        id: retries
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.head_branch }}
+          fetch-depth: 0
+
+      - name: Count previous autofix attempts
+        if: steps.pr.outputs.skip != 'true'
+        id: count
+        run: |
+          AUTOFIX_COUNT=$(git log origin/main..HEAD --oneline --grep='\[autofix' | wc -l | tr -d ' ')
+          echo "count=$AUTOFIX_COUNT" >> $GITHUB_OUTPUT
+          echo "Previous autofix attempts: $AUTOFIX_COUNT / $MAX_AUTOFIX_RETRIES"
+
+          if [ "$AUTOFIX_COUNT" -ge "$MAX_AUTOFIX_RETRIES" ]; then
+            echo "exceeded=true" >> $GITHUB_OUTPUT
+            echo "Max retries ($MAX_AUTOFIX_RETRIES) reached, will not attempt fix"
+          else
+            echo "exceeded=false" >> $GITHUB_OUTPUT
+            ATTEMPT=$((AUTOFIX_COUNT + 1))
+            echo "attempt=$ATTEMPT" >> $GITHUB_OUTPUT
+          fi
+
+      # Post max-retries comment and stop
+      - name: Post max retries comment
+        if: |
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          number: ${{ steps.pr.outputs.pr_number }}
+          header: ci-autofix
+          message: |
+            ## CI Auto-Fix: Max Retries Reached
+
+            Auto-fix has been attempted **${{ steps.count.outputs.count }}/${{ env.MAX_AUTOFIX_RETRIES }}** times without resolving all issues.
+
+            **Manual intervention required.** Please review the failures and fix them manually.
+
+            | Detail | Value |
+            |--------|-------|
+            | Source | ${{ steps.source.outputs.workflow_name }} |
+            | Branch | `${{ steps.source.outputs.head_branch }}` |
+            | Last Run | ${{ steps.source.outputs.run_id }} |
+
+      # === CI FAILURE MODE ===
+      - name: Download CI failure logs
+        if: |
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded != 'true' &&
+          steps.source.outputs.mode == 'ci-failure'
+        id: ci-logs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Downloading failure logs from CI run ${{ steps.source.outputs.run_id }}..."
+          gh run view ${{ steps.source.outputs.run_id }} --log-failed > /tmp/ci-failure-logs.txt 2>&1 || true
+
+          # Truncate to last 200 lines to stay within prompt limits
+          tail -200 /tmp/ci-failure-logs.txt > /tmp/ci-failure-context.txt
+          echo "Captured $(wc -l < /tmp/ci-failure-context.txt) lines of failure context"
+
+      # === REVIEW FINDINGS MODE ===
+      - name: Fetch review findings
+        if: |
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded != 'true' &&
+          steps.source.outputs.mode == 'review-findings'
+        id: review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM="${{ steps.pr.outputs.pr_number }}"
+
+          # Fetch the claude-review sticky comment
+          REVIEW_BODY=$(gh api "repos/${{ github.repository }}/issues/$PR_NUM/comments" \
+            --jq '[.[] | select(.body | contains("claude-review") or contains("## PR Code Review"))] | last | .body // ""' 2>/dev/null || echo "")
+
+          if [ -z "$REVIEW_BODY" ]; then
+            echo "No review comment found, skipping"
+            echo "has_findings=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # AUTOFIX_LEVEL=ci-only skips all review findings regardless of verdict
+          if [ "$AUTOFIX_LEVEL" = "ci-only" ]; then
+            echo "AUTOFIX_LEVEL=ci-only: skipping all review findings"
+            echo "has_findings=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Parse review for findings
+          HAS_CRITICALS=false
+          HAS_SUGGESTIONS=false
+
+          if echo "$REVIEW_BODY" | grep -q "Critical (must fix)"; then
+            if ! echo "$REVIEW_BODY" | grep -A 1 "Critical (must fix)" | grep -q "None\|No critical\|N/A"; then
+              HAS_CRITICALS=true
+            fi
+          fi
+
+          if echo "$REVIEW_BODY" | grep -q "Suggestions (nice to have)"; then
+            if ! echo "$REVIEW_BODY" | grep -A 1 "Suggestions (nice to have)" | grep -q "None\|No suggestions\|N/A"; then
+              HAS_SUGGESTIONS=true
+            fi
+          fi
+
+          # Determine what to act on based on AUTOFIX_LEVEL
+          SKIP=false
+          case "$AUTOFIX_LEVEL" in
+            criticals)
+              if [ "$HAS_CRITICALS" = false ]; then
+                SKIP=true
+              fi
+              ;;
+            all-findings)
+              if [ "$HAS_CRITICALS" = false ] && [ "$HAS_SUGGESTIONS" = false ]; then
+                SKIP=true
+              fi
+              ;;
+            *)
+              echo "WARNING: Unknown AUTOFIX_LEVEL='$AUTOFIX_LEVEL' (valid: ci-only, criticals, all-findings), defaulting to criticals"
+              if [ "$HAS_CRITICALS" = false ]; then
+                SKIP=true
+              fi
+              ;;
+          esac
+
+          if [ "$SKIP" = true ]; then
+            echo "No findings to address at level=$AUTOFIX_LEVEL (criticals=$HAS_CRITICALS, suggestions=$HAS_SUGGESTIONS)"
+            echo "has_findings=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Review has findings: criticals=$HAS_CRITICALS, suggestions=$HAS_SUGGESTIONS (level=$AUTOFIX_LEVEL)"
+
+          # Has findings that need fixing
+          echo "has_findings=true" >> $GITHUB_OUTPUT
+          printf '%s' "$REVIEW_BODY" > /tmp/review-findings.md
+          echo "Review findings saved ($(wc -c < /tmp/review-findings.md) bytes)"
+
+      # === CLAUDE FIX (both modes) ===
+      - name: Run Claude to fix issues
+        if: |
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded != 'true' &&
+          (
+            steps.source.outputs.mode == 'ci-failure' ||
+            (steps.source.outputs.mode == 'review-findings' && steps.review.outputs.has_findings == 'true')
+          )
+        id: fix
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Edit,Write,Bash(./tests/*),Bash(python3 *),Glob,Grep"
+          prompt: |
+            You are fixing issues found by CI or code review.
+            This is autofix attempt ${{ steps.count.outputs.attempt }}/${{ env.MAX_AUTOFIX_RETRIES }}.
+            Trigger mode: ${{ steps.source.outputs.mode }}
+
+            IMPORTANT RULES:
+            - Do NOT modify .github/workflows/ci-self-heal.yml
+            - Do NOT use EnterPlanMode or ExitPlanMode
+            - Use the Read tool to read files (NOT Bash with cat/find/ls)
+            - You do NOT have access to gh or git CLI
+            - Focus only on fixing the reported issues
+            - Keep changes minimal and focused
+
+            ## What to fix
+
+            If trigger mode is "ci-failure":
+            - Use the Read tool to read /tmp/ci-failure-context.txt
+            - Diagnose the root cause and fix the code
+
+            If trigger mode is "review-findings":
+            - Use the Read tool to read /tmp/review-findings.md
+            - Address all findings - criticals first, then suggestions
+            - Summarize: Critical fixes: [list], Suggestion fixes: [list]
+
+            After fixing, run relevant test scripts to verify your fixes.
+
+      # === COMMIT AND PUSH ===
+      - name: Detect token approach
+        if: |
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded != 'true' &&
+          (
+            steps.source.outputs.mode == 'ci-failure' ||
+            (steps.source.outputs.mode == 'review-findings' && steps.review.outputs.has_findings == 'true')
+          )
+        id: token
+        run: |
+          if [ -n "${{ secrets.CI_AUTOFIX_APP_ID }}" ] && [ -n "${{ secrets.CI_AUTOFIX_PRIVATE_KEY }}" ]; then
+            echo "approach=app" >> $GITHUB_OUTPUT
+            echo "Using GitHub App token approach"
+          else
+            echo "approach=pat" >> $GITHUB_OUTPUT
+            echo "Using GITHUB_TOKEN + workflow dispatch approach"
+          fi
+
+      - name: Generate GitHub App token
+        if: |
+          steps.token.outputs.approach == 'app' &&
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.CI_AUTOFIX_APP_ID }}
+          private-key: ${{ secrets.CI_AUTOFIX_PRIVATE_KEY }}
+
+      - name: Commit and push fixes
+        if: |
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded != 'true' &&
+          (
+            steps.source.outputs.mode == 'ci-failure' ||
+            (steps.source.outputs.mode == 'review-findings' && steps.review.outputs.has_findings == 'true')
+          )
+        env:
+          GIT_TOKEN: ${{ steps.token.outputs.approach == 'app' && steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          ATTEMPT="${{ steps.count.outputs.attempt }}"
+
+          # Check if there are actual changes to commit
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes to commit, Claude may not have found a fix"
+            echo "committed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stage and commit
+          git add -A
+          git commit -m "[autofix ${ATTEMPT}/${MAX_AUTOFIX_RETRIES}] fix: auto-fix from ${{ steps.source.outputs.mode }}"
+
+          # Push using token
+          git remote set-url origin "https://x-access-token:${GIT_TOKEN}@github.com/${{ github.repository }}.git"
+          git push origin HEAD:${{ steps.source.outputs.head_branch }}
+
+          echo "committed=true" >> $GITHUB_OUTPUT
+          echo "Pushed autofix commit ${ATTEMPT}/${MAX_AUTOFIX_RETRIES}"
+
+      # Re-trigger CI if using GITHUB_TOKEN (app token push triggers naturally)
+      - name: Re-trigger CI via workflow dispatch
+        if: |
+          steps.token.outputs.approach == 'pat' &&
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Re-triggering CI via workflow_dispatch..."
+          gh workflow run ci.yml --ref ${{ steps.source.outputs.head_branch }} || true
+
+      # === STATUS COMMENT ===
+      - name: Post autofix status comment
+        if: |
+          steps.pr.outputs.skip != 'true' &&
+          steps.count.outputs.exceeded != 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          number: ${{ steps.pr.outputs.pr_number }}
+          header: ci-autofix
+          message: |
+            ## CI Auto-Fix: Attempt ${{ steps.count.outputs.attempt }}/${{ env.MAX_AUTOFIX_RETRIES }}
+
+            | Detail | Value |
+            |--------|-------|
+            | Source | ${{ steps.source.outputs.workflow_name }} (${{ steps.source.outputs.mode }}) |
+            | Branch | `${{ steps.source.outputs.head_branch }}` |
+            | Trigger Run | ${{ steps.source.outputs.run_id }} |
+            | Status | Fix pushed, CI re-triggered |
+
+            Waiting for CI to re-run. If all checks pass and review approves, this loop is complete.
+
+            ---
+            _Auto-fix powered by Claude Code. Max ${{ env.MAX_AUTOFIX_RETRIES }} attempts._

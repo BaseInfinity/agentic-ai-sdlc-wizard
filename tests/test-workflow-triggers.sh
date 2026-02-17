@@ -1656,8 +1656,8 @@ test_ci_score_history_push_explicit_ref() {
     fi
 }
 
-# Test 73: ci-self-heal.yml has workflows: write permission (needed to push workflow file changes)
-test_ci_autofix_has_workflows_write() {
+# Test 73: ci-self-heal.yml must NOT have 'workflows: write' permission (invalid scope, breaks GitHub parser)
+test_ci_autofix_no_workflows_permission() {
     WORKFLOW="$REPO_ROOT/.github/workflows/ci-self-heal.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
@@ -1665,12 +1665,14 @@ test_ci_autofix_has_workflows_write() {
         return
     fi
 
-    # Without workflows: write, autofix can't push fixes to .github/workflows/ files.
-    # Git rejects with: "refusing to allow a GitHub App to create or update workflow without workflows permission"
+    # 'workflows' is NOT a valid YAML permission scope (actionlint confirms).
+    # Having it causes GitHub's parser to silently fail, registering the workflow
+    # as 'on: push' instead of 'on: workflow_run'. This killed the self-healing loop.
+    # Pushing workflow files requires a PAT with 'workflow' scope or a GitHub App, not YAML permissions.
     if grep -q 'workflows: write' "$WORKFLOW"; then
-        pass "ci-self-heal.yml has workflows: write permission (can push workflow file fixes)"
+        fail "ci-self-heal.yml has invalid 'workflows: write' permission (breaks GitHub's YAML parser)"
     else
-        fail "ci-self-heal.yml missing workflows: write permission (can't push workflow file fixes)"
+        pass "ci-self-heal.yml does not have invalid 'workflows' permission scope"
     fi
 }
 
@@ -1804,7 +1806,7 @@ test_ci_autofix_no_show_full_output
 test_weekly_e2e_triggers_on_findings
 test_monthly_e2e_triggers_on_notable
 test_ci_score_history_push_explicit_ref
-test_ci_autofix_has_workflows_write
+test_ci_autofix_no_workflows_permission
 test_ci_workspace_git_init
 test_ci_max_turns_sufficient
 
