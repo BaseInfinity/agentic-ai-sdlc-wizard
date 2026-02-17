@@ -385,26 +385,26 @@ test_ci_allowed_tools_task_tracking() {
 # ============================================
 # CI Auto-Fix Workflow Tests
 # ============================================
-# These tests ensure the ci-autofix.yml workflow
+# These tests ensure the autofix.yml workflow
 # is properly configured for the automated fix loop.
 
-# Test 22: ci-autofix.yml file exists
+# Test 22: autofix.yml file exists
 test_ci_autofix_exists() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ -f "$WORKFLOW" ]; then
-        pass "ci-autofix.yml file exists"
+        pass "autofix.yml file exists"
     else
-        fail "ci-autofix.yml file not found"
+        fail "autofix.yml file not found"
     fi
 }
 
 # Test 23: ci-autofix triggers on workflow_run
 test_ci_autofix_workflow_run_trigger() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for trigger test)"
+        fail "autofix.yml file not found (needed for trigger test)"
         return
     fi
 
@@ -417,10 +417,10 @@ test_ci_autofix_workflow_run_trigger() {
 
 # Test 24: ci-autofix watches both CI and PR Code Review workflows
 test_ci_autofix_watches_both_workflows() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for workflows test)"
+        fail "autofix.yml file not found (needed for workflows test)"
         return
     fi
 
@@ -433,10 +433,10 @@ test_ci_autofix_watches_both_workflows() {
 
 # Test 25: ci-autofix has MAX_AUTOFIX_RETRIES config
 test_ci_autofix_max_retries() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for retries test)"
+        fail "autofix.yml file not found (needed for retries test)"
         return
     fi
 
@@ -449,10 +449,10 @@ test_ci_autofix_max_retries() {
 
 # Test 26: ci-autofix excludes main branch
 test_ci_autofix_excludes_main() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for branch exclusion test)"
+        fail "autofix.yml file not found (needed for branch exclusion test)"
         return
     fi
 
@@ -465,10 +465,10 @@ test_ci_autofix_excludes_main() {
 
 # Test 27: ci-autofix uses claude-code-action
 test_ci_autofix_uses_claude() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for claude action test)"
+        fail "autofix.yml file not found (needed for claude action test)"
         return
     fi
 
@@ -481,10 +481,10 @@ test_ci_autofix_uses_claude() {
 
 # Test 28: ci-autofix uses [autofix] commit tag pattern
 test_ci_autofix_commit_tag() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for commit tag test)"
+        fail "autofix.yml file not found (needed for commit tag test)"
         return
     fi
 
@@ -497,10 +497,10 @@ test_ci_autofix_commit_tag() {
 
 # Test 29: ci-autofix posts sticky PR comment
 test_ci_autofix_sticky_comment() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for sticky comment test)"
+        fail "autofix.yml file not found (needed for sticky comment test)"
         return
     fi
 
@@ -529,10 +529,10 @@ test_ci_workflow_dispatch() {
 
 # Test 31: ci-autofix reads review comment for findings
 test_ci_autofix_reads_review() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for review reading test)"
+        fail "autofix.yml file not found (needed for review reading test)"
         return
     fi
 
@@ -552,10 +552,10 @@ test_ci_autofix_reads_review() {
 
 # Test 32: ci-autofix prompt references /tmp/ci-failure-context.txt
 test_ci_autofix_prompt_failure_file() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for prompt file test)"
+        fail "autofix.yml file not found (needed for prompt file test)"
         return
     fi
 
@@ -568,10 +568,10 @@ test_ci_autofix_prompt_failure_file() {
 
 # Test 33: ci-autofix prompt references /tmp/review-findings.md
 test_ci_autofix_prompt_review_file() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for prompt file test)"
+        fail "autofix.yml file not found (needed for prompt file test)"
         return
     fi
 
@@ -653,10 +653,10 @@ test_ci_max_turns_sufficient
 
 # Test 37: ci-autofix checks for suggestions (not just criticals)
 test_ci_autofix_checks_suggestions() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for suggestions test)"
+        fail "autofix.yml file not found (needed for suggestions test)"
         return
     fi
 
@@ -669,10 +669,10 @@ test_ci_autofix_checks_suggestions() {
 
 # Test 38: ci-autofix prompt addresses all findings
 test_ci_autofix_prompt_all_findings() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for prompt test)"
+        fail "autofix.yml file not found (needed for prompt test)"
         return
     fi
 
@@ -685,10 +685,10 @@ test_ci_autofix_prompt_all_findings() {
 
 # Test 39: ci-autofix prompt tells Claude to use Read tool (not Bash) for context files
 test_ci_autofix_prompt_read_tool() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for Read tool test)"
+        fail "autofix.yml file not found (needed for Read tool test)"
         return
     fi
 
@@ -709,18 +709,18 @@ test_ci_autofix_prompt_read_tool
 
 # Test 40: ci-autofix --max-turns >= 30
 test_ci_autofix_max_turns() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for max-turns test)"
+        fail "autofix.yml file not found (needed for max-turns test)"
         return
     fi
 
-    # Extract --max-turns value from ci-autofix.yml
+    # Extract --max-turns value from autofix.yml
     TURNS=$(grep -oE '\-\-max-turns [0-9]+' "$WORKFLOW" | grep -oE '[0-9]+')
 
     if [ -z "$TURNS" ]; then
-        fail "ci-autofix.yml missing --max-turns flag"
+        fail "autofix.yml missing --max-turns flag"
         return
     fi
 
@@ -733,10 +733,10 @@ test_ci_autofix_max_turns() {
 
 # Test 41: ci-autofix prompt has no literal \n ternary pattern
 test_ci_autofix_no_ternary_newlines() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml file not found (needed for ternary test)"
+        fail "autofix.yml file not found (needed for ternary test)"
         return
     fi
 
@@ -1552,17 +1552,17 @@ test_ci_score_history_committed() {
 
 # Test 69: ci-autofix has no show_full_output input
 test_ci_autofix_no_show_full_output() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml not found"
+        fail "autofix.yml not found"
         return
     fi
 
     if grep -q 'show_full_output' "$WORKFLOW"; then
-        fail "ci-autofix.yml still has invalid 'show_full_output' input"
+        fail "autofix.yml still has invalid 'show_full_output' input"
     else
-        pass "ci-autofix.yml has no invalid 'show_full_output' input"
+        pass "autofix.yml has no invalid 'show_full_output' input"
     fi
 }
 
@@ -1656,9 +1656,9 @@ test_ci_score_history_push_explicit_ref() {
     fi
 }
 
-# Test 73: ci-autofix.yml has workflows: write permission (needed to push workflow file changes)
+# Test 73: autofix.yml has workflows: write permission (needed to push workflow file changes)
 test_ci_autofix_has_workflows_write() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
         fail "ci-autofix workflow file not found"
@@ -1668,9 +1668,9 @@ test_ci_autofix_has_workflows_write() {
     # Without workflows: write, autofix can't push fixes to .github/workflows/ files.
     # Git rejects with: "refusing to allow a GitHub App to create or update workflow without workflows permission"
     if grep -q 'workflows: write' "$WORKFLOW"; then
-        pass "ci-autofix.yml has workflows: write permission (can push workflow file fixes)"
+        pass "autofix.yml has workflows: write permission (can push workflow file fixes)"
     else
-        fail "ci-autofix.yml missing workflows: write permission (can't push workflow file fixes)"
+        fail "autofix.yml missing workflows: write permission (can't push workflow file fixes)"
     fi
 }
 
@@ -1767,12 +1767,12 @@ test_monthly_has_pr_write_permission() {
     fi
 }
 
-# Test 78: ci-autofix.yml has name: field (required for workflow_run registry)
+# Test 78: autofix.yml has name: field (required for workflow_run registry)
 test_ci_autofix_has_name_field() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci-autofix.yml"
+    WORKFLOW="$REPO_ROOT/.github/workflows/autofix.yml"
 
     if [ ! -f "$WORKFLOW" ]; then
-        fail "ci-autofix.yml not found"
+        fail "autofix.yml not found"
         return
     fi
 
@@ -1787,11 +1787,11 @@ print(wf.get('name', ''))
 ")
 
     if [ "$YAML_NAME" = "CI Auto-Fix" ]; then
-        pass "ci-autofix.yml has correct name: field ('CI Auto-Fix')"
+        pass "autofix.yml has correct name: field ('CI Auto-Fix')"
     elif [ -n "$YAML_NAME" ]; then
-        fail "ci-autofix.yml name: field is '$YAML_NAME' (expected 'CI Auto-Fix')"
+        fail "autofix.yml name: field is '$YAML_NAME' (expected 'CI Auto-Fix')"
     else
-        fail "ci-autofix.yml missing name: field (workflow_run registry will use file path instead)"
+        fail "autofix.yml missing name: field (workflow_run registry will use file path instead)"
     fi
 }
 

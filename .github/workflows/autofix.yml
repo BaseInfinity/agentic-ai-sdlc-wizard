@@ -233,7 +233,7 @@ jobs:
             Trigger mode: ${{ steps.source.outputs.mode }}
 
             IMPORTANT RULES:
-            - Do NOT modify .github/workflows/ci-autofix.yml
+            - Do NOT modify .github/workflows/autofix.yml
             - Do NOT use EnterPlanMode or ExitPlanMode
             - Use the Read tool to read files (NOT Bash with cat/find/ls)
             - You do NOT have access to gh or git CLI
