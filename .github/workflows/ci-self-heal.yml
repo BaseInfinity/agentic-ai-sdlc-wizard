@@ -14,7 +14,7 @@ permissions:
 
 env:
   MAX_AUTOFIX_RETRIES: 3
-  AUTOFIX_LEVEL: criticals
+  AUTOFIX_LEVEL: all-findings
 
 jobs:
   autofix:
