@@ -1816,6 +1816,23 @@ test_ci_autofix_has_actions_write() {
     fi
 }
 
+# Test 80: ci-self-heal.yml comment includes collapsible <details> section
+test_ci_autofix_comment_has_details() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-self-heal.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-self-heal.yml not found (needed for comment format test)"
+        return
+    fi
+
+    if grep -q '<details>' "$WORKFLOW" && grep -q '</details>' "$WORKFLOW"; then
+        pass "ci-self-heal.yml comment includes collapsible <details> section"
+    else
+        fail "ci-self-heal.yml comment missing <details> section (flat format is not scannable)"
+    fi
+}
+
+test_ci_autofix_comment_has_details
 test_ci_autofix_has_name_field
 test_monthly_has_pr_write_permission
 test_ci_autofix_has_actions_write

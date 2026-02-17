@@ -623,6 +623,39 @@ echo "--- Commit Message Format ---"
 test_commit_message_format
 
 echo ""
+echo "--- Error Summary Extraction ---"
+
+# Test 26: Extract first FAIL/ERROR line from CI logs for comment
+test_error_summary_extraction() {
+    TEMP_DIR=$(mktemp -d)
+    LOG_FILE="$TEMP_DIR/ci-failure-context.txt"
+
+    # Simulate CI log output with a FAIL line buried in noise
+    cat > "$LOG_FILE" << 'LOGEOF'
+2026-02-16T10:00:00Z Run ./tests/test-version-logic.sh
+2026-02-16T10:00:01Z === Version Logic Tests ===
+2026-02-16T10:00:02Z PASS: v2.1.0 > v2.0.0
+2026-02-16T10:00:03Z PASS: v2.1.20 > v2.1.19
+2026-02-16T10:00:04Z FAIL: Intentional failure for self-heal live test
+2026-02-16T10:00:05Z ERROR: some other error
+2026-02-16T10:00:06Z === Results ===
+LOGEOF
+
+    # Same extraction logic as ci-self-heal.yml
+    ERROR_SUMMARY=$(grep -iE '(FAIL|ERROR)' "$LOG_FILE" | head -1 | sed 's/.*\(FAIL\)/FAIL/' | cut -c1-120)
+
+    rm -rf "$TEMP_DIR"
+
+    if [ "$ERROR_SUMMARY" = "FAIL: Intentional failure for self-heal live test" ]; then
+        pass "Error summary extraction finds first FAIL line and strips timestamp"
+    else
+        fail "Error summary extraction got '$ERROR_SUMMARY' (expected 'FAIL: Intentional failure for self-heal live test')"
+    fi
+}
+
+test_error_summary_extraction
+
+echo ""
 echo "--- Workflow YAML Validation ---"
 test_workflow_yaml_valid
 test_prompt_forbids_self_modification
