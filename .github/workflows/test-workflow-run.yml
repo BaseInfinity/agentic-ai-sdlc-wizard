@@ -1,0 +1,10 @@
+name: Test Workflow Run Trigger
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "workflow_run event received for CI completion"
