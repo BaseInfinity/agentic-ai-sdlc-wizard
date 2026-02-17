@@ -124,6 +124,11 @@ test_branch_name() {
     fi
 }
 
+# INTENTIONAL FAILURE — self-heal live test (delete this block to fix CI)
+test_intentional_fail() {
+    fail "Intentional failure for self-heal live test — Claude should remove this test"
+}
+
 # Run all tests
 test_same_version
 test_different_version
@@ -131,6 +136,7 @@ test_initial_state
 test_version_file_read
 test_missing_version_file
 test_branch_name
+test_intentional_fail
 
 echo ""
 echo "=== Results ==="
