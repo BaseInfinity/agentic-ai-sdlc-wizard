@@ -251,6 +251,14 @@ Push PR
 ### Step 5: Cleanup
 
 ```bash
+# Remove the stress test fixture file before closing the PR.
+# gh pr close without merging does not clean up committed files if the
+# branch was previously pushed; removing it explicitly prevents the file
+# from lingering if the branch is re-used or cherry-picked elsewhere.
+git rm tests/e2e/lib/retry-utils.sh
+git commit -m "cleanup: remove retry-utils.sh stress test fixture"
+git push origin test/self-heal-stress
+
 gh pr close test/self-heal-stress --comment "Multi-path stress test complete. Results documented."
 git checkout main
 git branch -D test/self-heal-stress

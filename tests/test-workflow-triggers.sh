@@ -1852,8 +1852,8 @@ test_ci_autofix_retriggers_pr_review() {
     fi
 }
 
-test_ci_autofix_retriggers_pr_review
 test_ci_autofix_comment_has_details
+test_ci_autofix_retriggers_pr_review
 test_ci_autofix_has_name_field
 test_monthly_has_pr_write_permission
 test_ci_autofix_has_actions_write
