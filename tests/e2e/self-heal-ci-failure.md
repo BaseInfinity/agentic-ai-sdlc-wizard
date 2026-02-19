@@ -271,4 +271,4 @@ _Record results here after each execution._
 
 | Date | Attempt 1 | Attempt 2 | Final State | Notes |
 |------|-----------|-----------|-------------|-------|
-| _(date)_ | _(pass/fail)_ | _(pass/fail)_ | _(clean/issues)_ | _(notes)_ |
+| 2026-02-19 | PASS | PASS | Clean (5 commits, CI green) | Attempt 1: ci-failure, removed broken test. Attempt 2: review-findings (suggestions=true), fixed doc cleanup + test ordering. Review flagged eval/seq bugs as intentional (correct). No attempt 3. |
