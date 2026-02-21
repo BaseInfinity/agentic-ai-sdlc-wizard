@@ -271,4 +271,4 @@ _Record results here after each execution._
 
 | Date | Attempt 1 | Attempt 2 | Final State | Notes |
 |------|-----------|-----------|-------------|-------|
-| 2026-02-19 | PASS | PASS | Clean (5 commits, CI green) | Attempt 1: ci-failure, removed broken test. Attempt 2: review-findings (suggestions=true), fixed doc cleanup + test ordering. Review flagged eval/seq bugs as intentional (correct). No attempt 3. |
+| 2026-02-19 | PASS | PASS | Clean (7 commits, CI green) | Attempt 1: ci-failure, removed broken test. Attempt 2: review-findings (suggestions), fixed doc cleanup + test ordering. Attempt 3: review-findings (suggestions), deleted retry-utils.sh + reordered tests. Review flagged eval/seq bugs as intentional (correct — labeled bugs trick reviewers). All 3/3 attempts used. |
