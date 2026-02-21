@@ -121,3 +121,154 @@ git push origin --delete test/self-heal-live
 | "No open PR found" | Branch name mismatch in API query | Check PR is open and branch matches |
 | Claude makes no changes | Failure context too vague or truncated | Check the 200-line truncation captured the relevant error |
 | Infinite loop | `MAX_AUTOFIX_RETRIES` not counting correctly | Check git log grep pattern matches commit format |
+
+---
+
+## Multi-Path Stress Test
+
+### Purpose
+
+Verify all 3 self-heal trigger paths work in a single PR cascade:
+1. **CI failure** mode — self-heal fixes a broken test
+2. **Review findings (criticals)** — self-heal fixes command injection
+3. **Review findings (all-findings)** — self-heal fixes suggestions too
+
+This extends the single-path test above by exercising the full loop including the `all-findings` level.
+
+### Prerequisites
+
+Same as above, plus:
+- PR #51 (or equivalent) merged to main — `all-findings` level must be on default branch
+- `ci-self-heal.yml` on default branch with `AUTOFIX_LEVEL: all-findings`
+
+### Step 1: Create Branch with 4 Intentional Bugs
+
+```bash
+git checkout -b test/self-heal-stress
+```
+
+**Bug 1 — CI breaker** (triggers ci-failure mode):
+```bash
+# In tests/test-version-logic.sh, add a failing test function (before "Run all tests")
+# and add the call in the test execution list (before results summary):
+test_intentional_ci_break() {
+    fail "STRESS TEST: intentional CI failure for self-heal validation"
+}
+# ... added to test execution list before results check ...
+test_intentional_ci_break
+```
+
+**Bugs 2-4 — Review findings** (trigger review-findings mode):
+
+Create `tests/e2e/lib/retry-utils.sh` with these intentional bugs:
+
+| Bug # | Severity | What | Why it's a finding |
+|-------|----------|------|-------------------|
+| 2 | Critical | `eval $COMMAND` (unquoted) | Command injection — textbook security bug |
+| 3 | Medium | `seq 0 $MAX_RETRIES` | Off-by-one: runs N+1 times instead of N |
+| 4 | Suggestion | Missing `set -e` | Convention violation — all scripts should have it |
+
+```bash
+#!/bin/bash
+# Retry utilities for E2E test execution
+# NOTE: This file contains INTENTIONAL bugs for self-heal stress testing
+
+retry_command() {
+    local COMMAND="$1"
+    local MAX_RETRIES="${2:-3}"
+    local DELAY="${3:-5}"
+
+    for i in $(seq 0 $MAX_RETRIES); do
+        echo "Attempt $i of $MAX_RETRIES..."
+        if eval $COMMAND; then
+            echo "Command succeeded on attempt $i"
+            return 0
+        fi
+        echo "Attempt $i failed, retrying in ${DELAY}s..."
+        sleep "$DELAY"
+    done
+
+    echo "All $MAX_RETRIES retries exhausted"
+    return 1
+}
+```
+
+### Step 2: Push and Open PR
+
+```bash
+git add tests/test-version-logic.sh tests/e2e/lib/retry-utils.sh
+git commit -m "test: self-heal multi-path stress test (4 intentional bugs)"
+git push -u origin test/self-heal-stress
+gh pr create \
+  --title "test: self-heal multi-path stress test" \
+  --body "Multi-path stress test for self-heal loop. Contains 4 intentional bugs.
+Will auto-close after test. See tests/e2e/self-heal-ci-failure.md for procedure."
+```
+
+### Step 3: Expected Cascade
+
+```
+Push PR
+  → CI validate FAILS (bug 1: broken test)
+  → self-heal attempt 1 (ci-failure mode)
+    → Claude removes broken test → [autofix 1/3] → push
+      → CI re-runs → PASSES
+      → PR Review runs → finds bugs 2,3,4
+      → self-heal attempt 2 (review-findings, all-findings mode)
+        → Claude fixes all findings → [autofix 2/3] → push
+          → CI re-runs → PASSES
+          → PR Review → APPROVE (clean) → DONE
+```
+
+### Step 4: Verification Checklist
+
+**Attempt 1 (CI failure):**
+- [ ] Self-heal triggered within 60s of CI failure
+- [ ] PR comment shows "Attempt 1/3" with `ci-failure` source
+- [ ] Claude removed the broken test (not the whole file)
+- [ ] Commit message: `[autofix 1/3] fix: auto-fix from ci-failure`
+- [ ] CI re-triggered via `gh workflow run`
+
+**Between attempts:**
+- [ ] CI passes on the fixed code
+- [ ] PR Review runs and finds bugs 2-4
+- [ ] Review comment contains critical/medium/suggestion findings
+
+**Attempt 2 (review findings):**
+- [ ] Self-heal triggered within 60s of review completion
+- [ ] PR comment updated to show "Attempt 2/3" with `review-findings` source
+- [ ] Claude fixed `eval $COMMAND` → `"$COMMAND"` (bug 2)
+- [ ] Claude fixed `seq 0` → `seq 1` (bug 3)
+- [ ] Claude added `set -e` (bug 4)
+- [ ] Commit message: `[autofix 2/3] fix: auto-fix from review-findings`
+
+**Final state:**
+- [ ] CI passes clean
+- [ ] PR Review shows no critical findings
+- [ ] No attempt 3 triggered (loop stopped)
+- [ ] Total autofix attempts: exactly 2
+
+### Step 5: Cleanup
+
+```bash
+# Remove the stress test fixture file before closing the PR.
+# gh pr close without merging does not clean up committed files if the
+# branch was previously pushed; removing it explicitly prevents the file
+# from lingering if the branch is re-used or cherry-picked elsewhere.
+git rm tests/e2e/lib/retry-utils.sh
+git commit -m "cleanup: remove retry-utils.sh stress test fixture"
+git push origin test/self-heal-stress
+
+gh pr close test/self-heal-stress --comment "Multi-path stress test complete. Results documented."
+git checkout main
+git branch -D test/self-heal-stress
+git push origin --delete test/self-heal-stress
+```
+
+### Results Log
+
+_Record results here after each execution._
+
+| Date | Attempt 1 | Attempt 2 | Final State | Notes |
+|------|-----------|-----------|-------------|-------|
+| 2026-02-19 | PASS | PASS | Clean (7 commits, CI green) | Attempt 1: ci-failure, removed broken test. Attempt 2: review-findings (suggestions), fixed doc cleanup + test ordering. Attempt 3: review-findings (suggestions), deleted retry-utils.sh + reordered tests. Review flagged eval/seq bugs as intentional (correct — labeled bugs trick reviewers). All 3/3 attempts used. |
