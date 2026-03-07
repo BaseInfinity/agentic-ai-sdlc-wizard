@@ -1832,10 +1832,31 @@ test_ci_autofix_comment_has_details() {
     fi
 }
 
-test_ci_autofix_comment_has_details
-test_ci_autofix_has_name_field
+# Test 81: ci-self-heal.yml re-triggers PR Review after fix (adds needs-review label)
+test_ci_autofix_retriggers_pr_review() {
+    WORKFLOW="$REPO_ROOT/.github/workflows/ci-self-heal.yml"
+
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "ci-self-heal.yml not found (needed for PR Review re-trigger test)"
+        return
+    fi
+
+    # GITHUB_TOKEN pushes don't fire pull_request events (anti-loop protection).
+    # Self-heal re-triggers CI via `gh workflow run ci.yml`, but PR Review only
+    # triggers on pull_request events. Adding the `needs-review` label fires
+    # pull_request_target(labeled), which pr-review.yml already handles.
+    if grep -q 'needs-review' "$WORKFLOW"; then
+        pass "ci-self-heal.yml re-triggers PR Review after fix (needs-review label)"
+    else
+        fail "ci-self-heal.yml does not re-trigger PR Review after fix (review-findings cascade broken)"
+    fi
+}
+
 test_monthly_has_pr_write_permission
+test_ci_autofix_has_name_field
 test_ci_autofix_has_actions_write
+test_ci_autofix_comment_has_details
+test_ci_autofix_retriggers_pr_review
 test_tier1_regression_threshold
 test_ci_no_dead_token_extraction
 test_ci_score_history_committed

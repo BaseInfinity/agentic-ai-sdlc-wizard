@@ -336,17 +336,21 @@ jobs:
           echo "committed=true" >> $GITHUB_OUTPUT
           echo "Pushed autofix commit ${ATTEMPT}/${MAX_AUTOFIX_RETRIES}"
 
-      # Re-trigger CI if using GITHUB_TOKEN (app token push triggers naturally)
-      - name: Re-trigger CI via workflow dispatch
+      # Re-trigger CI and PR Review if using GITHUB_TOKEN (app token push triggers naturally)
+      - name: Re-trigger CI and PR Review
         if: |
           steps.token.outputs.approach == 'pat' &&
           steps.pr.outputs.skip != 'true' &&
-          steps.count.outputs.exceeded != 'true'
+          steps.count.outputs.exceeded != 'true' &&
+          steps.commit.outputs.committed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Re-triggering CI via workflow_dispatch..."
           gh workflow run ci.yml --ref ${{ steps.source.outputs.head_branch }} || true
+
+          echo "Re-triggering PR Review via needs-review label..."
+          gh pr edit ${{ steps.pr.outputs.pr_number }} --add-label needs-review || true
 
       # === STATUS COMMENT ===
       - name: Build autofix status comment
