@@ -15,9 +15,11 @@
 #
 # What's inventoried (when present at $ROOT):
 #   - CLAUDE.md / SDLC.md / TESTING.md / ARCHITECTURE.md / MEMORY.md
-#   - All hooks/*.sh (script size, NOT runtime stdout — that's separately
-#     gated by the existing brevity-cap tests in tests/test-hooks.sh)
-#   - All skills/*/SKILL.md
+#   - All hooks/*.sh (dev-repo path) AND .claude/hooks/*.sh (consumer install
+#     via cli/init.js). Script size, NOT runtime stdout — that's separately
+#     gated by the existing brevity-cap tests in tests/test-hooks.sh.
+#   - All skills/*/SKILL.md (dev-repo path) AND .claude/skills/*/SKILL.md
+#     (consumer install path; cli/init.js:32-35 copies SKILL.md files there).
 #
 # Output columns: SIZE_CHARS, EST_TOKENS (chars/4), TYPE, FLAG, PATH
 # FLAG = "OK" if <5K tokens, "TRIM" if >=5K tokens.
@@ -82,6 +84,19 @@ fi
 if [ -d "$ROOT/skills" ]; then
     for s in "$ROOT/skills"/*/SKILL.md; do
         [ -f "$s" ] && add_entry "$s" "skill"
+    done
+fi
+# Also check .claude/skills/ if separate (consumer install path).
+# cli/init.js:32-35 copies SKILL.md files to .claude/skills/<name>/SKILL.md
+# at install time. Without this scan, the audit silently ignores all
+# bloat in real consumer projects. Mirrors the .claude/hooks/ pattern
+# above (will double-count in dogfood where .claude/skills/ symlinks
+# back to skills/, same trade-off as hooks).
+if [ -d "$ROOT/.claude/skills" ] && [ "$ROOT/.claude/skills" != "$ROOT/skills" ]; then
+    for skill_dir in "$ROOT/.claude/skills"/*/; do
+        [ -d "$skill_dir" ] || continue
+        skill_md="${skill_dir}SKILL.md"
+        [ -f "$skill_md" ] && add_entry "$skill_md" "skill"
     done
 fi
 

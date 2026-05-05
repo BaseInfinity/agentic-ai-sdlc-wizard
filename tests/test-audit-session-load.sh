@@ -173,6 +173,49 @@ print("\n".join(flagged))
     fi
 }
 
+test_audit_scans_consumer_install_layout() {
+    # Codex strategic review caught a measurement blind spot: the audit
+    # scans root `skills/*/SKILL.md`, but `cli/init.js:32-35` copies
+    # SKILL.md files to `.claude/skills/<name>/SKILL.md` in real
+    # consumer installs. Without parallel scanning, the audit can't
+    # see bloat in installed projects — only in dev maintainer repos.
+    #
+    # Mirrors the existing `.claude/hooks/` consumer-install fallback
+    # at `scripts/audit-session-load.sh`. Negative control: deleting
+    # the new audit-script block makes this test fail (path won't
+    # appear in the JSON output, predicate fails).
+    local d output
+    d=$(make_temp)
+    # Consumer install layout: .claude/skills/<name>/SKILL.md exists,
+    # root skills/ does NOT (dev-only path).
+    make_file_with_size "$d/.claude/skills/sdlc/SKILL.md" 21000
+
+    output=$(SDLC_AUDIT_ROOT="$d" "$AUDIT" --json 2>&1)
+    rm -rf "$d"
+
+    # Strict predicate (per Codex sign-off): require entry whose path
+    # ENDS in `.claude/skills/sdlc/SKILL.md` AND has flag "TRIM".
+    # Substring match would also accept noise like a real `skills/`
+    # path that happens to contain `claude` somewhere in its prefix.
+    if echo "$output" | python3 -c '
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+except json.JSONDecodeError:
+    sys.exit(1)
+hit = [
+    e for e in data.get("entries", [])
+    if e.get("path", "").endswith("/.claude/skills/sdlc/SKILL.md")
+    and e.get("flag") == "TRIM"
+]
+sys.exit(0 if hit else 1)
+' 2>/dev/null; then
+        pass "audit scans .claude/skills/ in consumer install layout (>5K SKILL.md flagged TRIM)"
+    else
+        fail "audit did not inventory .claude/skills/sdlc/SKILL.md from consumer-install fixture. Output: $output"
+    fi
+}
+
 test_audit_exists_and_executable
 test_audit_flags_oversized_skill_as_trim_candidate
 test_audit_does_not_flag_small_files
@@ -181,6 +224,7 @@ test_audit_json_output_includes_trim_count
 test_audit_threshold_override
 test_audit_empty_repo_no_crash
 test_audit_ranks_by_size_descending
+test_audit_scans_consumer_install_layout
 test_wizard_own_skills_below_threshold
 
 echo ""
