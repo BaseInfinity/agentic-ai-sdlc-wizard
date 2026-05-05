@@ -1,13 +1,19 @@
 {
-  "review_id": "skill-cross-model-trim-001",
-  "round": 3,
-  "responding_to": ".reviews/skill-cross-model-trim-001/round-2-review.md",
+  "review_id": "gc-benchmark-workflows-001",
+  "round": 2,
+  "responding_to": ".reviews/latest-review.md",
   "responses": [
     {
       "finding": "1",
+      "action": "ACCEPTED",
+      "summary": "You're right — the deleted test wasn't pure existence. It covered AUTOCOMPACT_BENCHMARK.md (kept, ROADMAP #92), tests/benchmarks/run-benchmark.sh (kept), task suite (kept), canary facts (kept) AND the workflow (deleted). Created tests/test-autocompact-methodology.sh (433 lines) which ports the non-workflow coverage: 23 tests (8 methodology + 5 harness + 4 task suite + 3 canary + 2 wizard integration). All 23 green. Workflow-specific tests (test_workflow_dispatch, test_workflow_matrix, test_workflow_threshold_env) stay deleted — the workflow is gone. Wired into .github/workflows/ci.yml + CONTRIBUTING.md. Commit: 550fd7f",
+      "evidence": "tests/test-autocompact-methodology.sh (new, 23/23 green); .github/workflows/ci.yml line 175 ('Run autocompact methodology tests' step); CONTRIBUTING.md run-block."
+    },
+    {
+      "finding": "2",
       "action": "FIXED",
-      "summary": "Changed `\"pr_number\"` to `\"pr_number\":` (with colon) in SKILL.md handoff key list. Test now matches: 1 PENDING_REVIEW handoff schema marker + 1 `\"pr_number\":` occurrence. Self-heal context (PreCompact self-heal (#209)) is within the same line. tests/test-hooks.sh now 154/154 PASS.",
-      "evidence": "skills/sdlc/SKILL.md handoff key list — `\"pr_number\":` with colon"
+      "summary": "TESTING.md stale refs cleaned. Replaced `tests/test-autocompact-benchmark.sh` row + run-block entry with `tests/test-autocompact-methodology.sh`. Dropped `tests/test-model-comparison.sh` rows entirely (workflow gone). Verified via grep — only CHANGELOG.md (history, not rewriting) still references the deleted names. Commit: 550fd7f",
+      "evidence": "TESTING.md no longer matches `test-autocompact-benchmark` or `test-model-comparison`; grep -rn across .github/, tests/, scripts/, docs/, *.md returns only CHANGELOG.md."
     }
   ]
 }

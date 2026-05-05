@@ -26,11 +26,10 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-docs-usability.sh && ./tests/test-plugin.sh && \
    ./tests/test-install-script.sh && ./tests/test-release-workflow.sh && \
    ./tests/test-domain-detection.sh && \
-   ./tests/test-autocompact-benchmark.sh && \
+   ./tests/test-autocompact-methodology.sh && \
    ./tests/test-node24-compliance.sh && \
    ./tests/test-effectiveness-scoreboard.sh && \
    ./tests/test-firmware-fixture.sh && \
-   ./tests/test-model-comparison.sh && \
    ./tests/test-degradation-detection.sh && \
    ./tests/test-doc-consistency.sh && \
    ./tests/test-api-feature-detection.sh && \
@@ -198,7 +197,6 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 ./tests/test-cli.sh
 ./tests/test-setup-path.sh
 ./tests/test-docs-usability.sh
-./tests/test-model-comparison.sh
 ./tests/test-degradation-detection.sh
 ./tests/test-local-shepherd.sh
 ./tests/e2e/run-simulation.sh

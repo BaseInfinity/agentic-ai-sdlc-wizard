@@ -1,8 +1,13 @@
 #!/bin/bash
-# Autocompact Benchmarking — Quality Tests
+# Autocompact Benchmarking Methodology — Quality Tests
 # Validates that the methodology document, benchmark harness, task suite,
-# canary facts, and CI workflow meet rigorous research standards.
+# and canary facts meet rigorous research standards.
 # Proves It Gate: tests prove OUTPUT QUALITY, not just existence.
+#
+# Scope note (2026-05-05): the companion CI workflow `benchmark-autocompact.yml`
+# was deleted in the GC pass — it never ran and burned API on dispatch. Tests
+# for the workflow itself were dropped with it. The methodology + harness are
+# kept (ROADMAP #92) for local-Max execution, and these tests cover those.
 
 set -e
 
@@ -40,9 +45,8 @@ HARNESS="$REPO_ROOT/tests/benchmarks/run-benchmark.sh"
 ANALYZER="$REPO_ROOT/tests/benchmarks/analyze-results.sh"
 TASKS_DIR="$REPO_ROOT/tests/benchmarks/tasks"
 CANARY="$REPO_ROOT/tests/benchmarks/canary-facts.json"
-WORKFLOW="$REPO_ROOT/.github/workflows/benchmark-autocompact.yml"
 
-echo "=== Autocompact Benchmarking Quality Tests ==="
+echo "=== Autocompact Benchmarking Methodology Quality Tests ==="
 echo "Validates methodology rigor, harness quality, and research standards"
 echo ""
 
@@ -347,52 +351,6 @@ test_canary_domain_independent() {
 }
 
 # ─────────────────────────────────────────────────────
-# CI Workflow Quality
-# ─────────────────────────────────────────────────────
-
-echo ""
-echo "--- CI Workflow Quality ---"
-
-# Test 22: Benchmark workflow uses workflow_dispatch trigger
-test_workflow_dispatch() {
-    if [ -f "$WORKFLOW" ]; then
-        if grep -q 'workflow_dispatch' "$WORKFLOW"; then
-            pass "Benchmark workflow uses workflow_dispatch trigger (manual)"
-        else
-            fail "Benchmark workflow missing workflow_dispatch trigger"
-        fi
-    else
-        fail "Benchmark workflow missing: $WORKFLOW"
-    fi
-}
-
-# Test 23: Benchmark workflow has matrix strategy with thresholds
-test_workflow_matrix() {
-    if [ -f "$WORKFLOW" ]; then
-        if grep -q 'matrix' "$WORKFLOW" && grep -qE 'threshold|AUTOCOMPACT' "$WORKFLOW"; then
-            pass "Benchmark workflow has matrix strategy with threshold values"
-        else
-            fail "Benchmark workflow missing matrix strategy for thresholds"
-        fi
-    else
-        fail "Benchmark workflow missing: $WORKFLOW"
-    fi
-}
-
-# Test 24: Benchmark workflow sets CLAUDE_AUTOCOMPACT_PCT_OVERRIDE env var
-test_workflow_threshold_env() {
-    if [ -f "$WORKFLOW" ]; then
-        if grep -q 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE' "$WORKFLOW" && grep -qi 'env:' "$WORKFLOW"; then
-            pass "Benchmark workflow sets AUTOCOMPACT threshold via env"
-        else
-            fail "Benchmark workflow not setting AUTOCOMPACT threshold"
-        fi
-    else
-        fail "Benchmark workflow missing: $WORKFLOW"
-    fi
-}
-
-# ─────────────────────────────────────────────────────
 # Integration
 # ─────────────────────────────────────────────────────
 
@@ -461,11 +419,6 @@ test_tasks_distinct
 test_canary_count
 test_canary_distinct_prompts
 test_canary_domain_independent
-
-# CI Workflow Quality
-test_workflow_dispatch
-test_workflow_matrix
-test_workflow_threshold_env
 
 # Integration
 test_wizard_references_methodology

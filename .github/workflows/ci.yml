@@ -172,8 +172,8 @@ jobs:
       - name: Run domain detection tests
         run: ./tests/test-domain-detection.sh
 
-      - name: Run autocompact benchmark tests
-        run: ./tests/test-autocompact-benchmark.sh
+      - name: Run autocompact methodology tests
+        run: ./tests/test-autocompact-methodology.sh
 
       - name: Run node24 compliance tests
         run: ./tests/test-node24-compliance.sh
@@ -183,9 +183,6 @@ jobs:
 
       - name: Run firmware fixture tests
         run: ./tests/test-firmware-fixture.sh
-
-      - name: Run model comparison benchmark tests
-        run: ./tests/test-model-comparison.sh
 
       - name: Run degradation detection tests
         run: ./tests/test-degradation-detection.sh

@@ -175,12 +175,21 @@ test_setup_node_v5_present() {
     fi
 }
 
-# Test 11: Workflows with upload-artifact use @v6+
+# Test 11: If any workflow uses upload-artifact, it must be @v6+
+# (Conditional: no failure when no workflow uses upload-artifact at all —
+# Test 3 above + the no-v4/v5/v7 negative coverage already enforce that any
+# present version is current. This guards against silently regressing to an
+# older version if upload-artifact is reintroduced.)
 test_upload_artifact_v6_present() {
-    if grep -rq 'actions/upload-artifact@v6' "$WORKFLOW_DIR"; then
-        pass "Workflows use actions/upload-artifact@v6"
+    if grep -rq 'actions/upload-artifact@' "$WORKFLOW_DIR"; then
+        if grep -rq 'actions/upload-artifact@v6' "$WORKFLOW_DIR"; then
+            pass "Workflows that use upload-artifact use @v6"
+        else
+            fail "Some workflow uses upload-artifact at non-v6 version"
+            grep -rn 'actions/upload-artifact@' "$WORKFLOW_DIR" | head -3
+        fi
     else
-        fail "No workflow uses actions/upload-artifact@v6"
+        pass "No workflow uses upload-artifact (nothing to version-check)"
     fi
 }
 

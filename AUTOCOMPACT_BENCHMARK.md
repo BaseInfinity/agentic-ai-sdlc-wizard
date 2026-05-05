@@ -210,13 +210,14 @@ The harness supports incremental execution:
 
 ### CI Execution
 
+The companion `benchmark-autocompact.yml` workflow was deleted 2026-05-05 in the GC pass — it never ran and burned API on dispatch. Run the methodology locally on a Max subscription instead:
+
 ```bash
-# Trigger via GitHub Actions (manual dispatch)
-gh workflow run benchmark-autocompact.yml \
-  -f thresholds="60,75,95" \
-  -f task="medium" \
-  -f trials=3
+./tests/benchmarks/run-benchmark.sh --threshold 60,75,95 --task medium --trials 3
+./tests/benchmarks/analyze-results.sh tests/benchmarks/results/
 ```
+
+This mirrors the [#231 workflow-port pattern](ROADMAP.md): cheap detection + maintainer-on-Max execution beats Action-layer LLM calls.
 
 ## Limitations
 
