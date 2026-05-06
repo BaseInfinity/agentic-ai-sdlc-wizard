@@ -4,6 +4,45 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.73.0] - 2026-05-06
+
+### Fix: PreCompact hook no longer false-positives on stale `.git/REBASE_HEAD`
+
+`hooks/precompact-seam-check.sh` was treating any presence of `.git/REBASE_HEAD` as "rebase in progress" and blocking manual `/compact`. But `REBASE_HEAD` is just a rebase-related ref (the stopped/replayed commit) that git can leave behind after a clean rebase finishes — the authoritative "rebase in progress" signal is the `rebase-merge/` or `rebase-apply/` directory (which is what `git status` keys on too). Hit live in this repo 2026-05-05 — yesterday's clean rebase left `REBASE_HEAD` behind, the user's manual `/compact` was blocked, and clearing it required `rm .git/REBASE_HEAD` by hand.
+
+The OR-chain at line 227 now drops the `REBASE_HEAD` predicate; only the `rebase-{merge,apply}/` dir checks remain. Two new tests cover the fix:
+
+- `test_precompact_silent_on_stale_rebase_head_alone` — positive: `rc=0` + empty stderr when only `REBASE_HEAD` exists
+- `test_precompact_blocks_on_rebase_head_with_rebase_merge_dir` — negative control: still blocks on real in-flight rebase (REBASE_HEAD + rebase-merge dir together)
+
+156/156 hook tests green. Codex round 1 CERTIFIED 9/10 (one P2 comment-accuracy nit caught — fixed: `REBASE_HEAD` is the stopped/replayed commit, not the original branch tip, which is `ORIG_HEAD`).
+
+PR #330.
+
+### GC: -460 LOC of stale review/plan artifacts (#236 bloat hunt)
+
+`.reviews/` is gitignored, but 14 handoff/preflight/round-N review files for now-merged PRs were committed before that gitignore line landed. They held no ongoing reference value. `plans/CATCHUP.md` captured the v2.1.15 → v2.1.81 catch-up (March 2026) — historical context lives in CHANGELOG (v1.8.0 entry); the plan doc was dead weight.
+
+Deleted (15 files):
+
+- `.reviews/baseline-fires-once-001/{round-1,round-2}-review.md`
+- `.reviews/skill-cross-model-trim-001/{round-1,round-2,round-3}-review.md`
+- `.reviews/tdd-pretool-fires-once-001/{round-1,round-2}-review.md`
+- `.reviews/preflight-{allowed-tools-permissions,baseline-fires-once,model-pin-opt-in,precompact-seam,skill-cross-model-trim,staleness-nudge,tdd-pretool-fires-once}-001.md`
+- `plans/CATCHUP.md`
+
+Kept (still load-bearing):
+
+- `.reviews/research-95/97/99/206/235.md` (cited from ROADMAP rows)
+- `.reviews/experiment-tracking.md` (asserted by `tests/test-workflow-triggers.sh:2189`)
+- `plans/AUTO_SELF_UPDATE.md` (still annotated with #231 phase notes)
+
+Hooks 156/156, cli 88/88, workflow 176/176, docs 35/35 — all green post-deletion.
+
+PR #331.
+
+---
+
 ## [1.72.0] - 2026-05-05
 
 ### Closes #323: `init --force` no longer silently overwrites CUSTOMIZED files
