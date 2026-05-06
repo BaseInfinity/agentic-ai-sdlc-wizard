@@ -493,6 +493,42 @@ console.log(lines.join('\n'));
     fi
 }
 
+# Test 22c (#325 P2 follow-up): buildUpdateRecommendation returns [] for null updateInfo
+test_check_recommendation_null_updateinfo() {
+    local result
+    result=$(node -e "
+const { buildUpdateRecommendation } = require('$SCRIPT_DIR/../cli/init.js');
+const a = buildUpdateRecommendation(null, 5);
+const b = buildUpdateRecommendation(undefined, 5);
+console.log(JSON.stringify({ null: a, undefined: b }));
+" 2>&1) || true
+    if echo "$result" | grep -q '"null":\[\]' \
+        && echo "$result" | grep -q '"undefined":\[\]'; then
+        pass "#325 P2: buildUpdateRecommendation returns [] for null/undefined updateInfo (no UPDATE → no output)"
+    else
+        fail "#325 P2: null/undefined updateInfo should produce no recommendation lines. Got: $result"
+    fi
+}
+
+# Test 22d (#325 P2 follow-up): undefined customizedCount falls through to --force path
+# (defensive — if a future caller forgets the second arg, behavior shouldn't silently
+# flip to the warning path, which would be surprising. customizedCount=undefined
+# should be treated like "0 known customized" and recommend --force.)
+test_check_recommendation_undefined_count() {
+    local result
+    result=$(node -e "
+const { buildUpdateRecommendation } = require('$SCRIPT_DIR/../cli/init.js');
+const lines = buildUpdateRecommendation({ current: '1.0.0', latest: '2.0.0' });
+console.log(lines.join('\n'));
+" 2>&1) || true
+    if echo "$result" | grep -q 'init --force' \
+        && ! echo "$result" | grep -q 'init --dry-run'; then
+        pass "#325 P2: undefined customizedCount falls through to --force (defensive default)"
+    else
+        fail "#325 P2: undefined customizedCount should default to --force path. Got: $result"
+    fi
+}
+
 # Test 22: check detects missing .gitignore entries (DRIFT)
 test_check_drift_gitignore() {
     local d
@@ -792,6 +828,8 @@ test_check_drift_permissions
 test_check_drift_gitignore
 test_check_recommends_dry_run_when_customized
 test_check_recommends_force_when_no_customized
+test_check_recommendation_null_updateinfo
+test_check_recommendation_undefined_count
 test_setup_wizard_frontmatter
 test_merge_settings_output
 test_merge_preserves_keys
