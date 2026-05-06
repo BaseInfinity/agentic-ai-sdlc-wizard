@@ -359,9 +359,9 @@ test_precompact_silent_on_stale_rebase_head_alone() {
     # Bug: .git/REBASE_HEAD can persist as a stale marker after a rebase
     # has finished cleanly. The authoritative "rebase in progress" signal
     # is .git/rebase-merge/ or .git/rebase-apply/ — REBASE_HEAD alone is
-    # just a reference to the original HEAD pre-rebase, not an in-flight
-    # state. Hit live 2026-05-05: yesterday's clean rebase left REBASE_HEAD
-    # behind and blocked the user's manual /compact for no real reason.
+    # just a rebase-related ref (the stopped/replayed commit), not an
+    # in-flight state. Hit live 2026-05-05: yesterday's clean rebase left
+    # REBASE_HEAD behind and blocked the user's manual /compact for no real reason.
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.git"
