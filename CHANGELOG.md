@@ -4,6 +4,52 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.72.0] - 2026-05-05
+
+### Closes #323: `init --force` no longer silently overwrites CUSTOMIZED files
+
+User report 2026-05-05 — `npx agentic-sdlc-wizard check` flags 6 files as CUSTOMIZED then recommends `init --force`, which silently clobbers all 6. Reporter: "the wizard correctly **detected** 6 CUSTOMIZED files and then **recommended a command that would overwrite all 6**." Fully closed in two parts:
+
+#### Part 1 — customization-aware recommendation in `check` (PR #325)
+
+When `check` finds CUSTOMIZED files alongside an available update, the suggested command now warns and points at `init --dry-run` first instead of silently recommending `init --force`. Pure function `buildUpdateRecommendation(updateInfo, customizedCount)` exported from `cli/init.js`. Backward compat: zero-customized recommendation byte-for-byte unchanged.
+
+#### Part 2 — new `init --preserve-customized` flag (PR #328)
+
+Composes existing `--force` semantics — when both flags are set:
+
+- **CUSTOMIZED** files (sha256 mismatch with template) → action `PRESERVE`, skipped during write, reported in summary footer
+- **MATCH** files → `OVERWRITE` (refresh; effectively no-op since hashes already match)
+- **MISSING** files → `CREATE` (new files added in latest version still get installed)
+
+Without `--force`, the flag is a no-op (all existing files SKIP regardless). Updated `check` recommendation now suggests `init --force --preserve-customized` as the "upgrade safely" path when CUSTOMIZED files exist.
+
+#### Sample output
+
+```
+PRESERVE  .claude/hooks/sdlc-prompt-check.sh
+PRESERVE  .claude/skills/sdlc/SKILL.md
+OVERWRITE .claude/hooks/tdd-pretool-check.sh
+CREATE    .claude/skills/feedback/SKILL.md
+
+PRESERVED 2 customized file(s) — review with `init --dry-run` to see what differs from the latest template.
+```
+
+#### Test coverage
+
+10 new tests in `tests/test-cli.sh` across 3 PRs (78 → 88 green): customization-aware recommendation (2 from #325), null/undefined edge cases (2 from #326 P2 follow-up), preserve-customized core behavior (3 from #328 round 1), no-force-no-op + settings.json MERGE precedence + WIZARD_DOC parity (3 from #328 round-2).
+
+#### Deferred
+
+Option 3 from #323 (real `update` subcommand with backup directory + per-file diff prompt) — options 1 + 2 close the immediate footgun without a new subcommand and backup-storage convention.
+
+#### Files
+
+- `cli/init.js` — `buildUpdateRecommendation()` exported; `--preserve-customized` threaded through `init()` → `planOperations()`; `isCustomized()` hash helper; `PRESERVE` action skipped in `executeOperations()`; `printOps()` adds yellow `PRESERVE` color + summary footer
+- `cli/bin/sdlc-wizard.js` — `--preserve-customized` flag + help text
+- `tests/test-cli.sh` — 10 new tests across 3 PRs (78 → 88 green)
+- `package.json`, `.claude-plugin/plugin.json` + `marketplace.json`, `SDLC.md`, `skills/update/SKILL.md`, `CLAUDE_CODE_SDLC_WIZARD.md`, `CHANGELOG.md` (1.71.0 → 1.72.0)
+
 ## [1.71.0] - 2026-05-05
 
 ### Token-bloat fix: SDLC skill Cross-Model Review section trimmed

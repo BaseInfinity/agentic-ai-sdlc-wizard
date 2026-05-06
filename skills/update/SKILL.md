@@ -93,10 +93,11 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.71.0
+Latest:    1.72.0
 
 What changed:
-- [1.71.0] token-bloat fix phase 3 — `skills/sdlc/SKILL.md` Cross-Model Review section trimmed from ~70 lines to ~20 (4995 → 4568 tokens). Decision-making + 4-step protocol summary + convergence rule kept; full JSON examples / codex commands moved to `CLAUDE_CODE_SDLC_WIZARD.md` "Cross-Model Review Loop" canonical section (which also gained Anti-patterns + Multi-reviewer + Non-code-domain subsections). Saves ~427 tokens per SDLC skill auto-invoke. Codex round 1 caught 3 test assertions broken by initial trim; round 2 fixes restored constraints in tighter prose.
+- [1.72.0] #323 closed — customization-aware `check` recommendation + new `--preserve-customized` flag. `init --force --preserve-customized` skips CUSTOMIZED files (action `PRESERVE`), still OVERWRITEs MATCH and CREATEs MISSING. Default `init --force` unchanged. 10 tests.
+- [1.71.0] token-bloat phase 3 — `skills/sdlc/SKILL.md` Cross-Model Review trimmed (~70 → ~20 lines, -427 tokens). Full protocol + examples moved to canonical `CLAUDE_CODE_SDLC_WIZARD.md` "Cross-Model Review Loop" section.
 - [1.70.0] token-bloat fix phase 2 — `hooks/tdd-pretool-check.sh` TDD CHECK JSON nudge fires once per CC `session_id` instead of every src/ edit. Saves ~0.5-1.5K tokens/session.
 - [1.69.0] token-bloat fix phase 1 — `hooks/sdlc-prompt-check.sh` BASELINE block fires once per CC `session_id`. Saves ~12K tokens/session.
 - [1.68.0–1.65.0] roadmap hygiene — five paperwork closes: #97 Anthropic Policy NO-GO + AAR-paper validating parallel; #99 AutoGPT NO-GO; #95 Nous NO-GO; #243 token-history liveness verified; #210 Node-24 false-green; #235 Thoughtworks AI Evals NO-GO. **6/6 external-product audits NO-GO** (continues #76, #77). Research write-ups in `.reviews/research-*.md`.
