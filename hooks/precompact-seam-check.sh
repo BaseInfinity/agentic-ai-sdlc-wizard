@@ -218,7 +218,13 @@ esac
 # Unknown value (e.g. typo "bogus") → also falls through to real check
 # rather than silently bypassing safety. The safer-than-the-typo path.
 if [ "$DRY_RUN_GIT_HANDLED" -eq 0 ] && [ -d "$GITDIR" ]; then
-    if [ -e "$GITDIR/REBASE_HEAD" ] || [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
+    # Only the rebase-{merge,apply}/ dir is authoritative for "rebase in progress."
+    # .git/REBASE_HEAD is a reference to the original HEAD pre-rebase and can
+    # persist as a stale marker after a rebase finishes cleanly — git removes
+    # the dir but leaves REBASE_HEAD around for diff/log lookups. Including it
+    # in the OR-chain caused false-positive HOLDs that blocked manual /compact
+    # for users whose previous rebase had completed (hit live 2026-05-05).
+    if [ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ]; then
         HOLD_REASONS="${HOLD_REASONS}  - Git rebase in progress. Compacting mid-rebase loses the operation's context.
     Resolve: finish or abort the rebase before /compact."$'\n'
     fi
