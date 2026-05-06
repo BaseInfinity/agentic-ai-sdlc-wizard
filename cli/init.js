@@ -396,12 +396,34 @@ function check(targetDir, { json = false } = {}) {
       }
     }
     if (updateInfo) {
-      console.log(`\n  ${YELLOW}UPDATE${RESET}  v${updateInfo.current} -> v${updateInfo.latest}`);
-      console.log('         Run: npx agentic-sdlc-wizard init --force');
+      const customizedCount = results.filter((r) => r.status === 'CUSTOMIZED').length;
+      for (const line of buildUpdateRecommendation(updateInfo, customizedCount)) {
+        console.log(line);
+      }
     }
   }
 
   return { results, updateInfo, hasDrift, marketplace };
+}
+
+// #323: when `check` finds CUSTOMIZED files alongside an available update,
+// the historical recommendation `init --force` would silently clobber them.
+// This builds an update-recommendation block that's customization-aware:
+// no-CUSTOMIZED → recommend --force as before. Has-CUSTOMIZED → warn and
+// recommend `--dry-run` first so the user can preview the diff.
+function buildUpdateRecommendation(updateInfo, customizedCount) {
+  if (!updateInfo) return [];
+  const lines = [
+    `\n  ${YELLOW}UPDATE${RESET}  v${updateInfo.current} -> v${updateInfo.latest}`,
+  ];
+  if (customizedCount > 0) {
+    lines.push(`         ${YELLOW}WARNING${RESET}: ${customizedCount} file(s) CUSTOMIZED — \`init --force\` will overwrite them`);
+    lines.push(`         Preview first: npx agentic-sdlc-wizard init --dry-run`);
+    lines.push(`         (Review the dry-run output before running \`init --force\`.)`);
+  } else {
+    lines.push('         Run: npx agentic-sdlc-wizard init --force');
+  }
+  return lines;
 }
 
 function checkFile(srcPath, destPath, relativeDest, shouldBeExecutable) {
@@ -519,4 +541,4 @@ function checkMarketplacePaths() {
   return results;
 }
 
-module.exports = { init, check, planOperations, detectPluginInstall, GITIGNORE_ENTRIES };
+module.exports = { init, check, planOperations, detectPluginInstall, buildUpdateRecommendation, GITIGNORE_ENTRIES };

@@ -461,6 +461,38 @@ test_check_drift_permissions() {
     rm -rf "$d"
 }
 
+# Test 22a (#323): check recommends --dry-run when CUSTOMIZED files + UPDATE available
+test_check_recommends_dry_run_when_customized() {
+    local result
+    result=$(node -e "
+const { buildUpdateRecommendation } = require('$SCRIPT_DIR/../cli/init.js');
+const lines = buildUpdateRecommendation({ current: '1.0.0', latest: '2.0.0' }, 3);
+console.log(lines.join('\n'));
+" 2>&1) || true
+    if echo "$result" | grep -q 'init --dry-run' \
+        && echo "$result" | grep -qiE 'customized|preview|overwrite'; then
+        pass "#323: check recommends 'init --dry-run' + warning when CUSTOMIZED files exist"
+    else
+        fail "#323: should recommend --dry-run + warn about customized files. Got: $result"
+    fi
+}
+
+# Test 22b (#323): check still recommends --force when no CUSTOMIZED files
+test_check_recommends_force_when_no_customized() {
+    local result
+    result=$(node -e "
+const { buildUpdateRecommendation } = require('$SCRIPT_DIR/../cli/init.js');
+const lines = buildUpdateRecommendation({ current: '1.0.0', latest: '2.0.0' }, 0);
+console.log(lines.join('\n'));
+" 2>&1) || true
+    if echo "$result" | grep -q 'init --force' \
+        && ! echo "$result" | grep -q 'init --dry-run'; then
+        pass "#323: check recommends 'init --force' when no CUSTOMIZED files (no behavior change)"
+    else
+        fail "#323: no-customized case should recommend --force, not --dry-run. Got: $result"
+    fi
+}
+
 # Test 22: check detects missing .gitignore entries (DRIFT)
 test_check_drift_gitignore() {
     local d
@@ -758,6 +790,8 @@ test_check_all_missing
 test_check_json
 test_check_drift_permissions
 test_check_drift_gitignore
+test_check_recommends_dry_run_when_customized
+test_check_recommends_force_when_no_customized
 test_setup_wizard_frontmatter
 test_merge_settings_output
 test_merge_preserves_keys
