@@ -355,6 +355,47 @@ test_precompact_blocks_on_cherry_pick_in_progress() {
     fi
 }
 
+test_precompact_silent_on_stale_rebase_head_alone() {
+    # Bug: .git/REBASE_HEAD can persist as a stale marker after a rebase
+    # has finished cleanly. The authoritative "rebase in progress" signal
+    # is .git/rebase-merge/ or .git/rebase-apply/ — REBASE_HEAD alone is
+    # just a rebase-related ref (the stopped/replayed commit), not an
+    # in-flight state. Hit live 2026-05-05: yesterday's clean rebase left
+    # REBASE_HEAD behind and blocked the user's manual /compact for no real reason.
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.git"
+    echo "abc123" > "$tmpdir/.git/REBASE_HEAD"
+    # NO rebase-merge/ or rebase-apply/ — actual rebase has finished
+    local stderr_out rc=0
+    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
+    rm -rf "$tmpdir"
+    if [ "$rc" -eq 0 ] && [ -z "$stderr_out" ]; then
+        pass "precompact hook is silent on stale REBASE_HEAD without rebase-{merge,apply} dirs"
+    else
+        fail "precompact should be silent on stale REBASE_HEAD alone (rc=$rc, stderr='$stderr_out')"
+    fi
+}
+
+test_precompact_blocks_on_rebase_head_with_rebase_merge_dir() {
+    # Negative control: REBASE_HEAD + rebase-merge/ together = real rebase
+    # in progress (git wrote REBASE_HEAD when it created the dir). MUST
+    # still block. Distinguishes the stale-alone case above from a live one.
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.git/rebase-merge"
+    echo "abc123" > "$tmpdir/.git/REBASE_HEAD"
+    echo "dummy" > "$tmpdir/.git/rebase-merge/head-name"
+    local stderr_out rc=0
+    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
+    rm -rf "$tmpdir"
+    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -qi "rebase"; then
+        pass "precompact still blocks on REBASE_HEAD + rebase-merge dir (real rebase)"
+    else
+        fail "precompact should block on REBASE_HEAD + rebase-merge dir (rc=$rc, stderr='$stderr_out')"
+    fi
+}
+
 test_precompact_size_cap() {
     # Worst case: all 4 blockers fire simultaneously (PENDING_RECHECK + rebase + merge + cherry-pick).
     # Should still emit a token-efficient HOLD message.
@@ -1671,6 +1712,8 @@ test_precompact_blocks_on_git_rebase_in_progress
 test_precompact_blocks_on_git_rebase_apply_in_progress
 test_precompact_blocks_on_git_merge_in_progress
 test_precompact_blocks_on_cherry_pick_in_progress
+test_precompact_silent_on_stale_rebase_head_alone
+test_precompact_blocks_on_rebase_head_with_rebase_merge_dir
 test_precompact_size_cap
 test_precompact_self_heals_on_merged_pr
 test_precompact_still_blocks_on_open_pr
