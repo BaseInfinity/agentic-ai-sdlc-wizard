@@ -11,6 +11,7 @@ const flags = {
   force: args.includes('--force'),
   dryRun: args.includes('--dry-run'),
   json: args.includes('--json'),
+  preserveCustomized: args.includes('--preserve-customized'),
 };
 
 const positional = args.filter((a) => !a.startsWith('--'));
@@ -31,11 +32,12 @@ if (args.includes('--help') || args.includes('-h') || !command) {
     sdlc-wizard complexity [path]            Print mixed-mode tier heuristic (roadmap #233)
 
   Options:
-    --force       Overwrite existing files (init only)
-    --dry-run     Preview changes without writing (init only)
-    --json        Output as JSON (check / complexity)
-    --version     Show version
-    --help        Show this help
+    --force                  Overwrite existing files (init only)
+    --preserve-customized    With --force, skip files that have local edits (init only)
+    --dry-run                Preview changes without writing (init only)
+    --json                   Output as JSON (check / complexity)
+    --version                Show version
+    --help                   Show this help
   `.trim());
   process.exit(0);
 }

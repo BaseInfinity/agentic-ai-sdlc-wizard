@@ -130,8 +130,22 @@ function mergeSettings(existingPath, templatePath, force) {
   }
 }
 
-function planOperations(targetDir, { force }) {
+function planOperations(targetDir, { force, preserveCustomized = false }) {
   const ops = [];
+
+  // #323 option 2: preserve mode requires hashing each existing file to
+  // distinguish CUSTOMIZED from MATCH. Only meaningful with --force; without
+  // --force, existing files are SKIP regardless of hash.
+  const isCustomized = (srcPath, destPath) => {
+    if (!preserveCustomized || !force) return false;
+    try {
+      const srcHash = crypto.createHash('sha256').update(fs.readFileSync(srcPath)).digest('hex');
+      const destHash = crypto.createHash('sha256').update(fs.readFileSync(destPath)).digest('hex');
+      return srcHash !== destHash;
+    } catch (_) {
+      return false;
+    }
+  };
 
   for (const file of FILES) {
     const destPath = path.join(targetDir, file.dest);
@@ -154,11 +168,16 @@ function planOperations(targetDir, { force }) {
       // Invalid JSON — fall through to normal SKIP/OVERWRITE
     }
 
+    let action;
+    if (!exists) action = 'CREATE';
+    else if (isCustomized(srcPath, destPath)) action = 'PRESERVE';
+    else action = force ? 'OVERWRITE' : 'SKIP';
+
     ops.push({
       src: srcPath,
       dest: destPath,
       relativeDest: file.dest,
-      action: exists ? (force ? 'OVERWRITE' : 'SKIP') : 'CREATE',
+      action,
       executable: file.executable || false,
     });
   }
@@ -166,11 +185,15 @@ function planOperations(targetDir, { force }) {
   // Wizard doc
   const wizardDest = path.join(targetDir, 'CLAUDE_CODE_SDLC_WIZARD.md');
   const wizardExists = fs.existsSync(wizardDest);
+  let wizardAction;
+  if (!wizardExists) wizardAction = 'CREATE';
+  else if (isCustomized(WIZARD_DOC, wizardDest)) wizardAction = 'PRESERVE';
+  else wizardAction = force ? 'OVERWRITE' : 'SKIP';
   ops.push({
     src: WIZARD_DOC,
     dest: wizardDest,
     relativeDest: 'CLAUDE_CODE_SDLC_WIZARD.md',
-    action: wizardExists ? (force ? 'OVERWRITE' : 'SKIP') : 'CREATE',
+    action: wizardAction,
     executable: false,
   });
 
@@ -183,7 +206,7 @@ function ensureDir(filePath) {
 
 function executeOperations(ops) {
   for (const op of ops) {
-    if (op.action === 'SKIP') continue;
+    if (op.action === 'SKIP' || op.action === 'PRESERVE') continue;
     ensureDir(op.dest);
     if (op.action === 'MERGE') {
       fs.writeFileSync(op.dest, op.mergedContent);
@@ -230,12 +253,18 @@ function updateGitignore(targetDir, { dryRun }) {
 }
 
 function printOps(ops) {
+  let preserveCount = 0;
   for (const op of ops) {
     const color = op.action === 'CREATE' ? GREEN
       : op.action === 'SKIP' ? YELLOW
       : op.action === 'MERGE' ? MAGENTA
+      : op.action === 'PRESERVE' ? YELLOW
       : CYAN;
     console.log(`  ${color}${op.action}${RESET}  ${op.relativeDest}`);
+    if (op.action === 'PRESERVE') preserveCount++;
+  }
+  if (preserveCount > 0) {
+    console.log(`\n  ${YELLOW}PRESERVED ${preserveCount} customized file(s)${RESET} — review with \`init --dry-run\` to see what differs from the latest template.`);
   }
 }
 
@@ -254,7 +283,7 @@ function invalidateVersionCache({ dryRun }) {
   return true;
 }
 
-function init(targetDir, { force = false, dryRun = false } = {}) {
+function init(targetDir, { force = false, dryRun = false, preserveCustomized = false } = {}) {
   if (!dryRun && !force) {
     const pluginPaths = detectPluginInstall();
     if (pluginPaths.length > 0) {
@@ -273,7 +302,7 @@ function init(targetDir, { force = false, dryRun = false } = {}) {
     }
   }
 
-  const ops = planOperations(targetDir, { force });
+  const ops = planOperations(targetDir, { force, preserveCustomized });
 
   if (dryRun) {
     console.log('Dry run — no files will be written:\n');
@@ -418,8 +447,9 @@ function buildUpdateRecommendation(updateInfo, customizedCount) {
   ];
   if (customizedCount > 0) {
     lines.push(`         ${YELLOW}WARNING${RESET}: ${customizedCount} file(s) CUSTOMIZED — \`init --force\` will overwrite them`);
-    lines.push(`         Preview first: npx agentic-sdlc-wizard init --dry-run`);
-    lines.push(`         (Review the dry-run output before running \`init --force\`.)`);
+    lines.push(`         Preview first:  npx agentic-sdlc-wizard init --dry-run`);
+    lines.push(`         Or upgrade safely: npx agentic-sdlc-wizard init --force --preserve-customized`);
+    lines.push(`         (\`--preserve-customized\` skips CUSTOMIZED files and updates only MATCH ones.)`);
   } else {
     lines.push('         Run: npx agentic-sdlc-wizard init --force');
   }

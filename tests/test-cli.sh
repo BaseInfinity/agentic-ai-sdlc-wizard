@@ -511,9 +511,6 @@ console.log(JSON.stringify({ null: a, undefined: b }));
 }
 
 # Test 22d (#325 P2 follow-up): undefined customizedCount falls through to --force path
-# (defensive — if a future caller forgets the second arg, behavior shouldn't silently
-# flip to the warning path, which would be surprising. customizedCount=undefined
-# should be treated like "0 known customized" and recommend --force.)
 test_check_recommendation_undefined_count() {
     local result
     result=$(node -e "
@@ -527,6 +524,131 @@ console.log(lines.join('\n'));
     else
         fail "#325 P2: undefined customizedCount should default to --force path. Got: $result"
     fi
+}
+
+# Test 22e (#323 option 2): init --force --preserve-customized skips CUSTOMIZED files
+test_init_preserve_customized_skips_customized() {
+    local d
+    d=$(make_temp)
+    (cd "$d" && node "$CLI" init > /dev/null 2>&1)
+    echo "# user customization" >> "$d/.claude/hooks/sdlc-prompt-check.sh"
+    local before_hash
+    before_hash=$(shasum -a 256 "$d/.claude/hooks/sdlc-prompt-check.sh" | awk '{print $1}')
+    (cd "$d" && node "$CLI" init --force --preserve-customized > /dev/null 2>&1)
+    local after_hash
+    after_hash=$(shasum -a 256 "$d/.claude/hooks/sdlc-prompt-check.sh" | awk '{print $1}')
+    if [ "$before_hash" = "$after_hash" ]; then
+        pass "#323 option 2: init --force --preserve-customized skips CUSTOMIZED files (file hash unchanged)"
+    else
+        fail "#323 option 2: --preserve-customized should NOT overwrite CUSTOMIZED files. Hash changed."
+    fi
+    rm -rf "$d"
+}
+
+# Test 22f (#323 option 2): --preserve-customized still creates MISSING files
+test_init_preserve_customized_creates_missing() {
+    local d
+    d=$(make_temp)
+    (cd "$d" && node "$CLI" init > /dev/null 2>&1)
+    rm "$d/.claude/hooks/tdd-pretool-check.sh"
+    (cd "$d" && node "$CLI" init --force --preserve-customized > /dev/null 2>&1)
+    if [ -f "$d/.claude/hooks/tdd-pretool-check.sh" ]; then
+        pass "#323 option 2: --preserve-customized creates MISSING files (preserve != skip-everything)"
+    else
+        fail "#323 option 2: --preserve-customized should still create MISSING files"
+    fi
+    rm -rf "$d"
+}
+
+# Test 22g (#323 option 2): regression guard — --force alone still overwrites CUSTOMIZED
+test_init_force_alone_still_overwrites() {
+    local d
+    d=$(make_temp)
+    (cd "$d" && node "$CLI" init > /dev/null 2>&1)
+    echo "# user customization" >> "$d/.claude/hooks/sdlc-prompt-check.sh"
+    local before_hash
+    before_hash=$(shasum -a 256 "$d/.claude/hooks/sdlc-prompt-check.sh" | awk '{print $1}')
+    (cd "$d" && node "$CLI" init --force > /dev/null 2>&1)
+    local after_hash
+    after_hash=$(shasum -a 256 "$d/.claude/hooks/sdlc-prompt-check.sh" | awk '{print $1}')
+    if [ "$before_hash" != "$after_hash" ]; then
+        pass "#323 option 2: regression guard — --force alone (no --preserve-customized) still overwrites CUSTOMIZED"
+    else
+        fail "#323 option 2: --force alone should still overwrite (existing behavior unchanged)"
+    fi
+    rm -rf "$d"
+}
+
+# Test 22h (#327 round-2 P2): --preserve-customized without --force is a no-op
+# (existing files all SKIP regardless; the flag composes with --force, doesn't replace it)
+test_preserve_customized_without_force_is_noop() {
+    local d
+    d=$(make_temp)
+    (cd "$d" && node "$CLI" init > /dev/null 2>&1)
+    echo "# user customization" >> "$d/.claude/hooks/sdlc-prompt-check.sh"
+    local before_hash
+    before_hash=$(shasum -a 256 "$d/.claude/hooks/sdlc-prompt-check.sh" | awk '{print $1}')
+    # No --force, just --preserve-customized
+    (cd "$d" && node "$CLI" init --preserve-customized > /dev/null 2>&1)
+    local after_hash
+    after_hash=$(shasum -a 256 "$d/.claude/hooks/sdlc-prompt-check.sh" | awk '{print $1}')
+    if [ "$before_hash" = "$after_hash" ]; then
+        pass "#323 option 2: --preserve-customized without --force is no-op (existing files unchanged)"
+    else
+        fail "#323 option 2: --preserve-customized without --force should not modify files. Hash changed."
+    fi
+    rm -rf "$d"
+}
+
+# Test 22i (#327 round-2 P2): settings.json still MERGEs under --force --preserve-customized
+# (MERGE branch in planOperations runs BEFORE the customized hash check — settings should
+# get its custom-hooks-preserving merge, not be PRESERVED-as-blob)
+test_settings_merges_under_preserve_customized() {
+    local d
+    d=$(make_temp)
+    (cd "$d" && node "$CLI" init > /dev/null 2>&1)
+    # Add a custom hook to settings.json that the merge logic should preserve
+    python3 -c "
+import json
+with open('$d/.claude/settings.json') as f: data = json.load(f)
+data.setdefault('hooks', {}).setdefault('UserPromptSubmit', []).append({
+    'hooks': [{'type': 'command', 'command': 'echo custom-hook'}]
+})
+with open('$d/.claude/settings.json', 'w') as f: json.dump(data, f)
+"
+    local output
+    output=$(cd "$d" && node "$CLI" init --force --preserve-customized 2>&1)
+    # MERGE action should appear for settings.json (not PRESERVE — merge runs first)
+    if echo "$output" | grep -E '(MERGE|OVERWRITE)' | grep -q 'settings.json'; then
+        # And the custom hook should still be present after the merge
+        if grep -q 'custom-hook' "$d/.claude/settings.json"; then
+            pass "#323 option 2: settings.json MERGEs under --force --preserve-customized (custom hooks preserved)"
+        else
+            fail "#323 option 2: settings.json merge dropped custom hook"
+        fi
+    else
+        fail "#323 option 2: settings.json should be MERGEd (or OVERWRITTEN), not PRESERVEd as blob. Got: $output"
+    fi
+    rm -rf "$d"
+}
+
+# Test 22j (#327 round-2 P2): WIZARD_DOC parity — customized wizard doc gets PRESERVED
+test_wizard_doc_preserved_when_customized() {
+    local d
+    d=$(make_temp)
+    (cd "$d" && node "$CLI" init > /dev/null 2>&1)
+    echo "# user added section" >> "$d/CLAUDE_CODE_SDLC_WIZARD.md"
+    local before_hash
+    before_hash=$(shasum -a 256 "$d/CLAUDE_CODE_SDLC_WIZARD.md" | awk '{print $1}')
+    (cd "$d" && node "$CLI" init --force --preserve-customized > /dev/null 2>&1)
+    local after_hash
+    after_hash=$(shasum -a 256 "$d/CLAUDE_CODE_SDLC_WIZARD.md" | awk '{print $1}')
+    if [ "$before_hash" = "$after_hash" ]; then
+        pass "#323 option 2: WIZARD_DOC also respects --preserve-customized (parity with FILES loop)"
+    else
+        fail "#323 option 2: WIZARD_DOC should be PRESERVEd when customized. Hash changed."
+    fi
+    rm -rf "$d"
 }
 
 # Test 22: check detects missing .gitignore entries (DRIFT)
@@ -830,6 +952,12 @@ test_check_recommends_dry_run_when_customized
 test_check_recommends_force_when_no_customized
 test_check_recommendation_null_updateinfo
 test_check_recommendation_undefined_count
+test_init_preserve_customized_skips_customized
+test_init_preserve_customized_creates_missing
+test_init_force_alone_still_overwrites
+test_preserve_customized_without_force_is_noop
+test_settings_merges_under_preserve_customized
+test_wizard_doc_preserved_when_customized
 test_setup_wizard_frontmatter
 test_merge_settings_output
 test_merge_preserves_keys
