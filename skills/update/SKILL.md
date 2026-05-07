@@ -93,13 +93,12 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.72.0
+Latest:    1.73.0
 
 What changed:
+- [1.73.0] precompact stale REBASE_HEAD fix + bloat sweep — `hooks/precompact-seam-check.sh` no longer false-positive HOLDs `/compact` when a finished rebase left REBASE_HEAD behind without `rebase-{merge,apply}/` dirs (hit live 2026-05-05). 15 tracked review/plan artifacts deleted (-460 LOC).
 - [1.72.0] #323 closed — customization-aware `check` recommendation + new `--preserve-customized` flag. `init --force --preserve-customized` skips CUSTOMIZED files (action `PRESERVE`), still OVERWRITEs MATCH and CREATEs MISSING. Default `init --force` unchanged. 10 tests.
-- [1.71.0] token-bloat phase 3 — `skills/sdlc/SKILL.md` Cross-Model Review trimmed (~70 → ~20 lines, -427 tokens). Full protocol + examples moved to canonical `CLAUDE_CODE_SDLC_WIZARD.md` "Cross-Model Review Loop" section.
-- [1.70.0] token-bloat fix phase 2 — `hooks/tdd-pretool-check.sh` TDD CHECK JSON nudge fires once per CC `session_id` instead of every src/ edit. Saves ~0.5-1.5K tokens/session.
-- [1.69.0] token-bloat fix phase 1 — `hooks/sdlc-prompt-check.sh` BASELINE block fires once per CC `session_id`. Saves ~12K tokens/session.
+- [1.71.0–1.69.0] token-bloat sweep #236 — three phases: BASELINE block fires once per `session_id` (-12K/session), TDD CHECK fires once per `session_id` (-0.5-1.5K/session), `skills/sdlc/SKILL.md` Cross-Model Review trimmed (full protocol moved to canonical wizard doc).
 - [1.68.0–1.65.0] roadmap hygiene — five paperwork closes: #97 Anthropic Policy NO-GO + AAR-paper validating parallel; #99 AutoGPT NO-GO; #95 Nous NO-GO; #243 token-history liveness verified; #210 Node-24 false-green; #235 Thoughtworks AI Evals NO-GO. **6/6 external-product audits NO-GO** (continues #76, #77). Research write-ups in `.reviews/research-*.md`.
 - [1.64.0] XDLC ecosystem cross-references — README, wizard doc, and ROADMAP now cross-reference all three sibling packages (`agentic-sdlc-wizard`, `codex-sdlc-wizard`, `claude-gdlc-wizard`). New "Ecosystem (Sibling Projects)" section in README. 3 new doc-consistency tests prevent drift.
 - [1.63.0] cache-cost observability closeout (#204 absorbed by #220) — `tests/test-token-spike.sh` gains explicit cache-miss regression test + negative-control test. SDLC skill + wizard doc gain "Cache-Cost Surprises" sections covering 10-20× silent cost blowups (mid-session CLAUDE.md edits, idle pruning, upstream cache bugs) and detection via `hooks/token-spike-check.sh`'s `costly_tokens` metric.
