@@ -1,4 +1,4 @@
-<!-- SDLC Wizard Version: 1.42.1 -->
+<!-- SDLC Wizard Version: 1.43.0 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 # SDLC Configuration
@@ -7,8 +7,8 @@
 
 | Property | Value |
 |----------|-------|
-| Wizard Version | 1.42.1 |
-| Last Updated | 2026-04-24 |
+| Wizard Version | 1.43.0 |
+| Last Updated | 2026-05-12 |
 | Claude Code Baseline | v2.1.111+ (required for Opus 4.7 / `opus[1m]`) |
 | Recommended Model | `opus[1m]` (Opus 4.7, 1M context) — run `/model opus[1m]` |
 | Recommended Effort | `max` (preferred) / `xhigh` (floor) — run `/effort max` |

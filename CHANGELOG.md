@@ -4,6 +4,27 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.43.0] - 2026-05-12
+
+### Fixed
+
+- **#226 weekly-update.yml wording cleanup.** Tier 2 step previously claimed "Full Statistical (5 trials)" / "5 trials" — misleading because Tier 2 re-scores the same Tier 1 transcript 5× by the judge (a judge-consistency band, not independent-trial CI). Step renamed to "Judge-Consistency Band (5× judge re-score)" in `.github/workflows/weekly-update.yml` (lines 490, 496, 680). Matches the existing caveat at line 701 referencing this same ROADMAP entry. No statistical-language drift left in the workflow itself; true N-independent-trial scoring still tracked as ROADMAP #226.
+- **#227 community-PR `.txt` churn.** Community-pattern weekly PRs were shipping empty diffs whose only change was a one-line append to `tests/e2e/score-history.txt` (legacy; canonical is `.jsonl`). Root cause: `weekly-update.yml` called `cusum.sh --add "$SCORE"` which appends to `.txt`. Both Update-CUSUM steps now call `cusum.sh --add-json "{\"score\":$SCORE}"` so writes land in `score-history.jsonl`. Regression test added to `tests/test-workflow-triggers.sh::test_weekly_update_uses_cusum_jsonl_only` — fails if any future PR re-introduces the legacy bare-score form. 166/0 workflow-trigger tests green, 17/17 cusum tests green (cusum.sh API unchanged).
+
+### Added
+
+- **#338 skill-precedence preamble.** `skills/sdlc/SKILL.md` now opens with a "Skill source & precedence" block clarifying that repo-local `.claude/skills/` takes precedence over global `~/.claude/skills/` when both exist, with a one-liner verification command (`head -5` comparison). Repo-local copies are the project's authoritative workflow contract; global skills are for cross-repo personal tooling (e.g. `feedback`, `revise-claude-md`). Resolves user-reported confusion when both copies of `sdlc` exist with the same name.
+- **#219 model-pin re-verification (CC 2.1.117).** Confirmed CC 2.1.117 restart-persistence behavior ("a session-picked model persists across restarts even when settings.json pins a different model; startup header shows when the active model comes from a project or managed-settings pin") is **orthogonal** to our no-pin-default recommendation. Setup skill Step 9.5 now documents the interaction explicitly: project pins still apply on first launch and to new contributors, but a user's later `/model` choice sticks across restarts. No code change to the recommendation itself; the docs catch up to the new CC behavior.
+
+### Verified clean (no code change)
+
+- **#337 `--yolo` flag audit.** Repo-wide grep across `.md`, `.sh`, `.yml`, `.json`, `.js` (including `cli/`, `.claude/`, `hooks/`, `tests/`, `skills/`, `plans/`) returned zero hits for `--full-auto` or `--yolo`. We never recommended either flag; Codex usage in our docs is limited to `codex exec -s danger-full-access`, a different flag.
+- **#339 Anthropic API changelog triage (5 entries).** Multiagent sessions (2026-05-06) → out-of-scope; Sonnet 4.5/4 1M retired (2026-04-30) → N/A, we use `sonnet[1m]` (4.6); Rate Limits API (2026-04-24) → out-of-scope (admin tooling); Managed Agents memory (2026-04-23) → out-of-scope (different from our `~/.claude/projects/<proj>/memory/` system); Haiku 3 retired (2026-04-20) → N/A, no Haiku 3 references in repo.
+
+### Process
+
+- Codex GPT-5.5 xhigh cross-model review on the prioritization plan itself (`.reviews/preflight-roadmap-prioritization-2026-05-12.md`) before sinking 10-15 hrs into the proposed migration. Result: NOT CERTIFIED on the original 6-release plan (2 P0 / 3 P1 findings, including "claimed $25-55/week burn is fiction — cron already disabled per #212 Option 1" and "OpenCode sibling at v0.9.0, not v0.1.0 as the plan stated"). Plan pivoted: this v1.43 ships the unambiguous quick-wins first; migration items (#220, #230, #231 Phases 2-4) deferred to subsequent intervals after a separate decision gate.
+
 ## [1.42.1] - 2026-04-26
 
 ### Fixed

@@ -487,13 +487,16 @@ jobs:
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
           echo "Tier 1 Score: $SCORE (Passed: $PASSED)"
 
-      - name: Phase A - Regression Test (Tier 2 - Full Statistical)
+      - name: Phase A - Regression Test (Tier 2 - Judge-Consistency Band)
         id: phase-a
         if: steps.phase-a-tier1.outputs.passed == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          echo "Running Phase A Tier 2: Full statistical evaluation (5 trials)"
+          # Tier 2 re-scores the same Tier 1 transcript 5× by the judge.
+          # This is a judge-consistency band, NOT independent N-trial CI.
+          # See ROADMAP #226 for migration to true independent-trial scoring.
+          echo "Running Phase A Tier 2: 5× judge re-score of Tier 1 transcript"
 
           OUTPUT_FILE="${RUNNER_TEMP:-/tmp}/claude-execution-output.json"
 
@@ -658,7 +661,8 @@ jobs:
         run: |
           SCORE="${{ steps.phase-a.outputs.score }}"
           if [ -n "$SCORE" ] && [ "$SCORE" != "0" ]; then
-            ./tests/e2e/cusum.sh --add "$SCORE" || true
+            # ROADMAP #227: write to score-history.jsonl (canonical), not .txt (legacy)
+            ./tests/e2e/cusum.sh --add-json "{\"score\":$SCORE}" || true
             ./tests/e2e/cusum.sh --status
           fi
 
@@ -677,7 +681,7 @@ jobs:
             | Metric | Value |
             |--------|-------|
             | Tier 1 (Quick) | ${{ steps.phase-a-tier1.outputs.score }}/10 |
-            | Tier 2 (5 trials) | ${{ steps.phase-a.outputs.ci }} |
+            | Tier 2 (5× judge re-score) | ${{ steps.phase-a.outputs.ci }} |
             | Status | ${{ steps.phase-a.outputs.passed == 'true' && 'PASS' || 'FAIL' }} |
 
             ### Phase B: Improvement Test
@@ -1131,7 +1135,8 @@ jobs:
         run: |
           SCORE="${{ steps.baseline.outputs.score }}"
           if [ -n "$SCORE" ] && [ "$SCORE" != "0" ]; then
-            ./tests/e2e/cusum.sh --add "$SCORE" || true
+            # ROADMAP #227: write to score-history.jsonl (canonical), not .txt (legacy)
+            ./tests/e2e/cusum.sh --add-json "{\"score\":$SCORE}" || true
           fi
 
       - name: Create PR with results

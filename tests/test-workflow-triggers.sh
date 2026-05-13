@@ -2570,6 +2570,27 @@ PYEOF
     fi
 }
 
+# Test: weekly-update.yml must not use legacy `cusum.sh --add <score>` form,
+# which writes to score-history.txt (legacy). All CUSUM updates from the
+# weekly workflow must use `--add-json` so writes land in score-history.jsonl.
+# Regresses ROADMAP #227 — community PRs were shipping empty .txt-only diffs.
+test_weekly_update_uses_cusum_jsonl_only() {
+    local WORKFLOW="$REPO_ROOT/.github/workflows/weekly-update.yml"
+    if [ ! -f "$WORKFLOW" ]; then
+        fail "weekly-update.yml not found"
+        return
+    fi
+    # Match `cusum.sh --add` not followed by `-json` (a single hyphen literal),
+    # i.e. the legacy bare-score form. Allow `--add-json` and `--add-score-jsonl`.
+    local LEGACY
+    LEGACY=$(grep -cE 'cusum\.sh[[:space:]]+--add[[:space:]]' "$WORKFLOW" || true)
+    if [ "$LEGACY" -gt 0 ]; then
+        fail "weekly-update.yml still uses legacy 'cusum.sh --add <score>' (writes to score-history.txt) — switch to '--add-json' (ROADMAP #227). $LEGACY instance(s)."
+    else
+        pass "weekly-update.yml uses cusum --add-json only (no legacy .txt writes)"
+    fi
+}
+
 test_ci_self_heal_deleted
 test_ci_no_self_heal_simulation_step
 test_self_heal_simulation_deleted
@@ -2578,6 +2599,7 @@ test_cicd_no_tier2_autofix
 test_skill_no_autofix_bot
 test_ci_max_score_not_hardcoded
 test_ci_gated_expressions_reference_real_outputs
+test_weekly_update_uses_cusum_jsonl_only
 
 echo ""
 echo "=== Results ==="

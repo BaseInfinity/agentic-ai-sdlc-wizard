@@ -6,6 +6,12 @@ effort: high
 ---
 # SDLC Skill - Full Development Workflow
 
+## Skill source & precedence
+
+This skill is loaded from **`.claude/skills/sdlc/SKILL.md` in the active repo**. Claude Code prefers repo-local skills over global (`~/.claude/skills/sdlc/SKILL.md`) when both exist with the same name — the repo-local copy is the project's authoritative workflow contract. Use global skills only for cross-repo personal tooling (e.g. `feedback`, `revise-claude-md`); use repo-local for implementation, tests, release, and verification in this repo.
+
+If unsure which copy is active, compare `head -5 .claude/skills/sdlc/SKILL.md` against `head -5 ~/.claude/skills/sdlc/SKILL.md`. The repo-local copy wins. Don't mix guidance from both — pick the source for this repo and stay there.
+
 ## Task
 $ARGUMENTS
 

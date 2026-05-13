@@ -232,6 +232,8 @@ The CLI ships `cli/templates/settings.json` with **no** `model` or `env` pin by 
 
 **Why this is opt-in (issue #198):** A top-level `"model"` in `settings.json` tells Claude Code "the user has explicitly chosen a model" and disables auto-mode for the session. That is a real tradeoff — pinning is only worth it when you actually need the 1M headroom or you've decided mixed-mode tier-splitting is better than per-turn auto-selection.
 
+**CC 2.1.117 restart-persistence (ROADMAP #219 re-verification, 2026-05-12):** As of Claude Code 2.1.117, a model picked via `/model` mid-session persists across restarts **even when `settings.json` pins a different model**, and the startup header shows when the active model comes from a project or managed-settings pin. This is orthogonal to our recommendation: the "no pin" default still works, and a project pin still applies on first launch — but if a user later picks a different model via `/model`, that choice sticks across restarts. Tell users: "If you set a pin here but later `/model` to something else, CC will remember your in-session choice — the pin only sets the *initial* model for fresh installs / new contributors."
+
 **Run the complexity heuristic first (roadmap #233):**
 
 ```bash
