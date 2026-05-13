@@ -2601,6 +2601,48 @@ test_ci_max_score_not_hardcoded
 test_ci_gated_expressions_reference_real_outputs
 test_weekly_update_uses_cusum_jsonl_only
 
+# Test: SDLC skill must carry the skill-source-and-precedence preamble.
+# Regresses ROADMAP #338 — user confusion when both repo-local and global
+# `sdlc` skills exist. The doc-only fix in v1.43.0 added an explicit preamble;
+# this test guards against silent deletion in future refactors.
+test_sdlc_skill_has_precedence_preamble() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then
+        fail "skills/sdlc/SKILL.md not found"
+        return
+    fi
+    if grep -qE '^## Skill source & precedence' "$SKILL" && \
+       grep -qE 'repo-local' "$SKILL" && \
+       grep -qE 'global' "$SKILL" && \
+       grep -qE 'head -5' "$SKILL"; then
+        pass "SDLC skill carries 'Skill source & precedence' preamble (#338)"
+    else
+        fail "SDLC skill missing precedence preamble (must include section header, repo-local vs global, and head -5 verification one-liner — ROADMAP #338)"
+    fi
+}
+
+# Test: Setup skill Step 9.5 must document CC 2.1.117 restart-persistence.
+# Regresses ROADMAP #219 — re-verification of #198 model-pin guidance against
+# the new CC behavior. The doc-only fix in v1.43.0 added an explicit note;
+# this test guards against silent deletion.
+test_setup_skill_documents_cc_2117_persistence() {
+    local SKILL="$REPO_ROOT/skills/setup/SKILL.md"
+    if [ ! -f "$SKILL" ]; then
+        fail "skills/setup/SKILL.md not found"
+        return
+    fi
+    if grep -qE 'CC 2\.1\.117' "$SKILL" && \
+       grep -qE 'restart-persistence|persist.*restart' "$SKILL" && \
+       grep -qE 'ROADMAP #219|#219' "$SKILL"; then
+        pass "Setup skill Step 9.5 documents CC 2.1.117 restart-persistence (#219)"
+    else
+        fail "Setup skill missing CC 2.1.117 restart-persistence note (must reference 'CC 2.1.117', persistence behavior, and ROADMAP #219)"
+    fi
+}
+
+test_sdlc_skill_has_precedence_preamble
+test_setup_skill_documents_cc_2117_persistence
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
