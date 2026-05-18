@@ -93,9 +93,10 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.73.0
+Latest:    1.74.0
 
 What changed:
+- [1.74.0] Salvage from closed v1.43.0 branch (long-running session built quick-wins off c1c6f31, unaware main had shipped to v1.73.0). After Codex+Claude joint triage closed PR #340, this release ships what was genuinely still missing: (a) #338 SDLC-skill source-and-precedence preamble — `head -5` verification one-liner clarifies repo-local `.claude/skills/sdlc/` wins over global `~/.claude/skills/sdlc/`. (b) #235(a) `/insights` complementary-tool guidance in setup-skill Step 12 + wizard-doc "Complementary native skills" table, with explicit qualitative-only caveat (does NOT replace #220 token-spike). (c) #235(b) `/insights` in `tests/e2e/known-slash-commands.txt` so community scanner #207 stops flagging it. (d) Codex stdin-hang fix — all multi-line `codex exec` invocations in README/wizard/sdlc-skill + new `scripts/codex-review-with-progress.sh` now append `< /dev/null` (codex blocks on stdin from non-interactive parents → S/0% CPU hang with 0-byte output, validated on codex-cli 0.130.0). (e) `test-hooks.sh` env-isolation — `test_instructions_hook_cwd_walkup` now scopes `HOME=$tmpdir + SDLC_WIZARD_CACHE_DIR=$tmpdir/cache` so a stale latest-version cache doesn't poison the test. 4 new doc-consistency tests + 1 community-scanner test + 1 wrapper test, all green.
 - [1.73.0] precompact stale REBASE_HEAD fix + bloat sweep — `hooks/precompact-seam-check.sh` no longer false-positive HOLDs `/compact` when a finished rebase left REBASE_HEAD behind without `rebase-{merge,apply}/` dirs (hit live 2026-05-05). 15 tracked review/plan artifacts deleted (-460 LOC).
 - [1.72.0] #323 closed — customization-aware `check` recommendation + new `--preserve-customized` flag. `init --force --preserve-customized` skips CUSTOMIZED files (action `PRESERVE`), still OVERWRITEs MATCH and CREATEs MISSING. Default `init --force` unchanged. 10 tests.
 - [1.71.0–1.69.0] token-bloat sweep #236 — three phases: BASELINE block fires once per `session_id` (-12K/session), TDD CHECK fires once per `session_id` (-0.5-1.5K/session), `skills/sdlc/SKILL.md` Cross-Model Review trimmed (full protocol moved to canonical wizard doc).

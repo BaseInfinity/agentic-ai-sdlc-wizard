@@ -717,6 +717,94 @@ test_wizard_doc_mentions_gdlc_sibling
 test_readme_mentions_codex_near_top
 test_wizard_doc_mentions_codex_near_top
 
+# Setup skill must point users at /insights with the explicit qualitative-only
+# caveat (ROADMAP #235a, original research #206). Without the caveat, the doc
+# risks drifting into "we have token-spike detection via /insights" — which
+# would be wrong; /insights is qualitative friction surfacing only, NOT a
+# substitute for #220's raw-JSONL token instrumentation.
+test_setup_skill_mentions_insights_with_caveat() {
+    local SKILL="$REPO_ROOT/skills/setup/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/setup/SKILL.md not found"; return; fi
+    if grep -qF '/insights' "$SKILL" && \
+       grep -qE 'friction|qualitative' "$SKILL" && \
+       grep -qE '#220|token-spike|raw.*session.*JSONL|does NOT replace' "$SKILL"; then
+        pass "skills/setup/SKILL.md mentions /insights with qualitative-only caveat (#235a)"
+    else
+        fail "skills/setup/SKILL.md must reference /insights + friction/qualitative + the #220 non-replacement caveat"
+    fi
+}
+
+# Wizard doc must list /insights in the "Complementary native skills" table
+# (next to /less-permission-prompts and /permissions) AND carry the
+# qualitative-only caveat as a paragraph below the table. Same anti-overclaim
+# protection as the setup-skill test above.
+test_wizard_doc_lists_insights_with_caveat() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    # Extract the Complementary native skills section
+    local section
+    section=$(awk '/Complementary native skills/,/### When Claude Code Improves/' "$DOC")
+    if echo "$section" | grep -qF '/insights' && \
+       echo "$section" | grep -qE 'friction|qualitative' && \
+       echo "$section" | grep -qE '#220|token-spike|raw.*session.*JSONL|not a substitute'; then
+        pass "CLAUDE_CODE_SDLC_WIZARD.md lists /insights with qualitative-only caveat (#235a)"
+    else
+        fail "CLAUDE_CODE_SDLC_WIZARD.md 'Complementary native skills' section must list /insights with the #220 non-replacement caveat"
+    fi
+}
+
+# SDLC skill must carry the skill-source-and-precedence preamble (ROADMAP
+# #338). Prevents user confusion when both repo-local .claude/skills/sdlc/
+# and global ~/.claude/skills/sdlc/ exist with the same name.
+test_sdlc_skill_has_precedence_preamble() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    if grep -qE '^## Skill source & precedence' "$SKILL" && \
+       grep -qF 'repo-local' "$SKILL" && \
+       grep -qF 'head -5' "$SKILL"; then
+        pass "skills/sdlc/SKILL.md carries 'Skill source & precedence' preamble (#338)"
+    else
+        fail "skills/sdlc/SKILL.md must include '## Skill source & precedence' section with repo-local-wins guidance + head -5 verification one-liner"
+    fi
+}
+
+# Codex stdin-hang fix: every documented multi-line `codex exec` block must
+# append `< /dev/null` so callers don't hit the codex stdin-read hang from
+# non-interactive parents (background, hooks, CI, CC Bash tool). Validated
+# on codex-cli 0.130.0 / macOS 14, 2026-05-15.
+test_codex_exec_blocks_redirect_stdin() {
+    local missing=0
+    for f in "$REPO_ROOT/README.md" "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"; do
+        if [ ! -f "$f" ]; then continue; fi
+        # Count multi-line `codex exec \` blocks (those continuing onto next line).
+        local total stdin_redirected
+        total=$(grep -cE '^[[:space:]]*codex exec \\$' "$f" || true)
+        # Within ~20 lines after each `codex exec \` start, count those that
+        # have `< /dev/null` (the redirect for the same block).
+        stdin_redirected=$(awk '
+            /^[[:space:]]*codex exec \\$/ { in_block=1; depth=0; next }
+            in_block {
+                depth++
+                if (/<[[:space:]]*\/dev\/null/) { count++; in_block=0; next }
+                if (depth > 25) { in_block=0 }
+            }
+            END { print count+0 }
+        ' "$f")
+        if [ "$total" -gt 0 ] && [ "$stdin_redirected" -lt "$total" ]; then
+            fail "$f: $stdin_redirected of $total codex exec blocks redirect stdin (need all $total to append '< /dev/null')"
+            missing=$((missing+1))
+        fi
+    done
+    if [ "$missing" -eq 0 ]; then
+        pass "All documented multi-line codex exec blocks append '< /dev/null' (stdin-hang fix)"
+    fi
+}
+
+test_setup_skill_mentions_insights_with_caveat
+test_wizard_doc_lists_insights_with_caveat
+test_sdlc_skill_has_precedence_preamble
+test_codex_exec_blocks_redirect_stdin
+
 # ────────────────────────────────────────────
 # Summary
 # ────────────────────────────────────────────

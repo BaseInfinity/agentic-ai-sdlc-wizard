@@ -287,6 +287,34 @@ test_wrapper_missing_codex_binary_exits_127() {
     fi
 }
 
+# Stdin-hang fix: the wrapper must redirect the child codex's stdin to
+# /dev/null. Without it, codex from a non-interactive parent (background,
+# hooks, CI, CC Bash tool) blocks on stdin reads even when the prompt is
+# given as an argument — process sits at S/0% CPU indefinitely with a
+# 0-byte -o output file. Validated on codex-cli 0.130.0 / macOS 14, 2026-05-15.
+# This is a static check on the wrapper source — the redirect must exist.
+test_wrapper_redirects_child_stdin_to_dev_null() {
+    if [ ! -f "$WRAPPER" ]; then
+        fail "wrapper script not found at $WRAPPER"
+        return
+    fi
+    # Find the "$CODEX_BIN" exec invocation block and confirm it ends with
+    # `< /dev/null &` (the redirect to /dev/null followed by background).
+    if awk '
+        /"\$CODEX_BIN" exec/ { in_block=1; depth=0; next }
+        in_block {
+            depth++
+            if (/<[[:space:]]*\/dev\/null[[:space:]]*&/) { found=1; exit }
+            if (depth > 15) { exit }
+        }
+        END { exit !found }
+    ' "$WRAPPER"; then
+        pass "wrapper redirects child codex stdin to /dev/null (stdin-hang fix)"
+    else
+        fail "wrapper's codex exec block must end with '< /dev/null &' to prevent codex stdin-read hang from non-interactive parents"
+    fi
+}
+
 test_wrapper_exists_and_executable
 test_wrapper_rejects_too_few_args
 test_wrapper_emits_heartbeat_during_long_run
@@ -298,6 +326,7 @@ test_wrapper_invalid_interval_falls_back
 test_wrapper_kills_child_codex_on_termination_promptly
 test_wrapper_no_spurious_heartbeat_after_codex_exits
 test_wrapper_missing_codex_binary_exits_127
+test_wrapper_redirects_child_stdin_to_dev_null
 
 echo ""
 echo "=== Results ==="

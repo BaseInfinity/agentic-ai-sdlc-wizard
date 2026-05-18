@@ -2360,8 +2360,12 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
       review the listed files. Output each finding with: an ID (1, 2, ...), \
       severity (P0/P1/P2), description, and a 'certify condition' stating \
       what specific change would resolve it. \
-      End with CERTIFIED or NOT CERTIFIED."
+      End with CERTIFIED or NOT CERTIFIED." \
+     < /dev/null
    ```
+
+   > **Always append `< /dev/null`** to `codex exec` calls run from background, hooks, CI, or any non-interactive parent. Without it, codex blocks on stdin reads even when the prompt is given as an argument — the process sits at S/0% CPU indefinitely with a 0-byte `-o` output file (the file is only written on completion, so a hang gives zero visibility). Validated on codex-cli 0.130.0 / macOS 14, 2026-05-15. For live progress, use `scripts/codex-review-with-progress.sh` instead.
+
 3. If CERTIFIED → proceed to CI. If NOT CERTIFIED → go to Round 2.
 
 ### Round 2+: Dialogue Loop
@@ -2402,7 +2406,8 @@ When the reviewer finds issues, respond per-finding instead of silently fixing e
       ACCEPTED → verify it was applied. \
       Do NOT raise new findings unless P0 (critical/security). \
       New observations go in 'Notes for next review' (non-blocking). \
-      End with CERTIFIED or NOT CERTIFIED."
+      End with CERTIFIED or NOT CERTIFIED." \
+     < /dev/null
    ```
 
 4. If CERTIFIED → done. If NOT CERTIFIED (rejected disputes or failed fixes) → fix rejected items and repeat.
@@ -2976,7 +2981,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.73.0 -->
+<!-- SDLC Wizard Version: 1.74.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
@@ -3791,8 +3796,11 @@ codex exec \
    review the listed files. Output each finding with: an ID (1, 2, ...), \
    severity (P0/P1/P2), description, and a 'certify condition' stating \
    what specific change would resolve it. \
-   End with CERTIFIED or NOT CERTIFIED."
+   End with CERTIFIED or NOT CERTIFIED." \
+  < /dev/null
 ```
+
+> **Always append `< /dev/null`** to `codex exec` calls run from background, hooks, CI, or any non-interactive parent. Without it, codex blocks on stdin reads even when the prompt is given as an argument — the process sits at S/0% CPU indefinitely with a 0-byte `-o` output file. Validated on codex-cli 0.130.0 / macOS 14, 2026-05-15. For live progress visibility, use `scripts/codex-review-with-progress.sh` instead.
 
 4. If CERTIFIED → done. If NOT CERTIFIED → enter the dialogue loop.
 
@@ -3849,7 +3857,8 @@ codex exec \
    ACCEPTED → verify it was applied. \
    Do NOT raise new findings unless P0 (critical/security). \
    New observations go in 'Notes for next review' (non-blocking). \
-   End with CERTIFIED or NOT CERTIFIED."
+   End with CERTIFIED or NOT CERTIFIED." \
+  < /dev/null
 ```
 
 **The key constraint:** Rechecks are scoped to previous findings only. The reviewer cannot block certification with new P2 observations discovered during recheck. This prevents scope creep and ensures convergence.
@@ -4070,7 +4079,7 @@ Walk through updates? (y/n)
 Store wizard state in `SDLC.md` as metadata comments (invisible to readers, parseable by Claude):
 
 ```markdown
-<!-- SDLC Wizard Version: 1.73.0 -->
+<!-- SDLC Wizard Version: 1.74.0 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: PRs -->
@@ -4423,8 +4432,11 @@ The gap this closes: the advisor tool (API beta, `advisor-tool-2026-03-01`) ship
 |--------------|--------------|-------------|
 | `/less-permission-prompts` | Scans transcripts for common read-only Bash/MCP calls and proposes a prioritized allowlist | After a few sessions — reduces permission friction without auto mode |
 | `/permissions` | Pre-allow specific commands and check them into `.claude/settings.json` | Anytime you want an auditable team allowlist |
+| `/insights` | Local analyzer of your CC session history. Generates HTML report at `~/.claude/usage-data/report.html` + per-session facet JSON at `~/.claude/usage-data/facets/<session>.json`. Surfaces `underlying_goal`, `outcome`, `friction_counts`, `user_satisfaction_counts`, `brief_summary`, recurring friction patterns, suggested CLAUDE.md additions | Monthly — **qualitative-only**; see caveat below |
 
 These are shipped by Claude Code itself. The wizard doesn't reimplement them — it points you at them so you benefit from the native version's ongoing maintenance.
+
+**`/insights` caveat (do not over-claim):** the output is behavioral/qualitative only — friction counts, goal categories, satisfaction. It does NOT expose `cache_read_input_tokens`, cache-hit ratio, per-turn token breakdown, or model-version tracking. It is **not a substitute** for token-spike detection (ROADMAP #220 / `hooks/token-spike-check.sh`), which reads raw session JSONL (`~/.claude/projects/<proj>/<session>.jsonl`, `usage.cache_read_input_tokens` per turn). Use `/insights` for behavioral friction; use `#220`-class instrumentation for token/cache anomalies. They are complementary, not interchangeable. (Original research: ROADMAP #206, full writeup `.reviews/research-206-insights.md`.)
 
 ### When Claude Code Improves
 
