@@ -296,10 +296,13 @@ codex exec \
    Output each finding with: ID (1, 2, ...), severity (P0/P1/P2), evidence, \
    and a 'certify condition' (what specific change resolves it). \
    Re-verify any prior-round passes still hold. \
-   End with: score (1-10), CERTIFIED or NOT CERTIFIED."
+   End with: score (1-10), CERTIFIED or NOT CERTIFIED." \
+  < /dev/null
 ```
 
 **Always use `xhigh` reasoning effort.** Lower settings miss subtle errors (wrong-generation references, stale pricing, cross-file inconsistencies).
+
+**Always append `< /dev/null`** when invoking `codex exec` from a hook, CI step, background process, or any non-interactive parent (including the Claude Code Bash tool). Without it, codex blocks on stdin reads even when the prompt is given as a positional argument — the process sits at S/0% CPU indefinitely with a 0-byte `-o` output file (the file is only written on completion, so a hang gives zero visibility). Validated on codex-cli 0.130.0 / macOS 14, May 15, 2026, after two ~30+ min silent hangs. For live progress visibility add `--json` and redirect stdout to a file (`> .reviews/events.jsonl`); `tail -f` then shows the event stream.
 
 **Sandbox note:** Codex's Rust binary requires access to macOS system configuration APIs (`SCDynamicStore`) during sandbox initialization. Claude Code's sandbox blocks this access, causing `codex exec` to crash with `system-configuration panicked: Attempted to create a NULL object`. When running `codex exec` from within Claude Code, you MUST use `dangerouslyDisableSandbox: true` on the Bash tool call. This is safe — Codex has its own sandbox (`-s danger-full-access` is already specified), and the CC sandbox bypass only affects the Codex process. This is a known Codex issue ([#15640](https://github.com/openai/codex/issues/15640)).
 
@@ -342,7 +345,8 @@ Respond per-finding — don't silently fix everything:
       Do NOT raise new findings unless P0 (critical/security). \
       New observations go in 'Notes for next review' (non-blocking). \
       Re-verify all prior passes still hold. \
-      End with: score (1-10), CERTIFIED or NOT CERTIFIED."
+      End with: score (1-10), CERTIFIED or NOT CERTIFIED." \
+     < /dev/null
    ```
 
 ### Convergence

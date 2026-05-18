@@ -2347,8 +2347,12 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
       review the listed files. Output each finding with: an ID (1, 2, ...), \
       severity (P0/P1/P2), description, and a 'certify condition' stating \
       what specific change would resolve it. \
-      End with CERTIFIED or NOT CERTIFIED."
+      End with CERTIFIED or NOT CERTIFIED." \
+     < /dev/null
    ```
+
+   > **Always append `< /dev/null`** to `codex exec` calls run from background, hooks, CI, or any non-interactive parent. Without it, codex blocks on stdin reads even when the prompt is given as an argument — the process sits at S/0% CPU indefinitely with a 0-byte `-o` output file. Validated on codex-cli 0.130.0 / macOS 14, May 15, 2026. For live progress visibility, add `--json` and redirect stdout to a file (`> .reviews/events.jsonl`), then `tail -f` shows event-by-event flow.
+
 3. If CERTIFIED → proceed to CI. If NOT CERTIFIED → go to Round 2.
 
 ### Round 2+: Dialogue Loop
@@ -2389,7 +2393,8 @@ When the reviewer finds issues, respond per-finding instead of silently fixing e
       ACCEPTED → verify it was applied. \
       Do NOT raise new findings unless P0 (critical/security). \
       New observations go in 'Notes for next review' (non-blocking). \
-      End with CERTIFIED or NOT CERTIFIED."
+      End with CERTIFIED or NOT CERTIFIED." \
+     < /dev/null
    ```
 
 4. If CERTIFIED → done. If NOT CERTIFIED (rejected disputes or failed fixes) → fix rejected items and repeat.
@@ -3716,7 +3721,8 @@ codex exec \
    review the listed files. Output each finding with: an ID (1, 2, ...), \
    severity (P0/P1/P2), description, and a 'certify condition' stating \
    what specific change would resolve it. \
-   End with CERTIFIED or NOT CERTIFIED."
+   End with CERTIFIED or NOT CERTIFIED." \
+  < /dev/null
 ```
 
 4. If CERTIFIED → done. If NOT CERTIFIED → enter the dialogue loop.
@@ -3774,7 +3780,8 @@ codex exec \
    ACCEPTED → verify it was applied. \
    Do NOT raise new findings unless P0 (critical/security). \
    New observations go in 'Notes for next review' (non-blocking). \
-   End with CERTIFIED or NOT CERTIFIED."
+   End with CERTIFIED or NOT CERTIFIED." \
+  < /dev/null
 ```
 
 **The key constraint:** Rechecks are scoped to previous findings only. The reviewer cannot block certification with new P2 observations discovered during recheck. This prevents scope creep and ensures convergence.
