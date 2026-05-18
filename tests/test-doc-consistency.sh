@@ -772,17 +772,21 @@ test_sdlc_skill_has_precedence_preamble() {
 # append `< /dev/null` so callers don't hit the codex stdin-read hang from
 # non-interactive parents (background, hooks, CI, CC Bash tool). Validated
 # on codex-cli 0.130.0 / macOS 14, 2026-05-15.
+#
+# Matcher covers BOTH multi-line shapes:
+#   1. `codex exec \`                (bare, args on continuation lines)
+#   2. `codex exec -c '...' -s ... \` (flags on the first line, continuing)
+# Both end the first line with a trailing backslash. False positives are
+# limited to lines containing the literal word "codex exec" followed by a
+# trailing-backslash continuation, which is exactly what we want to enforce.
 test_codex_exec_blocks_redirect_stdin() {
     local missing=0
-    for f in "$REPO_ROOT/README.md" "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"; do
+    for f in "$REPO_ROOT/README.md" "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" "$REPO_ROOT/skills/sdlc/SKILL.md"; do
         if [ ! -f "$f" ]; then continue; fi
-        # Count multi-line `codex exec \` blocks (those continuing onto next line).
         local total stdin_redirected
-        total=$(grep -cE '^[[:space:]]*codex exec \\$' "$f" || true)
-        # Within ~20 lines after each `codex exec \` start, count those that
-        # have `< /dev/null` (the redirect for the same block).
+        total=$(grep -cE '^[[:space:]]*codex exec( .*)? \\$' "$f" || true)
         stdin_redirected=$(awk '
-            /^[[:space:]]*codex exec \\$/ { in_block=1; depth=0; next }
+            /^[[:space:]]*codex exec( .*)? \\$/ { in_block=1; depth=0; next }
             in_block {
                 depth++
                 if (/<[[:space:]]*\/dev\/null/) { count++; in_block=0; next }
@@ -791,7 +795,7 @@ test_codex_exec_blocks_redirect_stdin() {
             END { print count+0 }
         ' "$f")
         if [ "$total" -gt 0 ] && [ "$stdin_redirected" -lt "$total" ]; then
-            fail "$f: $stdin_redirected of $total codex exec blocks redirect stdin (need all $total to append '< /dev/null')"
+            fail "$f: $stdin_redirected of $total multi-line codex exec blocks redirect stdin (need all $total to append '< /dev/null'). Matcher covers both 'codex exec \\' and 'codex exec -c ... \\' shapes."
             missing=$((missing+1))
         fi
     done
