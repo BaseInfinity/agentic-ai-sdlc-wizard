@@ -6,6 +6,14 @@ All notable changes to the SDLC Wizard.
 
 ## [1.43.0] - 2026-05-12
 
+### Added (late additions, 2026-05-17)
+
+- **#235(a) `/insights` complementary-tool guidance.** Surfaced the unshipped action from #206 research (2026-04-19). Setup skill Step 12 closing checklist + `CLAUDE_CODE_SDLC_WIZARD.md` "Complementary Tools" section now both cite `/insights` (native CC, v2.1.101+) with an explicit qualitative-only caveat: it surfaces `underlying_goal`, `outcome`, `friction_counts`, `user_satisfaction_counts`, `brief_summary` from local session history, but does NOT expose `cache_read_input_tokens` / cache-hit ratio / per-turn breakdown / model-version tracking, so it does NOT replace token-spike detection (ROADMAP #220) which needs raw session JSONL. Codex cross-model reviewed (CERTIFIED 8/10, 3 P2 corrections applied — section name fixed from "Known CC Gotchas" → "Complementary Tools" since /insights is a built-in CLI command, not a failure-mode or skill).
+- **#235(b) `/insights` added to slash-command allowlist.** Appended `/insights` to `tests/e2e/known-slash-commands.txt` so the community feature-discovery scanner (#207) stops flagging it as a "new" candidate on every weekly run.
+- **3 doc-presence regression tests** in `tests/test-workflow-triggers.sh` guard #235(a)+(b): setup-skill mention, wizard-doc "Complementary Tools" section content, and allowlist presence. 171/0 green.
+
+**Deferred:** #235(c) re-research checkpoint (changelog scan + direct facet-JSON inspection on CC 2.1.140 for schema additions since 2.1.101) → v1.44.
+
 ### Fixed
 
 - **#226 weekly-update.yml wording cleanup.** Tier 2 step previously claimed "Full Statistical (5 trials)" / "5 trials" — misleading because Tier 2 re-scores the same Tier 1 transcript 5× by the judge (a judge-consistency band, not independent-trial CI). Step renamed to "Judge-Consistency Band (5× judge re-score)" in `.github/workflows/weekly-update.yml` (lines 490, 496, 680). Matches the existing caveat at line 701 referencing this same ROADMAP entry. No statistical-language drift left in the workflow itself; true N-independent-trial scoring still tracked as ROADMAP #226.

@@ -3491,6 +3491,8 @@ Add project-specific guidance to skills:
 
 The wizard handles SDLC process enforcement. For stack-specific tooling, run `/claude-automation-recommender` — it suggests MCP servers, formatting hooks, type-checking hooks, subagent templates, and plugins based on your detected tech stack. See [Step 0.3](#step-03-additional-recommendations-optional) for the full comparison.
 
+**`/insights` (native CC, v2.1.101+).** Run monthly to surface friction patterns from the last 30 days of session history. Generates a local HTML report at `~/.claude/usage-data/report.html` plus per-session facet JSON at `~/.claude/usage-data/facets/<session>.json`. Surfaces `underlying_goal`, `outcome`, `user_satisfaction_counts`, `friction_counts`, `brief_summary`, recurring friction patterns, and suggested `CLAUDE.md` additions. All analysis is local — no data sent to Anthropic. **Qualitative-only** — does NOT expose `cache_read_input_tokens`, cache-hit ratio, per-turn token breakdown, or model-version tracking. **Does NOT replace token-spike detection (ROADMAP #220)** which requires raw session JSONL (`~/.claude/projects/<proj>/<session>.jsonl`, `usage.cache_read_input_tokens` per turn). Use `/insights` for behavioral friction, `#220`-class instrumentation for token/cache anomalies; they are complementary, not interchangeable. (Original research: ROADMAP #206, full writeup `.reviews/research-206-insights.md`.)
+
 ---
 
 ## Testing AI Apps: What's Different

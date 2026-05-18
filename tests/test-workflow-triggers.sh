@@ -2643,6 +2643,70 @@ test_setup_skill_documents_cc_2117_persistence() {
 test_sdlc_skill_has_precedence_preamble
 test_setup_skill_documents_cc_2117_persistence
 
+# Test: Setup skill Step 12 must surface /insights with qualitative-only caveat.
+# Regresses ROADMAP #235(a) — original #206 research concluded /insights is
+# qualitative friction-pattern surfacing only (no token/cache data); recommended
+# action was to add a complementary-tool mention but it shipped silently.
+# This test prevents the mention from drifting into "we have token-spike
+# detection via /insights" misclaim, which would conflict with #220's plan.
+test_setup_skill_mentions_insights_with_caveat() {
+    local SKILL="$REPO_ROOT/skills/setup/SKILL.md"
+    if [ ! -f "$SKILL" ]; then
+        fail "skills/setup/SKILL.md not found"
+        return
+    fi
+    if grep -qE '/insights' "$SKILL" && \
+       grep -qE 'friction|qualitative' "$SKILL" && \
+       grep -qE '#220|token-spike|raw.*session.*JSONL|does NOT replace' "$SKILL"; then
+        pass "Setup skill mentions /insights with qualitative-only caveat (#235a)"
+    else
+        fail "Setup skill missing /insights mention with qualitative-only caveat (must reference /insights, friction/qualitative, and the #220 token-spike non-replacement)"
+    fi
+}
+
+# Test: Wizard doc "Complementary Tools" section must list /insights with caveat.
+# Regresses ROADMAP #235(a). Target section is "Complementary Tools" (NOT
+# "Known CC Gotchas" which is failure-modes-only, and NOT "Complementary native
+# skills" table which is skill-specific — /insights is a built-in CLI command).
+test_wizard_doc_complementary_tools_lists_insights() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$DOC" ]; then
+        fail "CLAUDE_CODE_SDLC_WIZARD.md not found"
+        return
+    fi
+    # Extract the Complementary Tools section (until next ## heading)
+    local section
+    section=$(awk '/^### Complementary Tools/,/^## /' "$DOC")
+    if echo "$section" | grep -qE '/insights' && \
+       echo "$section" | grep -qE 'friction|qualitative' && \
+       echo "$section" | grep -qE '#220|token-spike|raw.*session.*JSONL|does NOT replace'; then
+        pass "Wizard doc 'Complementary Tools' section lists /insights with caveat (#235a)"
+    else
+        fail "Wizard doc 'Complementary Tools' section missing /insights mention with qualitative-only caveat"
+    fi
+}
+
+# Test: /insights must appear in tests/e2e/known-slash-commands.txt allowlist.
+# Regresses ROADMAP #235(b) — community scanner #207 was flagging /insights as
+# a "new" candidate on every weekly run because the allowlist didn't include it.
+test_known_slash_commands_includes_insights() {
+    local LIST="$REPO_ROOT/tests/e2e/known-slash-commands.txt"
+    if [ ! -f "$LIST" ]; then
+        fail "tests/e2e/known-slash-commands.txt not found"
+        return
+    fi
+    # Must match exact line "/insights" (not /insights-foo). Allow whitespace.
+    if grep -qE '^[[:space:]]*/insights[[:space:]]*$' "$LIST"; then
+        pass "/insights present in known-slash-commands.txt (#235b — stops scanner noise)"
+    else
+        fail "/insights missing from known-slash-commands.txt — community scanner will keep flagging it as 'new' (ROADMAP #235b)"
+    fi
+}
+
+test_setup_skill_mentions_insights_with_caveat
+test_wizard_doc_complementary_tools_lists_insights
+test_known_slash_commands_includes_insights
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"

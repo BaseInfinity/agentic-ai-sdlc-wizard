@@ -311,8 +311,9 @@ Tell the user:
 > - After a few sessions, run `/less-permission-prompts` — a native Claude Code skill
 >   that scans your transcripts for common read-only Bash/MCP calls and proposes a
 >   prioritized allowlist. Reduces permission friction without enabling auto mode.
+> - Run `/insights` (native CC, v2.1.101+) **monthly** to surface friction patterns from your session history — `underlying_goal`, `outcome`, `friction_counts`, `user_satisfaction_counts`. Output is **qualitative-only**; it does NOT replace token-spike detection (ROADMAP #220) which needs raw session JSONL (`~/.claude/projects/<proj>/<session>.jsonl`, `usage.cache_read_input_tokens` per turn).
 >
-> Both are complementary to the SDLC wizard — they add tooling and quality-of-life, not process enforcement.
+> All three are complementary to the SDLC wizard — they add tooling and quality-of-life, not process enforcement.
 
 ## Rules
 
