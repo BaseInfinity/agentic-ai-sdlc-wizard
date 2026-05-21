@@ -4,6 +4,25 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.75.1] - 2026-05-20
+
+### Fixed
+
+- **`release.yml` npm-upgrade step failed during v1.75.0 publish.** The `npm install -g npm@latest` step hit `npm error code MODULE_NOT_FOUND` / `Cannot find module 'promise-retry'` on the GitHub-hosted runner — a documented npm CLI bug where the in-place self-upgrade corrupts its own module tree mid-install. Bumped `actions/setup-node@v5` to `node-version: 24` (ships npm 11.x natively), dropped the unreliable `npm install -g` step entirely, and added an explicit `npm --version` fail-loud guard that aborts the publish if Node ever ships an npm older than 11.5.1. v1.75.0 is a tagged-but-unpublished version on GitHub; v1.75.1 supersedes it as the first version actually shipped via Trusted Publishing.
+
+### Process post-mortem (for /sdlc Lessons Learned)
+
+Two process gaps shipped this minor release:
+
+1. **CI doesn't exercise `release.yml`.** `tests/test-release-workflow.sh` greps the workflow YAML but no test actually executes the npm-upgrade step on a runner. The MODULE_NOT_FOUND bug is invisible to unit tests. Future-proofing options: (a) add a `release-dry-run` job in CI that runs the publish steps with `--dry-run` against a throwaway scope, (b) accept that some failures are only visible at deploy time and document a fast rollback path. Tracked as a roadmap follow-up.
+2. **`tag-then-publish` has a feedback gap.** v1.75.0 was tagged before the npm publish succeeded, leaving an inconsistent state where the GitHub Release page and the npm registry disagree. Mitigation already in place: tag verification (`git merge-base --is-ancestor` + `tag-vs-package.json` match), but neither catches "tag pushed, publish failed." Roadmap follow-up: gate the GitHub Release creation step on `npm publish` success (workflow already does this via step ordering), but also surface an explicit "PUBLISH FAILED — DO NOT TAG NEXT VERSION FROM THIS BASE" notice in the failed run.
+
+Both items added to ROADMAP as v1.76.0+ candidates. Neither blocked v1.75.1 shipping.
+
+### Test
+
+- `tests/test-release-workflow.sh::test_upgrades_npm_for_trusted_publishing` rewritten to accept either strategy: (a) Node ≥24 + explicit `npm --version` guard, or (b) explicit `npm install -g npm@…` step before publish. The new strategy (a) is what 1.75.1 uses; the test still catches a future revert to either no-guard Node 24 (which could silently downgrade) or back to the unreliable in-place upgrade.
+
 ## [1.75.0] - 2026-05-20
 
 ### Changed

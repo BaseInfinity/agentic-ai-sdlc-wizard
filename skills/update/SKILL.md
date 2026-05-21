@@ -93,12 +93,13 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.75.0
+Latest:    1.75.1
 
 What changed:
-- [1.75.0] npm Trusted Publishing — `release.yml` swapped from `NPM_TOKEN` to GitHub OIDC. No more token rotation. One-time publisher config on the npm package page required. 2 new release-workflow tests.
-- [1.74.0] Salvage from closed v1.43 PR: #338 sdlc-skill source-precedence preamble; #235(a)(b) `/insights` guidance + allowlist (qualitative-only); codex stdin-hang `< /dev/null` fix; test-hooks env-isolation.
-- [1.73.0] precompact stale REBASE_HEAD fix + bloat sweep — `hooks/precompact-seam-check.sh` no longer false-positive HOLDs `/compact` when a finished rebase left REBASE_HEAD behind without `rebase-{merge,apply}/` dirs (hit live 2026-05-05). 15 tracked review/plan artifacts deleted (-460 LOC).
+- [1.75.1] release-workflow fix — Node 22 → 24 (ships npm 11.x), dropped flaky `npm install -g` self-upgrade (hit MODULE_NOT_FOUND on v1.75.0 publish). Explicit npm-version guard.
+- [1.75.0] npm Trusted Publishing — `release.yml` swapped from `NPM_TOKEN` to OIDC. No more token rotation. Requires one-time publisher config on the npm package page.
+- [1.74.0] Salvage from v1.43 PR: #338 sdlc-skill source-precedence preamble; #235(a)(b) `/insights` guidance; codex stdin-hang `< /dev/null` fix; test-hooks env-isolation.
+- [1.73.0] precompact stale REBASE_HEAD fix + bloat sweep — `hooks/precompact-seam-check.sh` no longer HOLDs `/compact` on stale REBASE_HEAD without `rebase-{merge,apply}/` dirs. 15 tracked artifacts deleted (-460 LOC).
 - [1.72.0] #323 closed — customization-aware `check` recommendation + new `--preserve-customized` flag. `init --force --preserve-customized` skips CUSTOMIZED files (action `PRESERVE`), still OVERWRITEs MATCH and CREATEs MISSING. Default `init --force` unchanged. 10 tests.
 - [1.71.0–1.69.0] token-bloat sweep #236 — BASELINE + TDD CHECK fire once per `session_id` (-12K, -0.5-1.5K); sdlc-skill Cross-Model Review trimmed.
 - [1.68.0–1.65.0] roadmap hygiene — five paperwork closes: #97 Anthropic Policy NO-GO + AAR-paper validating parallel; #99 AutoGPT NO-GO; #95 Nous NO-GO; #243 token-history liveness verified; #210 Node-24 false-green; #235 Thoughtworks AI Evals NO-GO. **6/6 external-product audits NO-GO** (continues #76, #77). Research write-ups in `.reviews/research-*.md`.
