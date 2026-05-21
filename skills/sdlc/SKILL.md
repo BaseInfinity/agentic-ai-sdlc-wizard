@@ -6,6 +6,12 @@ effort: high
 ---
 # SDLC Skill - Full Development Workflow
 
+## Skill source & precedence
+
+This skill is loaded from **`.claude/skills/sdlc/SKILL.md`** in the active repo (symlinked to `skills/sdlc/SKILL.md` in the wizard's source tree). Claude Code prefers repo-local skills over global (`~/.claude/skills/sdlc/SKILL.md`) when both exist with the same name — the repo-local copy is the project's authoritative workflow contract. Use global skills only for cross-repo personal tooling (e.g. `feedback`, `revise-claude-md`); use repo-local for implementation, tests, release, and verification in this repo.
+
+If unsure which copy is active, compare `head -5 .claude/skills/sdlc/SKILL.md` against `head -5 ~/.claude/skills/sdlc/SKILL.md`. The repo-local copy wins. Don't mix guidance from both — pick the source for this repo and stay there.
+
 ## Task
 $ARGUMENTS
 
@@ -126,7 +132,7 @@ PROTOCOL is universal across domains; only `review_instructions` and `verificati
 
 1. **Preflight** (`.reviews/preflight-{review_id}.md`) — what you already checked: `/code-review` passed, tests passing, manual verifications, known limits. Reduces reviewer findings to 0-1/round.
 2. **Mission-first handoff** (`.reviews/handoff.json`) — required JSON keys: `"review_id"`, `"status": "PENDING_REVIEW"`, `"round": 1`, `"mission"` / `"success"` / `"failure"` (2-3 sentences each — without them you get "looks good"), `"files_changed"`, `"verification_checklist"` — the **verification checklist** is specific items with file:line refs (NOT a generic "review this"), `"review_instructions"`, `"preflight_path"`. Optional `"pr_number":` opts into the PreCompact self-heal (#209): if PR is MERGED, `/compact` treats handoff as implicit CERTIFIED.
-3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access -o .reviews/latest-review.md "<prompt>"`. Always `xhigh`. CC sandbox blocks Codex's Rust binary (`SCDynamicStore`) — use `dangerouslyDisableSandbox: true` on Bash; Codex has its own sandbox. xhigh runs take 1-5 min; for a heartbeat use `scripts/codex-review-with-progress.sh`.
+3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `xhigh`. **Always append `< /dev/null`** — codex blocks on stdin reads from non-interactive parents (background, hooks, CI, CC Bash tool); without the redirect it hangs at S/0% CPU indefinitely. CC sandbox blocks Codex's Rust binary (`SCDynamicStore`) — use `dangerouslyDisableSandbox: true` on Bash; Codex has its own sandbox. xhigh runs take 1-5 min; for a heartbeat use `scripts/codex-review-with-progress.sh` (already redirects child stdin).
 4. **Dialogue loop:** per-finding response (`{"finding": "1", "action": "FIXED|DISPUTED|ACCEPTED", "summary": "..."}` in `.reviews/response.json`). Bump round, set status `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. No new findings unless P0."
 
 **Convergence:** 2 rounds sweet spot, 3 max (research: 14 repos + 7 papers). After 3 still NOT CERTIFIED → escalate.
@@ -161,7 +167,7 @@ Mandatory steps:
 1. Push to remote
 2. `gh pr checks --watch`
 3. **Read CI logs whether pass or fail** (`gh run view <RUN_ID> --log`, not just `--log-failed`). Passing CI hides warnings, skipped steps, degraded scores
-4. **Cross-model audit the CI logs** — pipe to a tmp file, run `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access` with *"Audit for silent failures, skipped tests, degraded metrics, warnings-that-should-be-errors."* Tier 1 + Tier 2 separately
+4. **Cross-model audit the CI logs** — pipe to a tmp file, run `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access "<audit prompt>" < /dev/null` (always append `< /dev/null` — stdin-hang fix) with *"Audit for silent failures, skipped tests, degraded metrics, warnings-that-should-be-errors."* Tier 1 + Tier 2 separately
 5. CI fails → diagnose, fix, push (max 2 attempts)
 6. CI passes → `gh api repos/OWNER/REPO/pulls/PR/comments` for review feedback
 7. Implement valid suggestions (bugs, perf, missing error handling, dedup, coverage). Skip opinions/style. Max 3 iterations

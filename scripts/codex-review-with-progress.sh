@@ -88,7 +88,8 @@ trap cleanup_codex EXIT
     -s danger-full-access \
     -o "$OUTPUT" \
     "$@" \
-    "$PROMPT" &
+    "$PROMPT" \
+    < /dev/null &
 CODEX_PID=$!
 
 START=$(date +%s)

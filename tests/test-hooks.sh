@@ -2474,7 +2474,11 @@ test_instructions_hook_cwd_walkup() {
     printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/codex"
     chmod +x "$tmpdir/bin/npm" "$tmpdir/bin/claude" "$tmpdir/bin/codex"
     local output
-    output=$(cd "$tmpdir/project/src" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    # Isolate HOME so the user's ~/.cache/sdlc-wizard/latest-version cache
+    # doesn't poison the staleness check (real-world bug: a stale 1.73.0
+    # cache makes a 1.43.0 install look "30 releases behind" and the loud
+    # nudge fires, breaking the negative-grep below).
+    output=$(cd "$tmpdir/project/src" && PATH="$tmpdir/bin:$PATH" HOME="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" CLAUDE_PROJECT_DIR="" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     if [ -z "$output" ] || ! echo "$output" | grep -qi "missing"; then
         pass "instructions-loaded-check.sh walks up from CWD (no false warning)"

@@ -93,16 +93,17 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.73.0
+Latest:    1.74.0
 
 What changed:
+- [1.74.0] Salvage from closed v1.43 PR. Ships #338 SDLC-skill source-and-precedence preamble; #235(a)(b) `/insights` guidance + allowlist (qualitative-only — NOT a substitute for #220 token-spike); codex stdin-hang fix (`< /dev/null` on all multi-line `codex exec` blocks + wrapper, codex-cli 0.130.0); `test-hooks.sh` env-isolation.
 - [1.73.0] precompact stale REBASE_HEAD fix + bloat sweep — `hooks/precompact-seam-check.sh` no longer false-positive HOLDs `/compact` when a finished rebase left REBASE_HEAD behind without `rebase-{merge,apply}/` dirs (hit live 2026-05-05). 15 tracked review/plan artifacts deleted (-460 LOC).
 - [1.72.0] #323 closed — customization-aware `check` recommendation + new `--preserve-customized` flag. `init --force --preserve-customized` skips CUSTOMIZED files (action `PRESERVE`), still OVERWRITEs MATCH and CREATEs MISSING. Default `init --force` unchanged. 10 tests.
 - [1.71.0–1.69.0] token-bloat sweep #236 — three phases: BASELINE block fires once per `session_id` (-12K/session), TDD CHECK fires once per `session_id` (-0.5-1.5K/session), `skills/sdlc/SKILL.md` Cross-Model Review trimmed (full protocol moved to canonical wizard doc).
 - [1.68.0–1.65.0] roadmap hygiene — five paperwork closes: #97 Anthropic Policy NO-GO + AAR-paper validating parallel; #99 AutoGPT NO-GO; #95 Nous NO-GO; #243 token-history liveness verified; #210 Node-24 false-green; #235 Thoughtworks AI Evals NO-GO. **6/6 external-product audits NO-GO** (continues #76, #77). Research write-ups in `.reviews/research-*.md`.
 - [1.64.0] XDLC ecosystem cross-references — README, wizard doc, and ROADMAP now cross-reference all three sibling packages (`agentic-sdlc-wizard`, `codex-sdlc-wizard`, `claude-gdlc-wizard`). New "Ecosystem (Sibling Projects)" section in README. 3 new doc-consistency tests prevent drift.
-- [1.63.0] cache-cost observability closeout (#204 absorbed by #220) — `tests/test-token-spike.sh` gains explicit cache-miss regression test + negative-control test. SDLC skill + wizard doc gain "Cache-Cost Surprises" sections covering 10-20× silent cost blowups (mid-session CLAUDE.md edits, idle pruning, upstream cache bugs) and detection via `hooks/token-spike-check.sh`'s `costly_tokens` metric.
-- [1.62.0] roadmap hygiene + #211 backfill — closes paperwork-stale rows (#207, #211 historical, #215, #217, #78, #79, #80, #219). Backfilled 5 corrupted `score-history.jsonl` rows from `max_score:10` → `max_score:11` (UI scenarios with design_system criterion). Codex strategic review confirmed scope.
+- [1.63.0] cache-cost observability closeout (#204 absorbed by #220) — token-spike test gains explicit cache-miss + negative-control coverage. "Cache-Cost Surprises" docs added (10-20× silent blowups from mid-session CLAUDE.md edits, idle pruning).
+- [1.62.0] roadmap hygiene + #211 backfill — closes paperwork-stale rows. Backfilled 5 corrupted `score-history.jsonl` rows from `max_score:10` → `:11` (UI scenarios). Codex strategic review confirmed scope.
 - [1.61.0] calibration scenarios for #96 Phase 3 PR 2 — `tests/e2e/scenarios/calibration-careful-read.md` (parsePrice with 5 edge-case formats) tests whether self-review catches missed requirements. Score delta between SDLC and naive agents on this scenario is a calibration signal for `lift-proof.sh`
 - [1.60.0] wizard-installation lift-proof harness (#96 Phase 3 PR 1) — `tests/e2e/lift-proof.sh` runs same scenario on bare vs wizard-installed fixture, emits score delta. Closes the "does the wizard work?" question. Honestly zero-API (sim + eval on Max)
 - [1.59.0] evaluator on Max via `claude --print` (#228) — `EVAL_USE_CLI=1` swaps `evaluate.sh`'s per-criterion judge transport from `curl` → API to `claude --print --output-format json`. local-shepherd.sh sets it by default, so the local path is honestly zero-API
