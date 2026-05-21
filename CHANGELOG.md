@@ -4,6 +4,42 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.74.0] - 2026-05-17
+
+### Salvaged from closed v1.43.0-quick-wins branch (PR #340)
+
+Long-running session built v1.43.0 quick-wins off `c1c6f31` (~May 12), unaware main had shipped through `v1.73.0`. PR #340 closed without merging; this release ships the items that are still genuinely missing on current main, with Codex+Claude joint triage (`.reviews/v143-salvage-triage.md`).
+
+### Added
+
+- **#338 SDLC-skill source-and-precedence preamble.** `skills/sdlc/SKILL.md` now opens with an explicit "Skill source & precedence" section: repo-local `.claude/skills/sdlc/SKILL.md` (symlinked to wizard's `skills/sdlc/SKILL.md`) wins over global `~/.claude/skills/sdlc/SKILL.md`, with a `head -5` verification one-liner. Resolves user-reported confusion when both copies exist with the same name. Regression test `test_sdlc_skill_has_precedence_preamble` in `tests/test-doc-consistency.sh`.
+- **#235(a) `/insights` complementary-tool guidance.** Setup skill Step 12 closing checklist + `CLAUDE_CODE_SDLC_WIZARD.md` "Complementary native skills" table now both cite `/insights` (native CC v2.1.101+) with an explicit qualitative-only caveat: it surfaces `underlying_goal` / `outcome` / `friction_counts` / `user_satisfaction_counts` / `brief_summary` from local session history, but does NOT expose `cache_read_input_tokens` / cache-hit ratio / per-turn breakdown / model-version tracking — so it is **not a substitute** for token-spike detection (ROADMAP #220 / `hooks/token-spike-check.sh`) which reads raw session JSONL. Two regression tests guard the doc-presence + caveat.
+- **#235(b) `/insights` allowlist.** Appended `/insights` to `tests/e2e/known-slash-commands.txt` so the community feature-discovery scanner (#207) stops flagging it as a "new" candidate on every weekly run. `tests/test-community-scanner.sh::test_filters_insights_as_known` asserts the scanner now filters `/insights` from candidate output.
+
+### Fixed
+
+- **Codex stdin-hang doc fix.** All multi-line `codex exec` invocations in `README.md`, `CLAUDE_CODE_SDLC_WIZARD.md`, `skills/sdlc/SKILL.md` (and the new `scripts/codex-review-with-progress.sh` wrapper) now append `< /dev/null`. Without the redirect, codex from a non-interactive parent (background, hooks, CI, Claude Code Bash tool) blocks on stdin reads even when the prompt is passed as an argument — the process sits at S/0% CPU indefinitely with a 0-byte `-o` output file (file only written on completion, so a hang gives zero visibility). Validated on `codex-cli 0.130.0` / macOS 14, 2026-05-15, after two 30+ minute silent hangs. Repro: `codex exec -s read-only 'Reply A.' &` hangs forever; `codex exec -s read-only 'Reply A.' < /dev/null` returns in 8s. Two new tests: `test_codex_exec_blocks_redirect_stdin` in `tests/test-doc-consistency.sh` (asserts every multi-line block in user-facing docs has the redirect) and `test_wrapper_redirects_child_stdin_to_dev_null` in `tests/test-codex-progress-wrapper.sh` (asserts the wrapper redirects child stdin so heartbeats actually fire instead of hanging).
+- **`tests/test-hooks.sh` env-isolation.** `test_instructions_hook_cwd_walkup` now scopes both `HOME=$tmpdir` and `SDLC_WIZARD_CACHE_DIR=$tmpdir/cache`. Without isolation, the user's `~/.cache/sdlc-wizard/latest-version` (e.g. a stale `1.73.0`) poisoned the staleness check and triggered the "30 releases behind" loud nudge against a fresh-version fixture, breaking the test's negative grep. Hit live during the v1.43 session; happens any time the cached latest doesn't match the SDLC.md version under test.
+
+### Test counts (all green)
+
+- `tests/test-doc-consistency.sh` — 39/0 (4 new tests: setup-insights, wizard-insights, sdlc-preamble, codex-stdin)
+- `tests/test-community-scanner.sh` — 15/0 (1 new: filters-insights-as-known)
+- `tests/test-codex-progress-wrapper.sh` — 12/0 (1 new: wrapper-redirects-child-stdin)
+- `tests/test-hooks.sh` — 156/0 (env-isolation fix)
+
+### Dropped from v1.43 branch (not salvaged — already-shipped or no-longer-applicable)
+
+- #226 weekly-update.yml Tier 2 wording fix — code deleted in #231 Phase 3d (v1.54.0)
+- #227 weekly-update.yml `cusum --add` → `--add-json` — same refactor removed the CUSUM steps
+- #219 setup-skill CC 2.1.117 model-pin note — already verified on main (CHANGELOG.md:331); doc nuance dropped per Codex's "weak MAYBE → DROP"
+- #337 `--yolo` audit — verification-only, no code to ship
+- #339 5-entry API triage — triage-only, no code to ship
+
+### Process
+
+Two-step Codex cross-model review: (1) initial triage of branch vs main (`.reviews/v143-salvage-triage.md`) returned CERTIFIED 7/10 with corrected target-line numbers for every salvaged item, (2) closed PR #340 cleanly with explanation comment, rebuilt against current main with Codex's targets.
+
 ## [1.73.0] - 2026-05-06
 
 ### Fix: PreCompact hook no longer false-positives on stale `.git/REBASE_HEAD`

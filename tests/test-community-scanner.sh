@@ -106,6 +106,30 @@ print('ok')
     fi
 }
 
+# /insights must filter as known after ROADMAP #235b appended it to
+# tests/e2e/known-slash-commands.txt. Without this, every weekly run flags
+# /insights as a candidate (noise — it's been native CC since v2.1.101).
+test_filters_insights_as_known() {
+    local fixture="$FIXTURES/transcript-insights.txt"
+    # Generate a tiny fixture inline (kept here so the test is self-contained
+    # and doesn't depend on an external fixture file existing).
+    printf 'Did anyone try /insights yet? Friction counts looked interesting.\n' > "$fixture"
+    local out
+    out=$(bash "$SCANNER" "$fixture" 2>&1)
+    rm -f "$fixture"
+    if echo "$out" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+candidates = [c['slash'] for c in d.get('candidates', [])]
+assert '/insights' not in candidates, f'/insights leaked into candidates (ROADMAP #235b — must be in known-slash-commands.txt allowlist): {candidates}'
+print('ok')
+" 2>/dev/null | grep -q ok; then
+        pass "scanner filters /insights as known (ROADMAP #235b)"
+    else
+        fail "scanner did not filter /insights — check tests/e2e/known-slash-commands.txt has '/insights' listed. Output: $out"
+    fi
+}
+
 test_filters_wizard_skills() {
     local out
     out=$(bash "$SCANNER" "$FIXTURES/transcript-multi.txt" 2>&1)
@@ -301,6 +325,7 @@ test_allowlist_exists
 test_detects_new_slash_command
 test_filters_known_commands
 test_filters_wizard_skills
+test_filters_insights_as_known
 test_dedupes_and_counts
 test_empty_input_returns_empty_candidates
 test_outputs_valid_json
