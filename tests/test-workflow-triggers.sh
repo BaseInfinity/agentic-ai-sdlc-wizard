@@ -2003,15 +2003,40 @@ test_cicd_push_main_validation_only() {
     fi
 }
 
-# Test 153: CI_CD.md permissions section doesn't mention id-token:write
+# Test 153: CI_CD.md may mention id-token: write ONLY in the context of an
+# active OIDC consumer (npm Trusted Publishing per v1.75.0, or SLSA
+# provenance). The original intent was to flag dead/unused declarations.
+# With Trusted Publishing live in release.yml, the permission is legitimate;
+# this test now ensures any mention is tied to its OIDC consumer.
 test_cicd_permissions_no_id_token() {
     local CICD="$REPO_ROOT/CI_CD.md"
     if [ ! -f "$CICD" ]; then fail "CI_CD.md not found"; return; fi
 
-    if grep -q 'id-token.*write' "$CICD" 2>/dev/null; then
-        fail "CI_CD.md permissions section still mentions id-token: write"
+    # Find every line mentioning id-token: write; each must be co-mentioned
+    # with an OIDC consumer (Trusted Publishing, OIDC, or provenance) within
+    # the same surrounding paragraph.
+    local lines
+    lines=$(grep -nE 'id-token[ :_-]*write' "$CICD" 2>/dev/null || true)
+    if [ -z "$lines" ]; then
+        pass "CI_CD.md has no id-token: write mentions (acceptable when no OIDC consumer is documented)"
+        return
+    fi
+    local bad=0
+    while IFS= read -r entry; do
+        local line_no="${entry%%:*}"
+        # Scan ±5 lines of context for the OIDC-consumer keywords.
+        local start=$((line_no > 5 ? line_no - 5 : 1))
+        local context
+        context=$(sed -n "${start},$((line_no+5))p" "$CICD")
+        if echo "$context" | grep -qiE 'Trusted Publishing|OIDC|provenance'; then
+            continue
+        fi
+        bad=$((bad+1))
+    done <<< "$lines"
+    if [ "$bad" -eq 0 ]; then
+        pass "CI_CD.md id-token: write mentions are all tied to an OIDC consumer (Trusted Publishing / provenance)"
     else
-        pass "CI_CD.md permissions section does not mention id-token: write"
+        fail "CI_CD.md mentions id-token: write in $bad place(s) without an OIDC-consumer context — declarations must cite Trusted Publishing, OIDC, or provenance"
     fi
 }
 

@@ -80,11 +80,41 @@ test_uses_gh_release_create() {
     fi
 }
 
-test_references_npm_token() {
-    if grep -q 'NPM_TOKEN' "$WORKFLOW"; then
-        pass "release.yml references NPM_TOKEN secret"
+test_uses_trusted_publishing_not_token() {
+    # ROADMAP: v1.75.0 migrated from long-lived NPM_TOKEN to npm Trusted
+    # Publishing (OIDC). NODE_AUTH_TOKEN must NOT appear in the publish env
+    # — the presence of any auth-token env variable means we slipped back
+    # to token-based publishing.
+    if grep -qE '^[[:space:]]*NODE_AUTH_TOKEN:' "$WORKFLOW"; then
+        fail "release.yml still uses NODE_AUTH_TOKEN — must use npm Trusted Publishing (OIDC) instead. ROADMAP: drop NPM_TOKEN dependency."
+    elif ! grep -q 'id-token: write' "$WORKFLOW"; then
+        fail "release.yml is missing 'id-token: write' permission required for npm Trusted Publishing OIDC"
     else
-        fail "release.yml does not reference NPM_TOKEN secret"
+        pass "release.yml uses npm Trusted Publishing (OIDC) — no long-lived token"
+    fi
+}
+
+test_upgrades_npm_for_trusted_publishing() {
+    # npm Trusted Publishing requires npm CLI 11.5.1+. Node 22 ships with
+    # 10.9.x by default, so the workflow must explicitly bump the npm CLI
+    # BEFORE the publish step. Without this, the publish silently falls
+    # back to token mode and fails with the same E404 we saw on v1.74.0.
+    #
+    # Codex P2 (v1.75.0 audit): existence check alone allows future
+    # reordering to silently break Trusted Publishing. Verify ordering
+    # explicitly: the npm-upgrade line MUST appear before the npm-publish
+    # line in the same file.
+    local upgrade_line publish_line
+    upgrade_line=$(grep -nE 'npm install -g npm@(latest|1[1-9]\.)' "$WORKFLOW" | head -1 | cut -d: -f1)
+    publish_line=$(grep -nE '^[[:space:]]+run:[[:space:]]*npm publish' "$WORKFLOW" | head -1 | cut -d: -f1)
+    if [ -z "$upgrade_line" ]; then
+        fail "release.yml must run 'npm install -g npm@latest' (or pin >=11.5.1) before publish — Node 22 ships npm 10.9.x which lacks Trusted Publishing support"
+    elif [ -z "$publish_line" ]; then
+        fail "release.yml has the npm upgrade step but no 'npm publish' line — workflow incomplete"
+    elif [ "$upgrade_line" -ge "$publish_line" ]; then
+        fail "release.yml has npm upgrade (line $upgrade_line) AFTER or AT npm publish (line $publish_line) — upgrade must come BEFORE publish or Trusted Publishing silently falls back to token mode"
+    else
+        pass "release.yml upgrades npm CLI to ≥11.5.1 BEFORE publish (line $upgrade_line < line $publish_line)"
     fi
 }
 
@@ -113,16 +143,22 @@ test_verifies_tag_on_main() {
 }
 
 test_npm_provenance() {
-    if grep -q '\-\-provenance' "$WORKFLOW"; then
-        pass "release.yml uses npm publish --provenance (SLSA)"
+    # ROADMAP: v1.75.0 migrated to npm Trusted Publishing. Trusted publish
+    # auto-generates provenance — the explicit --provenance flag is no
+    # longer required (and is incompatible with the token-less mode in
+    # some npm CLI versions). Test is now a no-op assertion that provenance
+    # remains in force via the trusted-publish path (provenance is implicit
+    # when id-token: write is set + publishing via OIDC).
+    if grep -q 'id-token: write' "$WORKFLOW"; then
+        pass "release.yml provides provenance via Trusted Publishing (id-token: write set)"
     else
-        fail "release.yml missing --provenance flag"
+        fail "release.yml missing id-token: write permission — required for OIDC + provenance"
     fi
 }
 
 test_has_id_token_permission() {
     if grep -q 'id-token: write' "$WORKFLOW"; then
-        pass "release.yml has id-token: write permission (required for --provenance)"
+        pass "release.yml has id-token: write permission (required for Trusted Publishing OIDC)"
     else
         fail "release.yml missing id-token: write permission"
     fi
@@ -145,7 +181,8 @@ test_has_contents_write_permission
 test_uses_checkout_v5
 test_uses_setup_node_with_registry
 test_uses_gh_release_create
-test_references_npm_token
+test_uses_trusted_publishing_not_token
+test_upgrades_npm_for_trusted_publishing
 test_generates_release_notes
 test_npm_publish_step
 test_verifies_tag_on_main

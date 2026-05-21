@@ -51,10 +51,23 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      - name: Publish to npm
-        run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # npm Trusted Publishing requires npm CLI 11.5.1+. Node 22 ships with
+      # npm 10.9.x; we upgrade in-place so the workflow can use OIDC auth
+      # instead of a long-lived NPM_TOKEN.
+      - name: Upgrade npm to 11.5.1+ (Trusted Publishing requirement)
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      # No NODE_AUTH_TOKEN — npm Trusted Publishing uses GitHub Actions OIDC
+      # (id-token: write) to authenticate against npm. The publisher is
+      # configured on the npm package side: npmjs.com → agentic-sdlc-wizard →
+      # Settings → Publishing access → GitHub Actions → repo
+      # BaseInfinity/claude-sdlc-wizard, workflow release.yml.
+      # --provenance is auto-generated on a trusted publish, so the flag is
+      # redundant (kept omitted for clarity).
+      - name: Publish to npm (Trusted Publishing — OIDC, no token)
+        run: npm publish
 
       - name: Create GitHub Release
         run: gh release create "$TAG_NAME" --generate-notes
