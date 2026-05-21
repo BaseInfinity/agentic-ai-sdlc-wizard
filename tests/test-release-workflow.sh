@@ -95,26 +95,62 @@ test_uses_trusted_publishing_not_token() {
 }
 
 test_upgrades_npm_for_trusted_publishing() {
-    # npm Trusted Publishing requires npm CLI 11.5.1+. Node 22 ships with
-    # 10.9.x by default, so the workflow must explicitly bump the npm CLI
-    # BEFORE the publish step. Without this, the publish silently falls
-    # back to token mode and fails with the same E404 we saw on v1.74.0.
+    # npm Trusted Publishing requires npm CLI ≥11.5.1. There are two valid
+    # strategies in release.yml: (a) use a Node version that ships npm 11.x
+    # natively (Node 24+), or (b) run `npm install -g npm@latest` before
+    # publish to bump the CLI in place. v1.75.0 tried (b) and hit the npm
+    # MODULE_NOT_FOUND self-upgrade bug; v1.75.1 switched to (a).
     #
-    # Codex P2 (v1.75.0 audit): existence check alone allows future
-    # reordering to silently break Trusted Publishing. Verify ordering
-    # explicitly: the npm-upgrade line MUST appear before the npm-publish
-    # line in the same file.
-    local upgrade_line publish_line
-    upgrade_line=$(grep -nE 'npm install -g npm@(latest|1[1-9]\.)' "$WORKFLOW" | head -1 | cut -d: -f1)
+    # The test now accepts either approach:
+    # 1. node-version: 24 (or higher) in actions/setup-node — npm 11+ baked in
+    # 2. An explicit `npm install -g npm@(latest|11.|12.|...)` step BEFORE publish
+    #
+    # If approach (a), also require an explicit `npm --version` check to
+    # fail-loudly if Node ever ships an older npm than expected (so the
+    # publish doesn't silently fall back to token mode like in v1.74.0).
+    local node_version
+    node_version=$(grep -E '^[[:space:]]+node-version:[[:space:]]*[0-9]+' "$WORKFLOW" | head -1 | grep -oE '[0-9]+' | head -1)
+    local publish_line
     publish_line=$(grep -nE '^[[:space:]]+run:[[:space:]]*npm publish' "$WORKFLOW" | head -1 | cut -d: -f1)
-    if [ -z "$upgrade_line" ]; then
-        fail "release.yml must run 'npm install -g npm@latest' (or pin >=11.5.1) before publish — Node 22 ships npm 10.9.x which lacks Trusted Publishing support"
-    elif [ -z "$publish_line" ]; then
-        fail "release.yml has the npm upgrade step but no 'npm publish' line — workflow incomplete"
-    elif [ "$upgrade_line" -ge "$publish_line" ]; then
-        fail "release.yml has npm upgrade (line $upgrade_line) AFTER or AT npm publish (line $publish_line) — upgrade must come BEFORE publish or Trusted Publishing silently falls back to token mode"
+    local upgrade_line
+    # Match actual command lines only, NOT comments. YAML comments start
+    # with `#` after optional whitespace; exclude those so the explanatory
+    # comment in release.yml about the legacy v1.75.0 step doesn't false-match.
+    upgrade_line=$(grep -nE '^[[:space:]]*[^#[:space:]].*npm install -g npm@(latest|1[1-9]\.)' "$WORKFLOW" | head -1 | cut -d: -f1)
+    local has_version_check
+    has_version_check=$(grep -cE '(npm --version|NPM_VERSION=\$\(npm --version\))' "$WORKFLOW" || echo 0)
+
+    if [ -z "$publish_line" ]; then
+        fail "release.yml has no 'npm publish' line — workflow incomplete"
+        return
+    fi
+
+    # Mutual exclusivity check (per CHANGELOG.md v1.75.1 claim and Codex
+    # round-1 P1#2): once we're on Node 24+, the in-place `npm install -g
+    # npm@latest` upgrade should NEVER reappear — it's the very pattern
+    # that caused MODULE_NOT_FOUND: promise-retry on v1.75.0. Fail loudly
+    # if both Node 24+ AND the flaky upgrade step coexist.
+    if [ -n "$node_version" ] && [ "$node_version" -ge 24 ] && [ -n "$upgrade_line" ]; then
+        fail "release.yml uses Node $node_version (ships npm 11+ natively) AND has 'npm install -g npm@…' at line $upgrade_line — the in-place upgrade is unreliable (MODULE_NOT_FOUND bug, v1.75.0 incident). Remove the upgrade step; Node 24+ already provides npm 11.x."
+        return
+    fi
+
+    # Strategy (a): Node 24+ with version verification
+    if [ -n "$node_version" ] && [ "$node_version" -ge 24 ] && [ "$has_version_check" -ge 1 ]; then
+        pass "release.yml uses Node $node_version (ships npm 11+) with version-check guard — Trusted Publishing requirement met"
+        return
+    fi
+
+    # Strategy (b): explicit upgrade before publish (back-compat for older Node)
+    if [ -n "$upgrade_line" ] && [ "$upgrade_line" -lt "$publish_line" ]; then
+        pass "release.yml runs explicit npm upgrade (line $upgrade_line) before publish (line $publish_line)"
+        return
+    fi
+
+    if [ -n "$node_version" ] && [ "$node_version" -ge 24 ]; then
+        fail "release.yml uses Node $node_version (ships npm 11+) but lacks an 'npm --version' guard — without it, a future Node 24 image with downgraded npm would silently fall back to token mode (cf. v1.74.0 EOTP)"
     else
-        pass "release.yml upgrades npm CLI to ≥11.5.1 BEFORE publish (line $upgrade_line < line $publish_line)"
+        fail "release.yml must either (a) use node-version >=24 with an 'npm --version' fail-loud check, or (b) include 'npm install -g npm@latest' BEFORE 'npm publish'. Neither found. Trusted Publishing requires npm CLI >=11.5.1."
     fi
 }
 
