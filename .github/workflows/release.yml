@@ -46,18 +46,37 @@ jobs:
             exit 1
           }
 
+      # Node 24 ships npm 11.x by default — required by npm Trusted Publishing
+      # (OIDC). Previously this workflow used Node 22 + an explicit
+      # `npm install -g npm@latest` step, but that in-place self-upgrade
+      # hit `Cannot find module 'promise-retry'` (MODULE_NOT_FOUND) on the
+      # GitHub-hosted runner during v1.75.0's release — a known npm CLI bug.
+      # Bumping Node to 24 sidesteps the unreliable self-upgrade entirely.
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
-      # npm Trusted Publishing requires npm CLI 11.5.1+. Node 22 ships with
-      # npm 10.9.x; we upgrade in-place so the workflow can use OIDC auth
-      # instead of a long-lived NPM_TOKEN.
-      - name: Upgrade npm to 11.5.1+ (Trusted Publishing requirement)
+      - name: Verify npm CLI version (Trusted Publishing needs ≥11.5.1)
         run: |
-          npm install -g npm@latest
-          npm --version
+          set -euo pipefail
+          NPM_VERSION=$(npm --version)
+          echo "npm CLI: $NPM_VERSION"
+          # Fail loudly if Node 24 ever ships an older npm. Trusted Publishing
+          # silently falls back to token mode on npm <11.5.1, reproducing the
+          # v1.74.0 EOTP failure. Better to fail here than mis-publish.
+          # npm docs explicitly require 11.5.1+ — patch matters (11.5.0 must FAIL).
+          MAJOR=$(echo "$NPM_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$NPM_VERSION" | cut -d. -f2)
+          PATCH=$(echo "$NPM_VERSION" | cut -d. -f3 | grep -oE '^[0-9]+')
+          # Three-tier check: major<11 OR (major==11 AND minor<5) OR
+          # (major==11 AND minor==5 AND patch<1). Each gate is necessary.
+          if [ "$MAJOR" -lt 11 ] \
+             || { [ "$MAJOR" -eq 11 ] && [ "$MINOR" -lt 5 ]; } \
+             || { [ "$MAJOR" -eq 11 ] && [ "$MINOR" -eq 5 ] && [ "$PATCH" -lt 1 ]; }; then
+            echo "::error::npm CLI $NPM_VERSION < 11.5.1 — Trusted Publishing requires 11.5.1+. Bump Node version or add explicit upgrade step."
+            exit 1
+          fi
 
       # No NODE_AUTH_TOKEN — npm Trusted Publishing uses GitHub Actions OIDC
       # (id-token: write) to authenticate against npm. The publisher is
