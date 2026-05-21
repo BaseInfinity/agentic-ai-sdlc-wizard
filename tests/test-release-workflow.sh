@@ -97,12 +97,24 @@ test_uses_trusted_publishing_not_token() {
 test_upgrades_npm_for_trusted_publishing() {
     # npm Trusted Publishing requires npm CLI 11.5.1+. Node 22 ships with
     # 10.9.x by default, so the workflow must explicitly bump the npm CLI
-    # before the publish step. Without this, the publish silently falls
+    # BEFORE the publish step. Without this, the publish silently falls
     # back to token mode and fails with the same E404 we saw on v1.74.0.
-    if grep -qE 'npm install -g npm@(latest|1[1-9]\.)' "$WORKFLOW"; then
-        pass "release.yml upgrades npm CLI to ≥11.5.1 (required for Trusted Publishing)"
-    else
+    #
+    # Codex P2 (v1.75.0 audit): existence check alone allows future
+    # reordering to silently break Trusted Publishing. Verify ordering
+    # explicitly: the npm-upgrade line MUST appear before the npm-publish
+    # line in the same file.
+    local upgrade_line publish_line
+    upgrade_line=$(grep -nE 'npm install -g npm@(latest|1[1-9]\.)' "$WORKFLOW" | head -1 | cut -d: -f1)
+    publish_line=$(grep -nE '^[[:space:]]+run:[[:space:]]*npm publish' "$WORKFLOW" | head -1 | cut -d: -f1)
+    if [ -z "$upgrade_line" ]; then
         fail "release.yml must run 'npm install -g npm@latest' (or pin >=11.5.1) before publish — Node 22 ships npm 10.9.x which lacks Trusted Publishing support"
+    elif [ -z "$publish_line" ]; then
+        fail "release.yml has the npm upgrade step but no 'npm publish' line — workflow incomplete"
+    elif [ "$upgrade_line" -ge "$publish_line" ]; then
+        fail "release.yml has npm upgrade (line $upgrade_line) AFTER or AT npm publish (line $publish_line) — upgrade must come BEFORE publish or Trusted Publishing silently falls back to token mode"
+    else
+        pass "release.yml upgrades npm CLI to ≥11.5.1 BEFORE publish (line $upgrade_line < line $publish_line)"
     fi
 }
 
