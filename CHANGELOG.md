@@ -4,6 +4,37 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.75.0] - 2026-05-20
+
+### Changed
+
+- **`release.yml` migrated to npm Trusted Publishing (OIDC).** Long-lived `NPM_TOKEN` retired in favor of per-publish OIDC auth via GitHub Actions (`id-token: write` was already set for SLSA provenance). The `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` env was removed, the `--provenance` flag was dropped (trusted publish auto-generates provenance), and a new step upgrades npm CLI to ≥ 11.5.1 (Node 22's bundled npm 10.9.x lacks Trusted Publishing support, which would silently fall back to token mode and re-introduce this failure class). Triggered by v1.74.0 publish failing with `404 Not Found - PUT` (revoked/expired token), then `EOTP` (token missing 2FA bypass). With Trusted Publishing there is no token to rotate, expire, mis-scope, or 2FA-gate — the workflow authenticates as itself against the registry via OIDC every time.
+
+### Required one-time setup (after merging this PR, before tagging v1.75.0)
+
+Maintainer must configure the publisher on the npm package page:
+
+1. https://www.npmjs.com/package/agentic-sdlc-wizard → **Settings**
+2. **Publishing access** → **GitHub Actions**
+3. Repository owner: `BaseInfinity`, repository name: `claude-sdlc-wizard`, workflow filename: `release.yml`, environment: (leave blank)
+4. **Save**
+
+After that, `git tag v1.75.0 && git push origin v1.75.0` publishes via OIDC with zero token interaction.
+
+### Removed
+
+- `NPM_TOKEN` GitHub secret is no longer used. After verifying v1.75.0 ships cleanly, the maintainer can revoke the granular access token on npmjs.com and delete the GH secret — both are dead weight.
+
+### Tests
+
+- `tests/test-release-workflow.sh::test_uses_trusted_publishing_not_token` — fails if `NODE_AUTH_TOKEN:` reappears in `release.yml` env (i.e., a revert to token-based publishing). Replaces the prior `test_references_npm_token` which asserted NPM_TOKEN's presence (now backwards).
+- `tests/test-release-workflow.sh::test_upgrades_npm_for_trusted_publishing` — fails if the `npm install -g npm@latest` (or pinned `>=11.5.1`) step is missing. Without the CLI upgrade, publishes silently fall back to token mode and reproduce the v1.74.0 EOTP failure.
+- All 15 release-workflow tests green.
+
+### Why this happened now (one-paragraph post-mortem)
+
+The 2026-05-21 v1.74.0 release was the first wizard release after the `NPM_TOKEN` secret aged past npm's automation token TTL. The token had successfully shipped v1.69.0 → v1.73.0 over the prior 2 weeks, then silently expired between v1.73.0 (2026-05-06) and v1.74.0 (2026-05-20). Symptom 1: `404 Not Found - PUT registry.npmjs.org/agentic-sdlc-wizard` — npm returns 404 (not 401) when a token doesn't recognize itself as a package maintainer, which makes the failure look like a missing package. Symptom 2 after rotation: `EOTP — This operation requires a one-time password from your authenticator` — the new granular token was created without the "Bypass two-factor authentication (2FA)" checkbox set, which npm requires for CI tokens. Both symptoms are eliminated by Trusted Publishing: no token, no expiry, no 2FA mode mismatch, and short-lived OIDC credentials are minted fresh per publish so revocation is automatic. Pattern: every npm token in CI is a latent ticking bomb. This PR defuses it permanently.
+
 ## [1.74.0] - 2026-05-17
 
 ### Salvaged from closed v1.43.0-quick-wins branch (PR #340)
