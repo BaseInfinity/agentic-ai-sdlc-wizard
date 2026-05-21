@@ -113,12 +113,25 @@ test_upgrades_npm_for_trusted_publishing() {
     local publish_line
     publish_line=$(grep -nE '^[[:space:]]+run:[[:space:]]*npm publish' "$WORKFLOW" | head -1 | cut -d: -f1)
     local upgrade_line
-    upgrade_line=$(grep -nE 'npm install -g npm@(latest|1[1-9]\.)' "$WORKFLOW" | head -1 | cut -d: -f1)
+    # Match actual command lines only, NOT comments. YAML comments start
+    # with `#` after optional whitespace; exclude those so the explanatory
+    # comment in release.yml about the legacy v1.75.0 step doesn't false-match.
+    upgrade_line=$(grep -nE '^[[:space:]]*[^#[:space:]].*npm install -g npm@(latest|1[1-9]\.)' "$WORKFLOW" | head -1 | cut -d: -f1)
     local has_version_check
     has_version_check=$(grep -cE '(npm --version|NPM_VERSION=\$\(npm --version\))' "$WORKFLOW" || echo 0)
 
     if [ -z "$publish_line" ]; then
         fail "release.yml has no 'npm publish' line — workflow incomplete"
+        return
+    fi
+
+    # Mutual exclusivity check (per CHANGELOG.md v1.75.1 claim and Codex
+    # round-1 P1#2): once we're on Node 24+, the in-place `npm install -g
+    # npm@latest` upgrade should NEVER reappear — it's the very pattern
+    # that caused MODULE_NOT_FOUND: promise-retry on v1.75.0. Fail loudly
+    # if both Node 24+ AND the flaky upgrade step coexist.
+    if [ -n "$node_version" ] && [ "$node_version" -ge 24 ] && [ -n "$upgrade_line" ]; then
+        fail "release.yml uses Node $node_version (ships npm 11+ natively) AND has 'npm install -g npm@…' at line $upgrade_line — the in-place upgrade is unreliable (MODULE_NOT_FOUND bug, v1.75.0 incident). Remove the upgrade step; Node 24+ already provides npm 11.x."
         return
     fi
 
@@ -128,7 +141,7 @@ test_upgrades_npm_for_trusted_publishing() {
         return
     fi
 
-    # Strategy (b): explicit upgrade before publish
+    # Strategy (b): explicit upgrade before publish (back-compat for older Node)
     if [ -n "$upgrade_line" ] && [ "$upgrade_line" -lt "$publish_line" ]; then
         pass "release.yml runs explicit npm upgrade (line $upgrade_line) before publish (line $publish_line)"
         return
