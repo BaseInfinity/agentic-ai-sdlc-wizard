@@ -1,0 +1,249 @@
+name: CC Version Drift
+
+# ROADMAP #350: cheap GitHub-API-only detector that opens a tracking
+# issue when the wizard's CC baseline (in SDLC.md) has drifted >5
+# patch releases behind npm latest. No LLM, no API spend. Mirrors the
+# weekly-api-update.yml shepherd pattern.
+#
+# Context: in #231 Phase 3d (v1.54.0) the in-CI Claude release ranker
+# was deleted to take weekly-update.yml to $0. The fallback was
+# "maintainer runs `claude --print` on Max weekly." That ran zero
+# times in 5 weeks, and native `/goal` (CC v2.1.139) slipped past
+# unnoticed until a user filed #347 — wizard then published wrong
+# research saying "no /goal exists." This workflow exists so the next
+# 5-week miss surfaces as a GH issue/notification instead of silence.
+#
+# Design constraints (each enforced by tests/test-cc-version-drift.sh):
+#
+#   1. Standalone workflow — NOT extending weekly-update.yml. Per
+#      Codex review (.reviews/176-followup-prio-codex.md #350.1):
+#      weekly-update.yml's cron is commented out and tests assert
+#      `issues: write` is absent (deliberate #212/#231 guardrails).
+#
+#   2. Cron staggered from neighboring workflows. weekly-update.yml
+#      uses 09:00 UTC Mon (documented but disabled); weekly-api-update.yml
+#      uses 10:00 UTC Mon. We slot at 09:30 UTC Mon.
+#
+#   3. Idempotency via label `cc-version-drift` + machine-readable
+#      marker in issue body. Edit existing open issue rather than
+#      comment-spam; only re-open a closed issue if delta has WIDENED
+#      since close (the maintainer's "won't fix for now" stays
+#      respected as long as the gap doesn't grow).
+#
+#   4. Baseline source: `<!-- Claude Code Baseline: vX.Y.Z -->`
+#      anchor in SDLC.md. Single-purpose, machine-parseable. Do NOT
+#      reuse `<!-- SDLC Wizard Version -->` (that's the wizard's own
+#      package version, not the CC feature baseline).
+#
+#   5. No `|| true` / `|| echo` failure-suppression. The whole point
+#      of #350 is "don't let drift detection silently fail." If
+#      jq/gh/npm break, fail loud with ::error:: annotations.
+
+on:
+  schedule:
+    - cron: '30 9 * * 1'  # Mon 09:30 UTC, staggered from weekly + weekly-api
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: 'Override drift threshold (patch-release gap). Default 5.'
+        required: false
+        default: '5'
+
+permissions:
+  contents: read  # SDLC.md + scripts/cc-drift-check.sh — read-only
+  issues: write   # open / update the tracking issue (the only side effect)
+
+env:
+  REVIEW_LABEL: 'cc-version-drift'
+  # Policy lives in git, in env: rather than repo variable so it's
+  # auditable and overridable by workflow_dispatch input.
+  CC_DRIFT_THRESHOLD: '5'
+
+jobs:
+  detect-drift:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Read wizard's CC baseline from SDLC.md
+        id: baseline
+        run: |
+          set -euo pipefail
+          # Single-purpose anchor — see header comment block.
+          BASELINE=$(grep -oE '<!-- Claude Code Baseline: v?[0-9]+\.[0-9]+\.[0-9]+ -->' SDLC.md | head -1 | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+')
+          if [ -z "${BASELINE:-}" ]; then
+            echo "::error::Could not parse '<!-- Claude Code Baseline: vX.Y.Z -->' anchor from SDLC.md"
+            echo "::error::Add the line near the existing version-tracking comments, then re-run."
+            exit 1
+          fi
+          echo "baseline=${BASELINE#v}" >> "$GITHUB_OUTPUT"
+          echo "wizard baseline: ${BASELINE}"
+
+      - name: Fetch latest Claude Code version from npm
+        id: latest
+        run: |
+          set -euo pipefail
+          # `npm view` writes to stdout on success and to stderr on
+          # network/404 failure. Run under pipefail so any non-zero
+          # exit code stops the step instead of silently emitting "".
+          LATEST=$(npm view @anthropic-ai/claude-code version)
+          if [ -z "${LATEST:-}" ]; then
+            echo "::error::npm view returned empty version for @anthropic-ai/claude-code — registry issue?"
+            exit 1
+          fi
+          echo "latest=${LATEST}" >> "$GITHUB_OUTPUT"
+          echo "npm latest: ${LATEST}"
+
+      - name: Compute drift
+        id: drift
+        env:
+          BASELINE: ${{ steps.baseline.outputs.baseline }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+          THRESHOLD: ${{ inputs.threshold || env.CC_DRIFT_THRESHOLD }}
+        run: |
+          set -euo pipefail
+          ./scripts/cc-drift-check.sh \
+            --baseline "$BASELINE" \
+            --latest "$LATEST" \
+            --threshold "$THRESHOLD" \
+            > /tmp/drift.json
+          cat /tmp/drift.json
+          # Surface fields to subsequent steps.
+          {
+            echo "alert=$(jq -r '.alert' /tmp/drift.json)"
+            echo "component=$(jq -r '.component' /tmp/drift.json)"
+            echo "patch_delta=$(jq -r '.patch_delta' /tmp/drift.json)"
+            echo "threshold_used=$(jq -r '.threshold' /tmp/drift.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update tracking issue
+        if: steps.drift.outputs.alert == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASELINE: ${{ steps.baseline.outputs.baseline }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+          COMPONENT: ${{ steps.drift.outputs.component }}
+          PATCH_DELTA: ${{ steps.drift.outputs.patch_delta }}
+          THRESHOLD: ${{ steps.drift.outputs.threshold_used }}
+        run: |
+          set -euo pipefail
+
+          # Ensure the label exists (idempotent). Mirrors
+          # weekly-api-update.yml: capture stdout+stderr to find the
+          # known 'already_exists' response; any other failure is loud.
+          # `gh api` writes JSON error bodies to STDOUT on non-2xx.
+          label_out=$(mktemp)
+          if ! gh api "repos/${REPO}/labels" --method POST \
+               -f name="${REVIEW_LABEL}" \
+               -f color='F9D71C' \
+               -f description='Wizard CC baseline is drifting from npm latest (ROADMAP #350)' \
+               >"$label_out" 2>&1; then
+            if grep -q 'already_exists' "$label_out"; then
+              echo "label ${REVIEW_LABEL} already exists — continuing"
+            else
+              cat "$label_out" >&2
+              rm -f "$label_out"
+              exit 1
+            fi
+          fi
+          rm -f "$label_out"
+
+          # Title and body.
+          TITLE="CC version drift: baseline v${BASELINE}, latest v${LATEST} (${PATCH_DELTA}-release gap)"
+          if [ "$COMPONENT" != "patch" ]; then
+            TITLE="CC version drift: baseline v${BASELINE}, latest v${LATEST} (${COMPONENT} jump)"
+          fi
+
+          {
+            # Machine-readable marker FIRST — used for re-comparison
+            # on next cron tick. If a future cron reads this issue back
+            # it can extract the previous baseline/latest/delta and
+            # decide whether the drift has widened.
+            echo "<!-- cc-version-drift baseline=v${BASELINE} latest=v${LATEST} delta=${PATCH_DELTA} threshold=${THRESHOLD} component=${COMPONENT} -->"
+            echo ""
+            echo "**Wizard's documented CC baseline is drifting from npm latest.**"
+            echo ""
+            if [ "$COMPONENT" = "major" ]; then
+              echo "- ⚠️  **MAJOR jump detected.** Always alert regardless of threshold."
+            elif [ "$COMPONENT" = "minor" ]; then
+              echo "- ⚠️  **SemVer-minor jump detected.** Always alert regardless of threshold."
+            else
+              echo "- Patch-release gap: **${PATCH_DELTA}** (threshold: ${THRESHOLD})"
+            fi
+            echo "- Wizard baseline: \`v${BASELINE}\` (from \`SDLC.md\` \`<!-- Claude Code Baseline: ... -->\` anchor)"
+            echo "- npm latest: \`v${LATEST}\` (\`npm view @anthropic-ai/claude-code version\`)"
+            echo ""
+            echo "## What to do"
+            echo ""
+            echo "1. Open a Claude Code session on your maintainer machine (Max subscription)."
+            echo "2. Run the changelog analysis on Max:"
+            echo "   \`\`\`bash"
+            echo "   claude --print --allowedTools \"WebFetch,Read,Bash\" \"\$(cat .github/prompts/analyze-release.md)\""
+            echo "   \`\`\`"
+            echo "3. For each new feature flagged HIGH/MEDIUM relevance, run the full SDLC loop (TDD → tests → review → PR)."
+            echo "4. Update \`SDLC.md\` — bump BOTH the \`<!-- Claude Code Baseline: ... -->\` anchor AND the \`Claude Code Recommended\` row."
+            echo "5. Close this issue. If drift recurs, the next Monday cron will open a fresh one."
+            echo ""
+            echo "## Sources"
+            echo ""
+            echo "- [Claude Code CHANGELOG (raw)](https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md)"
+            echo "- [.github/prompts/analyze-release.md](.github/prompts/analyze-release.md) — local Max analysis prompt"
+            echo "- Incident context: [\`.reviews/cc-feature-inventory-2026-05-24.md\`](.reviews/cc-feature-inventory-2026-05-24.md) (the 32-version miss that motivated this workflow)"
+          } > /tmp/issue_body.md
+
+          # Find existing open issue (idempotency: edit, don't spam).
+          EXISTING=$(gh issue list \
+            --repo "${REPO}" \
+            --state open \
+            --label "${REVIEW_LABEL}" \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Updating existing issue #${EXISTING} (no new issue, no comment spam)"
+            gh issue edit "$EXISTING" \
+              --repo "${REPO}" \
+              --title "$TITLE" \
+              --body-file /tmp/issue_body.md
+            exit 0
+          fi
+
+          # No open issue. Check for the most recent closed issue —
+          # only re-open if the drift has WIDENED since close (maintainer's
+          # "won't fix for now" stays respected as long as gap is stable).
+          CLOSED=$(gh issue list \
+            --repo "${REPO}" \
+            --state closed \
+            --label "${REVIEW_LABEL}" \
+            --limit 1 \
+            --json number,body \
+            --jq '.[0] // {}')
+          CLOSED_DELTA=$(echo "$CLOSED" | jq -r '.body // ""' | grep -oE 'delta=[0-9]+' | head -1 | sed 's/delta=//' || echo '-1')
+          CLOSED_DELTA="${CLOSED_DELTA:--1}"
+          # Components other than patch always alert again; for patch,
+          # only re-open if PATCH_DELTA > closed delta.
+          if [ "$COMPONENT" != "patch" ] || [ "$PATCH_DELTA" -gt "$CLOSED_DELTA" ]; then
+            echo "Creating new tracking issue (closed delta=${CLOSED_DELTA}, current=${PATCH_DELTA}, component=${COMPONENT})"
+            gh issue create \
+              --repo "${REPO}" \
+              --title "$TITLE" \
+              --body-file /tmp/issue_body.md \
+              --label "${REVIEW_LABEL}" \
+              --label "auto-generated"
+          else
+            echo "Drift already acknowledged at closed delta=${CLOSED_DELTA}; current=${PATCH_DELTA} has not widened. Staying silent."
+          fi
+
+      - name: No drift
+        if: steps.drift.outputs.alert != 'true'
+        run: |
+          echo "No drift: baseline=${BASELINE} latest=${LATEST} delta=${PATCH_DELTA} threshold=${THRESHOLD_USED}"
+        env:
+          BASELINE: ${{ steps.baseline.outputs.baseline }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+          PATCH_DELTA: ${{ steps.drift.outputs.patch_delta }}
+          THRESHOLD_USED: ${{ steps.drift.outputs.threshold_used }}
