@@ -1,4 +1,4 @@
-<!-- SDLC Wizard Version: 1.75.1 -->
+<!-- SDLC Wizard Version: 1.76.0 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 # SDLC Configuration
@@ -7,8 +7,8 @@
 
 | Property | Value |
 |----------|-------|
-| Wizard Version | 1.75.1 |
-| Last Updated | 2026-05-20 |
+| Wizard Version | 1.76.0 |
+| Last Updated | 2026-05-24 |
 | Claude Code Minimum | v2.1.111+ (required for Opus 4.7 / `opus[1m]`); v2.1.105+ for `PreCompact` hook |
 | Claude Code Recommended | v2.1.150+ (latest at 2026-05-24) — unlocks native `/goal` (v2.1.139), `/code-review --comment` (v2.1.147), per-category `/usage` (v2.1.149), `$CLAUDE_EFFORT` env var for hooks (v2.1.133) |
 | Recommended Model | `opus[1m]` (Opus 4.7, 1M context) — run `/model opus[1m]` |
