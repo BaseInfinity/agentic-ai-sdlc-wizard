@@ -110,15 +110,7 @@ Use plan mode for: multi-file changes, new features, LOW confidence, bugs needin
 
 ## Long-Running Goals (`/goal`)
 
-For multi-turn goal-bound work (refactors, migrations, "fix all failing tests"), use CC's native `/goal <condition>` (v2.1.139+, **requires v2.1.143+** for the subagent-race fix). Haiku evaluator re-checks per turn until met; survives `--resume` (counters reset), not `/clear`. Wizard hooks (`UserPromptSubmit`/`SessionStart`/`PreCompact`) fire normally per turn.
-
-**Pre-flight:** (a) workspace trusted (refuses untrusted dirs); (b) `disableAllHooks` and `allowManagedHooksOnly` both off (it's internally a Stop hook — v2.1.140 used to hang silent); (c) `claude --version` ≥ v2.1.143.
-
-**Condition = SDLC contract:** one measurable end state + stated check + constraints + hard turn/time bound (no native cap) + observable in transcript. Example: `/goal "npm test exits 0 AND git status clean AND no .github/workflows/* changed, or stop after 20 turns"`.
-
-**Anti-pattern:** the evaluator **cannot call tools** — it judges the transcript only. `/goal "production is healthy"` is wrong (it can't curl prod). Either pipe the check into the transcript per turn or don't use `/goal`. Resume caveat: `--resume` restores the condition but resets turn/time counters, so a "stop after N turns" cap restarts.
-
-`/goal` (no args) shows status overlay. `/goal clear` (aliases `stop`/`off`/`reset`/`none`/`cancel`) to end.
+Native `/goal <condition>` (**requires v2.1.143+**). Haiku evaluator re-checks transcript per turn. **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` both off (it's a Stop hook). **Condition = SDLC contract:** measurable end state + check + constraints + hard turn/time bound (no native cap); e.g. `/goal "npm test=0, stop after 20 turns"`. **Anti-pattern:** evaluator **cannot call tools** — judges transcript only; don't use for off-transcript work. `--resume` resets counters.
 
 ## Recommended Model
 
