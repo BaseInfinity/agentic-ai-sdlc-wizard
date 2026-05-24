@@ -4,6 +4,29 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.76.0] - 2026-05-24
+
+### Added
+
+- **Native `/goal` wrapper in `/sdlc` skill** (closes #347). CC v2.1.139 shipped a native `/goal <condition>` command — set a completion condition, Haiku evaluator re-checks the transcript per turn until met. The /sdlc skill now carries a tight wrapper section with 5 load-bearing elements: pre-flight checklist (workspace trusted, hooks not disabled, CC ≥ v2.1.143 for the subagent-race fix), condition-as-SDLC-contract guidance (measurable end state + check + constraints + hard turn/time bound since there's no native cap), compose-with-hooks note (UserPromptSubmit/SessionStart/PreCompact fire normally per turn), `--resume` resets counters caveat, and the off-transcript anti-pattern callout (the evaluator cannot call tools, so `/goal "production is healthy"` is wrong — it can only judge what's in the conversation). New quality test `test_sdlc_skill_has_goal_wrapper` greps for each element by keyword. Per Prove-It Gate absorption principle: extends the existing /sdlc skill, no new skill/hook/template scaffolding.
+- **CC v2.1.119 → v2.1.150 feature adoption** in `CLAUDE_CODE_SDLC_WIZARD.md` "Complementary native skills" table: `/code-review [effort] [--comment]` (v2.1.147+, renamed from `/simplify`, posts findings as inline GH PR comments), `/usage` per-category breakdown of limits usage (v2.1.149+ — skills, subagents, plugins, MCP-server costs), `/context all` per-skill per-model token estimates (v2.1.139+). Each row carries usage guidance with the same caveat discipline applied to `/insights` (#235a).
+- **`Claude Code Recommended` baseline guidance** in `SDLC.md` — new row at `v2.1.150+` alongside the unchanged `Claude Code Minimum` floor at `v2.1.111+`. Splits "what we require" from "what unlocks the latest features" without breaking back-compat for consumers still on the minimum.
+
+### Changed
+
+- **ROADMAP cleanup with demand-signal-first entry gate** (PR #349). New top-of-ROADMAP gate: new entries require one of a maintainer pain event with repro, a second external user signal, a dated platform deadline, or a low-cost cleanup. Everything else goes to a Research Parking Lot with 30/60-day expiry — if the trigger hasn't fired by expiry, the item is deleted rather than carried forward. Excised 4 items now tracked in sibling repos (#9 OpenCode → `BaseInfinity/opencode-sdlc-wizard`, #82 Domain DLCs → Stefan's separate track, #91 Multi-Agent Adapter umbrella → per-adapter sibling repos, Back Burner Agent-agnostic SDLC). Killed 4 stale items with no demand signal (#85 Phase 2 — 1.7 months stale, killed by #231 zero-cron philosophy; #233 automation subitems — 1 month stale, Max-user footgun; Back Burner Chaos/Resilience Testing — 1.8 months, no concrete failure; Back Burner Subagent Model Compliance Audit — 3+ months, prototype already deleted in #236). Source: cross-model prioritization at `.reviews/roadmap-prio-codex.md`.
+- **#347 corrected from "no native primitive" to "native `/goal` exists, build the wrapper"**. The original 2026-05-23 research (claude-code-guide subagent) was wrong — CC v2.1.139 had shipped `/goal` weeks earlier. Implementation scope shrunk from a 5-step plan + GOAL.md/HANDOFF.md templates down to a ~30-line wrapper in the existing `/sdlc` skill (now shipped — see Added). Meta-lesson captured: require explicit citation of an authoritative source (docs index, raw changelog grep) before accepting a "feature does not exist" claim — negative claims are easier to fake than positive ones.
+
+### Added (ROADMAP only — implementation deferred)
+
+- **#302 — User-level setup-wizard + repo-local lifecycle split** (PR #346). Cross-model design review (Codex gpt-5.5 xhigh) scored Claude's first-pass 5/10 NOT CERTIFIED and replaced it with a concrete channel contract: plugin = user-level/global, npm/npx = repo-local, no npm `postinstall` writing to `~/.claude/`. Implementation deferred per demand-signal-first gate.
+- **#350 — CC feature-discovery cadence fix** (PR #350). Captures the process gap that let `/goal` slip past for ~5 weeks: #231 Phase 3d gutted the in-CI LLM-ranker to take `weekly-update.yml` to $0, and the maintainer-run replacement on Max never ran. Proposed fix: a thin GH-API-only check that opens a "CC version drift" issue when our `<!-- SDLC Wizard Version -->` baseline is >5 minor versions behind latest npm. No LLM, no API spend.
+
+### Notes
+
+- **Trusted Publishing flow is stable.** Second release shipped via OIDC since the v1.75.0 migration; no token to rotate, expire, mis-scope, or 2FA-gate.
+- **Inventory of all 32 missed CC versions** (v2.1.119 → v2.1.150) lives at `.reviews/cc-feature-inventory-2026-05-24.md` (gitignored) with HIGH/MEDIUM/LOW relevance triage and the adoption sequence for follow-up PRs. After verifying against CC's hook docs, H2 (`$CLAUDE_EFFORT` env var) and H8 (Stop hook `background_tasks`) were demoted to non-applicable: `$CLAUDE_EFFORT` is only available in tool-use-context hooks (not our SessionStart-typed `model-effort-check.sh`), and `background_tasks` is only in Stop/SubagentStop input (not our PreCompact-typed `precompact-seam-check.sh`). The existing hook code is correct as-written.
+
 ## [1.75.1] - 2026-05-20
 
 ### Fixed
