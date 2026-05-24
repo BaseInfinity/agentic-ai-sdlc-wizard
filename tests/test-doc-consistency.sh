@@ -804,10 +804,33 @@ test_codex_exec_blocks_redirect_stdin() {
     fi
 }
 
+# SDLC skill must carry the /goal wrapper with all 5 quality elements
+# (#347 corrected 2026-05-24). Existence-only would let drift remove the
+# safety guidance — each item below is a load-bearing claim from the
+# corrected research doc (.reviews/347-goal-mode-research-CORRECTED.md).
+test_sdlc_skill_has_goal_wrapper() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    local missing=""
+    grep -qE '^## Long-Running Goals \(`?/goal`?\)' "$SKILL" || missing+=" section-header"
+    grep -qF 'v2.1.143' "$SKILL" || missing+=" version-floor-2.1.143"
+    grep -qiE 'trusted|untrusted' "$SKILL" || missing+=" trusted-workspace-preflight"
+    grep -qF 'disableAllHooks' "$SKILL" || missing+=" disableAllHooks-preflight"
+    grep -qiE 'turn(/| )?time bound|hard.*bound|stop after' "$SKILL" || missing+=" hard-bound-guidance"
+    grep -qiE 'evaluator.*not call tools|evaluator can.*not.*tool|cannot run tools|cannot call tools' "$SKILL" || missing+=" anti-pattern-off-transcript"
+    grep -qiE 'resume.*reset|--resume.*counters|counters.*reset' "$SKILL" || missing+=" resume-caveat"
+    if [ -z "$missing" ]; then
+        pass "skills/sdlc/SKILL.md /goal wrapper has all required quality elements (#347)"
+    else
+        fail "skills/sdlc/SKILL.md /goal wrapper missing:$missing"
+    fi
+}
+
 test_setup_skill_mentions_insights_with_caveat
 test_wizard_doc_lists_insights_with_caveat
 test_sdlc_skill_has_precedence_preamble
 test_codex_exec_blocks_redirect_stdin
+test_sdlc_skill_has_goal_wrapper
 
 # ────────────────────────────────────────────
 # Summary

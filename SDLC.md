@@ -9,7 +9,8 @@
 |----------|-------|
 | Wizard Version | 1.75.1 |
 | Last Updated | 2026-05-20 |
-| Claude Code Baseline | v2.1.111+ (required for Opus 4.7 / `opus[1m]`) |
+| Claude Code Minimum | v2.1.111+ (required for Opus 4.7 / `opus[1m]`); v2.1.105+ for `PreCompact` hook |
+| Claude Code Recommended | v2.1.150+ (latest at 2026-05-24) — unlocks native `/goal` (v2.1.139), `/code-review --comment` (v2.1.147), per-category `/usage` (v2.1.149), `$CLAUDE_EFFORT` env var for hooks (v2.1.133) |
 | Recommended Model | `opus[1m]` (Opus 4.7, 1M context) — run `/model opus[1m]` |
 | Recommended Effort | `max` (preferred) / `xhigh` (floor) — run `/effort max` |
 
