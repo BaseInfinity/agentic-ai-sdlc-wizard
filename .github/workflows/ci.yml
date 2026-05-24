@@ -169,6 +169,9 @@ jobs:
       - name: Run release workflow tests
         run: ./tests/test-release-workflow.sh
 
+      - name: Run release-dry-run workflow tests
+        run: ./tests/test-release-dry-run-workflow.sh
+
       - name: Run domain detection tests
         run: ./tests/test-domain-detection.sh
 
