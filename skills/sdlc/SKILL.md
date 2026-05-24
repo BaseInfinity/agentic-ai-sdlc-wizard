@@ -108,6 +108,10 @@ State your confidence before presenting an approach:
 
 Use plan mode for: multi-file changes, new features, LOW confidence, bugs needing investigation. **Skip plan approval step** (auto-approval) when confidence HIGH (95%+) AND single-file/trivial AND no new patterns AND no architectural decisions — still announce approach, don't wait. When in doubt, wait.
 
+## Long-Running Goals (`/goal`)
+
+Native `/goal <condition>` (**requires v2.1.143+**). Haiku evaluator re-checks transcript per turn. **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` both off (it's a Stop hook). **Condition = SDLC contract:** measurable end state + check + constraints + hard turn/time bound (no native cap); e.g. `/goal "npm test=0, stop after 20 turns"`. **Anti-pattern:** evaluator **cannot call tools** — judges transcript only; don't use for off-transcript work. `--resume` resets counters.
+
 ## Recommended Model
 
 **Opt-in: `opus[1m]` (Opus 4.7 with 1M context).** `/model opus[1m]` at the start of non-trivial sessions — understand the tradeoff (issue #198). A top-level `model` pin in `.claude/settings.json` disables CC's per-turn auto-selection; pin only when you need 1M headroom. Requires CC v2.1.111+.
