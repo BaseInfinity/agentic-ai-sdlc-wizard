@@ -169,6 +169,9 @@ jobs:
       - name: Run release workflow tests
         run: ./tests/test-release-workflow.sh
 
+      - name: Run release-dry-run workflow tests
+        run: ./tests/test-release-dry-run-workflow.sh
+
       - name: Run cc-drift-check script unit tests (#350)
         run: ./tests/test-cc-drift-check.sh
 
