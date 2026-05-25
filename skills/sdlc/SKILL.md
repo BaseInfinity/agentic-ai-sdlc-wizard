@@ -110,7 +110,7 @@ Use plan mode for: multi-file changes, new features, LOW confidence, bugs needin
 
 ## Long-Running Goals (`/goal`)
 
-Native `/goal <condition>` (**requires v2.1.143+**). Haiku evaluator re-checks transcript per turn. **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` both off (it's a Stop hook). **Condition = SDLC contract:** measurable end state + check + constraints + hard turn/time bound (no native cap); e.g. `/goal "npm test=0, stop after 20 turns"`. **Anti-pattern:** evaluator **cannot call tools** — judges transcript only; don't use for off-transcript work. `--resume` resets counters.
+Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript per turn. **Confidence gate — NEVER invoke below HIGH 95%**; below that the evaluator rubber-stamps flailing as progress. **DLC binding — condition MUST name the DLC** (`/sdlc`, `/gdlc`, `/ldlc`, etc.) so the evaluator anchors on "doing it right." **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` both off. **Condition = contract:** end state + check + constraints + hard turn/time bound (no native cap); e.g. `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. **Anti-pattern:** evaluator can't call tools — transcript-only. `--resume` resets counters.
 
 ## Recommended Model
 
@@ -141,7 +141,7 @@ PROTOCOL is universal across domains; only `review_instructions` and `verificati
 
 **Convergence:** 2 rounds sweet spot, 3 max (research: 14 repos + 7 papers). After 3 still NOT CERTIFIED → escalate.
 
-**Multi-reviewer / non-code domains:** when running multiple reviewers in parallel (e.g. Claude review + Codex + human), respond per-reviewer (different blind spots, no shared anchoring). For non-code domains (research, persuasion, medical), keep the same handoff format and add `"audience"` + `"stakes"` keys.
+**Multi-reviewer:** parallel reviewers → respond per-reviewer (different blind spots, no shared anchoring). **Non-code domains:** same handoff + add `"audience"`/`"stakes"` keys.
 
 ### Release Review Focus
 
