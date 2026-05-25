@@ -817,10 +817,15 @@ test_sdlc_skill_has_goal_wrapper() {
     grep -qiE 'trusted|untrusted' "$SKILL" || missing+=" trusted-workspace-preflight"
     grep -qF 'disableAllHooks' "$SKILL" || missing+=" disableAllHooks-preflight"
     grep -qiE 'turn(/| )?time bound|hard.*bound|stop after' "$SKILL" || missing+=" hard-bound-guidance"
-    grep -qiE 'evaluator.*not call tools|evaluator can.*not.*tool|cannot run tools|cannot call tools' "$SKILL" || missing+=" anti-pattern-off-transcript"
+    grep -qiE 'cannot call tools|can.t call tools|transcript[ -]only' "$SKILL" || missing+=" anti-pattern-off-transcript"
     grep -qiE 'resume.*reset|--resume.*counters|counters.*reset' "$SKILL" || missing+=" resume-caveat"
+    # PR-D additions: 95% confidence gate + DLC binding in condition.
+    # Without these, /goal becomes "20 turns of flailing" — the evaluator
+    # has no anchor for correctness, only for completion.
+    grep -qiE 'confidence gate|HIGH 95%|below.*95%|95%.*confidence' "$SKILL" || missing+=" 95-percent-confidence-gate"
+    grep -qiE 'DLC binding|name the (active )?DLC|condition MUST name' "$SKILL" || missing+=" DLC-binding-rule"
     if [ -z "$missing" ]; then
-        pass "skills/sdlc/SKILL.md /goal wrapper has all required quality elements (#347)"
+        pass "skills/sdlc/SKILL.md /goal wrapper has all required quality elements (#347 + PR-D)"
     else
         fail "skills/sdlc/SKILL.md /goal wrapper missing:$missing"
     fi
