@@ -1833,10 +1833,14 @@ test_no_hook_recommends_act() {
 }
 
 # Test 139: No workflow declares unused id-token: write
-# release.yml is excluded — it legitimately uses id-token for npm --provenance (SLSA)
+# release.yml is excluded — it legitimately uses id-token for npm Trusted
+# Publishing (OIDC). Match active code lines only, NOT YAML comments —
+# workflows like release-dry-run.yml legitimately mention "id-token: write"
+# in their explanatory comments to document WHY they DO NOT request it.
 test_no_unused_id_token_permission() {
     local WF_DIR="$REPO_ROOT/.github/workflows"
     local ERRORS=0
+    local OFFENDERS=""
 
     for wf in "$WF_DIR"/*.yml; do
         local name
@@ -1845,15 +1849,20 @@ test_no_unused_id_token_permission() {
         if [ "$name" = "release.yml" ]; then
             continue
         fi
-        if grep -q 'id-token: write' "$wf" 2>/dev/null; then
+        # Anchor on uncommented lines: optional leading whitespace, then a
+        # non-`#` non-whitespace char before the match. A bare `# ...` comment
+        # is excluded; an inline trailing comment on an active line still
+        # counts (the active code is what matters).
+        if grep -qE '^[[:space:]]*[^#[:space:]].*id-token:[[:space:]]*write' "$wf" 2>/dev/null; then
             ERRORS=$((ERRORS + 1))
+            OFFENDERS="$OFFENDERS $name"
         fi
     done
 
     if [ "$ERRORS" -eq 0 ]; then
-        pass "No workflow declares unused id-token: write permission"
+        pass "No workflow declares unused id-token: write permission (active code, comments allowed)"
     else
-        fail "$ERRORS workflow(s) still declare id-token: write (no OIDC consumers exist)"
+        fail "$ERRORS workflow(s) still declare id-token: write in active code (no OIDC consumers exist):$OFFENDERS"
     fi
 }
 

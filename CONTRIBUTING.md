@@ -25,6 +25,7 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-cli.sh && ./tests/test-setup-path.sh && \
    ./tests/test-docs-usability.sh && ./tests/test-plugin.sh && \
    ./tests/test-install-script.sh && ./tests/test-release-workflow.sh && \
+   ./tests/test-release-dry-run-workflow.sh && \
    ./tests/test-cc-drift-check.sh && ./tests/test-cc-version-drift.sh && \
    ./tests/test-domain-detection.sh && \
    ./tests/test-autocompact-methodology.sh && \
