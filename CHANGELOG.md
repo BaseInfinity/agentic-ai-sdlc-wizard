@@ -4,6 +4,21 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.77.0] - 2026-05-24
+
+### Added
+
+- **`release-dry-run.yml` CI workflow** (A1, v1.75.1 post-mortem). Runs `npm publish --dry-run --tag dry-run --json` on every PR touching `release.yml`, `package.json`, or the shipped package surface (`cli/`, `hooks/`, `skills/`, `.claude-plugin/`, `CLAUDE_CODE_SDLC_WIZARD.md`, `CHANGELOG.md`). Catches MODULE_NOT_FOUND-class regressions, dropped shipped paths, Node/npm version drift — visible at PR-time instead of producing a half-published tag. Uses `permissions: contents: read` only (no `id-token: write` — npm CLI runs OIDC setup before the dry-run branch, so requesting that permission would attempt token mint on every PR). Rewrites `package.json` to `0.0.0-dry-run-<SHA>` in a temp checkout to avoid the "cannot publish over previously published versions" error. Path filter is `package.json.files`-aware and tested for drift. 25 quality tests in `tests/test-release-dry-run-workflow.sh`.
+- **`cc-version-drift.yml` cadence workflow** (closes #350). The fix for the gap that let native `/goal` (CC v2.1.139) slip past for 32 versions / 5 weeks. Pure GH-API detector — no LLM, no API spend. Mon 09:30 UTC cron (staggered from `weekly-update.yml` 09:00 and `weekly-api-update.yml` 10:00) + `workflow_dispatch`. Parses new `<!-- Claude Code Baseline: vX.Y.Z -->` anchor in `SDLC.md` (single-purpose; NOT `<!-- SDLC Wizard Version -->` which is the wizard's own pkg version), compares to `npm view @anthropic-ai/claude-code version`, opens a tracking issue when patch gap > 5 (major/minor jumps alert regardless of threshold). Idempotent via label `cc-version-drift` + machine-readable marker in issue body. Edits existing open issue instead of comment-spamming. Re-opens a closed issue only if delta WIDENED (respects "won't fix for now"). 22 workflow tests + 18 unit tests on the extracted `scripts/cc-drift-check.sh` (bash 3 compatible, strict SemVer validation, refuses prereleases and regressions).
+- **`/goal` SDLC-discipline gates in `/sdlc` skill** (PR-D). Two new load-bearing rules now that native `/goal` is universal across CC (v2.1.139+) and Codex CLI: **(1) Confidence gate — NEVER invoke `/goal` below HIGH 95%** (mirrors existing Confidence Check; below 95% the Haiku evaluator rubber-stamps "did the agent flail" as progress). **(2) DLC binding — the condition MUST name the active DLC** (`/sdlc`, `/gdlc`, `/ldlc`, etc.) so the evaluator anchors on "doing it right," not just "doing it." Example: `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. `test_sdlc_skill_has_goal_wrapper` extended to grep both new keywords (9 quality elements total).
+- **`<!-- Claude Code Baseline: v2.1.150 -->` anchor in `SDLC.md`** — single-purpose machine-parseable source of truth for `cc-version-drift.yml`. Maintainer updates this anchor + the human-readable `Claude Code Recommended` row when bumping CC support. Test asserts both stay in sync.
+
+### Notes
+
+- **Trusted Publishing flow held.** Third release shipped via OIDC since the v1.75.0 migration; no token to rotate, expire, or 2FA-gate.
+- **Cross-model design reviews** at `.reviews/176-followup-prio-codex.md` (Codex gpt-5.5 xhigh). Caught: (a) naive `npm publish --dry-run` against already-published version fails today; (b) `id-token: write` on the dry-run workflow would attempt OIDC mint on every PR; (c) `weekly-update.yml` is the wrong host for #350 (cron is disabled + tests assert no `issues: write`); (d) "minor versions" is wrong terminology — `2.1.150 → 2.1.180` is a SemVer patch delta.
+- **Self-test landed in PR-B:** the new `release-dry-run.yml` workflow ran ON the PR that introduced it (paths filter included `release-dry-run.yml` itself) and SUCCEEDED — first proof that the dry-run mechanism works end-to-end against the temp-version-rewrite + `--tag dry-run` flow.
+
 ## [1.76.0] - 2026-05-24
 
 ### Added
