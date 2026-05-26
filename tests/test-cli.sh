@@ -2123,6 +2123,34 @@ test_init_silent_when_cache_shows_local_newer_than_latest() {
     rm -rf "$d" "$cache_dir" "$(dirname "$stdout_f")"
 }
 
+# Test (#358): no nudge + no crash when npm is unavailable AND cache is absent.
+# Fault-injects a fake `npm` that always exits 1, with PATH override. Catches
+# regressions where someone removes the try/catch wrapping execSync — the
+# nudge would then crash init in environments without npm (CI sandboxes, etc.).
+test_init_silent_when_npm_unavailable_and_cache_empty() {
+    local d cache_dir bin_dir stdout_f exit_code
+    d=$(make_temp)
+    cache_dir=$(make_temp)
+    bin_dir=$(make_temp)
+    stdout_f=$(make_temp)/stdout
+    cat > "$bin_dir/npm" <<'NPMEOF'
+#!/bin/bash
+exit 1
+NPMEOF
+    chmod +x "$bin_dir/npm"
+    exit_code=0
+    ( cd "$d" && SDLC_WIZARD_CACHE_DIR="$cache_dir" PATH="$bin_dir:$PATH" node "$CLI" init ) \
+        > "$stdout_f" 2>&1 || exit_code=$?
+    if [ "$exit_code" -eq 0 ] \
+       && ! grep -qF "@latest init" "$stdout_f" \
+       && grep -qF "SDLC Wizard installed successfully" "$stdout_f"; then
+        pass "#358: init silent + successful when npm unavailable + no cache (offline-graceful)"
+    else
+        fail "#358: init should be silent + succeed offline (exit=$exit_code, stdout=$(cat "$stdout_f"))"
+    fi
+    rm -rf "$d" "$cache_dir" "$bin_dir" "$(dirname "$stdout_f")"
+}
+
 test_init_blocks_on_plugin_local
 test_init_blocks_on_plugin_cache
 test_init_force_bypasses_plugin
@@ -2135,6 +2163,7 @@ test_detect_plugin_install_guards_bad_homedir
 test_init_emits_stale_cli_nudge_when_cache_indicates_newer
 test_init_silent_when_cache_matches_current_version
 test_init_silent_when_cache_shows_local_newer_than_latest
+test_init_silent_when_npm_unavailable_and_cache_empty
 
 echo ""
 echo "=== Results ==="
