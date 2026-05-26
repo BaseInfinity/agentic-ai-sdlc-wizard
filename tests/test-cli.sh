@@ -2052,6 +2052,77 @@ test_init_empty_home_no_false_positive() {
     rm -rf "$d" "$(dirname "$stdout_f")" "$(dirname "$stderr_f")"
 }
 
+# === Stale CLI version nudge at init time (#358) ===
+# init time is where stale-npx-cache bites hardest — users who copy
+# `npx agentic-sdlc-wizard init` from old docs get whatever cached version
+# is on disk. /update Step 1.5 already does this check; init didn't.
+# Reuses the SDLC_WIZARD_CACHE_DIR/latest-version cache the
+# instructions-loaded hook already populates (#64/#196), so no extra npm hit.
+
+# Test (#358): nudge fires when cache says local CLI is older than latest.
+# Uses 999.999.999 as a far-future sentinel that will always exceed
+# package.json's current version regardless of future releases.
+test_init_emits_stale_cli_nudge_when_cache_indicates_newer() {
+    local d cache_dir stdout_f exit_code
+    d=$(make_temp)
+    cache_dir=$(make_temp)
+    stdout_f=$(make_temp)/stdout
+    echo "999.999.999" > "$cache_dir/latest-version"
+    exit_code=0
+    ( cd "$d" && SDLC_WIZARD_CACHE_DIR="$cache_dir" node "$CLI" init ) \
+        > "$stdout_f" 2>&1 || exit_code=$?
+    if [ "$exit_code" -eq 0 ] \
+       && grep -qF "npx -y agentic-sdlc-wizard@latest init" "$stdout_f" \
+       && grep -qF "999.999.999" "$stdout_f"; then
+        pass "#358: init emits stale-CLI nudge when cache indicates newer version"
+    else
+        fail "#358: stale-CLI nudge missing (exit=$exit_code, stdout=$(cat "$stdout_f"))"
+    fi
+    rm -rf "$d" "$cache_dir" "$(dirname "$stdout_f")"
+}
+
+# Test (#358): no nudge when cache version == package.json version.
+# Prevents post-upgrade "1.77.0 → 1.77.0" noise.
+test_init_silent_when_cache_matches_current_version() {
+    local d cache_dir stdout_f pkg_version exit_code
+    d=$(make_temp)
+    cache_dir=$(make_temp)
+    stdout_f=$(make_temp)/stdout
+    pkg_version=$(node -e "console.log(require('$SCRIPT_DIR/../package.json').version)")
+    echo "$pkg_version" > "$cache_dir/latest-version"
+    exit_code=0
+    ( cd "$d" && SDLC_WIZARD_CACHE_DIR="$cache_dir" node "$CLI" init ) \
+        > "$stdout_f" 2>&1 || exit_code=$?
+    if [ "$exit_code" -eq 0 ] \
+       && ! grep -qF "@latest init" "$stdout_f"; then
+        pass "#358: init silent when cache shows latest == current"
+    else
+        fail "#358: init should NOT nudge when up-to-date (exit=$exit_code, stdout=$(cat "$stdout_f"))"
+    fi
+    rm -rf "$d" "$cache_dir" "$(dirname "$stdout_f")"
+}
+
+# Test (#358): no reverse nudge when cache shows local > latest.
+# Mirrors #239 cache-poison sanity: cached "latest=0.0.1" is impossible,
+# so we treat installed as already-current and stay silent.
+test_init_silent_when_cache_shows_local_newer_than_latest() {
+    local d cache_dir stdout_f exit_code
+    d=$(make_temp)
+    cache_dir=$(make_temp)
+    stdout_f=$(make_temp)/stdout
+    echo "0.0.1" > "$cache_dir/latest-version"
+    exit_code=0
+    ( cd "$d" && SDLC_WIZARD_CACHE_DIR="$cache_dir" node "$CLI" init ) \
+        > "$stdout_f" 2>&1 || exit_code=$?
+    if [ "$exit_code" -eq 0 ] \
+       && ! grep -qF "@latest init" "$stdout_f"; then
+        pass "#358: init silent when cache shows local > latest (no reverse nudge)"
+    else
+        fail "#358: init should NOT nudge in reverse direction (exit=$exit_code, stdout=$(cat "$stdout_f"))"
+    fi
+    rm -rf "$d" "$cache_dir" "$(dirname "$stdout_f")"
+}
+
 test_init_blocks_on_plugin_local
 test_init_blocks_on_plugin_cache
 test_init_force_bypasses_plugin
@@ -2061,6 +2132,9 @@ test_init_plugin_warning_guidance
 test_init_empty_home_no_false_positive
 test_init_unset_home_no_false_positive
 test_detect_plugin_install_guards_bad_homedir
+test_init_emits_stale_cli_nudge_when_cache_indicates_newer
+test_init_silent_when_cache_matches_current_version
+test_init_silent_when_cache_shows_local_newer_than_latest
 
 echo ""
 echo "=== Results ==="

@@ -12,8 +12,9 @@ A **self-evolving Software Development Life Cycle (SDLC) enforcement system for 
 
 Run from your terminal or from inside Claude Code (`!` prefix):
 ```bash
-npx agentic-sdlc-wizard init
+npx -y agentic-sdlc-wizard@latest init
 ```
+The `@latest` pin forces npm to fetch the newest version. Without it, `npx` may serve a stale CLI from your local cache (#358); `init` also nudges if it detects a gap.
 Then start (or restart) Claude Code — type `/exit` then `claude` to reload hooks. Setup auto-invokes on first prompt — Claude reads the wizard doc, scans your project, and generates bespoke CLAUDE.md, SDLC.md, TESTING.md, and ARCHITECTURE.md. No manual commands needed.
 
 <details>
@@ -242,7 +243,7 @@ This isn't the only Claude Code SDLC tool. Here's an honest comparison:
 | **Evaluation** | 95% CI, CUSUM, SDP, Tier 1/2 | Configuration testing | skilltest framework |
 | **CI Shepherd** | Local CI fix loop | No | No |
 | **Auto-updates** | Weekly CC + community scan | No | No |
-| **Install** | `npx agentic-sdlc-wizard init` | npm install | npm install |
+| **Install** | `npx -y agentic-sdlc-wizard@latest init` | npm install | npm install |
 | **Philosophy** | Lightweight, prove-it-or-delete | Scale and optimization | Documentation-first |
 
 **Our unique strengths:** Statistical rigor (CUSUM + 95% CI), SDP scoring (model quality vs SDLC compliance), CI shepherd loop, Prove-It A/B pipeline, comprehensive automated test suite, dogfooding enforcement.
