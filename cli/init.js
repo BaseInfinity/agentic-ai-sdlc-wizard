@@ -283,6 +283,79 @@ function invalidateVersionCache({ dryRun }) {
   return true;
 }
 
+// #358: Nudge the user if their CLI is behind npm latest. Stale-npx-cache
+// is the quiet onboarding bug — `npx agentic-sdlc-wizard init` (no @latest
+// pin) serves whatever version is cached on disk, sometimes months old.
+// Reuses the SDLC_WIZARD_CACHE_DIR/latest-version cache that the
+// instructions-loaded hook already populates (#64/#196), so up-to-date users
+// pay zero extra latency.
+function maybeEmitStaleCliNudge() {
+  const semverRe = /^(\d+)\.(\d+)\.(\d+)$/;
+  const cmp = (a, b) => {
+    const am = a.match(semverRe);
+    const bm = b.match(semverRe);
+    if (!am || !bm) return 0;
+    for (let i = 1; i <= 3; i++) {
+      const ai = parseInt(am[i], 10);
+      const bi = parseInt(bm[i], 10);
+      if (ai < bi) return -1;
+      if (ai > bi) return 1;
+    }
+    return 0;
+  };
+
+  let current;
+  try {
+    current = require('../package.json').version;
+  } catch (_) {
+    return;
+  }
+  if (!semverRe.test(current)) return;
+
+  const cacheDir = process.env.SDLC_WIZARD_CACHE_DIR
+    || path.join(os.homedir(), '.cache', 'sdlc-wizard');
+  const cacheFile = path.join(cacheDir, 'latest-version');
+  let latest = null;
+
+  // Try cache first (24h TTL, valid semver, #239 sanity check: cached
+  // "latest" must be >= installed — older value means poisoned, refetch).
+  if (fs.existsSync(cacheFile)) {
+    try {
+      const stat = fs.statSync(cacheFile);
+      const ageMs = Date.now() - stat.mtimeMs;
+      if (ageMs < 86400 * 1000) {
+        const content = fs.readFileSync(cacheFile, 'utf8').trim();
+        if (semverRe.test(content) && cmp(content, current) >= 0) {
+          latest = content;
+        }
+      }
+    } catch (_) { /* unreadable — fall through to npm fetch */ }
+  }
+
+  // Cache miss / stale / poisoned → npm fetch (5s timeout, write on success)
+  if (latest === null) {
+    try {
+      const { execSync } = require('child_process');
+      const fetched = execSync('npm view agentic-sdlc-wizard version 2>/dev/null', {
+        encoding: 'utf8',
+        timeout: 5000,
+      }).trim();
+      if (semverRe.test(fetched)) {
+        latest = fetched;
+        try {
+          fs.mkdirSync(cacheDir, { recursive: true });
+          fs.writeFileSync(cacheFile, latest);
+        } catch (_) { /* best-effort cache write */ }
+      }
+    } catch (_) { /* offline or npm unavailable — silent */ }
+  }
+
+  if (latest && cmp(current, latest) < 0) {
+    console.log(`\n  ${YELLOW}STALE${RESET}   agentic-sdlc-wizard CLI ${current} in use; npm latest is ${latest}.`);
+    console.log(`         Recommended: rerun with ${CYAN}npx -y agentic-sdlc-wizard@latest init${RESET} to install the newest hooks/skills.`);
+  }
+}
+
 function init(targetDir, { force = false, dryRun = false, preserveCustomized = false } = {}) {
   if (!dryRun && !force) {
     const pluginPaths = detectPluginInstall();
@@ -301,6 +374,8 @@ function init(targetDir, { force = false, dryRun = false, preserveCustomized = f
       throw err;
     }
   }
+
+  maybeEmitStaleCliNudge();
 
   const ops = planOperations(targetDir, { force, preserveCustomized });
 

@@ -241,7 +241,7 @@ When Anthropic provides official plugins or tools that handle something:
 | **Claude Code v2.1.69+** | Required for InstructionsLoaded hook, skill directory variable, and Tasks system |
 | **Git repository** | Files should be committed for team sharing |
 
-**Blank repos (no CLAUDE.md, no code):** The wizard works on empty repos. Run `npx agentic-sdlc-wizard init` — it installs hooks, skills, and the wizard doc. On first session, the hooks detect missing SDLC files and redirect to `/setup-wizard`, which generates CLAUDE.md, SDLC.md, TESTING.md, and ARCHITECTURE.md interactively. You do NOT need to run Claude's built-in `/init` first — the setup wizard handles everything.
+**Blank repos (no CLAUDE.md, no code):** The wizard works on empty repos. Run `npx -y agentic-sdlc-wizard@latest init` — it installs hooks, skills, and the wizard doc. (The `@latest` pin guards against stale npx caches per #358.) On first session, the hooks detect missing SDLC files and redirect to `/setup-wizard`, which generates CLAUDE.md, SDLC.md, TESTING.md, and ARCHITECTURE.md interactively. You do NOT need to run Claude's built-in `/init` first — the setup wizard handles everything.
 
 ---
 
