@@ -831,11 +831,36 @@ test_sdlc_skill_has_goal_wrapper() {
     fi
 }
 
+# Cross-model review guidance must teach background-mode (issue #364, 2026-05-27).
+# Bash tool clamps `timeout` to 600000 ms; foreground codex gets force-killed at
+# the wall. Without this guidance, sessions burn 60+ minutes on 7-minute reviews
+# (incident: 70 min + 9 Stop-hook re-invocations before harness safeguard fired).
+test_codex_review_guidance_teaches_background_mode() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    local WIZARD="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local missing=""
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    if [ ! -f "$WIZARD" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    # SKILL.md must teach background-mode + cite the 10-min cap reason
+    grep -qF 'run_in_background: true' "$SKILL" || missing+=" SKILL.md:run_in_background"
+    grep -qiE '600000|10 min|10-min' "$SKILL" || missing+=" SKILL.md:10-min-cap-reason"
+    # Wizard doc must carry the same guidance (verified in at least one of the
+    # two Cross-Model Review sections — both edits land in the same release).
+    grep -qF 'run_in_background: true' "$WIZARD" || missing+=" WIZARD.md:run_in_background"
+    grep -qiE '600000|10 min|10-min' "$WIZARD" || missing+=" WIZARD.md:10-min-cap-reason"
+    if [ -z "$missing" ]; then
+        pass "Cross-model review guidance teaches background-mode + cites 10-min cap (#364)"
+    else
+        fail "Cross-model review background-mode guidance missing:$missing"
+    fi
+}
+
 test_setup_skill_mentions_insights_with_caveat
 test_wizard_doc_lists_insights_with_caveat
 test_sdlc_skill_has_precedence_preamble
 test_codex_exec_blocks_redirect_stdin
 test_sdlc_skill_has_goal_wrapper
+test_codex_review_guidance_teaches_background_mode
 
 # ────────────────────────────────────────────
 # Summary
