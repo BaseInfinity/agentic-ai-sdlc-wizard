@@ -2366,6 +2366,8 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 
    > **Always append `< /dev/null`** to `codex exec` calls run from background, hooks, CI, or any non-interactive parent. Without it, codex blocks on stdin reads even when the prompt is given as an argument — the process sits at S/0% CPU indefinitely with a 0-byte `-o` output file (the file is only written on completion, so a hang gives zero visibility). Validated on codex-cli 0.130.0 / macOS 14, 2026-05-15. For live progress, use `scripts/codex-review-with-progress.sh` instead.
 
+   > **Always launch codex via `run_in_background: true` on the Bash tool.** The Bash tool clamps `timeout` to 600000 ms (10 min) regardless of the value passed, and force-kills the foreground process at that wall. Multi-artifact bundle reviews (release reviews per the checklist below, multi-finding rechecks, etc.) routinely run 6–30 minutes — they need background mode to complete. The wrapper `scripts/codex-review.sh` already has a 30-min stall watchdog (`STALL_SECONDS=1800`) as the real timeout control. A foreground call killed mid-review plus the Stop-hook re-invocation loop can burn 60+ minutes of session compute on what should be a single 7-minute run (issue #364, 2026-05-27 incident). The general rule: **any long-running wrapper invoked through the CC Bash tool — codex, slow builds, long test suites — should use `run_in_background: true` unconditionally and let the wrapper's own stall watchdog be the timeout authority.**
+
 3. If CERTIFIED → proceed to CI. If NOT CERTIFIED → go to Round 2.
 
 ### Round 2+: Dialogue Loop
@@ -3801,6 +3803,8 @@ codex exec \
 ```
 
 > **Always append `< /dev/null`** to `codex exec` calls run from background, hooks, CI, or any non-interactive parent. Without it, codex blocks on stdin reads even when the prompt is given as an argument — the process sits at S/0% CPU indefinitely with a 0-byte `-o` output file. Validated on codex-cli 0.130.0 / macOS 14, 2026-05-15. For live progress visibility, use `scripts/codex-review-with-progress.sh` instead.
+
+> **Always launch via `run_in_background: true` on the Bash tool.** Same reason as the parallel callout in the Cross-Model Review Loop section above — Bash tool clamps `timeout` to 600000 ms (10 min) regardless of the value passed and force-kills foreground at the wall. Multi-artifact bundle reviews need background mode to complete. See issue #364 (2026-05-27 incident: 70 min session compute on a 7-min review).
 
 4. If CERTIFIED → done. If NOT CERTIFIED → enter the dialogue loop.
 
