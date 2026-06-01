@@ -3383,6 +3383,99 @@ test_hook_emits_cc_nudge_when_pending
 test_hook_silent_when_no_pending_cc_updates
 test_hook_silent_without_weekly_update_workflow
 
+# ---- /goal confidence + DLC-binding gate (ROADMAP #360) ----
+# UserPromptSubmit hook fires on `/goal <condition>` invocations, reads
+# transcript_path, scans the LAST assistant text message for a HIGH-95%
+# confidence statement, and also checks the condition for DLC binding
+# (`/sdlc`, `/gdlc`, `/ldlc`, etc). PR #355 (v1.77.0) added the *guidance*
+# in skills/sdlc/SKILL.md but nothing enforces it at runtime — this hook
+# is the enforcement layer per #360. Non-blocking soft nudge pattern
+# (mirrors model-effort-check.sh).
+
+test_goal_confidence_check_fires_when_no_confidence() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Wizard Version: 1.77.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    cat > "$tmpdir/transcript.jsonl" <<'JSONL'
+{"type":"user","message":{"role":"user","content":"hey"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Working on this now."}]}}
+JSONL
+    local payload='{"prompt":"/goal \"ship X, following /sdlc, stop after 10 turns\"","transcript_path":"'"$tmpdir/transcript.jsonl"'"}'
+    local output
+    output=$(printf '%s' "$payload" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
+    rm -rf "$tmpdir"
+    if echo "$output" | grep -qiE 'GATE|WARNING' && echo "$output" | grep -qi 'confidence'; then
+        pass "#360: /goal without prior HIGH 95% confidence triggers warning"
+    else
+        fail "#360: confidence-gate warning missing (got: $output)"
+    fi
+}
+
+test_goal_confidence_check_silent_when_confidence_present() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Wizard Version: 1.77.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    cat > "$tmpdir/transcript.jsonl" <<'JSONL'
+{"type":"user","message":{"role":"user","content":"recon done?"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Confidence: HIGH (95%) — verified pattern matches existing reference."}]}}
+JSONL
+    local payload='{"prompt":"/goal \"ship X, following /sdlc, stop after 10 turns\"","transcript_path":"'"$tmpdir/transcript.jsonl"'"}'
+    local output
+    output=$(printf '%s' "$payload" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
+    rm -rf "$tmpdir"
+    if echo "$output" | grep -qiE 'GATE|WARNING'; then
+        fail "#360: should be silent when prior turn has HIGH 95% confidence (got: $output)"
+    else
+        pass "#360: silent when prior turn has HIGH 95% confidence statement"
+    fi
+}
+
+test_goal_confidence_check_dlc_binding_warning() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Wizard Version: 1.77.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    cat > "$tmpdir/transcript.jsonl" <<'JSONL'
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Confidence: HIGH (95%)."}]}}
+JSONL
+    # Goal condition WITHOUT any DLC binding (/sdlc, /gdlc, /ldlc)
+    local payload='{"prompt":"/goal \"ship X, stop after 10 turns\"","transcript_path":"'"$tmpdir/transcript.jsonl"'"}'
+    local output
+    output=$(printf '%s' "$payload" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
+    rm -rf "$tmpdir"
+    if echo "$output" | grep -qiE 'DLC.*binding|name.*DLC|/sdlc|/gdlc'; then
+        pass "#360: /goal without DLC binding triggers DLC-binding warning"
+    else
+        fail "#360: DLC-binding warning missing (got: $output)"
+    fi
+}
+
+test_goal_confidence_check_silent_on_status_and_clear() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Wizard Version: 1.77.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    cat > "$tmpdir/transcript.jsonl" <<'JSONL'
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"some text"}]}}
+JSONL
+    local out1 out2
+    out1=$(printf '%s' '{"prompt":"/goal","transcript_path":"'"$tmpdir/transcript.jsonl"'"}' | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
+    out2=$(printf '%s' '{"prompt":"/goal clear","transcript_path":"'"$tmpdir/transcript.jsonl"'"}' | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
+    rm -rf "$tmpdir"
+    if [ -z "$out1" ] && [ -z "$out2" ]; then
+        pass "#360: silent on bare /goal (status) and /goal clear (reset)"
+    else
+        fail "#360: should be silent on status/clear (out1='$out1', out2='$out2')"
+    fi
+}
+
+test_goal_confidence_check_fires_when_no_confidence
+test_goal_confidence_check_silent_when_confidence_present
+test_goal_confidence_check_dlc_binding_warning
+test_goal_confidence_check_silent_on_status_and_clear
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
