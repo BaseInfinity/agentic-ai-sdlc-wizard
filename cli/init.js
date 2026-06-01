@@ -25,6 +25,7 @@ const FILES = [
   { src: 'hooks/instructions-loaded-check.sh', dest: '.claude/hooks/instructions-loaded-check.sh', executable: true, base: REPO_ROOT },
   { src: 'hooks/model-effort-check.sh', dest: '.claude/hooks/model-effort-check.sh', executable: true, base: REPO_ROOT },
   { src: 'hooks/precompact-seam-check.sh', dest: '.claude/hooks/precompact-seam-check.sh', executable: true, base: REPO_ROOT },
+  { src: 'hooks/goal-confidence-check.sh', dest: '.claude/hooks/goal-confidence-check.sh', executable: true, base: REPO_ROOT },
   // #254 Bug 1: shared helper sourced by all hooks above. Must ship — without
   // it, hooks emit "_find-sdlc-root.sh: No such file or directory" + the
   // SDLC root walk-up logic is silently dead.
