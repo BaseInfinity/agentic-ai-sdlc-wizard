@@ -2669,7 +2669,7 @@ test_model_effort_check_max_is_silent() {
 }
 
 # Test: below-xhigh produces LOUD warning mentioning SDLC compliance + /effort max
-# Per ROADMAP #217: below-xhigh breaks SDLC compliance on Opus 4.7 (shallow reasoning,
+# Per ROADMAP #217: below-xhigh breaks SDLC compliance on Opus 4.8 (shallow reasoning,
 # skipped TDD, dropped self-review). Hook must produce a distinguishable WARNING that
 # recommends /effort max (not just the soft "upgrade available" nudge).
 test_model_effort_check_below_xhigh_loud_warning() {

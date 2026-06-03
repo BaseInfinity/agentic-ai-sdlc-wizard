@@ -4,7 +4,7 @@
 # Sonnet coder + Opus reviewer) or "complex" (full Opus tier recommended).
 #
 # Roadmap #233: introduces repo_complexity signal so setup wizard can suggest
-# mixed-mode for trivial/CRUD repos and reserve flagship Opus 4.7 for
+# mixed-mode for trivial/CRUD repos and reserve flagship Opus 4.8 for
 # fixture-deep, multi-workflow, secrets-touching repos.
 
 set -e
