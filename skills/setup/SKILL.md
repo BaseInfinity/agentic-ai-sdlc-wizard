@@ -247,8 +247,8 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 > How do you want to configure the model for this repo?
 >
 > - **[N] No pin (default, recommended for most repos):** Leaves auto-mode enabled. Claude Code picks the model per turn. Compaction follows upstream defaults. Simplest, lowest friction.
-> - **[m] Mixed-mode** *(suggested for **simple** tier — roadmap #233):* Pins `model: "sonnet[1m]"` for the coder (Sonnet 4.6 with 1M context). The cross-model review layer (Codex / external reviewer) **always stays at the flagship** (Opus 4.7 max or gpt-5.5 xhigh) regardless. Saves cost/quota on simple repos; reviewer catches what Sonnet misses. Requires comfort with losing per-turn auto-selection.
-> - **[f] Flagship full** *(suggested for **complex** / stakes-flagged tier):* Pins `model: "opus[1m]"` (Opus 4.7 with 1M context) and sets `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. Long SDLC sessions cross 100K tokens regularly; the 1M window gives headroom and 30% autocompact fires at ~300K. Requires Claude Code v2.1.111+.
+> - **[m] Mixed-mode** *(suggested for **simple** tier — roadmap #233):* Pins `model: "sonnet[1m]"` for the coder (Sonnet 4.6 with 1M context). The cross-model review layer (Codex / external reviewer) **always stays at the flagship** (Opus 4.8 max or gpt-5.5 xhigh) regardless. Saves cost/quota on simple repos; reviewer catches what Sonnet misses. Requires comfort with losing per-turn auto-selection.
+> - **[f] Flagship full** *(suggested for **complex** / stakes-flagged tier):* Pins `model: "opus[1m]"` (Opus 4.8 with 1M context) and sets `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. Long SDLC sessions cross 100K tokens regularly; the 1M window gives headroom and 30% autocompact fires at ~300K. Requires Claude Code v2.1.154+.
 >
 > `[N/m/f]`
 

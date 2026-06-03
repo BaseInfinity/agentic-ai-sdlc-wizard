@@ -4,6 +4,16 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.78.0] - 2026-06-02
+
+### Changed
+
+- **Bumped recommended model from Opus 4.7 → Opus 4.8** (closes #365). Opus 4.8 launched 2026-05-28; day 5 in-the-wild sentiment settled positive, proof-of-life via `claude --print --model claude-opus-4-8` confirmed reachability, and the `opus[1m]` alias auto-resolves to latest Opus on CC v2.1.154+ (no settings.json template change needed — alias does the work). Updated prose across `SDLC.md` (Recommended Model row + effort warning), `CLAUDE_CODE_SDLC_WIZARD.md` (~11 mentions in effort table + autocompact + mixed-mode tier + 1M-context section), `skills/sdlc/SKILL.md`, `skills/setup/SKILL.md` (mixed-mode + flagship tier suggestions), `skills/update/SKILL.md`, `hooks/model-effort-check.sh` (warning text), and `cli/lib/repo-complexity.js` (tier comments). Min CC bumped v2.1.111+ → v2.1.154+ (required to resolve `opus[1m]` to 4.8). Effort semantics preserved — strict effort behavior introduced in 4.7 carried forward to 4.8, so `max` remains the recommended default and `xhigh` the floor.
+
+### Notes
+
+- **Un-run gates 2+3 tracked as post-deploy follow-up obligations on #365.** Gate 2 (A/B coder quality vs 4.7 on real PRs) and Gate 3 (dogfood for 24h before bump) were both deferred. If real-world use surfaces the system-card-flagged regressions for 4.8 — prompt-injection +60% on Gray Swan, file-deletion tendency, or eval-awareness affecting wizard output — revert via a single PR that flips the 4.7↔4.8 prose. Settings.json template unchanged means revert is prose-only.
+
 ## [1.77.0] - 2026-05-24
 
 ### Added

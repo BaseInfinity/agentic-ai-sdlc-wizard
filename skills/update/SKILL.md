@@ -93,9 +93,10 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.77.0
+Latest:    1.78.0
 
 What changed:
+- [1.78.0] Opus 4.7 → 4.8 model recommendation (#365) + min CC v2.1.154+.
 - [1.77.0] release-dry-run.yml + cc-version-drift.yml (#350) + /goal SDLC gates (95% + DLC binding).
 - [1.76.0] /goal /sdlc wrapper (#347) + CC v2.1.150 feature adoption + ROADMAP demand-signal gate (4 excise, 4 kill).
 - [1.75.1] release-workflow fix — Node 22 → 24 (ships npm 11.x), dropped flaky `npm install -g` self-upgrade (hit MODULE_NOT_FOUND on v1.75.0 publish). Explicit npm-version guard.
@@ -104,7 +105,6 @@ What changed:
 - [1.73.0] precompact stale REBASE_HEAD fix + 15 stale artifact deletes (-460 LOC).
 - [1.72.0] #323 closed — customization-aware `check` recommendation + new `--preserve-customized` flag. `init --force --preserve-customized` skips CUSTOMIZED files (action `PRESERVE`), still OVERWRITEs MATCH and CREATEs MISSING. Default `init --force` unchanged. 10 tests.
 - [1.71.0–1.69.0] token-bloat sweep #236 — BASELINE + TDD CHECK fire once per `session_id` (-12K, -0.5-1.5K); sdlc-skill Cross-Model Review trimmed.
-- [1.68.0–1.65.0] roadmap hygiene — five paperwork closes: #97 Anthropic Policy NO-GO + AAR-paper validating parallel; #99 AutoGPT NO-GO; #95 Nous NO-GO; #243 token-history liveness verified; #210 Node-24 false-green; #235 Thoughtworks AI Evals NO-GO. **6/6 external-product audits NO-GO** (continues #76, #77). Research write-ups in `.reviews/research-*.md`.
 - [1.64.0] XDLC ecosystem cross-references — README, wizard doc, and ROADMAP now cross-reference all three sibling packages (`agentic-sdlc-wizard`, `codex-sdlc-wizard`, `claude-gdlc-wizard`). New "Ecosystem (Sibling Projects)" section in README. 3 new doc-consistency tests prevent drift.
 - [1.63.0] cache-cost observability closeout (#204 absorbed by #220) — token-spike test gains explicit cache-miss + negative-control coverage. "Cache-Cost Surprises" docs added (10-20× silent blowups from mid-session CLAUDE.md edits, idle pruning).
 - [1.62.0] roadmap hygiene + #211 backfill — closes paperwork-stale rows. Backfilled 5 corrupted `score-history.jsonl` rows from `max_score:10` → `:11` (UI scenarios). Codex strategic review confirmed scope.
@@ -170,7 +170,7 @@ Check user's `.claude/settings.json`:
 1. **`model: "opus[1m]"` AND `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "30"`** — likely the old wizard-installed pair, not an intentional choice. Ask:
    > Your `.claude/settings.json` pins `model: "opus[1m]"` with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. This pair was the wizard default in 1.31.0–1.33.x, but it disables Claude Code's auto-mode (issue #198).
    > - **Remove the pin** (recommended) — keeps auto-mode enabled
-   > - **Keep the pin** — guaranteed Opus 4.7 + 1M, OK with no auto-selection
+   > - **Keep the pin** — guaranteed Opus 4.8 + 1M, OK with no auto-selection
    > Remove, keep, or decide later? `[r/k/l]`
 
 2. **Only one of the two fields matches** — treat as intentional customization. Do not prompt.
