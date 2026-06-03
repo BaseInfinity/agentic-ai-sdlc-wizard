@@ -1,8 +1,8 @@
 // Roadmap #233: repo complexity heuristic for mixed-mode tier selection.
 //
 // Output: { tier: 'simple' | 'complex', score: <number>, signals: [...] }
-//   - 'simple' → setup wizard suggests mixed-mode (Sonnet 4.6 coder + Opus 4.7 reviewer)
-//   - 'complex' → setup wizard suggests full flagship (Opus 4.7 everywhere)
+//   - 'simple' → setup wizard suggests mixed-mode (Sonnet 4.6 coder + Opus 4.8 reviewer)
+//   - 'complex' → setup wizard suggests full flagship (Opus 4.8 everywhere)
 // Cross-model review (Codex / external) always stays at the flagship tier
 // regardless of coder selection — see CLAUDE_CODE_SDLC_WIZARD.md.
 //

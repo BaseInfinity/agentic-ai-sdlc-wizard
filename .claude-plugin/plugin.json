@@ -1,6 +1,6 @@
 {
   "name": "sdlc-wizard",
-  "version": "1.77.0",
+  "version": "1.78.0",
   "description": "SDLC enforcement for AI agents — TDD, planning, self-review, CI shepherd",
   "author": {
     "name": "Stefan Ayala",

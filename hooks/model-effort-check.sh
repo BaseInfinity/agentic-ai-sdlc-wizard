@@ -3,9 +3,9 @@
 #
 # Behavior (per ROADMAP #217):
 #   effort=max    -> silent (preferred default, above floor)
-#   effort=xhigh  -> silent (minimum floor on Opus 4.7)
+#   effort=xhigh  -> silent (minimum floor on Opus 4.8)
 #   effort=high|medium|low (or unset) -> LOUD WARNING:
-#     Opus 4.7 needs xhigh floor for SDLC compliance (TDD, self-review, deep reasoning).
+#     Opus 4.8 needs xhigh floor for SDLC compliance (TDD, self-review, deep reasoning).
 #     Recommends `/effort max`. Also reminds about recommended model `opus[1m]`.
 #
 # CC does not expose the current model to hooks, so the model nudge is emitted as
@@ -57,7 +57,7 @@ else
 fi
 
 echo "=============================================================================="
-echo " WARNING: effort '$effort_display' breaks SDLC compliance on Opus 4.7."
+echo " WARNING: effort '$effort_display' breaks SDLC compliance on Opus 4.8."
 echo " Below xhigh = shallow reasoning, skipped TDD, dropped self-review."
 echo ""
 echo " Run: /effort max    (preferred, full SDLC compliance)"

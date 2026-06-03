@@ -114,7 +114,7 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 ## Recommended Model
 
-**Opt-in: `opus[1m]` (Opus 4.7 with 1M context).** `/model opus[1m]` at the start of non-trivial sessions — understand the tradeoff (issue #198). A top-level `model` pin in `.claude/settings.json` disables CC's per-turn auto-selection; pin only when you need 1M headroom. Requires CC v2.1.111+.
+**Opt-in: `opus[1m]` (Opus 4.8 with 1M context).** `/model opus[1m]` at the start of non-trivial sessions — understand the tradeoff (issue #198). A top-level `model` pin in `.claude/settings.json` disables CC's per-turn auto-selection; pin only when you need 1M headroom. Requires CC v2.1.154+.
 
 **Pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` when you opt in.** Without it, the default fires at ~76K on 1M. **Pick ONE — do NOT set both `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` AND `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000`** — they compound to 30% × 400K = 120K trigger ≈ 12% of 1M, fires almost immediately (#207). See wizard "Autocompact Tuning" for details.
 
@@ -130,7 +130,7 @@ The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confi
 
 ## Cross-Model Review (If Configured)
 
-**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip:** trivial changes, time-sensitive hotfixes, risk < review cost. **Prerequisites:** Codex CLI (`npm i -g @openai/codex`) + OpenAI API key. **Reviewer at flagship tier (#233):** even when project pins `sonnet[1m]`, reviewer runs `gpt-5.5` / Opus 4.7 max — adversarial diversity is the point.
+**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip:** trivial changes, time-sensitive hotfixes, risk < review cost. **Prerequisites:** Codex CLI (`npm i -g @openai/codex`) + OpenAI API key. **Reviewer at flagship tier (#233):** even when project pins `sonnet[1m]`, reviewer runs `gpt-5.5` / Opus 4.8 max — adversarial diversity is the point.
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
