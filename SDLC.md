@@ -1,4 +1,4 @@
-<!-- SDLC Wizard Version: 1.78.0 -->
+<!-- SDLC Wizard Version: 1.79.0 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Claude Code Baseline: v2.1.159 -->
@@ -10,8 +10,8 @@
 
 | Property | Value |
 |----------|-------|
-| Wizard Version | 1.78.0 |
-| Last Updated | 2026-06-02 |
+| Wizard Version | 1.79.0 |
+| Last Updated | 2026-06-08 |
 | Claude Code Minimum | v2.1.154+ (required for Opus 4.8 / `opus[1m]`); v2.1.105+ for `PreCompact` hook |
 | Claude Code Recommended | v2.1.159+ (latest at 2026-06-02) — unlocks Opus 4.8 (v2.1.154), `.claude/skills` plugin auto-load (v2.1.157), enriched `tool_decision` telemetry via `OTEL_LOG_TOOL_DETAILS=1` (v2.1.157), native `/goal` (v2.1.139), `/code-review --comment` (v2.1.147), per-category `/usage` (v2.1.149), `$CLAUDE_EFFORT` env var for hooks (v2.1.133) |
 | Recommended Model | `opus[1m]` (Opus 4.8, 1M context) — run `/model opus[1m]` |
