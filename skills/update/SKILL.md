@@ -93,10 +93,11 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.79.0
+Latest:    1.80.0
 
 What changed:
-- [1.79.0] Opus 4.6 Stability tier (max-effort sweet spot, community-validated flagship alternative).
+- [1.80.0] Flip default: Opus 4.6 max becomes recommended flagship; Opus 4.8 demoted to opt-in `[l] Latest` tier.
+- [1.79.0] Opus 4.6 Stability tier added as flagship alternative (now graduated to default in 1.80.0).
 - [1.78.0] Opus 4.7 → 4.8 model recommendation (#365) + min CC v2.1.154+.
 - [1.77.0] release-dry-run.yml + cc-version-drift.yml (#350) + /goal SDLC gates (95% + DLC binding).
 - [1.76.0] /goal /sdlc wrapper (#347) + CC v2.1.150 feature adoption + ROADMAP demand-signal gate (4 excise, 4 kill).
@@ -171,7 +172,7 @@ Check user's `.claude/settings.json`:
 1. **`model: "opus[1m]"` AND `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "30"`** — likely the old wizard-installed pair, not an intentional choice. Ask:
    > Your `.claude/settings.json` pins `model: "opus[1m]"` with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. This pair was the wizard default in 1.31.0–1.33.x, but it disables Claude Code's auto-mode (issue #198).
    > - **Remove the pin** (recommended) — keeps auto-mode enabled
-   > - **Keep the pin** — guaranteed Opus 4.8 + 1M, OK with no auto-selection
+   > - **Keep the pin** — guaranteed Opus 4.6 max + 1M, OK with no auto-selection
    > Remove, keep, or decide later? `[r/k/l]`
 
 2. **Only one of the two fields matches** — treat as intentional customization. Do not prompt.

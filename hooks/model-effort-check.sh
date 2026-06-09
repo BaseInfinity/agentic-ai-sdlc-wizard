@@ -3,17 +3,17 @@
 #
 # Behavior (per ROADMAP #217):
 #   effort=max    -> silent (preferred default, above floor)
-#   effort=xhigh  -> silent (minimum floor on Opus 4.8)
+#   effort=xhigh  -> silent (minimum floor on Opus 4.6 max)
 #   effort=high|medium|low (or unset) -> LOUD WARNING:
-#     Opus 4.8 needs xhigh floor for SDLC compliance (TDD, self-review, deep reasoning).
-#     Recommends `/effort max`. Also reminds about recommended model `opus[1m]`.
+#     Opus 4.6 max needs xhigh floor for SDLC compliance (TDD, self-review, deep reasoning).
+#     Recommends `/effort max`. Also reminds about recommended model `claude-opus-4-6[1m]`.
 #
 # CC does not expose the current model to hooks, so the model nudge is emitted as
 # guidance for Claude to compare against its own system prompt.
 #
 # Non-blocking: always exits 0.
 
-RECOMMENDED_MODEL="opus[1m]"
+RECOMMENDED_MODEL="claude-opus-4-6[1m]"
 
 # Token-bloat fix: when both project + plugin register this hook, plugin yields.
 HOOK_DIR="${BASH_SOURCE[0]%/*}"
@@ -57,7 +57,7 @@ else
 fi
 
 echo "=============================================================================="
-echo " WARNING: effort '$effort_display' breaks SDLC compliance on Opus 4.8."
+echo " WARNING: effort '$effort_display' breaks SDLC compliance on Opus 4.6 max."
 echo " Below xhigh = shallow reasoning, skipped TDD, dropped self-review."
 echo ""
 echo " Run: /effort max    (preferred, full SDLC compliance)"

@@ -2560,7 +2560,8 @@ test_model_effort_check_exists() {
 }
 
 # Test: detects stale effort and outputs upgrade nudge with model recommendation.
-# The nudge must name the opus[1m] alias specifically so the command is copy-pasteable.
+# The nudge must name the wizard's recommended model alias so the command is copy-pasteable.
+# Wizard's flagship recommendation is claude-opus-4-6[1m] (v1.80.0+).
 test_model_effort_check_stale_effort() {
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -2571,10 +2572,10 @@ test_model_effort_check_stale_effort() {
     rm -rf "$tmpdir"
     if echo "$output" | grep -q '/effort' \
         && echo "$output" | grep -q 'recommended model' \
-        && echo "$output" | grep -qF 'opus[1m]'; then
-        pass "model-effort-check.sh nudges effort + recommends opus[1m] when effort is stale"
+        && echo "$output" | grep -qF 'claude-opus-4-6[1m]'; then
+        pass "model-effort-check.sh nudges effort + recommends claude-opus-4-6[1m] when effort is stale"
     else
-        fail "model-effort-check.sh should nudge /effort and recommend 'opus[1m]', got: $output"
+        fail "model-effort-check.sh should nudge /effort and recommend 'claude-opus-4-6[1m]', got: $output"
     fi
 }
 
