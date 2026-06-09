@@ -98,10 +98,30 @@ Credit allocations: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. **No rollover.*
 
 ### What this means for the lanes
 
-- **Setup A — Premium (Opus 4.6 max planner + driver):** all interactive `/sdlc` work in Claude Code runs on your Max subscription. No API charges for the Claude side.
-- **Setup B — Saver (Opus 4.6 max planner + Sonnet driver):** same — interactive Sonnet sessions also stay on Max. The cost-saving in B isn't avoiding API charges, it's getting more work-per-5-hour-window from Sonnet's lower per-turn token spend vs Opus.
+- **Setup A — Premium (Opus 4.6 max planner + driver):** all interactive `/sdlc` work in Claude Code runs on your Max subscription. No API charges for the Claude side. Opus 4.6 / 4.7 / 4.8 at 1M context are all included in Max — confirmed by Claude Code's own `/model` picker which shows no credit warning for any 1M Opus variant.
+- **Setup B — Saver (Opus 4.6 max planner + Sonnet driver):** **mixed billing.** Planner (Opus 4.6 max) stays on Max. Driver (Sonnet 4.6) billing depends on context window:
+  - **Sonnet 4.6 standard context (~200K):** Max subscription ✓
+  - **Sonnet 4.6 with 1M context:** **draws from your separate usage credits pool**, not your Max subscription. Flat $3/$15 per Mtok, but routes to credits. Claude Code's `/model` picker shows this explicitly: "Sonnet 4.6 with 1M context · Draws from usage credits · $3/$15 per Mtok"
 - **Reviewer (GPT-5.5 xhigh) in both lanes:** billed against your OpenAI account, completely separate from Anthropic.
 - **CI loops that use `claude -p` post-June-15:** these now bill against the separate Anthropic credit pool, not your Max subscription. The wizard's CI shepherd loops (E2E scoring, weekly-update jobs) are local-only on the maintainer's machine and stay on Max; consumer-repo CI integrations may need to budget the new credit pool.
+
+### Caveat: Setup B's cost-saving has conditions
+
+The savings argument for Setup B is "Sonnet driver is cheaper than Opus driver per turn." **That's true at standard 200K context.** If your Sonnet driver needs to load >200K tokens (large diff, multi-file refactor, monorepo audit), the bill quietly flips:
+
+| Mode | Per-token rate | Pool |
+|---|---|---|
+| Setup A — Opus 4.6 1M | $5/$25 per Mtok | **Max subscription** |
+| Setup B — Sonnet 4.6 standard | $3/$15 per Mtok | **Max subscription** |
+| Setup B — Sonnet 4.6 1M | $3/$15 per Mtok | **Credits pool** |
+
+So **for context-heavy work that crosses 200K, Setup A on Max is actually cheaper than Setup B on credits** — because Setup A's Opus stays on the Max pool while Setup B's Sonnet 1M draws down a separately-metered $100/mo (Max 5x) or $200/mo (Max 20x) credit budget.
+
+**Practical guidance:**
+
+- **Subscription-first mindset (recommended):** Use Setup A unless you're confident the Sonnet driver in Setup B stays under 200K context. The Opus 4.6 max planner+driver combo lives entirely on Max — no credit-pool drawdown.
+- **Setup B is a real cost win only when:** the driver task fits in ≤ 200K (routine implementation, single-file work, small refactors, docs). Use B specifically for those, not as a blanket choice.
+- **Watch the picker.** When you swap to Sonnet 1M, Claude Code shows "Draws from usage credits" explicitly. That's your billing flip signal — choose Opus 1M instead if you want to stay on Max.
 
 ### Bottom line
 
