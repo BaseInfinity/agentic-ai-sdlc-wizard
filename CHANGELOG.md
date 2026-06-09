@@ -4,6 +4,36 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.80.0] - 2026-06-09
+
+### Changed
+
+- **Flipped default recommended model: Opus 4.8 → Opus 4.6 max.** v1.79.0 added Opus 4.6 max as opt-in Stability tier; v1.80.0 graduates it to the wizard's recommended flagship default. Setup wizard's `[f] Flagship full` choice now writes `model: "claude-opus-4-6[1m]"` (was `"opus[1m]"` → 4.8). All wizard prose flipped accordingly: SDLC.md Recommended Model row, CLAUDE_CODE_SDLC_WIZARD.md effort warning + Strict Effort behavior section + mixed-mode reviewer references, skills/sdlc/SKILL.md model section + cross-model reviewer line, skills/setup/SKILL.md choice list, hooks/model-effort-check.sh RECOMMENDED_MODEL + warning text, cli/lib/repo-complexity.js tier comments, README.md "Choosing Your Model" section reframed as a 6-source argument for why 4.6 max beats 4.8 in production SDLC workflows.
+
+- **Added `[l] Latest` tier as opt-in for Opus 4.8.** Replaces v1.79.0's `[s] Stability` choice (which is now the default — graduated, not removed). Latest tier ships SWE-Bench Pro / Terminal-Bench 2.1 / dynamic-workflows / parallel-subagent-swarm features 4.6 doesn't have. Documents the tradeoffs explicitly: 40-60× cache token jump at HIGH effort ([AI Weekly](https://aiweekly.co/alerts/claude-opus-48-thinking-burns-900k-tokens-per-turn)), `max` is worse than `xhigh` on 4.8 ([Andon Labs Vending-Bench](https://andonlabs.com/blog/opus-4-8-vending-bench)), active GitHub regressions still open. Recommended effort for 4.8 is `xhigh`, not `max`.
+
+- **Setup wizard choice list updated** from `[N/m/f/s]` to `[N/m/f/l]`. The Stability tier graduates into Flagship; Latest replaces Stability as the new optional opposite-direction choice.
+
+### Why
+
+- Six independent sources converged in the 12 days since 4.8 launched (2026-05-28) on the same conclusion: **4.6 is the only Opus where `max` effort tolerates without overthinking, and 4.7/4.8's tokenizer + agentic improvements come with structural token-burn tradeoffs that hurt long-running SDLC workflows.** Sources: Andon Labs Vending-Bench arena (4.8 finished last; "Max reasoning is not the best reasoning effort"), AI Weekly (40-60× cache token jump at HIGH effort; up to 900K tokens per turn), [Tech.yahoo review](https://tech.yahoo.com/ai/claude/articles/claude-opus-4-8-review-130106963.html) ("Anthropic deliberately made Opus's new tokenizer less efficient"), [Paweł Huryn's 4.7 guide](https://www.productcompass.pm/p/claude-opus-4-7-guide) ("most complaints about 4.7 feeling slow stem from people reflexively using max"), [BSWEN effort decision guide](https://docs.bswen.com/blog/2026-04-19-claude-code-effort-level-decision-guide/) ("Max on Opus causes overthinking"), r/Claudeopus field reports including one maintainer's literal A/B ("12 hours with 4.8 zero deliverables; plugged in 4.6, spec written + 133 tests green in one session").
+
+- Active GitHub regressions documented against 4.8 in Claude Code: false-greens ([#63861](https://github.com/anthropics/claude-code/issues/63861)), 2-3× token burn ([#64961](https://github.com/anthropics/claude-code/issues/64961)), 46K tokens for simple coding turn ([#64153](https://github.com/anthropics/claude-code/issues/64153)), dropped constraints during execution ([#65932](https://github.com/anthropics/claude-code/issues/65932)), fabricated identifiers in parallel batches.
+
+- 4.6 is Anthropic-supported until ≥ Feb 5, 2027 per the [official deprecation page](https://platform.claude.com/docs/en/about-claude/model-deprecations) — 8 months minimum runway. The Feb-Apr 2026 quality bugs that triggered the original "is 4.6 nerfed" wave are fully fixed per Anthropic's [April 23 postmortem](https://www.anthropic.com/engineering/april-23-postmortem); the wizard's default picks up the post-fix model.
+
+- Aligns the wizard with the [AI Setup Lanes](AI_SETUP_LANES.md) doc shipped in v1.79.0, which already named Opus 4.6 max as "Claude Premium" for both planner and driver in Setup A. The wizard's default flagship recommendation now matches.
+
+### Notes
+
+- **This is an explicit bet against the "newest = best" convention.** Anthropic recommends Opus 4.8 as their flagship; the wizard recommends Opus 4.6 max instead. Documented in README.md "Choosing Your Model" with the full six-source argument so users can evaluate the bet themselves and pick `[l] Latest` if they want Anthropic's official flagship.
+
+- **No breaking changes to consumer-repo installs.** `settings.json` template still ships unpinned (auto-mode default unchanged). The flip is at the *setup wizard's recommendation step* — users running `setup-wizard` get the new `[f] Flagship full` choice writing 4.6 max instead of 4.8. Users who already opted into v1.78.0/v1.79.0 flagship and want to stay current can re-run setup or manually flip `claude-opus-4-8` → `claude-opus-4-6` in their `~/.claude/settings.json` env vars.
+
+- **v1.79.0's Stability tier code stays in git history** but is now redundant — the Stability tier *was* "opt into Opus 4.6 max"; in v1.80.0 that's the default. No PR needed to remove the redundancy because the v1.80.0 prose subsumes it cleanly (Stability section content reframed as Latest tier opt-out instructions).
+
+- **If 4.8 regressions materially improve** (Anthropic ships hotfixes for the token-burn issues, GitHub bug closures, second wave of positive field reports), the default can flip back via a single PR. The CHANGELOG entry above names the specific signals to watch.
+
 ## [1.79.0] - 2026-06-08
 
 ### Added

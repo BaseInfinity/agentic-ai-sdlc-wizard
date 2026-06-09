@@ -142,18 +142,40 @@ codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access \
 
 The wizard ships a **default recommendation**, not a mandate. You can swap to any Claude model — newer, older, or sibling tier — at any time. `/model` per session, or pin in `.claude/settings.json`.
 
-**Default: Opus 4.8 at max effort** (`[f] Flagship` in the setup wizard). Matches Anthropic's current flagship; unlocks 4.8's SWE-Bench Pro / Terminal-Bench 2.1 / dynamic-workflow gains. If you're starting fresh, this is the right pick.
+**Default: Opus 4.6 at max effort** (`[f] Flagship` in the setup wizard). This is the wizard's recommendation as of v1.80.0 — a stronger statement than "this might work." Here's why.
 
-**Alternative tier: Opus 4.6 at max effort** (`[s] Stability`, added v1.79.0). Some maintainers — including the wizard author — hit 4.7/4.8 regressions in production that 4.6 simply doesn't have: false-greens ([anthropics/claude-code#63861](https://github.com/anthropics/claude-code/issues/63861)), 2-3× token burn ([#64961](https://github.com/anthropics/claude-code/issues/64961)), dropped constraints during execution ([#65932](https://github.com/anthropics/claude-code/issues/65932)), fabricated identifiers under parallel tool batches. Field signal converges on **4.6 being the only Opus where `max` effort doesn't overthink** — Andon Labs Vending-Bench arena (4.8 finished last), [Paweł Huryn's 4.7 guide](https://www.productcompass.pm/p/claude-opus-4-7-guide) ("most complaints about 4.7 feeling slow stem from people reflexively using max"), r/Claudeopus field reports (one maintainer: "12 hours with 4.8 zero deliverables; plugged in 4.6, 133 tests green in one session"). 4.6 is Anthropic-supported until ≥ Feb 5, 2027 per the [official deprecation page](https://platform.claude.com/docs/en/about-claude/model-deprecations) — 8 months minimum runway.
+### Why Opus 4.6 max, not Anthropic's latest
 
-**The wizard's stance: aim for stability.** Default to what works reliably in your hands, not what's newest. If 4.8 ships well for your workflow, stay on flagship. If you've hit the regressions, the Stability tier is one setup-wizard choice (`[s]`) and reversion is two lines in `~/.claude/settings.json`. See [CLAUDE_CODE_SDLC_WIZARD.md → "Stability tier — Opus 4.6 at max effort"](CLAUDE_CODE_SDLC_WIZARD.md) for the full pick-list and tradeoffs.
+Two weeks of in-the-wild data after Opus 4.8's launch (2026-05-28) showed a clear pattern:
 
-**Switch any time:**
+- **[Andon Labs Vending-Bench](https://andonlabs.com/blog/opus-4-8-vending-bench)** — 4.8 finished last vs 4.7 and GPT-5.5; documented "Max reasoning is not the best reasoning effort"; falls for scam suppliers 30× more frequently
+- **[AI Weekly: 900K cache tokens per turn](https://aiweekly.co/alerts/claude-opus-48-thinking-burns-900k-tokens-per-turn)** — 40-60× jump vs 4.7 at HIGH effort. Burns Max 5-hour limits 2-3× faster
+- **[Tech.yahoo review](https://tech.yahoo.com/ai/claude/articles/claude-opus-4-8-review-130106963.html)** — explicit: "Anthropic deliberately made Opus's new tokenizer less efficient"; "a single coding prompt drained our entire token quota"
+- **Active GitHub regressions** — false-greens ([#63861](https://github.com/anthropics/claude-code/issues/63861)), 2-3× token burn ([#64961](https://github.com/anthropics/claude-code/issues/64961)), 46K tokens for simple coding turn ([#64153](https://github.com/anthropics/claude-code/issues/64153)), dropped constraints during execution ([#65932](https://github.com/anthropics/claude-code/issues/65932)), fabricated identifiers in parallel tool batches
+- **[Paweł Huryn's 4.7 guide](https://www.productcompass.pm/p/claude-opus-4-7-guide)** — "most complaints about 4.7 feeling slow stem from people reflexively using max"
+- **[BSWEN effort decision guide](https://docs.bswen.com/blog/2026-04-19-claude-code-effort-level-decision-guide/)** — "Max on Opus causes overthinking on routine stuff. xHigh is the sweet spot for autonomous work"
+- **r/Claudeopus field reports** — one maintainer's literal A/B: "12 hours with 4.8 zero deliverables; plugged in 4.6, spec written + 133 tests green in one session." Top comment: "4.6 had the best overall balance at max"
+
+Six independent sources converging on the same conclusion: **4.6 is the only Opus where `max` effort tolerates without overthinking, and 4.7/4.8's "improvements" come with structural token-burn tradeoffs.** When you're running SDLC discipline workflows that span hours and tens of thousands of tokens, reliability beats benchmarks.
+
+4.6 is Anthropic-supported until **≥ Feb 5, 2027** per the [official deprecation page](https://platform.claude.com/docs/en/about-claude/model-deprecations) — 8 months minimum runway. The Feb-Apr 2026 quality bugs are fully fixed per Anthropic's [April 23 postmortem](https://www.anthropic.com/engineering/april-23-postmortem) — the wizard picks up the post-fix model, not the regression window.
+
+### What 4.6 max gives up
+
+- 4.8's SWE-Bench Pro (69.2% vs 4.7's 64.3%) and Terminal-Bench 2.1 (74.6% vs 66.1%) gains
+- Dynamic-workflows and parallel-subagent-swarm features introduced in 4.8
+- Anthropic's "latest = best" convention. The wizard is explicitly betting against that convention here.
+
+### Latest tier — Opus 4.8 (opt-in)
+
+If you want the newest benchmarks and you're comfortable with the token-burn tradeoff, pick `[l] Latest` in the setup wizard. Recommended effort is `xhigh`, not `max`, on 4.8 — Andon Labs' data is explicit that `max` on 4.8 is worse than `xhigh`. The [`Latest tier — Opus 4.8`](CLAUDE_CODE_SDLC_WIZARD.md) section has the full opt-in instructions.
+
+### Switch any time
 
 ```bash
-/model claude-opus-4-8[1m]   # flagship default
-/model claude-opus-4-6[1m]   # stability tier
-/model opus[1m]              # whatever the wizard's recommendation resolves to
+/model claude-opus-4-6[1m]   # wizard's recommended flagship (default in v1.80.0+)
+/model claude-opus-4-8[1m]   # Anthropic's latest, opt-in via Latest tier
+/model opus[1m]              # whatever your env-var resolves to (alias)
 ```
 
 Or pin in `.claude/settings.json`:
@@ -164,9 +186,9 @@ Or pin in `.claude/settings.json`:
 
 Or sweep all your projects from one place by setting `ANTHROPIC_DEFAULT_OPUS_MODEL` in `~/.claude/settings.json` — the `opus[1m]` alias resolves through it, so flipping one env var switches every repo at once.
 
-Effort tuning is independent of model choice. `max` is the wizard's default; `xhigh` is the floor. Adjust per session with `/effort max`. The Stability tier is specifically a **`max`-effort tier** because that's the field-validated sweet spot for 4.6 — at the cost of giving up 4.8's newer benchmark wins.
+Effort tuning is independent of model choice. `max` is the wizard's default *paired with 4.6*; `xhigh` is the floor. Adjust per session with `/effort max`. On 4.8, drop effort to `xhigh` per field evidence.
 
-**A note on `[1m]` and billing.** The `[1m]` suffix on `claude-opus-4-6[1m]` is the 1M-context alias. As of [March 2026](https://claude.com/blog/1m-context-ga), 1M context is GA at standard pricing — **no long-context surcharge, no premium tier, no API-only restriction.** Interactive Claude Code sessions on Max / Team / Enterprise plans include 1M context automatically; whether you set `claude-opus-4-6` or `claude-opus-4-6[1m]`, you're billed against the same per-token Max budget at $5/$25 per million tokens. (Pro users need "Enable usage credits" turned on once.) The [June 15, 2026 billing split](https://codersera.com/blog/anthropic-june-2026-billing-change-claude-code/) moved *headless* surfaces — `claude -p`, Agent SDK, GitHub Actions, third-party apps — off the Max subscription onto a separate metered credit pool. Interactive Claude Code in your terminal stays on Max. Full details in [`AI_SETUP_LANES.md` § How Billing Works](AI_SETUP_LANES.md#how-billing-works--1m-context-max-plan-and-the-june-15-split).
+**A note on `[1m]` and billing.** The `[1m]` suffix is the 1M-context alias. As of [March 2026](https://claude.com/blog/1m-context-ga), 1M context is GA at standard pricing — **no long-context surcharge, no premium tier, no API-only restriction.** Interactive Claude Code sessions on Max / Team / Enterprise plans include 1M context automatically; whether you set `claude-opus-4-6` or `claude-opus-4-6[1m]`, you're billed against the same per-token Max budget at $5/$25 per million tokens. (Pro users need "Enable usage credits" turned on once.) The [June 15, 2026 billing split](https://codersera.com/blog/anthropic-june-2026-billing-change-claude-code/) moved *headless* surfaces — `claude -p`, Agent SDK, GitHub Actions, third-party apps — off the Max subscription onto a separate metered credit pool. Interactive Claude Code in your terminal stays on Max. Full details in [`AI_SETUP_LANES.md` § How Billing Works](AI_SETUP_LANES.md#how-billing-works--1m-context-max-plan-and-the-june-15-split).
 
 ## How It Works
 
