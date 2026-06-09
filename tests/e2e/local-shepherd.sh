@@ -218,9 +218,9 @@ echo "PR #$PR_NUMBER → scenario: $SCENARIO_NAME" >&2
 # any of them without a matching CI change creates a silent score-drift risk.
 # The parity-audit test (tests/test-local-shepherd.sh) diffs these against
 # the CI block to catch drift.
-# Model is NOT pinned explicitly — CI relies on action default (Opus 4.8),
+# Model is NOT pinned explicitly — CI relies on the action's default model,
 # so shepherd does too. If Anthropic changes the default, both paths shift
-# together.
+# together. Wizard recommends Opus 4.6 max locally (v1.80.0+).
 PARITY_MAX_TURNS=55
 PARITY_ALLOWED_TOOLS='Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,TodoWrite,TaskCreate,Task'
 

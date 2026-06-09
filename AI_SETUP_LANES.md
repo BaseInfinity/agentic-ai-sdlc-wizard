@@ -70,7 +70,7 @@ The reviewer (GPT-5.5 xhigh) is billed against your OpenAI account, separately. 
 
 A common question: **"does the `[1m]` model alias get billed differently? Does it pull from my Max plan or from API credits?"**
 
-The short answer: **both lanes run on your Max subscription for interactive Claude Code sessions, including 1M context, with no premium surcharge.** Here's the detail.
+The short answer: **Setup A (Opus planner + driver) runs entirely on your Max subscription, including 1M context, with no premium surcharge. Setup B's Sonnet driver has a billing caveat when using 1M context — see the "Caveat" section below.** Here's the detail.
 
 ### 1M context is free on Max — no API premium
 

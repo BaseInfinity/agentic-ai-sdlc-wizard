@@ -250,7 +250,7 @@ The `review` job is **skipped on `BaseInfinity/claude-sdlc-wizard` self-PRs** �
 
 ## Local Codex Audit of CI Logs (Cross-Model)
 
-The GH `pr-review.yml` workflow uses Claude Opus 4.8 (via `claude-code-action@v1` default). For adversarial diversity, the local shepherd loop runs a **second pass with Codex xhigh** against the CI logs themselves — not just the code. A second model catches things the first missed (silent test exclusions, degraded E2E scores on a green checkmark, warnings promoted to errors in a later version).
+The GH `pr-review.yml` workflow uses whichever Claude model `claude-code-action@v1` defaults to (the action's upstream default — currently Opus 4.8, may change with action updates). For adversarial diversity, the local shepherd loop runs a **second pass with Codex xhigh** against the CI logs themselves — not just the code. A second model catches things the first missed (silent test exclusions, degraded E2E scores on a green checkmark, warnings promoted to errors in a later version). The wizard's local recommendation is Opus 4.6 max (v1.80.0+), but the CI action runs its own default independently.
 
 ```bash
 # After CI reports pass/fail:

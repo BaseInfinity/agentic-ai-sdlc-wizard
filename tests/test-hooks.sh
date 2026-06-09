@@ -1561,13 +1561,14 @@ test_wizard_effort_level_section() {
     fi
 }
 
-# Test 32: Wizard doc recommends high as default effort
+# Test 32: Wizard doc recommends max as default effort (v1.80.0+: 4.6 max flagship)
+# Also accepts "high" references since the wizard discusses effort floors.
 test_wizard_effort_high_default() {
     local wizard="$SCRIPT_DIR/../CLAUDE_CODE_SDLC_WIZARD.md"
-    if grep -qi "high.*default\|default.*high" "$wizard" && grep -q "effort.*high\|high.*effort" "$wizard"; then
-        pass "Wizard doc recommends high as default effort"
+    if grep -qi "max.*default\|default.*max\|recommended default" "$wizard" && grep -qE "effort.*(max|high)" "$wizard"; then
+        pass "Wizard doc recommends max as default effort (v1.80.0+)"
     else
-        fail "Wizard doc should recommend high as the default effort level"
+        fail "Wizard doc should recommend max as the default effort level"
     fi
 }
 
