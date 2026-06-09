@@ -2320,8 +2320,9 @@ test_cc_version_check_silent_under_non_claude_host() {
     printf '#!/bin/bash\nif echo "$@" | grep -q "claude-code"; then echo "2.1.168"; else echo "1.20.0"; fi\n' > "$tmpdir/bin/npm"
     chmod +x "$tmpdir/bin/claude" "$tmpdir/bin/npm"
     local output
-    # Key: do NOT set CLAUDE_PROJECT_DIR — simulates running under Codex/OpenCode
-    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    # Key: explicitly unset CLAUDE_PROJECT_DIR — simulates running under Codex/OpenCode.
+    # Must use env -u to prevent inheriting from the parent shell (e.g., when run from Claude Code).
+    output=$(cd "$tmpdir" && env -u CLAUDE_PROJECT_DIR PATH="$tmpdir/bin:$PATH" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     if echo "$output" | grep -q "Claude Code update"; then
         fail "#375: CC version check should NOT fire when CLAUDE_PROJECT_DIR is unset (non-Claude host)"

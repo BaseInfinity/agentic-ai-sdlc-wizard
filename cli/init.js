@@ -544,8 +544,13 @@ function settingsHooksMatch(srcPath, destPath) {
         if (!th.command) continue;
         const marker = WIZARD_HOOK_MARKERS.find((m) => th.command.includes(m));
         if (!marker) continue;
+        // Verify marker present AND type matches. We intentionally skip matcher/if
+        // comparison — those are customizable per-project (the wizard's own settings
+        // use different if guards than the consumer template).
         const found = dest.hooks[event].some(
-          (de) => de.hooks && de.hooks.some((h) => h.command && h.command.includes(marker))
+          (de) => de.hooks && de.hooks.some(
+            (h) => h.command && h.command.includes(marker) && h.type === (th.type || 'command')
+          )
         );
         if (!found) return false;
       }
