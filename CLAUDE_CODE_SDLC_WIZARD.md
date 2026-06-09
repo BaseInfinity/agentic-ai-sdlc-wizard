@@ -282,10 +282,10 @@ The `/sdlc` skill sets `effort: max` in its frontmatter, overriding the medium d
 
 **How it works:**
 - `/effort max` changes effort for the current session only (resets next session)
-- `effort: high` in SKILL.md frontmatter persists — every `/sdlc` invocation uses `high`
+- `effort: max` in SKILL.md frontmatter persists — every `/sdlc` invocation uses `max`
 - You can also type `ultrathink` in any prompt for a single high-effort turn
 
-**Cost note:** `max` uses significantly more tokens than `high`. Use it when the problem justifies it, not as a default.
+**Cost note:** `max` uses more tokens than `xhigh`. On Opus 4.6 (the wizard's recommended flagship), this is the validated sweet spot — 4.6 is the only Opus where `max` doesn't overthink. On Opus 4.7/4.8, consider `xhigh` instead.
 
 > See also: the **Effort** column in the [Confidence Check table](#confidence-check-required) below for per-confidence-level guidance on when to escalate to `max`.
 
@@ -2340,8 +2340,8 @@ Before presenting approach, STATE your confidence:
 
 | Level | Meaning | Action | Effort |
 |-------|---------|--------|--------|
-| HIGH (90%+) | Know exactly what to do | Present approach, proceed after approval | `high` (default) |
-| MEDIUM (60-89%) | Solid approach, some uncertainty | Present approach, highlight uncertainties | `high` (default) |
+| HIGH (90%+) | Know exactly what to do | Present approach, proceed after approval | `max` (default) |
+| MEDIUM (60-89%) | Solid approach, some uncertainty | Present approach, highlight uncertainties | `max` (default) |
 | LOW (<60%) | Not sure | ASK USER before proceeding | **Run `/effort xhigh` now** — don't wait |
 | FAILED 2x | Something's wrong | STOP. ASK USER immediately | **Run `/effort max` now** — you're burning cycles at lower effort |
 | CONFUSED | Can't diagnose why something is failing | STOP. Describe what you tried, ask for help | **Run `/effort max` now** — stop spinning |
