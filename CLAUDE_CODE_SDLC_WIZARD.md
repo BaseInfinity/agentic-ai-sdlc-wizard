@@ -249,26 +249,27 @@ When Anthropic provides official plugins or tools that handle something:
 
 Claude Code's **effort level** controls how much thinking the model does before responding. Higher effort = deeper reasoning but more tokens.
 
-> ⚠️ **On Opus 4.8, effort below `xhigh` breaks SDLC compliance in practice.** Inherited from 4.7, Opus 4.8 respects effort levels *strictly* — at `high` or below it scopes work tighter (shallow reasoning, skipped TDD, no self-review) rather than going above-and-beyond. Treat the table below accordingly: **`max` is the recommended default, `xhigh` is the floor**, `high` or below is for trivial grep/search subagents only.
+> ⚠️ **On Opus 4.6 max, effort below `xhigh` breaks SDLC compliance in practice.** Inherited from 4.7, Opus 4.6 max respects effort levels *strictly* — at `high` or below it scopes work tighter (shallow reasoning, skipped TDD, no self-review) rather than going above-and-beyond. Treat the table below accordingly: **`max` is the recommended default, `xhigh` is the floor**, `high` or below is for trivial grep/search subagents only.
 
 | Level | When to Use | How to Set |
 |-------|-------------|------------|
-| `high` or below | **Not for SDLC work on Opus 4.8.** Only for trivial grep/search subagents or one-shot questions that don't require planning | `effort: high` in a specific subagent frontmatter only |
-| `xhigh` | **Floor for SDLC work on Opus 4.8.** Long-running tasks, repeated tool calls, deep exploration. Claude Code defaults to this on Opus 4.7+ | `/effort xhigh` or set in skill frontmatter |
-| `max` | **Recommended default for Opus 4.8 SDLC work.** Multi-file changes, architecture decisions, debugging, cross-model reviews, any task touching wizard/skill/CI code | `/effort max` (session only — resets next session) |
+| `high` or below | **Not for SDLC work on Opus 4.6 max.** Only for trivial grep/search subagents or one-shot questions that don't require planning | `effort: high` in a specific subagent frontmatter only |
+| `xhigh` | **Floor for SDLC work on Opus 4.6 max.** Long-running tasks, repeated tool calls, deep exploration. Claude Code defaults to this on Opus 4.7+ | `/effort xhigh` or set in skill frontmatter |
+| `max` | **Recommended default for Opus 4.6 max SDLC work.** Multi-file changes, architecture decisions, debugging, cross-model reviews, any task touching wizard/skill/CI code | `/effort max` (session only — resets next session) |
 
-**Strict effort behavior (Opus 4.7+, carried forward to 4.8):**
+**Strict effort behavior (Opus 4.7+, carried forward in 4.8 — and why 4.6 max is the wizard's pick):**
 - **`xhigh` was introduced in 4.7** — sits between `high` and `max`, designed for coding and agentic work (30+ minute tasks with token budgets in the millions)
 - **Claude Code defaults to `xhigh`** on Opus 4.7+ for all plans
 - **Opus 4.7+ respects effort levels more strictly** than 4.6 — at lower levels it scopes work tighter instead of going above and beyond. If you see shallow reasoning, raise effort rather than prompting around it
 - **`budget_tokens` is deprecated** on Opus 4.7+ — use adaptive thinking with effort instead
+- **4.6 max is the wizard's flagship pick despite this:** community signal converges on 4.6 being the only Opus version where `max` effort tolerates without overthinking (Andon Labs Vending-Bench, Paweł Huryn's 4.7 guide, BSWEN effort decision guide, r/Claudeopus field reports). On 4.7 and 4.8, `max` triggers excessive reasoning that hits context limits faster and burns more tokens per turn — making the strict-effort behavior backfire. 4.6 max stays in the sweet spot. See [README → "Choosing Your Model"](../README.md#choosing-your-model) for the full evidence
 - When running at `xhigh` or `max`, set a large `max_tokens` (64k+) so the model has room to think across subagents and tool calls
 
 **Why `high` was the previous default:** Claude Code uses **adaptive thinking** to dynamically allocate reasoning budget per turn. On Pro and Max plans, the default effort level was **medium (85)**, which causes the model to under-allocate reasoning on complex multi-step tasks — leading to shallow analysis, missed edge cases, and "lazy" outputs. This was [confirmed by Anthropic engineer Boris Cherny](https://github.com/anthropics/claude-code/issues/42796) and is documented at [code.claude.com](https://code.claude.com/docs/en/model-config). API, Team, and Enterprise plans default to high effort and are not affected.
 
 **Don't rely on the CC default — set effort yourself.** Anthropic's [2026-04-23 post-mortem](https://www.anthropic.com/engineering/april-23-postmortem) is independent third-party evidence that CC has flipped reasoning_effort defaults across versions (high → medium → xhigh/high). The default has changed before and will change again. The wizard's `model-effort-check.sh` hook nudges to `xhigh`/`max` at session start specifically because the in-product default is not load-bearing — it can shift release-to-release without notice. Set `/effort max` explicitly every session you do SDLC work, and treat any "I assumed the default was X" reasoning as a bug.
 
-The `/sdlc` skill sets `effort: high` in its frontmatter as a baseline, overriding the medium default on every SDLC invocation. **On Opus 4.8, run `/effort max` at session start** — the frontmatter is a floor, not a ceiling, and `max` is where SDLC-compliant work actually happens on 4.8.
+The `/sdlc` skill sets `effort: high` in its frontmatter as a baseline, overriding the medium default on every SDLC invocation. **On Opus 4.6 max, run `/effort max` at session start** — the frontmatter is a floor, not a ceiling, and `max` is where SDLC-compliant work actually happens on 4.6.
 
 **Nuclear option — disable adaptive thinking entirely:** Set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` in your environment or settings.json `env` block. This forces a fixed reasoning budget per turn instead of letting the model dynamically allocate. Use this if you observe persistent quality issues even with `effort: high`. See [Claude Code model config docs](https://code.claude.com/docs/en/model-config) for details.
 
@@ -966,7 +967,7 @@ Override the default auto-compact threshold with environment variables. These ar
 | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Trigger compaction at this % of context capacity (1-100) | ~95% |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | Override context capacity in tokens (useful for 1M models) | Model default |
 
-**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model` or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 asks whether to opt into `"model": "opus[1m]"` + `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (tuned for the 1M window — compacts at ~300K). Default answer is **No**. Pinning the model at the top level tells Claude Code you've explicitly chosen a model and turns off per-turn model auto-selection — a real tradeoff, so we ask. Power users who want guaranteed Opus 4.8 + 1M context answer yes.
+**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model` or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 asks whether to opt into `"model": "opus[1m]"` + `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (tuned for the 1M window — compacts at ~300K). Default answer is **No**. Pinning the model at the top level tells Claude Code you've explicitly chosen a model and turns off per-turn model auto-selection — a real tradeoff, so we ask. Power users who want guaranteed Opus 4.6 max + 1M context answer yes.
 
 To opt in by hand, edit `.claude/settings.json`:
 
@@ -1021,13 +1022,13 @@ Claude Code supports both 200K and 1M context windows. **`opus[1m]` is an opt-in
 **Why `opus[1m]` is opt-in (issue #198):**
 - **Pinning disables auto-mode.** Max-plan users pay for Claude Code's per-turn model selection (Sonnet for cheap tasks, Opus for hard ones, plus weekly-limit smoothing). A top-level `model` gives that up.
 - **The 1M headroom has to earn it.** If your typical session stays under 150K, you're giving up auto-mode for headroom you're not using.
-- **Power users who want guaranteed Opus 4.8 + 1M** — go ahead, it's a real win for long shepherding sessions. Just make it a conscious choice, not a silent default.
+- **Power users who want guaranteed Opus 4.6 max + 1M** — go ahead, it's a real win for long shepherding sessions. Just make it a conscious choice, not a silent default.
 
-**Opt in when:** you routinely cross 100K tokens in a single session (plan → TDD → review → CI shepherd on one feature), you want Opus 4.8 specifically (not Sonnet), and you're OK losing auto-mode.
+**Opt in when:** you routinely cross 100K tokens in a single session (plan → TDD → review → CI shepherd on one feature), you want Opus 4.6 max specifically (not Sonnet), and you're OK losing auto-mode.
 
 **Stay on auto-mode (default) when:** you're unsure, your work is mixed short/long, or you want Claude Code to do the model math for you.
 
-**How to opt in:** run `/model opus[1m]` in your session (transient), or set `"model": "opus[1m]"` in `.claude/settings.json` (persistent). Requires Claude Code v2.1.154+ for Opus 4.8 (the `opus[1m]` alias auto-resolves to the latest Opus). The setup wizard's Step 9.5 also asks once, with default No.
+**How to opt in:** run `/model opus[1m]` in your session (transient), or set `"model": "opus[1m]"` in `.claude/settings.json` (persistent). Requires Claude Code v2.1.154+ for Opus 4.6 max (the `opus[1m]` alias auto-resolves to the latest Opus). The setup wizard's Step 9.5 also asks once, with default No.
 
 **How to opt out:** remove the `model` line from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".
 
@@ -1037,14 +1038,14 @@ Claude Code supports both 200K and 1M context windows. **`opus[1m]` is an opt-in
 
 ### Mixed-Mode Tier (Sonnet coder + Opus reviewer, roadmap #233)
 
-For trivial / blank / config-only / CRUD-style repos, full Opus 4.8 on every turn is overkill on the coder leg. The **mixed-mode tier** pins `model: "sonnet[1m]"` for in-session work while keeping the cross-model review layer (Codex / external reviewer) at the flagship — so the reviewer still catches what Sonnet missed.
+For trivial / blank / config-only / CRUD-style repos, full Opus 4.6 max on every turn is overkill on the coder leg. The **mixed-mode tier** pins `model: "sonnet[1m]"` for in-session work while keeping the cross-model review layer (Codex / external reviewer) at the flagship — so the reviewer still catches what Sonnet missed.
 
 **The split:**
 
 | Layer | Mixed-mode tier | Flagship tier |
 |-------|----------------|---------------|
 | Coder (in-session CC) | `model: "sonnet[1m]"` | `model: "opus[1m]"` |
-| Cross-model reviewer (Codex etc.) | gpt-5.5 xhigh (or Opus 4.8 max via Bash) | gpt-5.5 xhigh (or Opus 4.8 max via Bash) |
+| Cross-model reviewer (Codex etc.) | gpt-5.5 xhigh (or Opus 4.6 max via Bash for an in-family second opinion) | gpt-5.5 xhigh (or Opus 4.6 max via Bash for an in-family second opinion) |
 | Effort floor (CC session) | xhigh; max preferred | xhigh; max preferred |
 
 The reviewer always stays at flagship — the whole point of mixed-mode is that adversarial review catches Sonnet's blind spots, so weakening the review leg defeats the savings.
@@ -1058,7 +1059,7 @@ The reviewer always stays at flagship — the whole point of mixed-mode is that 
 **When to stay flagship:**
 - Stakes-flagged repo: anywhere `.env` / `secrets/` / `credentials/` exists. Force flagship even if LOC is tiny — leaks are catastrophic
 - Architecture work, debugging non-obvious bugs, security review, anything where the *coder's* judgment matters as much as the reviewer's
-- Long shepherd sessions (plan → TDD → review → CI loop) — they cross 100K tokens regularly and Opus 4.8 fits the window better in a single thread
+- Long shepherd sessions (plan → TDD → review → CI loop) — they cross 100K tokens regularly and Opus 4.6 max fits the window better in a single thread
 
 **Auto-detection:** the setup wizard runs `cli/lib/repo-complexity.js` against the target repo and suggests the tier. Stakes flag (`.env` / `secrets/`) forces complex regardless of size. The user always picks the final answer — the heuristic is a hint, not a gate.
 
@@ -1076,21 +1077,22 @@ Don't add `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` — Sonnet's 1M window has different
 - Sonnet 4.6 will drop some fine-grained self-review moves (it's fast, less deliberate). The Opus reviewer catches them — but you'll see more "fix in round 2" cycles compared to Opus-coder runs.
 - Mixed-mode disables auto-mode (same as flagship pin). The Sonnet pin is per-session — to switch back, remove the `model` line.
 
-### Stability tier — Opus 4.6 at max effort
+### Latest tier — Opus 4.8 (opt-in for bleeding-edge)
 
-The wizard's default flagship recommendation is Opus 4.8 (per Anthropic). Some maintainers report better real-world results with **Opus 4.6 at max effort** — community signal converges on 4.6 being the only Opus version where `max` doesn't overthink. Sources: r/Claudeopus field reports ("12 hours with 4.8 zero result; plugged in 4.6, spec written + 133 tests green in one session"; "4.6 had the best overall balance at max"), Andon Labs Vending-Bench (4.8 finished last vs 4.7 and GPT-5.5; "Max reasoning is not the best reasoning effort"), Paweł Huryn's 4.7 guide ("most complaints about 4.7 feeling slow stem from people reflexively using max"), and BSWEN effort decision guide ("Max on Opus causes overthinking").
+The wizard's flagship recommendation is Opus 4.6 max (see "Choosing Your Model" in [README.md](../README.md) for the full evidence). Some maintainers will want Anthropic's newest Opus instead — **Opus 4.8** ships SWE-Bench Pro / Terminal-Bench 2.1 gains, dynamic-workflows, and parallel-subagent-swarm features 4.6 doesn't have.
 
-**When the Stability tier is the right call:**
-- You've hit 4.7/4.8 regressions in production: false-greens (Claude declaring "done" without running canonical builds, GitHub #63861), 2-3× token burn vs prior baselines (#64961), dropped load-bearing constraints during execution (#65932), fabricated identifiers in parallel batches
-- Your work is context-heavy (large diffs, multi-file refactors, long sessions) — 4.6 scored 94.7% on NYT Connections vs 4.7's 41%
-- You want the original tokenizer (no 4.7+ 12-18% English token tax)
-- You're a high-volume user hitting Max 5-hour limits in 2-3 hours on 4.7/4.8 — field reports point to 4.6 sipping fewer tokens per turn
+**When the Latest tier is the right call:**
+- You want Anthropic's newest benchmark wins (SWE-Bench Pro 69.2% vs 4.7's 64.3%, Terminal-Bench 2.1 74.6% vs 4.7's 66.1%)
+- You use dynamic workflows / parallel subagent swarms — introduced in 4.8, not available in 4.6
+- You're on the launch-week mailing list and want to validate the newest model against your workflow
+- You haven't hit 4.7/4.8 token burn / false-green / dropped-constraint regressions in your own work
 
 **Tradeoffs (be honest):**
-- Misses 4.8's SWE-Bench Pro and Terminal-Bench 2.1 gains
-- No dynamic-workflows / parallel-subagent-swarm support introduced in 4.8
-- Anthropic-supported until ≥ Feb 5, 2027 (8 months minimum runway) — plan re-evaluation as that date approaches
-- 4.6's own Feb-Apr 2026 quality bugs are fully fixed per Anthropic's April 23 postmortem; this tier picks up the post-fix model, not the regression window
+- **Documented 40-60× cache token jump** vs 4.7 at HIGH effort ([AI Weekly](https://aiweekly.co/alerts/claude-opus-48-thinking-burns-900k-tokens-per-turn) — up to 900K cache tokens per turn). Burns Max 5-hour limits 2-3× faster than 4.6
+- **`max` effort is *worse* than `high` on 4.8** per [Andon Labs Vending-Bench](https://andonlabs.com/blog/opus-4-8-vending-bench) ("Max reasoning is not the best reasoning effort") — context fills faster
+- Active GitHub regressions still open: false-greens ([#63861](https://github.com/anthropics/claude-code/issues/63861)), 2-3× token burn ([#64961](https://github.com/anthropics/claude-code/issues/64961)), 46K tokens for simple coding turn ([#64153](https://github.com/anthropics/claude-code/issues/64153)), dropped constraints ([#65932](https://github.com/anthropics/claude-code/issues/65932))
+- [Tech.yahoo review](https://tech.yahoo.com/ai/claude/articles/claude-opus-4-8-review-130106963.html): "Anthropic deliberately made Opus's new tokenizer less efficient" — not a transient bug, structural pricing change
+- Anthropic-supported until ≥ May 28, 2027 (longer runway than 4.6)
 
 **How to opt in (global, sweeps every project):**
 
@@ -1098,25 +1100,25 @@ Edit `~/.claude/settings.json`:
 ```json
 {
   "env": {
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-opus-4-6"
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-opus-4-8"
   },
   "model": "opus[1m]"
 }
 ```
 
-The `opus[1m]` alias resolves through the env vars, so this combination pins `claude-opus-4-6[1m]` (1M context) everywhere.
+The `opus[1m]` alias resolves through the env vars, so this combination pins `claude-opus-4-8[1m]` (1M context) everywhere.
 
 **Project-scoped (single repo):**
 ```json
 {
-  "model": "claude-opus-4-6[1m]"
+  "model": "claude-opus-4-8[1m]"
 }
 ```
 
-**Effort:** keep your usual `max` — 4.6 is the version field reports converge on as the only Opus that tolerates `max` without overthinking.
+**Effort tuning for 4.8:** field signal recommends `xhigh` instead of `max` on 4.8 — the strict-effort behavior overcorrects at `max`. Keep `max` for 4.6, drop to `xhigh` if running 4.8.
 
-**Escape hatch:** flip the env vars back to `claude-opus-4-8` (or remove them entirely to fall back to the wizard's flagship default).
+**Escape hatch:** flip the env vars back to `claude-opus-4-6` to return to the wizard's recommended default. Or remove them entirely to fall back to Claude Code auto-mode.
 
 ### Community Feature-Discovery Scanner (roadmap #207)
 
@@ -3025,7 +3027,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.79.0 -->
+<!-- SDLC Wizard Version: 1.80.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->

@@ -362,10 +362,12 @@ test_wizard_doc_no_default_opus_1m_wording() {
 test_sdlc_skill_recommends_opus_1m() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
-    if grep -qE 'opus\[1m\]' "$SKILL"; then
-        pass "skills/sdlc/SKILL.md references opus[1m]"
+    # v1.80.0: accept either the opus[1m] alias OR an explicit
+    # claude-opus-4-X[1m] model id (flagship default flipped to 4.6 max).
+    if grep -qE 'opus\[1m\]|claude-opus-4-[0-9]+\[1m\]' "$SKILL"; then
+        pass "skills/sdlc/SKILL.md references an Opus pin (alias or explicit)"
     else
-        fail "skills/sdlc/SKILL.md missing opus[1m] recommendation"
+        fail "skills/sdlc/SKILL.md missing opus[1m] or claude-opus-4-X[1m] recommendation"
     fi
 }
 
@@ -396,15 +398,17 @@ test_cli_template_has_no_default_autocompact() {
     fi
 }
 
-# Setup skill Step 9.5 must still reference opus[1m] so the user can discover
-# it during the opt-in prompt — just without calling it the default.
+# Setup skill Step 9.5 must reference an Opus model alias (either the
+# `opus[1m]` generic alias or an explicit `claude-opus-4-X[1m]` id) so users
+# can discover the pin during the opt-in prompt — just without calling it the
+# default. v1.80.0 flipped to explicit model ids for the recommended flagship.
 test_setup_skill_mentions_opus_1m_in_optin_prompt() {
     local SKILL="$REPO_ROOT/skills/setup/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/setup/SKILL.md not found"; return; fi
-    if grep -qE 'opus\[1m\]' "$SKILL"; then
-        pass "skills/setup/SKILL.md references opus[1m] (opt-in prompt in Step 9.5)"
+    if grep -qE 'opus\[1m\]|claude-opus-4-[0-9]+\[1m\]' "$SKILL"; then
+        pass "skills/setup/SKILL.md references an Opus pin alias (opt-in prompt in Step 9.5)"
     else
-        fail "skills/setup/SKILL.md must name opus[1m] in the Step 9.5 opt-in prompt"
+        fail "skills/setup/SKILL.md must name opus[1m] or claude-opus-4-X[1m] in the Step 9.5 opt-in prompt"
     fi
 }
 
@@ -423,16 +427,19 @@ test_repo_settings_match_template_no_model_pin() {
     fi
 }
 
-# Hooks must nudge users toward the recommended alias, not the API id.
+# Hooks must nudge users toward the recommended Opus alias or explicit id,
+# not raw "claude-opus-4-6" without [1m] suffix (we want the 1M context).
 # Regression guard against Codex round-1 finding #3.
 # Post-#217 (2026-04-24): the effort/model nudge is centralized in
-# model-effort-check.sh — instructions-loaded-check.sh no longer duplicates it,
-# so we only require the alias in the single source of truth.
+# model-effort-check.sh — instructions-loaded-check.sh no longer duplicates it.
+# v1.80.0 flipped RECOMMENDED_MODEL from `opus[1m]` to explicit
+# `claude-opus-4-6[1m]`, so the wizard's flagship recommendation names the
+# version not the alias.
 test_hooks_recommend_opus_1m_alias() {
     local H1="$REPO_ROOT/hooks/model-effort-check.sh"
     if [ ! -f "$H1" ]; then fail "$H1 not found"; return; fi
-    if ! grep -qE 'RECOMMENDED_MODEL="opus\[1m\]"' "$H1"; then
-        fail "model-effort-check.sh should set RECOMMENDED_MODEL=\"opus[1m]\""
+    if ! grep -qE 'RECOMMENDED_MODEL="(opus\[1m\]|claude-opus-4-[0-9]+\[1m\])"' "$H1"; then
+        fail "model-effort-check.sh should set RECOMMENDED_MODEL to opus[1m] or claude-opus-4-X[1m]"
         return
     fi
     # instructions-loaded-check.sh must NOT re-declare the variable (would
@@ -442,7 +449,7 @@ test_hooks_recommend_opus_1m_alias() {
         fail "instructions-loaded-check.sh declares RECOMMENDED_MODEL — must delegate to model-effort-check.sh per #217"
         return
     fi
-    pass "model-effort-check.sh is single source of truth for opus[1m] alias (#217)"
+    pass "model-effort-check.sh is single source of truth for Opus model recommendation (#217)"
 }
 
 # Setup skill must point users at /less-permission-prompts so they can
@@ -511,15 +518,17 @@ test_sdlc_skill_warns_against_compound_autocompact_config() {
 }
 
 # Test (#207, Codex round 1 finding 2): the shipped `/sdlc` skill must frame
-# opus[1m] as opt-in (matching the wizard doc post-#198), not default.
+# the Opus pin as opt-in (matching the wizard doc post-#198), not default.
+# v1.80.0 flipped from opus[1m] alias to explicit claude-opus-4-6[1m] —
+# both forms are acceptable references to the opt-in pin.
 test_sdlc_skill_frames_opus_1m_as_opt_in() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
     # Must explicitly say "opt-in" or "issue #198" in the Recommended Model section.
-    if grep -qE 'Opt-in:.*opus\[1m\]|opt-in.*opus\[1m\]|opus\[1m\].*opt-in|issue #198' "$SKILL"; then
-        pass "skills/sdlc/SKILL.md frames opus[1m] as opt-in (#198, #207 round 1)"
+    if grep -qE 'Opt-in:.*opus\[1m\]|opt-in.*opus\[1m\]|opus\[1m\].*opt-in|Opt-in:.*claude-opus-4-[0-9]+\[1m\]|opt-in.*claude-opus-4-[0-9]+\[1m\]|claude-opus-4-[0-9]+\[1m\].*opt-in|issue #198' "$SKILL"; then
+        pass "skills/sdlc/SKILL.md frames Opus pin as opt-in (#198, #207 round 1)"
     else
-        fail "skills/sdlc/SKILL.md must frame opus[1m] as opt-in, not default (#198)"
+        fail "skills/sdlc/SKILL.md must frame Opus pin as opt-in, not default (#198)"
     fi
 }
 
