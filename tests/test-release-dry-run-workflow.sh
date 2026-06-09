@@ -227,13 +227,13 @@ test_asserts_shipped_paths() {
     # dry-run output — otherwise a regression where package.json.files
     # silently drops a path would not be caught.
     local missing=""
-    for path in 'cli/' 'skills/' 'hooks/' '.claude-plugin/' 'CLAUDE_CODE_SDLC_WIZARD.md' 'CHANGELOG.md'; do
+    for path in 'cli/' 'skills/' 'hooks/' '.claude-plugin/' 'CLAUDE_CODE_SDLC_WIZARD.md' 'AI_SETUP_LANES.md' 'CHANGELOG.md'; do
         if ! grep -qF "$path" "$WF"; then
             missing="$missing $path"
         fi
     done
     if [ -z "$missing" ]; then
-        pass "workflow references all 6 shipped paths from package.json.files for assertion"
+        pass "workflow references all 7 shipped paths from package.json.files for assertion"
     else
         fail "workflow missing shipped-path assertions for:$missing"
     fi
