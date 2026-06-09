@@ -2305,6 +2305,33 @@ test_update_notification_rejects_non_numeric_minor
 test_update_notification_silent_when_installed_newer_than_cache
 test_update_notification_surfaces_npm_failure
 
+# #375: CC version check must NOT fire under non-Claude hosts (Codex, OpenCode).
+# The bug: `command -v claude` is true even under Codex/OpenCode when the user
+# has Claude Code installed. Gate on CLAUDE_PROJECT_DIR instead of CLI presence.
+test_cc_version_check_silent_under_non_claude_host() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Wizard Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    mkdir -p "$tmpdir/bin"
+    # Fake claude CLI that reports an old version
+    printf '#!/bin/bash\necho "2.1.90 (Claude Code)"\n' > "$tmpdir/bin/claude"
+    # Fake npm that reports a newer version
+    printf '#!/bin/bash\nif echo "$@" | grep -q "claude-code"; then echo "2.1.168"; else echo "1.20.0"; fi\n' > "$tmpdir/bin/npm"
+    chmod +x "$tmpdir/bin/claude" "$tmpdir/bin/npm"
+    local output
+    # Key: do NOT set CLAUDE_PROJECT_DIR — simulates running under Codex/OpenCode
+    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if echo "$output" | grep -q "Claude Code update"; then
+        fail "#375: CC version check should NOT fire when CLAUDE_PROJECT_DIR is unset (non-Claude host)"
+    else
+        pass "#375: CC version check silent under non-Claude host (CLAUDE_PROJECT_DIR unset)"
+    fi
+}
+
+test_cc_version_check_silent_under_non_claude_host
+
 echo ""
 echo "--- Hook if-conditional tests (#68) ---"
 
