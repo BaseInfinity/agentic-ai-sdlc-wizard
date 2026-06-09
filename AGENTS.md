@@ -11,6 +11,12 @@ Meta-repository — SDLC Wizard documentation, automation, and a zero-dep Node.j
 - `tests/` — Bash test scripts (Layer 1 logic + Layer 5 E2E)
 - `cli/` — npx distribution CLI (zero-dep Node.js)
 
+## AI Setup Lanes
+
+This repo recommends two setup lanes for AI coding — Setup A (Claude Premium) and Setup B (Claude Saver). Both end at GPT-5.5 xhigh as the cross-model reviewer; only the planner/driver differ. Setup A keeps Opus 4.6 max for both planner and driver; Setup B keeps Opus 4.6 max as the planner but moves the driver to Sonnet for cost. See [`AI_SETUP_LANES.md`](AI_SETUP_LANES.md) for the full pick list (when to use which, credit-spend warning, override policy).
+
+The lanes are guidance, not a hard rule — maintainer override is always allowed.
+
 ## Review Focus Areas
 
 ### 1. SDLC Compliance
