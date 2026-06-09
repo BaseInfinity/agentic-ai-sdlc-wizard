@@ -1167,10 +1167,13 @@ test_setup_skill_references_settings_json() {
     fi
 }
 
-# Test 39b: Setup skill Step 9.5 frames the opus[1m] pin as opt-in with default No
+# Test 39b: Setup skill Step 9.5 frames the Opus pin as opt-in with default No
 # (issue #198). The key user-visible signals are: "opt-in", default "[y/N]" or
 # "Default: No" language, and an explicit note about auto-mode. Without these,
 # the wizard is still pushing the pin as the implicit default.
+#
+# v1.80.0 flipped from the opus[1m] alias to the explicit claude-opus-4-6[1m]
+# model id for the recommended flagship — both forms are acceptable references.
 test_setup_skill_step95_is_opt_in_default_no() {
     local skill="$SCRIPT_DIR/../skills/setup/SKILL.md"
     local step95
@@ -1178,11 +1181,11 @@ test_setup_skill_step95_is_opt_in_default_no() {
     local ok=true
     echo "$step95" | grep -qiE 'opt.?in|\[y/N\]|default.*no' || ok=false
     echo "$step95" | grep -qiE 'auto.?mode|auto.?select' || ok=false
-    echo "$step95" | grep -q 'opus\[1m\]' || ok=false
+    echo "$step95" | grep -qE 'opus\[1m\]|claude-opus-4-[0-9]+\[1m\]' || ok=false
     if [ "$ok" = true ]; then
-        pass "Setup skill Step 9.5 frames opus[1m] as opt-in (default No, mentions auto-mode)"
+        pass "Setup skill Step 9.5 frames Opus pin as opt-in (default No, mentions auto-mode)"
     else
-        fail "Setup skill Step 9.5 must frame opus[1m] pin as opt-in with default No + auto-mode note (issue #198)"
+        fail "Setup skill Step 9.5 must frame Opus pin as opt-in with default No + auto-mode note (issue #198)"
     fi
 }
 
