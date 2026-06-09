@@ -97,7 +97,7 @@ State your confidence before presenting an approach:
 | Level | Meaning | Action | Effort |
 |-------|---------|--------|--------|
 | HIGH (90%+) | Know exactly what to do | Present, proceed after approval | `max` (default) |
-| MEDIUM (60-89%) | Solid approach, some uncertainty | Present, highlight uncertainties | `max` |
+| MEDIUM (60-89%) | Solid approach, some uncertainty | Present, highlight uncertainties | `max` (default) |
 | LOW (<60%) | Not sure | Research or try Codex; if still LOW, ASK USER | **`/effort xhigh` now** |
 | FAILED 2x | Something's wrong | Codex for fresh perspective; if still stuck, STOP | **`/effort max` now** |
 | CONFUSED | Can't diagnose | Codex; if still confused, STOP and describe | **`/effort max` now** |
