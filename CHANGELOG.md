@@ -4,6 +4,18 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.79.0] - 2026-06-08
+
+### Added
+
+- **Opus 4.6 Stability tier** as a fourth setup-wizard model choice ([s] Stability, alongside [N] No pin / [m] Mixed-mode / [f] Flagship). Pins `model: "claude-opus-4-6[1m]"` with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. Pairs with `max` effort. Community signal converges on 4.6 being the only Opus version `max` tolerates without overthinking — Andon Labs Vending-Bench arena (4.8 finished last, "Max reasoning is not the best reasoning effort"), Paweł Huryn's 4.7 guide ("most complaints about 4.7 feeling slow stem from people reflexively using max"), BSWEN effort decision guide ("Max on Opus causes overthinking"), r/Claudeopus field reports (one maintainer: "12 hours with 4.8 zero deliverables; plugged in 4.6, spec written + 133 tests green in one session"; another commenter: "4.6 had the best overall balance at max"). New section "Stability tier — Opus 4.6 at max effort" in `CLAUDE_CODE_SDLC_WIZARD.md` documents when to pick it (production 4.7/4.8 regression escape — false-greens GH #63861, 2-3× token burn #64961, dropped constraints #65932, fabricated identifiers; context-heavy work where 4.6 scored 94.7% NYT Connections vs 4.7's 41%; original tokenizer avoids the 4.7+ 12-18% English token tax) and tradeoffs (misses 4.8's SWE-Bench Pro / Terminal-Bench / dynamic-workflows gains). Anthropic-supported until ≥ Feb 5, 2027 (8 months minimum runway per [Anthropic deprecation page](https://platform.claude.com/docs/en/about-claude/model-deprecations)). Wizard default remains flagship Opus 4.8 — Stability is opt-in, not a recommendation swap. Setup skill updated with `[s] Stability` choice + handler; settings.json snippet provided for both global (env-var sweep across all projects via `ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-6`) and project-scoped pin patterns.
+
+### Notes
+
+- **4.6's Feb-Apr 2026 quality bugs are fully fixed per [Anthropic's April 23 postmortem](https://www.anthropic.com/engineering/april-23-postmortem).** The three bugs (effort default high→medium Mar 4-Apr 7; cache-clear-every-turn Mar 26-Apr 10; verbosity-limit prompt Apr 16-Apr 20) are resolved. The Stability tier picks up the post-fix model, not the regression window. Anthropic reset usage limits as compensation Apr 23.
+- **Wizard default unchanged.** v1.78.0's flagship recommendation of Opus 4.8 stays. The Stability tier is an additive sibling for maintainers who've hit 4.7/4.8 regressions in production — surfaced as a choice in the setup wizard, not flipped as the default. If the community-validated A/B of 4.6 max vs 4.7/4.8 max materializes as a sustained pattern across maintainers, a future release may revisit the default.
+- **Validation pending.** This release ships the tier so maintainers can opt in across their own repos and run the comparison. Real-world signal from extended use (token spend deltas, context-fidelity wins, false-green regressions caught) feeds back into a v1.80.0 calibration if warranted.
+
 ## [1.78.0] - 2026-06-02
 
 ### Changed

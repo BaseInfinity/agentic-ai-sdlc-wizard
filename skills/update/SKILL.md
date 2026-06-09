@@ -93,9 +93,10 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.78.0
+Latest:    1.79.0
 
 What changed:
+- [1.79.0] Opus 4.6 Stability tier (max-effort sweet spot, community-validated flagship alternative).
 - [1.78.0] Opus 4.7 → 4.8 model recommendation (#365) + min CC v2.1.154+.
 - [1.77.0] release-dry-run.yml + cc-version-drift.yml (#350) + /goal SDLC gates (95% + DLC binding).
 - [1.76.0] /goal /sdlc wrapper (#347) + CC v2.1.150 feature adoption + ROADMAP demand-signal gate (4 excise, 4 kill).
