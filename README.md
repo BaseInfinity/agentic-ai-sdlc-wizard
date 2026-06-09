@@ -138,6 +138,34 @@ codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access \
 
 `xhigh` reasoning is **non-negotiable** — lower settings miss subtle bugs. See [CLAUDE_CODE_SDLC_WIZARD.md](CLAUDE_CODE_SDLC_WIZARD.md#cross-model-review-loop-optional) for the full protocol (handoff format, round-2 dialogue loop, preflight docs). Real-world: this catches P0/P1 issues in 2-3 out of 10 reviews that Claude's self-review rated as clean.
 
+## Choosing Your Model
+
+The wizard ships a **default recommendation**, not a mandate. You can swap to any Claude model — newer, older, or sibling tier — at any time. `/model` per session, or pin in `.claude/settings.json`.
+
+**Default: Opus 4.8 at max effort** (`[f] Flagship` in the setup wizard). Matches Anthropic's current flagship; unlocks 4.8's SWE-Bench Pro / Terminal-Bench 2.1 / dynamic-workflow gains. If you're starting fresh, this is the right pick.
+
+**Alternative tier: Opus 4.6 at max effort** (`[s] Stability`, added v1.79.0). Some maintainers — including the wizard author — hit 4.7/4.8 regressions in production that 4.6 simply doesn't have: false-greens ([anthropics/claude-code#63861](https://github.com/anthropics/claude-code/issues/63861)), 2-3× token burn ([#64961](https://github.com/anthropics/claude-code/issues/64961)), dropped constraints during execution ([#65932](https://github.com/anthropics/claude-code/issues/65932)), fabricated identifiers under parallel tool batches. Field signal converges on **4.6 being the only Opus where `max` effort doesn't overthink** — Andon Labs Vending-Bench arena (4.8 finished last), [Paweł Huryn's 4.7 guide](https://www.productcompass.pm/p/claude-opus-4-7-guide) ("most complaints about 4.7 feeling slow stem from people reflexively using max"), r/Claudeopus field reports (one maintainer: "12 hours with 4.8 zero deliverables; plugged in 4.6, 133 tests green in one session"). 4.6 is Anthropic-supported until ≥ Feb 5, 2027 per the [official deprecation page](https://platform.claude.com/docs/en/about-claude/model-deprecations) — 8 months minimum runway.
+
+**The wizard's stance: aim for stability.** Default to what works reliably in your hands, not what's newest. If 4.8 ships well for your workflow, stay on flagship. If you've hit the regressions, the Stability tier is one setup-wizard choice (`[s]`) and reversion is two lines in `~/.claude/settings.json`. See [CLAUDE_CODE_SDLC_WIZARD.md → "Stability tier — Opus 4.6 at max effort"](CLAUDE_CODE_SDLC_WIZARD.md) for the full pick-list and tradeoffs.
+
+**Switch any time:**
+
+```bash
+/model claude-opus-4-8[1m]   # flagship default
+/model claude-opus-4-6[1m]   # stability tier
+/model opus[1m]              # whatever the wizard's recommendation resolves to
+```
+
+Or pin in `.claude/settings.json`:
+
+```json
+{ "model": "claude-opus-4-6[1m]" }
+```
+
+Or sweep all your projects from one place by setting `ANTHROPIC_DEFAULT_OPUS_MODEL` in `~/.claude/settings.json` — the `opus[1m]` alias resolves through it, so flipping one env var switches every repo at once.
+
+Effort tuning is independent of model choice. `max` is the wizard's default; `xhigh` is the floor. Adjust per session with `/effort max`. The Stability tier is specifically a **`max`-effort tier** because that's the field-validated sweet spot for 4.6 — at the cost of giving up 4.8's newer benchmark wins.
+
 ## How It Works
 
 **Think Iron Man:** Jarvis is nothing without Tony Stark. Tony Stark is still Tony Stark. But together? They make Iron Man. This SDLC is your suit - you build it over time, improve it for your needs, and it makes you both better.

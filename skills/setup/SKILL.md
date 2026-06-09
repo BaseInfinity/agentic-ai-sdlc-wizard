@@ -249,8 +249,9 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 > - **[N] No pin (default, recommended for most repos):** Leaves auto-mode enabled. Claude Code picks the model per turn. Compaction follows upstream defaults. Simplest, lowest friction.
 > - **[m] Mixed-mode** *(suggested for **simple** tier — roadmap #233):* Pins `model: "sonnet[1m]"` for the coder (Sonnet 4.6 with 1M context). The cross-model review layer (Codex / external reviewer) **always stays at the flagship** (Opus 4.8 max or gpt-5.5 xhigh) regardless. Saves cost/quota on simple repos; reviewer catches what Sonnet misses. Requires comfort with losing per-turn auto-selection.
 > - **[f] Flagship full** *(suggested for **complex** / stakes-flagged tier):* Pins `model: "opus[1m]"` (Opus 4.8 with 1M context) and sets `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. Long SDLC sessions cross 100K tokens regularly; the 1M window gives headroom and 30% autocompact fires at ~300K. Requires Claude Code v2.1.154+.
+> - **[s] Stability** *(alternative to flagship when you've hit 4.7/4.8 regressions):* Pins `model: "claude-opus-4-6[1m]"` (Opus 4.6 with 1M context). Community signal converges on 4.6 being the only Opus version `max` effort tolerates without overthinking. Picks up the original tokenizer (no 4.7+ 12-18% English token tax). Best for: production work hitting false-greens / 2-3× token burn on 4.7/4.8, context-heavy refactors, hitting Max 5-hour limits early. Anthropic-supported until ≥ Feb 5, 2027. Misses 4.8's SWE-Bench Pro / Terminal-Bench / dynamic-workflows gains.
 >
-> `[N/m/f]`
+> `[N/m/f/s]`
 
 **If the user answers `N` (default):** Make no edits to `.claude/settings.json`. Auto-mode stays on. Done.
 
@@ -275,7 +276,20 @@ Do NOT add `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` for Sonnet — Sonnet's 1M window h
 }
 ```
 
-Mention the escape hatch in all three cases:
+**If the user answers `s` (stability):** Edit `.claude/settings.json` and add:
+
+```json
+{
+  "model": "claude-opus-4-6[1m]",
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
+  }
+}
+```
+
+Tell the user: "Effort `max` is the recommended pair for 4.6 (the only Opus version field reports converge on tolerating max without overthinking). Escape hatch is the same as flagship — remove the `model` line to fall back to auto-mode, or change it to `opus[1m]` to ride upstream's latest." See `CLAUDE_CODE_SDLC_WIZARD.md` → "Stability tier — Opus 4.6 at max effort" for the full rationale.
+
+Mention the escape hatch in all four cases:
 - To opt out later: remove the `model` line (and optionally the `env` block) from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".
 - To switch tiers later: edit `.claude/settings.json` and replace the `model` value, or re-run `/setup-wizard` Step 9.5.
 - For CI pipelines with short tasks (flagship only), consider `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=60` — compact early to stay fast.

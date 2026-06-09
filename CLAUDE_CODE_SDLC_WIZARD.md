@@ -1076,6 +1076,48 @@ Don't add `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` — Sonnet's 1M window has different
 - Sonnet 4.6 will drop some fine-grained self-review moves (it's fast, less deliberate). The Opus reviewer catches them — but you'll see more "fix in round 2" cycles compared to Opus-coder runs.
 - Mixed-mode disables auto-mode (same as flagship pin). The Sonnet pin is per-session — to switch back, remove the `model` line.
 
+### Stability tier — Opus 4.6 at max effort
+
+The wizard's default flagship recommendation is Opus 4.8 (per Anthropic). Some maintainers report better real-world results with **Opus 4.6 at max effort** — community signal converges on 4.6 being the only Opus version where `max` doesn't overthink. Sources: r/Claudeopus field reports ("12 hours with 4.8 zero result; plugged in 4.6, spec written + 133 tests green in one session"; "4.6 had the best overall balance at max"), Andon Labs Vending-Bench (4.8 finished last vs 4.7 and GPT-5.5; "Max reasoning is not the best reasoning effort"), Paweł Huryn's 4.7 guide ("most complaints about 4.7 feeling slow stem from people reflexively using max"), and BSWEN effort decision guide ("Max on Opus causes overthinking").
+
+**When the Stability tier is the right call:**
+- You've hit 4.7/4.8 regressions in production: false-greens (Claude declaring "done" without running canonical builds, GitHub #63861), 2-3× token burn vs prior baselines (#64961), dropped load-bearing constraints during execution (#65932), fabricated identifiers in parallel batches
+- Your work is context-heavy (large diffs, multi-file refactors, long sessions) — 4.6 scored 94.7% on NYT Connections vs 4.7's 41%
+- You want the original tokenizer (no 4.7+ 12-18% English token tax)
+- You're a high-volume user hitting Max 5-hour limits in 2-3 hours on 4.7/4.8 — field reports point to 4.6 sipping fewer tokens per turn
+
+**Tradeoffs (be honest):**
+- Misses 4.8's SWE-Bench Pro and Terminal-Bench 2.1 gains
+- No dynamic-workflows / parallel-subagent-swarm support introduced in 4.8
+- Anthropic-supported until ≥ Feb 5, 2027 (8 months minimum runway) — plan re-evaluation as that date approaches
+- 4.6's own Feb-Apr 2026 quality bugs are fully fixed per Anthropic's April 23 postmortem; this tier picks up the post-fix model, not the regression window
+
+**How to opt in (global, sweeps every project):**
+
+Edit `~/.claude/settings.json`:
+```json
+{
+  "env": {
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-opus-4-6"
+  },
+  "model": "opus[1m]"
+}
+```
+
+The `opus[1m]` alias resolves through the env vars, so this combination pins `claude-opus-4-6[1m]` (1M context) everywhere.
+
+**Project-scoped (single repo):**
+```json
+{
+  "model": "claude-opus-4-6[1m]"
+}
+```
+
+**Effort:** keep your usual `max` — 4.6 is the version field reports converge on as the only Opus that tolerates `max` without overthinking.
+
+**Escape hatch:** flip the env vars back to `claude-opus-4-8` (or remove them entirely to fall back to the wizard's flagship default).
+
 ### Community Feature-Discovery Scanner (roadmap #207)
 
 The weekly-update workflow watches Anthropic's official changelog + GitHub releases, but new CC slash-commands (e.g. a hypothetical `/insights`) often surface FIRST on Reddit, HN, or Discord weeks before they hit the changelog. `tests/e2e/scan-community.sh` ports the community-scan job out of CI (deleted per ROADMAP #231) into a maintainer-runnable script: pull transcripts manually, pipe through the scanner, triage the digest.
@@ -2983,7 +3025,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.78.0 -->
+<!-- SDLC Wizard Version: 1.79.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
