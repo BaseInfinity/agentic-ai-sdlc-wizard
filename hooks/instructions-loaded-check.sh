@@ -256,7 +256,9 @@ if [ -f "$PROJECT_DIR/.github/workflows/weekly-update.yml" ] && \
 fi
 
 # Claude Code version check (non-blocking, best-effort)
-if command -v claude > /dev/null 2>&1 && command -v npm > /dev/null 2>&1; then
+# Gate on CLAUDE_PROJECT_DIR — only Claude Code sets this. Without it, we're
+# running under Codex/OpenCode where a CC update nudge is misleading (#375).
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && command -v claude > /dev/null 2>&1 && command -v npm > /dev/null 2>&1; then
     CC_LOCAL=$(claude --version 2>/dev/null | grep -o '[0-9][0-9.]*' | head -1) || true
     if [ -n "$CC_LOCAL" ]; then
         CC_LATEST=$(npm view @anthropic-ai/claude-code version 2>/dev/null) || true

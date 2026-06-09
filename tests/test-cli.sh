@@ -415,6 +415,30 @@ test_check_customized() {
     rm -rf "$d"
 }
 
+# #383: consumer settings.json with extra hooks should still show MATCH for
+# settings.json — the wizard hooks are all present, extras are intentional.
+test_check_settings_match_with_extras() {
+    local d
+    d=$(make_temp)
+    (cd "$d" && node "$CLI" init > /dev/null 2>&1)
+    # Add extra consumer hooks (simulating PDLC or custom project hooks)
+    node -e "
+      const fs = require('fs');
+      const s = JSON.parse(fs.readFileSync('$d/.claude/settings.json','utf8'));
+      s.permissions = {allow:['Bash(npm test)']};
+      s.hooks.SessionStart[0].hooks.push({type:'command',command:'echo custom-hook'});
+      fs.writeFileSync('$d/.claude/settings.json', JSON.stringify(s,null,2)+'\n');
+    "
+    local output
+    output=$(cd "$d" && node "$CLI" check 2>&1)
+    if echo "$output" | grep "settings.json" | grep -q "MATCH"; then
+        pass "#383: settings.json with extra hooks shows MATCH (wizard hooks present)"
+    else
+        fail "#383: settings.json with extra hooks should show MATCH, got: $(echo "$output" | grep settings)"
+    fi
+    rm -rf "$d"
+}
+
 # Test 19: check on empty dir shows all MISSING
 test_check_all_missing() {
     local d
@@ -945,6 +969,7 @@ test_tdd_hook_generic
 test_no_allowed_tools
 test_check_all_match
 test_check_customized
+test_check_settings_match_with_extras
 test_check_all_missing
 test_check_json
 test_check_drift_permissions

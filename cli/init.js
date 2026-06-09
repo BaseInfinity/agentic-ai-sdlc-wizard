@@ -532,16 +532,50 @@ function buildUpdateRecommendation(updateInfo, customizedCount) {
   return lines;
 }
 
+function settingsHooksMatch(srcPath, destPath) {
+  try {
+    const src = JSON.parse(fs.readFileSync(srcPath, 'utf8'));
+    const dest = JSON.parse(fs.readFileSync(destPath, 'utf8'));
+    for (const [event, entries] of Object.entries(src.hooks || {})) {
+      if (!dest.hooks || !dest.hooks[event]) return false;
+      const templateEntry = entries[0];
+      if (!templateEntry || !templateEntry.hooks) continue;
+      for (const th of templateEntry.hooks) {
+        if (!th.command) continue;
+        const marker = WIZARD_HOOK_MARKERS.find((m) => th.command.includes(m));
+        if (!marker) continue;
+        // Verify marker present AND type matches. We intentionally skip matcher/if
+        // comparison — those are customizable per-project (the wizard's own settings
+        // use different if guards than the consumer template).
+        const found = dest.hooks[event].some(
+          (de) => de.hooks && de.hooks.some(
+            (h) => h.command && h.command.includes(marker) && h.type === (th.type || 'command')
+          )
+        );
+        if (!found) return false;
+      }
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function checkFile(srcPath, destPath, relativeDest, shouldBeExecutable) {
   if (!fs.existsSync(destPath)) {
     return { file: relativeDest, status: 'MISSING' };
   }
   const srcHash = crypto.createHash('sha256').update(fs.readFileSync(srcPath)).digest('hex');
   const destHash = crypto.createHash('sha256').update(fs.readFileSync(destPath)).digest('hex');
-  const result = {
-    file: relativeDest,
-    status: srcHash === destHash ? 'MATCH' : 'CUSTOMIZED',
-  };
+  let fileStatus;
+  if (srcHash === destHash) {
+    fileStatus = 'MATCH';
+  } else if (relativeDest === '.claude/settings.json' && settingsHooksMatch(srcPath, destPath)) {
+    fileStatus = 'MATCH';
+  } else {
+    fileStatus = 'CUSTOMIZED';
+  }
+  const result = { file: relativeDest, status: fileStatus };
 
   if (shouldBeExecutable) {
     try {
