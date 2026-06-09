@@ -66,6 +66,49 @@ Both lanes use Opus 4.6 max for at least the planner — that's the expensive ha
 
 The reviewer (GPT-5.5 xhigh) is billed against your OpenAI account, separately. Watch both bills.
 
+## How Billing Works — 1M Context, Max Plan, and the June 15 Split
+
+A common question: **"does the `[1m]` model alias get billed differently? Does it pull from my Max plan or from API credits?"**
+
+The short answer: **both lanes run on your Max subscription for interactive Claude Code sessions, including 1M context, with no premium surcharge.** Here's the detail.
+
+### 1M context is free on Max — no API premium
+
+[Anthropic 2026-03-13](https://claude.com/blog/1m-context-ga): 1M context is GA at standard $5/$25 per million tokens for Opus 4.6 (also 4.7, 4.8). No long-context multiplier. **No beta header required**, requests over 200K tokens just work.
+
+For Claude Code on Max / Team / Enterprise plans, **1M context is included automatically** with no extra usage allocation. Whether you set `claude-opus-4-6` or `claude-opus-4-6[1m]` doesn't change *what* you're billed — both pull from the same per-token budget on your subscription. The `[1m]` suffix just makes the alias explicit so it sticks across alias-resolution changes; functionally Opus 4.6 in Claude Code today *is* the 1M-context model on a Max plan.
+
+(Pro plan is the exception: Pro users need "Enable usage credits" turned on in their Claude account settings to use 1M context. Max / Team / Enterprise have it on by default.)
+
+### The June 15, 2026 billing split
+
+[Anthropic moved a slice of usage off the subscription](https://codersera.com/blog/anthropic-june-2026-billing-change-claude-code/) onto a separate metered credit pool that bills at full API rates:
+
+| Surface | Billing as of June 15, 2026 |
+|---|---|
+| **Interactive Claude Code in terminal** (you typing into Claude Code right now) | **Stays on Max subscription** — unchanged |
+| Claude.ai web / desktop / mobile chat | Stays on Max subscription |
+| Claude Cowork | Stays on Max subscription |
+| `claude -p` (headless / `--print`) | **Moves to separate credit pool**, billed at API rates |
+| Claude Agent SDK | Moves to separate credit pool |
+| Claude Code GitHub Actions | Moves to separate credit pool |
+| Third-party apps via Agent SDK | Moves to separate credit pool |
+
+Credit allocations: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. **No rollover.**
+
+### What this means for the lanes
+
+- **Setup A — Premium (Opus 4.6 max planner + driver):** all interactive `/sdlc` work in Claude Code runs on your Max subscription. No API charges for the Claude side.
+- **Setup B — Saver (Opus 4.6 max planner + Sonnet driver):** same — interactive Sonnet sessions also stay on Max. The cost-saving in B isn't avoiding API charges, it's getting more work-per-5-hour-window from Sonnet's lower per-turn token spend vs Opus.
+- **Reviewer (GPT-5.5 xhigh) in both lanes:** billed against your OpenAI account, completely separate from Anthropic.
+- **CI loops that use `claude -p` post-June-15:** these now bill against the separate Anthropic credit pool, not your Max subscription. The wizard's CI shepherd loops (E2E scoring, weekly-update jobs) are local-only on the maintainer's machine and stay on Max; consumer-repo CI integrations may need to budget the new credit pool.
+
+### Bottom line
+
+If you're using Claude Code interactively (you, in your terminal, doing `/sdlc` work), **both lanes ride your existing Max subscription**, and the `[1m]` alias is the same billable budget as plain `claude-opus-4-6`. No extra charges for the 1M context. The June 15 split only affects programmatic / headless / CI use of Claude Code.
+
+Watch the headless surface if you've automated `claude -p` calls in your project — those now bill differently as of June 15, 2026.
+
 ## Maintainer Override
 
 **Override at any time.** A blanket setup choice doesn't replace judgment per change. If you're touching CI but the change is a one-line typo, Setup B is fine. If you're touching docs but the section is the wizard's safety-critical hook ordering, Setup A is the call.

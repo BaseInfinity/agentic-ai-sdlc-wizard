@@ -166,6 +166,8 @@ Or sweep all your projects from one place by setting `ANTHROPIC_DEFAULT_OPUS_MOD
 
 Effort tuning is independent of model choice. `max` is the wizard's default; `xhigh` is the floor. Adjust per session with `/effort max`. The Stability tier is specifically a **`max`-effort tier** because that's the field-validated sweet spot for 4.6 — at the cost of giving up 4.8's newer benchmark wins.
 
+**A note on `[1m]` and billing.** The `[1m]` suffix on `claude-opus-4-6[1m]` is the 1M-context alias. As of [March 2026](https://claude.com/blog/1m-context-ga), 1M context is GA at standard pricing — **no long-context surcharge, no premium tier, no API-only restriction.** Interactive Claude Code sessions on Max / Team / Enterprise plans include 1M context automatically; whether you set `claude-opus-4-6` or `claude-opus-4-6[1m]`, you're billed against the same per-token Max budget at $5/$25 per million tokens. (Pro users need "Enable usage credits" turned on once.) The [June 15, 2026 billing split](https://codersera.com/blog/anthropic-june-2026-billing-change-claude-code/) moved *headless* surfaces — `claude -p`, Agent SDK, GitHub Actions, third-party apps — off the Max subscription onto a separate metered credit pool. Interactive Claude Code in your terminal stays on Max. Full details in [`AI_SETUP_LANES.md` § How Billing Works](AI_SETUP_LANES.md#how-billing-works--1m-context-max-plan-and-the-june-15-split).
+
 ## How It Works
 
 **Think Iron Man:** Jarvis is nothing without Tony Stark. Tony Stark is still Tony Stark. But together? They make Iron Man. This SDLC is your suit - you build it over time, improve it for your needs, and it makes you both better.
