@@ -343,11 +343,12 @@ test_skill_frontmatter() {
     (cd "$d" && node "$CLI" init > /dev/null 2>&1)
     local ok=true
     grep -q "^name: sdlc$" "$d/.claude/skills/sdlc/SKILL.md" || ok=false
-    grep -q "^effort: high$" "$d/.claude/skills/sdlc/SKILL.md" || ok=false
+    # v1.80.0: frontmatter effort is max (wizard's recommended default for 4.6 max flagship)
+    grep -qE "^effort: max$" "$d/.claude/skills/sdlc/SKILL.md" || ok=false
     if [ "$ok" = true ]; then
-        pass "Template skills have correct frontmatter (name + effort)"
+        pass "Template skills have correct frontmatter (name + effort: max)"
     else
-        fail "Skills should have name and effort: high in frontmatter"
+        fail "Skills should have name: sdlc and effort: max in frontmatter"
     fi
     rm -rf "$d"
 }
