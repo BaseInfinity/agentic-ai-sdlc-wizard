@@ -2,7 +2,7 @@
 name: sdlc
 description: Full SDLC workflow for implementing features, fixing bugs, refactoring code, testing, releasing, publishing, and deploying. Use this skill when implementing, fixing, refactoring, testing, adding features, building new code, or releasing/publishing/deploying.
 argument-hint: [task description]
-effort: high
+effort: max
 ---
 # SDLC Skill - Full Development Workflow
 
