@@ -119,7 +119,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          for path in cli/ skills/ hooks/ .claude-plugin/ CLAUDE_CODE_SDLC_WIZARD.md CHANGELOG.md; do
+          for path in cli/ skills/ hooks/ .claude-plugin/ CLAUDE_CODE_SDLC_WIZARD.md AI_SETUP_LANES.md CHANGELOG.md; do
             # `npm publish --dry-run --json` includes a `files[]` array
             # listing every shipped file path. Match the path prefix to
             # detect at least one file from each entry.
@@ -132,4 +132,4 @@ jobs:
             echo "If package.json.files was edited intentionally, update tests/test-release-dry-run-workflow.sh too."
             exit 1
           fi
-          echo "All 6 shipped paths present in dry-run output."
+          echo "All 7 shipped paths present in dry-run output."

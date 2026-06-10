@@ -73,6 +73,10 @@ Setup C is for work where SDLC discipline overhead exceeds the value:
 - Simple administrative tasks across repos like `~/afterhours`
 - Anything where blast radius is low and you need speed, not depth
 
+**Not Lite — escalate to A or B:** env vars that touch secrets or credentials, dependency bumps with security advisories, destructive bulk ops (rm -rf, drop table), migrations, prod-like shared staging, anything security-sensitive. If you're unsure, it's not Lite.
+
+**Haiku's context limit is 200K** (vs 1M for Opus/Sonnet). If the task needs to load a large diff, multi-file refactor, or cross-repo audit, Haiku will hit the ceiling — escalate to Setup B.
+
 ## What Setup C explicitly skips
 
 - No TDD (no test-first for running a deploy script)
