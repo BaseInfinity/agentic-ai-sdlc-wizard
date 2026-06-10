@@ -2372,10 +2372,10 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 4. Issues below 80 are likely false positives — skip unless obviously valid
 5. Address issues by going back through the proper SDLC loop
 
-## Cross-Model Review (If Configured)
+## Cross-Model Review (REQUIRED for High-Stakes)
 
 **When to run:** High-stakes changes (auth, payments, data handling), releases/publishes (version bumps, CHANGELOG, npm publish), complex refactors, research-heavy work.
-**When to skip:** Trivial changes (typo fixes, config tweaks), time-sensitive hotfixes, risk < review cost.
+**When to skip (log justification):** Trivial changes (typo fixes, config tweaks), time-sensitive hotfixes, risk < review cost.
 
 **Prerequisites:** Codex CLI installed (`npm i -g @openai/codex`), OpenAI API key set.
 
@@ -2486,7 +2486,7 @@ Self-review passes → handoff.json (round 1, PENDING_REVIEW)
 
 **Tool-agnostic:** The value is adversarial diversity (different model, different blind spots), not the specific tool. Any competing AI reviewer works.
 
-**Full protocol:** See the "Cross-Model Review Loop (Optional)" section below for key flags and reasoning effort guidance.
+**Full protocol:** See the "Cross-Model Review Loop" section below for key flags and reasoning effort guidance.
 
 ### Release Review Focus
 
@@ -3787,7 +3787,7 @@ Claude: [fetches via gh api, discusses with you interactively]
 
 This is optional - skip if you prefer fresh reviews only.
 
-### Cross-Model Review Loop (Optional)
+### Cross-Model Review Loop (REQUIRED for High-Stakes)
 
 Use an independent AI model from a different company as a code reviewer. The author can't grade their own homework — a model with different training data and different biases catches blind spots the authoring model misses.
 
