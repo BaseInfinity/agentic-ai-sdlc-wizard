@@ -14,15 +14,15 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
 Quality-first lane. Opus 4.6 max drives both the planning brain and the implementation hands; GPT-5.5 xhigh is the cross-model final gate that catches what Claude's self-review missed.
 
-## Setup B — Claude Saver
+## Setup B — Claude Saver (OpusPlan)
 
 | Role | Model |
 |------|-------|
-| **Planner** | Claude Code Opus 4.6 max |
-| **Driver** | Claude Code Sonnet (latest available) |
+| **Planner** | Opus 4.6 max (via Plan Mode — Shift+Tab) |
+| **Driver** | Sonnet 4.6 (auto, execute mode) |
 | **Reviewer** | Codex (GPT-5.5) xhigh |
 
-Cost-efficient lane. Keeps Opus 4.6 max as the planning brain — where context and reasoning matter most — but moves implementation to Sonnet for routine work. GPT-5.5 xhigh still the final reviewer. Use whatever Sonnet version the picker shows as latest.
+Cost-efficient lane using CC's native `opusplan` alias. Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both 200K context, Max-bundled — no API credit drain. Pin `model: "opusplan"` + `ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-6` + `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block. GPT-5.5 xhigh is the cross-model reviewer.
 
 ## When to Use Setup A
 
@@ -139,9 +139,8 @@ Credit allocations: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. **No rollover.*
 ### What this means for the lanes
 
 - **Setup A — Premium (Opus 4.6 max planner + driver):** all interactive `/sdlc` work in Claude Code runs on your Max subscription. No API charges for the Claude side. Opus 4.6 / 4.7 / 4.8 at 1M context are all included in Max — confirmed by Claude Code's own `/model` picker which shows no credit warning for any 1M Opus variant.
-- **Setup B — Saver (Opus 4.6 max planner + Sonnet driver):** **mixed billing.** Planner (Opus 4.6 max) stays on Max. Driver (Sonnet 4.6) billing depends on context window:
-  - **Sonnet 4.6 standard context (~200K):** Max subscription ✓
-  - **Sonnet 4.6 with 1M context:** **draws from your separate usage credits pool**, not your Max subscription. Flat $3/$15 per Mtok, but routes to credits. Claude Code's `/model` picker shows this explicitly: "Sonnet 4.6 with 1M context · Draws from usage credits · $3/$15 per Mtok"
+- **Setup B — Saver (OpusPlan):** **fully Max-bundled.** `opusplan` uses Opus (plan mode) + Sonnet (execute mode), both at 200K context — no `[1m]` variants, no credit drain. This is why Setup B now recommends `opusplan` instead of the old `sonnet[1m]` pin (#390).
+  - **⚠️ Avoid `sonnet[1m]`:** Sonnet with 1M context draws from your usage credits pool ($3/$15 per Mtok), NOT your Max subscription. The `/model` picker shows this explicitly. Plain `sonnet` (200K) or `opusplan` stays on Max.
 - **Reviewer (GPT-5.5 xhigh) in both lanes:** billed against your OpenAI account, completely separate from Anthropic.
 - **CI loops that use `claude -p` post-June-15:** these now bill against the separate Anthropic credit pool, not your Max subscription. The wizard's CI shepherd loops (E2E scoring, weekly-update jobs) are local-only on the maintainer's machine and stay on Max; consumer-repo CI integrations may need to budget the new credit pool.
 

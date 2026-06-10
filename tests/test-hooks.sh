@@ -2673,17 +2673,18 @@ test_model_effort_check_local_overrides_project() {
     local output
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if [ -z "$output" ]; then
-        pass "model-effort-check.sh respects local settings override (max from local, silent)"
+    if ! echo "$output" | grep -q "WARNING"; then
+        pass "model-effort-check.sh respects local override (max from local, no WARNING)"
     else
-        fail "model-effort-check.sh should respect local settings.json override, got: $output"
+        fail "model-effort-check.sh should respect local settings.json override (no WARNING), got: $output"
     fi
 }
 
 # Test: effort=max is silent (preferred; above the floor, no nudge needed)
 # Per ROADMAP #217: xhigh is the floor, max is preferred. Anything at-or-above the
 # floor should produce no output.
-test_model_effort_check_max_is_silent() {
+# effortLevel: max in settings WITHOUT env var → NOTE (CC ignores it)
+test_model_effort_check_max_settings_warns_persistence() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
@@ -2691,10 +2692,26 @@ test_model_effort_check_max_is_silent() {
     local output
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if [ -z "$output" ]; then
-        pass "model-effort-check.sh silent when effort=max (preferred, above floor)"
+    if echo "$output" | grep -q "session-only"; then
+        pass "#395: effortLevel:max in settings warns about session-only persistence"
     else
-        fail "model-effort-check.sh should be silent when effort=max, got: $output"
+        fail "#395: should warn about settings max being session-only, got: $output"
+    fi
+}
+
+# env var CLAUDE_CODE_EFFORT_LEVEL=max → truly silent (correctly persisted)
+test_model_effort_check_max_env_var_silent() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    echo '{}' > "$tmpdir/.claude/settings.json"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="max" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if [ -z "$output" ]; then
+        pass "#395: CLAUDE_CODE_EFFORT_LEVEL=max is truly silent (correctly persisted)"
+    else
+        fail "#395: env var max should be silent, got: $output"
     fi
 }
 
@@ -2763,7 +2780,8 @@ test_instructions_loaded_no_duplicate_effort_nudge() {
 test_model_effort_check_exists
 test_model_effort_check_stale_effort
 test_model_effort_check_xhigh_warns
-test_model_effort_check_max_is_silent
+test_model_effort_check_max_settings_warns_persistence
+test_model_effort_check_max_env_var_silent
 test_model_effort_check_below_xhigh_loud_warning
 test_model_effort_check_no_stdin
 test_settings_has_session_start_hook

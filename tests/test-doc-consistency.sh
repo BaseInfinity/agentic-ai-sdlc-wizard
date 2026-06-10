@@ -402,13 +402,13 @@ test_cli_template_has_no_default_autocompact() {
 # `opus[1m]` generic alias or an explicit `claude-opus-4-X[1m]` id) so users
 # can discover the pin during the opt-in prompt — just without calling it the
 # default. v1.80.0 flipped to explicit model ids for the recommended flagship.
-test_setup_skill_mentions_opus_1m_in_optin_prompt() {
+test_setup_skill_mentions_model_pin_in_optin_prompt() {
     local SKILL="$REPO_ROOT/skills/setup/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/setup/SKILL.md not found"; return; fi
-    if grep -qE 'opus\[1m\]|claude-opus-4-[0-9]+\[1m\]' "$SKILL"; then
-        pass "skills/setup/SKILL.md references an Opus pin alias (opt-in prompt in Step 9.5)"
+    if grep -qE 'opusplan|claude-opus-4-[0-9]+' "$SKILL"; then
+        pass "skills/setup/SKILL.md references opusplan or Opus model pin (Step 9.5)"
     else
-        fail "skills/setup/SKILL.md must name opus[1m] or claude-opus-4-X[1m] in the Step 9.5 opt-in prompt"
+        fail "skills/setup/SKILL.md must reference opusplan or claude-opus-4-X in Step 9.5"
     fi
 }
 
@@ -629,7 +629,7 @@ test_wizard_doc_real_browser_trigger_examples
 test_sdlc_skill_recommends_opus_1m
 test_cli_template_has_no_default_model_pin
 test_cli_template_has_no_default_autocompact
-test_setup_skill_mentions_opus_1m_in_optin_prompt
+test_setup_skill_mentions_model_pin_in_optin_prompt
 test_repo_settings_match_template_no_model_pin
 test_hooks_recommend_opus_1m_alias
 test_setup_skill_mentions_less_permission_prompts
