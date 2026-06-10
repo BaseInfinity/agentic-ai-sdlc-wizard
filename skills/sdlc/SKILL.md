@@ -116,7 +116,7 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 **Recommended: `claude-opus-4-6` or `opusplan` (Opus 4.6 max — wizard's flagship).** Pin in settings or `/model claude-opus-4-6` at session start. `opusplan` uses Opus for Plan Mode (Shift+Tab) + Sonnet for execution — both Max-bundled. Persist effort: `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block (#395).
 
-**Pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` when you opt in.** Without it, the default fires at ~76K on 1M. **Pick ONE — do NOT set both `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` AND `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000`** — they compound to 30% × 400K = 120K trigger ≈ 12% of 1M, fires almost immediately (#207). See wizard "Autocompact Tuning" for details.
+**If pinning `claude-opus-4-6` (flagship):** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — Opus auto-upgrades to 1M on Max and the default compacts too early at ~76K. **Do NOT set this for `opusplan`** — opusplan uses 200K context and 30% of 200K = 60K would compact too aggressively (#207).
 
 ## Self-Review Loop
 
@@ -130,7 +130,7 @@ The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confi
 
 ## Cross-Model Review (REQUIRED for High-Stakes)
 
-**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI (`npm i -g @openai/codex`) + OpenAI API key. **Reviewer at flagship tier (#233):** even when project pins `sonnet[1m]`, reviewer runs `gpt-5.5` / Opus 4.6 max — adversarial diversity is the point.
+**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI (`npm i -g @openai/codex`) + OpenAI API key. **Reviewer at flagship tier (#233):** even on `opusplan` (Sonnet driver), reviewer runs `gpt-5.5` xhigh — adversarial diversity is the point.
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
