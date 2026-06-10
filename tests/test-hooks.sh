@@ -2601,7 +2601,7 @@ test_model_effort_check_stale_effort() {
     rm -rf "$tmpdir"
     if echo "$output" | grep -q '/effort' \
         && echo "$output" | grep -q 'WARNING' \
-        && echo "$output" | grep -qF 'claude-opus-4-6[1m]'; then
+        && echo "$output" | grep -qF 'claude-opus-4-6'; then
         pass "model-effort-check.sh warns on effort=high (only max acceptable)"
     else
         fail "model-effort-check.sh should warn on effort=high, got: $output"
@@ -2663,27 +2663,27 @@ test_model_effort_check_nested_cwd() {
     fi
 }
 
-# Test: settings.json precedence — local overrides project
-test_model_effort_check_local_overrides_project() {
+# Test: env var overrides settings — local settings high + env var max = silent
+test_model_effort_check_env_overrides_settings() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
     echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
-    echo '{"effortLevel":"max"}' > "$tmpdir/.claude/settings.local.json"
     local output
-    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="max" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     if [ -z "$output" ]; then
-        pass "model-effort-check.sh respects local settings override (max from local, silent)"
+        pass "model-effort-check.sh env var max overrides settings high (silent)"
     else
-        fail "model-effort-check.sh should respect local settings.json override, got: $output"
+        fail "model-effort-check.sh env var max should override settings, got: $output"
     fi
 }
 
 # Test: effort=max is silent (preferred; above the floor, no nudge needed)
 # Per ROADMAP #217: xhigh is the floor, max is preferred. Anything at-or-above the
 # floor should produce no output.
-test_model_effort_check_max_is_silent() {
+# effortLevel: max in settings WITHOUT env var → NOTE (CC ignores it)
+test_model_effort_check_max_settings_warns_persistence() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
@@ -2691,10 +2691,26 @@ test_model_effort_check_max_is_silent() {
     local output
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if [ -z "$output" ]; then
-        pass "model-effort-check.sh silent when effort=max (preferred, above floor)"
+    if echo "$output" | grep -q "WARNING"; then
+        pass "#395: effortLevel:max in settings triggers WARNING (CC ignores it there)"
     else
-        fail "model-effort-check.sh should be silent when effort=max, got: $output"
+        fail "#395: settings-only max should trigger WARNING, got: $output"
+    fi
+}
+
+# env var CLAUDE_CODE_EFFORT_LEVEL=max → truly silent (correctly persisted)
+test_model_effort_check_max_env_var_silent() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    echo '{}' > "$tmpdir/.claude/settings.json"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="max" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if [ -z "$output" ]; then
+        pass "#395: CLAUDE_CODE_EFFORT_LEVEL=max is truly silent (correctly persisted)"
+    else
+        fail "#395: env var max should be silent, got: $output"
     fi
 }
 
@@ -2763,12 +2779,13 @@ test_instructions_loaded_no_duplicate_effort_nudge() {
 test_model_effort_check_exists
 test_model_effort_check_stale_effort
 test_model_effort_check_xhigh_warns
-test_model_effort_check_max_is_silent
+test_model_effort_check_max_settings_warns_persistence
+test_model_effort_check_max_env_var_silent
 test_model_effort_check_below_xhigh_loud_warning
 test_model_effort_check_no_stdin
 test_settings_has_session_start_hook
 test_model_effort_check_nested_cwd
-test_model_effort_check_local_overrides_project
+test_model_effort_check_env_overrides_settings
 test_instructions_loaded_no_duplicate_effort_nudge
 
 # #395: CLAUDE_CODE_EFFORT_LEVEL env var takes precedence over effortLevel in settings

@@ -114,7 +114,7 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 ## Recommended Model
 
-**Opt-in: `claude-opus-4-6[1m]` (Opus 4.6 max + 1M context — wizard's flagship).** `/model claude-opus-4-6[1m]` at session start (issue #198). Top-level `model` pin disables CC auto-selection; pin only when you need 1M headroom. CC v2.1.154+. For 4.8 opt-in, see wizard "Latest tier".
+**Recommended: `claude-opus-4-6` or `opusplan` (Opus 4.6 max — wizard's flagship).** Pin in settings or `/model claude-opus-4-6` at session start. `opusplan` uses Opus for Plan Mode (Shift+Tab) + Sonnet for execution — both Max-bundled. Persist effort: `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block (#395).
 
 **Pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` when you opt in.** Without it, the default fires at ~76K on 1M. **Pick ONE — do NOT set both `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` AND `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000`** — they compound to 30% × 400K = 120K trigger ≈ 12% of 1M, fires almost immediately (#207). See wizard "Autocompact Tuning" for details.
 

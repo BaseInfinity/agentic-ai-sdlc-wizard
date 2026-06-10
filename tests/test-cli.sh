@@ -1207,7 +1207,7 @@ test_setup_skill_step95_is_opt_in_default_no() {
     local ok=true
     echo "$step95" | grep -qiE 'opt.?in|\[y/N\]|default.*no' || ok=false
     echo "$step95" | grep -qiE 'auto.?mode|auto.?select' || ok=false
-    echo "$step95" | grep -qE 'opus\[1m\]|claude-opus-4-[0-9]+\[1m\]' || ok=false
+    echo "$step95" | grep -qE 'opusplan|claude-opus-4-[0-9]+' || ok=false
     if [ "$ok" = true ]; then
         pass "Setup skill Step 9.5 frames Opus pin as opt-in (default No, mentions auto-mode)"
     else
