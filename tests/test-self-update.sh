@@ -241,10 +241,10 @@ test_version_consistency() {
 
 # Test 16: Wizard contains Cross-Model Review section
 test_cross_model_review_section() {
-    if grep -q "### Cross-Model Review Loop (Optional)" "$WIZARD"; then
-        pass "Wizard contains Cross-Model Review section"
+    if grep -q "### Cross-Model Review Loop (REQUIRED" "$WIZARD"; then
+        pass "Wizard contains Cross-Model Review section (REQUIRED)"
     else
-        fail "Wizard should contain '### Cross-Model Review Loop (Optional)' section"
+        fail "Wizard should contain '### Cross-Model Review Loop (REQUIRED for High-Stakes)' section"
     fi
 }
 
@@ -388,7 +388,7 @@ test_step_registry_update_wizard
 # Helper: extract wizard cross-model blocks (embedded SKILL + deep-dive)
 wizard_cross_model_blocks() {
     # Embedded SKILL section: ## Cross-Model Review ... ## Test Review
-    sed -n '/^## Cross-Model Review (If Configured)/,/^## Test Review/p' "$WIZARD"
+    sed -n '/^## Cross-Model Review (REQUIRED/,/^## Test Review/p' "$WIZARD"
     # Deep-dive section: ### Cross-Model Review Loop ... next ### or EOF
     sed -n '/^### Cross-Model Review Loop/,/^### [^C]/p' "$WIZARD"
 }

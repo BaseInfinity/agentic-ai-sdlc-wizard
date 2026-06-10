@@ -2486,7 +2486,7 @@ Self-review passes → handoff.json (round 1, PENDING_REVIEW)
 
 **Tool-agnostic:** The value is adversarial diversity (different model, different blind spots), not the specific tool. Any competing AI reviewer works.
 
-**Full protocol:** See the "Cross-Model Review Loop (Optional)" section below for key flags and reasoning effort guidance.
+**Full protocol:** See the "Cross-Model Review Loop" section below for key flags and reasoning effort guidance.
 
 ### Release Review Focus
 
@@ -3787,7 +3787,7 @@ Claude: [fetches via gh api, discusses with you interactively]
 
 This is optional - skip if you prefer fresh reviews only.
 
-### Cross-Model Review Loop (Optional)
+### Cross-Model Review Loop (REQUIRED for High-Stakes)
 
 Use an independent AI model from a different company as a code reviewer. The author can't grade their own homework — a model with different training data and different biases catches blind spots the authoring model misses.
 
