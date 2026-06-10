@@ -2271,7 +2271,7 @@ TodoWrite([
   { content: "DRY check: Is logic duplicated elsewhere?", status: "pending", activeForm: "Checking for duplication" },
   { content: "Self-review: run /code-review", status: "pending", activeForm: "Running code review" },
   { content: "Security review (if warranted)", status: "pending", activeForm: "Checking security implications" },
-  { content: "Cross-model review (if configured — see below)", status: "pending", activeForm: "Running cross-model review" },
+  { content: "Cross-model review (REQUIRED for high-stakes)", status: "pending", activeForm: "Running cross-model review" },
   // CI FEEDBACK LOOP (After local tests pass)
   { content: "Commit and push to remote", status: "pending", activeForm: "Pushing to remote" },
   { content: "Watch CI - fix failures, iterate until green (max 2x)", status: "pending", activeForm: "Watching CI" },
@@ -4164,7 +4164,7 @@ Every wizard step has a unique ID for tracking:
 | `step-9` | SDLC/TESTING/ARCH docs | 1.0.0 |
 | `question-git-workflow` | Git workflow preference | 1.2.0 |
 | `step-update-notify` | Optional: CI update notification | 1.13.0 |
-| `step-cross-model-review` | Optional: Cross-model review loop | 1.16.0 |
+| `step-cross-model-review` | Cross-model review (REQUIRED for high-stakes) | 1.16.0 |
 | `step-update-wizard` | /update-wizard smart update skill | 1.18.0 |
 
 When checking for updates, Claude compares user's completed steps against this registry.

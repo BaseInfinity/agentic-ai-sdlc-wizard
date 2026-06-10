@@ -47,7 +47,7 @@ TodoWrite([
   { content: "Visual consistency check (if UI change)", status: "pending" },
   { content: "Self-review: run /code-review", status: "pending" },
   { content: "Security review (if warranted)", status: "pending" },
-  { content: "Cross-model review (if configured)", status: "pending" },
+  { content: "Cross-model review (high-stakes)", status: "pending" },
   { content: "Scope guard: only changes related to task? No legacy/fallback code left?", status: "pending" },
   // CI SHEPHERD
   { content: "Commit and push to remote", status: "pending" },
