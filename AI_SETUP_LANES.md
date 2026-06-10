@@ -66,7 +66,7 @@ The "just do the thing" lane. No TDD enforcement, no cross-model review, no plan
 Setup C is for work where SDLC discipline overhead exceeds the value:
 
 - Run a script with basic intelligence
-- Deploy to staging or prod
+- Deploy to staging (prod deploys need Setup A's discipline — human gate + rollback plan)
 - Config updates, env var changes
 - File moves, renames, bulk operations
 - Repo maintenance (dependency bumps, lockfile refreshes)
