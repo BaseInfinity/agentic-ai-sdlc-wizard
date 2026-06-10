@@ -284,7 +284,7 @@ The `/sdlc` skill sets `effort: max` in its frontmatter, overriding the medium d
 - `effort: max` in SKILL.md frontmatter persists — every `/sdlc` invocation uses `max`
 - You can also type `ultrathink` in any prompt for a single high-effort turn
 
-**Cost note:** `max` uses more tokens than `xhigh`. On Opus 4.6 (the wizard's recommended flagship), this is the validated sweet spot — 4.6 is the only Opus where `max` doesn't overthink. On Opus 4.7/4.8, consider `xhigh` instead.
+**Cost note:** `max` uses more tokens than lower efforts. Always `max` on all Claude models (#395). Token burn is higher on 4.7/4.8 than 4.6 — that's why 4.6 is the wizard's flagship.
 
 > See also: the **Effort** column in the [Confidence Check table](#confidence-check-required) below for per-confidence-level guidance on when to escalate to `max`.
 
@@ -1091,22 +1091,14 @@ The wizard's flagship recommendation is Opus 4.6 max (see "Choosing Your Model" 
 Edit `~/.claude/settings.json`:
 ```json
 {
+  "model": "claude-opus-4-8",
   "env": {
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-opus-4-8"
-  },
-  "model": "opus[1m]"
+    "CLAUDE_CODE_EFFORT_LEVEL": "max"
+  }
 }
 ```
 
-The `opus[1m]` alias resolves through the env vars, so this combination pins `claude-opus-4-8[1m]` (1M context) everywhere.
-
-**Project-scoped (single repo):**
-```json
-{
-  "model": "claude-opus-4-8[1m]"
-}
-```
+On Max plans, Opus auto-upgrades to 1M context. No `[1m]` suffix needed.
 
 **Effort tuning for 4.8:** always `max`. Earlier field signal suggested xhigh on 4.8 but the wizard standard is max on all Claude models (#395).
 
