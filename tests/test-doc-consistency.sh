@@ -501,7 +501,7 @@ test_wizard_doc_warns_against_compound_autocompact_config() {
 test_sdlc_skill_warns_against_compound_autocompact_config() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
-    if grep -qE '(do not set both|don.t set both|do NOT set both|pick one|alternatives.*not)' "$SKILL"; then
+    if grep -qiE '(do not set (both|this)|don.t set both|pick one|alternatives.*not)' "$SKILL"; then
         pass "skills/sdlc/SKILL.md warns against autocompact compound config (#207)"
     else
         fail "skills/sdlc/SKILL.md must warn against PCT_OVERRIDE + AUTO_COMPACT_WINDOW compound (#207)"

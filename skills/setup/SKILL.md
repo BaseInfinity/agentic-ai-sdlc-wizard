@@ -228,9 +228,9 @@ Present suggestions and let the user confirm.
 
 ### Step 9.5: Context Window + Mixed-Mode Configuration (Opt-In)
 
-The CLI ships `cli/templates/settings.json` with **no** `model` or `env` pin by default. This preserves Claude Code's built-in model auto-selection (Sonnet for cheap tasks, Opus for hard ones) and the upstream autocompact threshold. Power users can opt into a pin during setup; mixed-mode users (Sonnet coder + Opus reviewer) can pin Sonnet here too.
+The CLI ships `cli/templates/settings.json` with **no** `model` or `env` pin by default. This preserves Claude Code's built-in model auto-selection. Power users can opt into a pin during setup — `opusplan` for cost-conscious SDLC, or `claude-opus-4-6` for full flagship.
 
-**Why this is opt-in (issue #198):** A top-level `"model"` in `settings.json` tells Claude Code "the user has explicitly chosen a model" and disables auto-mode for the session. That is a real tradeoff — pinning is only worth it when you actually need the 1M headroom or you've decided mixed-mode tier-splitting is better than per-turn auto-selection.
+**Why this is opt-in (issue #198):** A top-level `"model"` in `settings.json` disables auto-mode for the session. Pinning is only worth it when you want consistent model behavior (opusplan or flagship) rather than per-turn auto-selection.
 
 **Run the complexity heuristic first (roadmap #233):**
 
@@ -275,12 +275,13 @@ Tell the user: "Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both
 {
   "model": "claude-opus-4-6",
   "env": {
-    "CLAUDE_CODE_EFFORT_LEVEL": "max"
+    "CLAUDE_CODE_EFFORT_LEVEL": "max",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
   }
 }
 ```
 
-Tell the user: "Opus 4.6 max everywhere. Max-bundled at 200K on your subscription. Effort persisted via env var (CC ignores effortLevel: max in settings)."
+Tell the user: "Opus 4.6 max everywhere. On Max plans, Opus auto-upgrades to 1M context — the autocompact override prevents early compaction at ~76K (default fires too soon on 1M)."
 
 **If the user answers `l` (latest):** Edit `.claude/settings.json` and add:
 
