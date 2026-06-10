@@ -269,9 +269,9 @@ Claude Code's **effort level** controls how much thinking the model does before 
 
 **Don't rely on the CC default — set effort yourself.** Anthropic's [2026-04-23 post-mortem](https://www.anthropic.com/engineering/april-23-postmortem) is independent third-party evidence that CC has flipped reasoning_effort defaults across versions (high → medium → xhigh/high). The default has changed before and will change again. The wizard's `model-effort-check.sh` hook nudges to `xhigh`/`max` at session start specifically because the in-product default is not load-bearing — it can shift release-to-release without notice. Set `/effort max` explicitly every session you do SDLC work, and treat any "I assumed the default was X" reasoning as a bug.
 
-The `/sdlc` skill sets `effort: high` in its frontmatter as a baseline, overriding the medium default on every SDLC invocation. **On Opus 4.6 max, run `/effort max` at session start** — the frontmatter is a floor, not a ceiling, and `max` is where SDLC-compliant work actually happens on 4.6.
+The `/sdlc` skill sets `effort: max` in its frontmatter, overriding the medium default on every SDLC invocation. This matches the wizard's v1.80.0 contract: Opus 4.6 max is the recommended flagship, and `max` is where SDLC-compliant work actually happens on 4.6.
 
-**Nuclear option — disable adaptive thinking entirely:** Set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` in your environment or settings.json `env` block. This forces a fixed reasoning budget per turn instead of letting the model dynamically allocate. Use this if you observe persistent quality issues even with `effort: high`. See [Claude Code model config docs](https://code.claude.com/docs/en/model-config) for details.
+**Nuclear option — disable adaptive thinking entirely:** Set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` in your environment or settings.json `env` block. This forces a fixed reasoning budget per turn instead of letting the model dynamically allocate. Use this if you observe persistent quality issues even at `max` effort. See [Claude Code model config docs](https://code.claude.com/docs/en/model-config) for details.
 
 **When to escalate to `max`:**
 - You hit LOW confidence on your approach — deeper thinking may find clarity
@@ -291,18 +291,18 @@ The `/sdlc` skill sets `effort: high` in its frontmatter as a baseline, overridi
 
 ### Anti-Laziness Guidance for CLAUDE.md
 
-If you notice Claude Code producing shallow outputs despite `effort: high`, add these instructions to your project's `CLAUDE.md`. These target the **specific mechanisms** behind quality degradation — adaptive thinking and effort levels — rather than vague directives:
+If you notice Claude Code producing shallow outputs despite `effort: max`, add these instructions to your project's `CLAUDE.md`. These target the **specific mechanisms** behind quality degradation — adaptive thinking and effort levels — rather than vague directives:
 
 ```markdown
 ## Quality Anchoring
-- This project uses effort: high via SDLC skill frontmatter. Do not reduce reasoning depth.
+- This project uses effort: max via SDLC skill frontmatter. Do not reduce reasoning depth.
 - Adaptive thinking may under-allocate your thinking budget on complex tasks. When working on
   multi-file changes, architecture decisions, or debugging: reason through the full problem
   before acting, even if the system prompt suggests taking the "simplest approach first."
 - If you catch yourself skipping steps, re-read the task requirements and verify completeness.
 ```
 
-**Why this works:** Claude Code's hidden system prompt includes "Go straight to the point. Try the simplest approach first." This is good for simple queries but causes the model to under-invest in reasoning on complex SDLC tasks. The instructions above don't fight the system prompt — they provide task-specific context that justifies deeper reasoning. Note that CLAUDE.md instructions can be partially overridden by the system prompt, so `effort: high` in skill frontmatter remains the primary defense.
+**Why this works:** Claude Code's hidden system prompt includes "Go straight to the point. Try the simplest approach first." This is good for simple queries but causes the model to under-invest in reasoning on complex SDLC tasks. The instructions above don't fight the system prompt — they provide task-specific context that justifies deeper reasoning. Note that CLAUDE.md instructions can be partially overridden by the system prompt, so `effort: max` in skill frontmatter remains the primary defense.
 
 ---
 
@@ -401,14 +401,14 @@ Skills support these frontmatter fields:
 |-------|---------|---------|
 | `name` | Skill name (matches `/command`) | `name: sdlc` |
 | `description` | Trigger description for auto-invocation | `description: Full SDLC workflow...` |
-| `effort` | Set reasoning effort level | `effort: high` |
+| `effort` | Set reasoning effort level | `effort: max` |
 | `paths` | Restrict skill to specific file patterns | `paths: ["src/**/*.ts", "tests/**"]` |
 | `context` | Context mode (`fork` = isolated subagent) | `context: fork` |
 | `argument-hint` | Hint for `$ARGUMENTS` placeholder | `argument-hint: [task description]` |
 | `disable-model-invocation` | Prevent skill from being auto-invoked by model | `disable-model-invocation: true` |
 
 **Key fields explained:**
-- **`effort: high`** — The wizard's `/sdlc` skill uses this to ensure Claude gives full attention. `max` is available but costs significantly more tokens.
+- **`effort: max`** — The wizard's `/sdlc` skill uses this to ensure Claude gives full attention at the recommended effort level for Opus 4.6 max (v1.80.0+).
 - **`paths:`** — Limits when a skill activates based on files being worked on. Useful for language-specific or directory-specific skills.
 - **`context: fork`** — Runs the skill in an isolated subagent context. The subagent gets its own context window, so it won't pollute the main conversation. Useful for review skills or analysis that should run independently.
 
