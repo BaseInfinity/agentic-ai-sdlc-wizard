@@ -8,11 +8,12 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
 | Role | Model |
 |------|-------|
-| **Planner** | Claude Code Opus 4.6 max |
-| **Driver** | Claude Code Opus 4.6 max |
+| **Planner** | Fable 5 high (via `claude --model claude-fable-5 --print`) |
+| **Driver** | Opus 4.6 max |
 | **Reviewer** | Codex (GPT-5.5) xhigh |
+| **Escalation** | + Fable 5 review (security, releases, wide-blast architecture only) |
 
-Quality-first lane. Opus 4.6 max drives both the planning brain and the implementation hands; GPT-5.5 xhigh is the cross-model final gate that catches what Claude's self-review missed.
+Quality-first lane. Fable 5 plans (best planner tested — deeper reasoning, finds architectural issues early), Opus 4.6 max implements (stable, Max-bundled), GPT-5.5 xhigh reviews (cross-family, free on ChatGPT sub, catches plan-level blind spots Fable can't see in its own work). Escalate to Fable review for the ~5% of PRs where stakes justify it.
 
 ## Setup B — Claude Saver (OpusPlan)
 
@@ -55,8 +56,7 @@ Setup B is sufficient for routine work where a Sonnet driver can ship with a str
 | Role | Model | Notes |
 |------|-------|-------|
 | **Planner** | You (the user) | Task is pre-planned, no model reasoning needed |
-| **Driver** | Haiku 4.5 | Cheapest Claude model: $1/$5 per Mtok (3× cheaper than Sonnet, 5× cheaper than Opus) |
-| **Driver fallback** | Sonnet 4.6 standard | If Haiku can't handle the task — $3/$15 per Mtok |
+| **Driver** | Sonnet 4.6 | Same model as Setup B driver — Max-bundled, no extra model to manage |
 | **Reviewer** | None | Blast radius too low for cross-model overhead |
 
 The "just do the thing" lane. No TDD enforcement, no cross-model review, no planning phase. You already know what to do — you just need a fast, cheap pair of hands.
@@ -75,16 +75,14 @@ Setup C is for work where SDLC discipline overhead exceeds the value:
 
 **Not Lite — escalate to A or B:** env vars that touch secrets or credentials, dependency bumps with security advisories, destructive bulk ops (rm -rf, drop table), migrations, prod-like shared staging, anything security-sensitive. If you're unsure, it's not Lite.
 
-**Haiku's context limit is 200K** (vs 1M for Opus/Sonnet). If the task needs to load a large diff, multi-file refactor, or cross-repo audit, Haiku will hit the ceiling — escalate to Setup B.
-
 ## What Setup C explicitly skips
 
 - No TDD (no test-first for running a deploy script)
 - No cross-model review (not worth the cost or time for grunt work)
 - No planning phase (you are the planner)
-- No effort escalation (Haiku standard is plenty)
+- No effort escalation (Sonnet standard is plenty)
 
-**The discipline of knowing when NOT to use discipline.** Documenting this lane tells users "here's when to switch off the heavy methodology" rather than silently tempting them to skip it. If the task turns out to be harder than expected, escalate to Setup B or A — don't force-fit Haiku on a complex problem.
+**The discipline of knowing when NOT to use discipline.** Documenting this lane tells users "here's when to switch off the heavy methodology" rather than silently tempting them to skip it. If the task turns out to be harder than expected, escalate to Setup B or A.
 
 ## Final Review Policy
 
