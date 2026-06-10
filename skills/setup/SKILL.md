@@ -246,50 +246,54 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 >
 > How do you want to configure the model for this repo?
 >
-> - **[N] No pin (default, recommended for most repos):** Leaves auto-mode enabled. Claude Code picks the model per turn. Compaction follows upstream defaults. Simplest, lowest friction.
-> - **[m] Mixed-mode** *(suggested for **simple** tier — roadmap #233):* Pins `model: "sonnet[1m]"` for the coder (Sonnet 4.6 with 1M context). The cross-model review layer (Codex / external reviewer) **always stays at the flagship** (Opus 4.6 max or gpt-5.5 xhigh) regardless. Saves cost/quota on simple repos; reviewer catches what Sonnet misses. Requires comfort with losing per-turn auto-selection.
-> - **[f] Flagship full** *(wizard's recommended default — suggested for complex / stakes-flagged):* Pins `model: "claude-opus-4-6[1m]"` + `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. 4.6 max is the only Opus/max combo that doesn't overthink (Andon Labs, Huryn, BSWEN, r/Claudeopus). Avoids 4.7+ tokenizer tax. Anthropic-supported until ≥ Feb 5, 2027. Requires CC v2.1.154+.
-> - **[l] Latest** *(opt-in for Anthropic's newest Opus):* Pins `model: "claude-opus-4-8[1m]"`. Ships SWE-Bench Pro / Terminal-Bench / dynamic-workflows gains. Tradeoff: 40-60× cache token jump at HIGH, active false-green / token-burn regressions. Drop to `xhigh` (4.8's `max` is worse than `xhigh`).
+> - **[N] No pin (default):** Auto-mode. CC picks model per turn. Simplest.
+> - **[o] OpusPlan** *(recommended for cost-conscious SDLC):* Pins `model: "opusplan"`. Opus plans (Shift+Tab), Sonnet executes. Both 200K, Max-bundled. No API credit drain (#390).
+> - **[f] Flagship full** *(recommended for complex / high-stakes):* Pins `model: "claude-opus-4-6"`. Opus 4.6 max everywhere. Max-bundled at 200K.
+> - **[l] Latest** *(opt-in bleeding-edge):* Pins `model: "claude-opus-4-8"`. Effort: always max (#395).
 >
-> `[N/m/f/l]`
+> `[N/o/f/l]`
 
 **If the user answers `N` (default):** Make no edits to `.claude/settings.json`. Auto-mode stays on. Done.
 
-**If the user answers `m` (mixed-mode):** Edit `.claude/settings.json` and add:
+**If the user answers `o` (opusplan):** Edit `.claude/settings.json` and add:
 
 ```json
 {
-  "model": "sonnet[1m]"
-}
-```
-
-Do NOT add `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` for Sonnet — Sonnet's 1M window has different compaction characteristics than Opus; let the upstream default ride. Tell the user explicitly: "Cross-model reviews still run at the flagship — `codex exec -c 'model_reasoning_effort=\"xhigh\"'` (gpt-5.5) or any future Opus-tier reviewer. Mixed-mode is coder-only."
-
-**If the user answers `f` (flagship):** Edit `.claude/settings.json` and add both fields at the top level:
-
-```json
-{
-  "model": "claude-opus-4-6[1m]",
+  "model": "opusplan",
   "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
+    "CLAUDE_CODE_EFFORT_LEVEL": "max"
   }
 }
 ```
 
-Tell the user: "Pair this with `/effort max` — 4.6 is the only Opus version where `max` doesn't overthink. See [`README.md` § Choosing Your Model](../README.md#choosing-your-model) and `CLAUDE_CODE_SDLC_WIZARD.md` → 'Latest tier — Opus 4.8' for the full rationale + the opt-in alternative if you want Anthropic's newest model."
+Tell the user: "Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both Max-bundled at 200K — no API credit drain. Press Shift+Tab before architecture/blast-radius decisions to get Opus reasoning. Cross-model reviews still run at GPT-5.5 xhigh."
+
+**If the user answers `f` (flagship):** Edit `.claude/settings.json` and add:
+
+```json
+{
+  "model": "claude-opus-4-6",
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "max"
+  }
+}
+```
+
+Tell the user: "Opus 4.6 max everywhere. Max-bundled at 200K on your subscription. Effort persisted via env var (CC ignores effortLevel: max in settings)."
 
 **If the user answers `l` (latest):** Edit `.claude/settings.json` and add:
 
 ```json
 {
-  "model": "claude-opus-4-8[1m]",
+  "model": "claude-opus-4-8",
   "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
+    "CLAUDE_CODE_EFFORT_LEVEL": "max"
   }
 }
 ```
 
-Tell the user: "Recommend dropping to `/effort xhigh` instead of `max` on 4.8 — strict effort behavior overcorrects at `max`. You'll want this if you're chasing SWE-Bench Pro / Terminal-Bench 2.1 / dynamic-workflows wins; otherwise the wizard's `[f] Flagship` (4.6 max) is the safer pick. Escape hatch: change the `model` value back to `claude-opus-4-6[1m]` or remove the line to fall back to auto-mode."
+Tell the user: "Always max effort on all Claude models (#395). Escape hatch: change `model` back to `claude-opus-4-6` or remove to fall back to auto-mode."
 
 Mention the escape hatch in all four cases:
 - To opt out later: remove the `model` line (and optionally the `env` block) from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".

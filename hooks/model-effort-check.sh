@@ -11,7 +11,7 @@
 #
 # Non-blocking: always exits 0.
 
-RECOMMENDED_MODEL="claude-opus-4-6[1m]"
+RECOMMENDED_MODEL="claude-opus-4-6"
 
 HOOK_DIR="${BASH_SOURCE[0]%/*}"
 [ "$HOOK_DIR" = "${BASH_SOURCE[0]}" ] && HOOK_DIR="."
@@ -27,6 +27,7 @@ fi
 
 # Env var takes precedence (CC docs: only way to persist max)
 effort="${CLAUDE_CODE_EFFORT_LEVEL:-}"
+settings_max=0
 
 if [ -z "$effort" ]; then
     project_dir="${CLAUDE_PROJECT_DIR:-.}"
@@ -35,20 +36,21 @@ if [ -z "$effort" ]; then
             val=$(jq -r '.effortLevel // empty' "$f" 2>/dev/null)
             if [ -n "$val" ]; then
                 effort="$val"
+                [ "$val" = "max" ] && settings_max=1
                 break
             fi
         fi
     done
 fi
 
-# Only max is acceptable — user preference: always run highest available.
-case "$effort" in
-    max)
-        exit 0
-        ;;
-esac
+# Only env-var max is truly silent.
+if [ "$effort" = "max" ] && [ "$settings_max" -eq 0 ]; then
+    exit 0
+fi
 
-if [ -z "$effort" ]; then
+if [ "$settings_max" -eq 1 ] && [ -z "${CLAUDE_CODE_EFFORT_LEVEL:-}" ]; then
+    effort_display="max (settings-only — CC ignores this)"
+elif [ -z "$effort" ]; then
     effort_display="unset"
 else
     effort_display="$effort"
