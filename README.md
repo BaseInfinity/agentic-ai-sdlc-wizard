@@ -186,7 +186,7 @@ Or pin in `.claude/settings.json`:
 
 Or sweep all your projects from one place by setting `ANTHROPIC_DEFAULT_OPUS_MODEL` in `~/.claude/settings.json` — the `opus[1m]` alias resolves through it, so flipping one env var switches every repo at once.
 
-Effort tuning is independent of model choice. `max` is the wizard's default *paired with 4.6*; `xhigh` is the floor. Adjust per session with `/effort max`. On 4.8, drop effort to `xhigh` per field evidence.
+Effort: **always `max`** on all Claude models. Persist it: set `CLAUDE_CODE_EFFORT_LEVEL=max` in your settings env block (CC docs: `effortLevel: "max"` in settings.json is session-only and silently ignored). OpenAI/Codex: `xhigh` (their highest).
 
 ### Three Setup Lanes
 
