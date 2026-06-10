@@ -188,6 +188,18 @@ Or sweep all your projects from one place by setting `ANTHROPIC_DEFAULT_OPUS_MOD
 
 Effort tuning is independent of model choice. `max` is the wizard's default *paired with 4.6*; `xhigh` is the floor. Adjust per session with `/effort max`. On 4.8, drop effort to `xhigh` per field evidence.
 
+### Three Setup Lanes
+
+The wizard defines three AI coding setups in [`AI_SETUP_LANES.md`](AI_SETUP_LANES.md):
+
+| Lane | Planner | Driver | Reviewer | When |
+|------|---------|--------|----------|------|
+| **A — Premium** | Opus 4.6 max | Opus 4.6 max | GPT-5.5 xhigh | Architecture, releases, security, anything high-stakes |
+| **B — Saver** | Opus 4.6 max | Sonnet (latest) | GPT-5.5 xhigh | Routine impl, docs, tests, low-risk edits |
+| **C — Lite** | You | Haiku 4.5 ($1/$5/Mtok) | None | Scripts, deploys to staging, config changes, grunt work |
+
+Setup C's whole point: **the discipline of knowing when NOT to use discipline.** When blast radius is low and you just need fast cheap hands, skip the SDLC overhead.
+
 **A note on `[1m]` and billing.** The `[1m]` suffix is the 1M-context alias. As of [March 2026](https://claude.com/blog/1m-context-ga), 1M context is GA at standard pricing — **no long-context surcharge, no premium tier, no API-only restriction.** Interactive Claude Code sessions on Max / Team / Enterprise plans include 1M context automatically; whether you set `claude-opus-4-6` or `claude-opus-4-6[1m]`, you're billed against the same per-token Max budget at $5/$25 per million tokens. (Pro users need "Enable usage credits" turned on once.) The [June 15, 2026 billing split](https://codersera.com/blog/anthropic-june-2026-billing-change-claude-code/) moved *headless* surfaces — `claude -p`, Agent SDK, GitHub Actions, third-party apps — off the Max subscription onto a separate metered credit pool. Interactive Claude Code in your terminal stays on Max. Full details in [`AI_SETUP_LANES.md` § How Billing Works](AI_SETUP_LANES.md#how-billing-works--1m-context-max-plan-and-the-june-15-split).
 
 ## How It Works

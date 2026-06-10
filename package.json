@@ -11,6 +11,7 @@
     "hooks/",
     ".claude-plugin/",
     "CLAUDE_CODE_SDLC_WIZARD.md",
+    "AI_SETUP_LANES.md",
     "CHANGELOG.md"
   ],
   "keywords": [
