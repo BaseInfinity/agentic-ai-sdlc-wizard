@@ -248,7 +248,7 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 >
 > - **[N] No pin (default):** Auto-mode. CC picks model per turn. Simplest.
 > - **[o] OpusPlan** *(recommended for cost-conscious SDLC):* Pins `model: "opusplan"`. Opus plans (Shift+Tab), Sonnet executes. Both 200K, Max-bundled. No API credit drain (#390).
-> - **[f] Flagship full** *(recommended for complex / high-stakes):* Pins `model: "claude-opus-4-6"`. Opus 4.6 max everywhere. Max-bundled at 200K.
+> - **[f] Flagship full** *(recommended for complex / high-stakes):* Pins `model: "claude-opus-4-6"`. Opus 4.6 max everywhere. Max-bundled (auto-upgrades to 1M on Max plans).
 > - **[l] Latest** *(opt-in bleeding-edge):* Pins `model: "claude-opus-4-8"`. Effort: always max (#395).
 >
 > `[N/o/f/l]`

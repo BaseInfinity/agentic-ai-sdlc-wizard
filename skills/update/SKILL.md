@@ -176,8 +176,8 @@ Check user's `.claude/settings.json`:
    > Remove, keep, or decide later? `[r/k/l]`
 
 2. **Only one of the two fields matches** — treat as intentional customization. Do not prompt.
-3. **`model: "sonnet[1m]"`** (mixed-mode tier, #233, v1.38.0+) — explicit user choice. Mention in summary: "Detected mixed-mode tier (Sonnet coder + flagship reviewer). Cross-model review still uses Opus / gpt-5.5."
-4. **Other `model` value** (`sonnet`, `opus`) — explicit user choice. Do not touch.
+3. **`model: "sonnet[1m]"`** — ⚠️ warn: "sonnet[1m] draws from usage credits, not Max subscription (#390). Consider switching to `opusplan` (Opus plans, Sonnet executes, both Max-bundled) or plain `sonnet` (200K, Max-bundled)."
+4. **`model: "opusplan"`** or other value (`sonnet`, `opus`) — explicit user choice. Do not touch.
 5. **Neither field set** — already on new default.
 
 When removing: drop `model` (and `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` if `env` becomes empty). Never touch other keys.

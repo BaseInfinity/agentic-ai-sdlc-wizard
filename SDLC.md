@@ -14,10 +14,10 @@
 | Last Updated | 2026-06-09 |
 | Claude Code Minimum | v2.1.154+ (required for `opus[1m]` alias resolution); v2.1.105+ for `PreCompact` hook |
 | Claude Code Recommended | v2.1.159+ (latest at 2026-06-02) — `.claude/skills` plugin auto-load (v2.1.157), enriched `tool_decision` telemetry via `OTEL_LOG_TOOL_DETAILS=1` (v2.1.157), native `/goal` (v2.1.139), `/code-review --comment` (v2.1.147), per-category `/usage` (v2.1.149), `$CLAUDE_EFFORT` env var for hooks (v2.1.133) |
-| Recommended Model | `claude-opus-4-6[1m]` (Opus 4.6, 1M context) — run `/model claude-opus-4-6[1m]` |
-| Recommended Effort | `max` (preferred) / `xhigh` (floor) — run `/effort max` |
+| Recommended Model | `claude-opus-4-6` or `opusplan` — run `/model claude-opus-4-6` or `/model opusplan` |
+| Recommended Effort | `max` — persist via `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block |
 
-> **Effort warning (Opus 4.6):** `max` is the recommended default, `xhigh` is the absolute floor. 4.6 is the field-validated Opus version where `max` doesn't overthink — Andon Labs Vending-Bench, Paweł Huryn's 4.7 guide, BSWEN effort decision guide, and r/Claudeopus reports all converge. Below `xhigh` (`high`, `medium`, `low`) scopes work tighter — shallow reasoning, skipped TDD, dropped self-review, SDLC non-compliance in practice. Use `high` or below only for trivial grep/search subagents.
+> **Effort warning:** `max` is required on all Claude models (#395). CC docs: `effortLevel: "max"` in settings.json is session-only — use the env var to persist. Below max = degraded reasoning, shallow TDD, weak self-review.
 
 See `CLAUDE_CODE_SDLC_WIZARD.md` → "1M vs 200K Context Window" for the rationale and pricing notes.
 
