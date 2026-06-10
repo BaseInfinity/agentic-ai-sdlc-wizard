@@ -13,7 +13,7 @@ Meta-repository — SDLC Wizard documentation, automation, and a zero-dep Node.j
 
 ## AI Setup Lanes
 
-This repo recommends two setup lanes for AI coding — Setup A (Claude Premium) and Setup B (Claude Saver). Both end at GPT-5.5 xhigh as the cross-model reviewer; only the planner/driver differ. Setup A keeps Opus 4.6 max for both planner and driver; Setup B keeps Opus 4.6 max as the planner but moves the driver to Sonnet for cost. See [`AI_SETUP_LANES.md`](AI_SETUP_LANES.md) for the full pick list (when to use which, credit-spend warning, override policy).
+This repo recommends three setup lanes — Setup A (Claude Premium: Opus 4.6 max all three roles + GPT-5.5 reviewer), Setup B (Claude Saver: Opus 4.6 max planner + Sonnet driver + GPT-5.5 reviewer), and Setup C (Claude Lite: Haiku 4.5 driver, no reviewer — for grunt/deploy/ops work). See [`AI_SETUP_LANES.md`](AI_SETUP_LANES.md) for the full pick list.
 
 The lanes are guidance, not a hard rule — maintainer override is always allowed.
 
