@@ -128,9 +128,9 @@ PLANNING → DOCS → TDD RED → GREEN → Tests Pass → Self-Review
 
 The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confidence ≥ 80 are real, < 80 are likely false positives. Found issues → ask "Want a plan to fix?" → new plan → docs → TDD → review.
 
-## Cross-Model Review (If Configured)
+## Cross-Model Review (REQUIRED for High-Stakes)
 
-**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip:** trivial changes, time-sensitive hotfixes, risk < review cost. **Prerequisites:** Codex CLI (`npm i -g @openai/codex`) + OpenAI API key. **Reviewer at flagship tier (#233):** even when project pins `sonnet[1m]`, reviewer runs `gpt-5.5` / Opus 4.6 max — adversarial diversity is the point.
+**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI (`npm i -g @openai/codex`) + OpenAI API key. **Reviewer at flagship tier (#233):** even when project pins `sonnet[1m]`, reviewer runs `gpt-5.5` / Opus 4.6 max — adversarial diversity is the point.
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 

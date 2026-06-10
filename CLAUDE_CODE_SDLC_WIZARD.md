@@ -2372,10 +2372,10 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 4. Issues below 80 are likely false positives — skip unless obviously valid
 5. Address issues by going back through the proper SDLC loop
 
-## Cross-Model Review (If Configured)
+## Cross-Model Review (REQUIRED for High-Stakes)
 
 **When to run:** High-stakes changes (auth, payments, data handling), releases/publishes (version bumps, CHANGELOG, npm publish), complex refactors, research-heavy work.
-**When to skip:** Trivial changes (typo fixes, config tweaks), time-sensitive hotfixes, risk < review cost.
+**When to skip (log justification):** Trivial changes (typo fixes, config tweaks), time-sensitive hotfixes, risk < review cost.
 
 **Prerequisites:** Codex CLI installed (`npm i -g @openai/codex`), OpenAI API key set.
 

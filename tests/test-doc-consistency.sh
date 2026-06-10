@@ -871,6 +871,18 @@ test_codex_exec_blocks_redirect_stdin
 test_sdlc_skill_has_goal_wrapper
 test_codex_review_guidance_teaches_background_mode
 
+# #372: Cross-model review is REQUIRED for high-stakes, not opt-in
+test_cross_model_review_required_not_optional() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if grep -q 'REQUIRED' "$SKILL" && ! grep -q 'If Configured' "$SKILL"; then
+        pass "#372: Cross-model review is REQUIRED (not opt-in 'If Configured')"
+    else
+        fail "#372: skills/sdlc/SKILL.md should say REQUIRED, not 'If Configured'"
+    fi
+}
+
+test_cross_model_review_required_not_optional
+
 # ────────────────────────────────────────────
 # Summary
 # ────────────────────────────────────────────
