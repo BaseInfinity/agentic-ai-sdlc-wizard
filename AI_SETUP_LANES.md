@@ -1,6 +1,6 @@
 # AI Setup Lanes
 
-Two recommended AI coding setups for this repo. Each is a complete triad: **planner → driver → reviewer**.
+Three recommended AI coding setups for this repo. Setups A and B are complete triads: **planner → driver → reviewer**. Setup C is a lightweight driver-only lane for operational grunt work.
 
 This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
@@ -50,19 +50,55 @@ Setup B is sufficient for routine work where a Sonnet driver can ship with a str
 - Low-risk methodology edits
 - Mechanical refactors
 
+## Setup C — Claude Lite
+
+| Role | Model | Notes |
+|------|-------|-------|
+| **Planner** | You (the user) | Task is pre-planned, no model reasoning needed |
+| **Driver** | Haiku 4.5 | Cheapest Claude model: $1/$5 per Mtok (3× cheaper than Sonnet, 5× cheaper than Opus) |
+| **Driver fallback** | Sonnet 4.6 standard | If Haiku can't handle the task — $3/$15 per Mtok |
+| **Reviewer** | None | Blast radius too low for cross-model overhead |
+
+The "just do the thing" lane. No TDD enforcement, no cross-model review, no planning phase. You already know what to do — you just need a fast, cheap pair of hands.
+
+## When to Use Setup C
+
+Setup C is for work where SDLC discipline overhead exceeds the value:
+
+- Run a script with basic intelligence
+- Deploy to staging or prod
+- Config updates, env var changes
+- File moves, renames, bulk operations
+- Repo maintenance (dependency bumps, lockfile refreshes)
+- Simple administrative tasks across repos like `~/afterhours`
+- Anything where blast radius is low and you need speed, not depth
+
+## What Setup C explicitly skips
+
+- No TDD (no test-first for running a deploy script)
+- No cross-model review (not worth the cost or time for grunt work)
+- No planning phase (you are the planner)
+- No effort escalation (Haiku standard is plenty)
+
+**The discipline of knowing when NOT to use discipline.** Documenting this lane tells users "here's when to switch off the heavy methodology" rather than silently tempting them to skip it. If the task turns out to be harder than expected, escalate to Setup B or A — don't force-fit Haiku on a complex problem.
+
 ## Final Review Policy
 
-**Both lanes end at GPT-5.5 xhigh as the cross-model reviewer.** Claude can't grade its own homework — the reviewer always belongs to a different lab with different blind spots. See [CLAUDE_CODE_SDLC_WIZARD.md → "Cross-Model Review (Codex)"](CLAUDE_CODE_SDLC_WIZARD.md) for the handoff protocol.
+**Setups A and B end at GPT-5.5 xhigh as the cross-model reviewer.** Claude can't grade its own homework — the reviewer always belongs to a different lab with different blind spots. See [CLAUDE_CODE_SDLC_WIZARD.md → "Cross-Model Review (Codex)"](CLAUDE_CODE_SDLC_WIZARD.md) for the handoff protocol.
+
+**Setup C has no reviewer** — the blast radius doesn't justify it. If you're unsure whether a task is truly Lite, it probably isn't. Escalate.
 
 If GPT-5.5 isn't available on your OpenAI account, Codex auto-falls back to GPT-5.4 — still keep `model_reasoning_effort="xhigh"`. Lower reasoning misses subtle bugs that the reviewer is the last gate to catch.
 
 ## Credit-Spend Warning
 
-Both lanes use Opus 4.6 max for at least the planner — that's the expensive half. On Max-plan subscriptions, **Premium can burn the 5-hour cap faster than Saver** because Opus 4.6 max drives implementation too. If you're hitting the cap mid-session:
+Setups A and B use Opus 4.6 max for at least the planner — that's the expensive half. On Max-plan subscriptions, **Premium can burn the 5-hour cap faster than Saver** because Opus 4.6 max drives implementation too. If you're hitting the cap mid-session:
 
 - Drop to Setup B for the remainder of the day
-- Or stick with Premium but downshift effort to `xhigh` (Opus 4.6 still works well there)
+- Or drop to Setup C for grunt work that doesn't need Opus reasoning
 - Or use Sonnet directly for the final mechanical edits, then run the GPT-5.5 reviewer over the whole diff at the end
+
+**Setup C is the cheapest option** — Haiku at $1/$5 per Mtok is 5× cheaper than Opus. For high-volume operational work, this is where the savings are.
 
 The reviewer (GPT-5.5 xhigh) is billed against your OpenAI account, separately. Watch both bills.
 
