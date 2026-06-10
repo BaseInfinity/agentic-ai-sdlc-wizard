@@ -11,7 +11,7 @@
 #
 # Non-blocking: always exits 0.
 
-RECOMMENDED_MODEL="claude-opus-4-6[1m]"
+RECOMMENDED_MODEL="claude-opus-4-6"
 
 HOOK_DIR="${BASH_SOURCE[0]%/*}"
 [ "$HOOK_DIR" = "${BASH_SOURCE[0]}" ] && HOOK_DIR="."
@@ -43,19 +43,14 @@ if [ -z "$effort" ]; then
     done
 fi
 
-# Only max is acceptable — user preference: always run highest available.
-case "$effort" in
-    max)
-        # Warn if max is in settings (CC ignores it there) without env var
-        if [ "$settings_max" -eq 1 ] && [ -z "${CLAUDE_CODE_EFFORT_LEVEL:-}" ]; then
-            echo "NOTE: effortLevel: max in settings is session-only (CC ignores it)."
-            echo " Persist: add CLAUDE_CODE_EFFORT_LEVEL=max to settings env block."
-        fi
-        exit 0
-        ;;
-esac
+# Only env-var max is truly silent.
+if [ "$effort" = "max" ] && [ "$settings_max" -eq 0 ]; then
+    exit 0
+fi
 
-if [ -z "$effort" ]; then
+if [ "$settings_max" -eq 1 ] && [ -z "${CLAUDE_CODE_EFFORT_LEVEL:-}" ]; then
+    effort_display="max (settings-only — CC ignores this)"
+elif [ -z "$effort" ]; then
     effort_display="unset"
 else
     effort_display="$effort"

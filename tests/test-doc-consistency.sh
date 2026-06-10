@@ -359,15 +359,13 @@ test_wizard_doc_no_default_opus_1m_wording() {
     fi
 }
 
-test_sdlc_skill_recommends_opus_1m() {
+test_sdlc_skill_recommends_opus_or_opusplan() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
-    # v1.80.0: accept either the opus[1m] alias OR an explicit
-    # claude-opus-4-X[1m] model id (flagship default flipped to 4.6 max).
-    if grep -qE 'opus\[1m\]|claude-opus-4-[0-9]+\[1m\]' "$SKILL"; then
-        pass "skills/sdlc/SKILL.md references an Opus pin (alias or explicit)"
+    if grep -qE 'opusplan|claude-opus-4-[0-9]+' "$SKILL"; then
+        pass "skills/sdlc/SKILL.md references opusplan or Opus model pin"
     else
-        fail "skills/sdlc/SKILL.md missing opus[1m] or claude-opus-4-X[1m] recommendation"
+        fail "skills/sdlc/SKILL.md missing opusplan or claude-opus-4-X recommendation"
     fi
 }
 
@@ -427,19 +425,12 @@ test_repo_settings_match_template_no_model_pin() {
     fi
 }
 
-# Hooks must nudge users toward the recommended Opus alias or explicit id,
-# not raw "claude-opus-4-6" without [1m] suffix (we want the 1M context).
-# Regression guard against Codex round-1 finding #3.
-# Post-#217 (2026-04-24): the effort/model nudge is centralized in
-# model-effort-check.sh — instructions-loaded-check.sh no longer duplicates it.
-# v1.80.0 flipped RECOMMENDED_MODEL from `opus[1m]` to explicit
-# `claude-opus-4-6[1m]`, so the wizard's flagship recommendation names the
-# version not the alias.
-test_hooks_recommend_opus_1m_alias() {
+# Hook must recommend a model pin (plain or opusplan — no [1m] since #390).
+test_hooks_recommend_model() {
     local H1="$REPO_ROOT/hooks/model-effort-check.sh"
     if [ ! -f "$H1" ]; then fail "$H1 not found"; return; fi
-    if ! grep -qE 'RECOMMENDED_MODEL="(opus\[1m\]|claude-opus-4-[0-9]+\[1m\])"' "$H1"; then
-        fail "model-effort-check.sh should set RECOMMENDED_MODEL to opus[1m] or claude-opus-4-X[1m]"
+    if ! grep -qE 'RECOMMENDED_MODEL="(claude-opus-4-[0-9]+|opusplan)"' "$H1"; then
+        fail "model-effort-check.sh should set RECOMMENDED_MODEL to claude-opus-4-X or opusplan"
         return
     fi
     # instructions-loaded-check.sh must NOT re-declare the variable (would
@@ -521,14 +512,13 @@ test_sdlc_skill_warns_against_compound_autocompact_config() {
 # the Opus pin as opt-in (matching the wizard doc post-#198), not default.
 # v1.80.0 flipped from opus[1m] alias to explicit claude-opus-4-6[1m] —
 # both forms are acceptable references to the opt-in pin.
-test_sdlc_skill_frames_opus_1m_as_opt_in() {
+test_sdlc_skill_frames_model_as_recommendation() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
-    # Must explicitly say "opt-in" or "issue #198" in the Recommended Model section.
-    if grep -qE 'Opt-in:.*opus\[1m\]|opt-in.*opus\[1m\]|opus\[1m\].*opt-in|Opt-in:.*claude-opus-4-[0-9]+\[1m\]|opt-in.*claude-opus-4-[0-9]+\[1m\]|claude-opus-4-[0-9]+\[1m\].*opt-in|issue #198' "$SKILL"; then
-        pass "skills/sdlc/SKILL.md frames Opus pin as opt-in (#198, #207 round 1)"
+    if grep -qE 'Recommended:.*claude-opus|Recommended:.*opusplan|opusplan.*claude-opus' "$SKILL"; then
+        pass "skills/sdlc/SKILL.md frames model pin as recommendation"
     else
-        fail "skills/sdlc/SKILL.md must frame Opus pin as opt-in, not default (#198)"
+        fail "skills/sdlc/SKILL.md must recommend opusplan or claude-opus-4-X"
     fi
 }
 
@@ -620,18 +610,18 @@ test_wizard_doc_frames_opus_1m_as_opt_in
 test_wizard_doc_no_default_opus_1m_wording
 test_wizard_doc_warns_against_compound_autocompact_config
 test_sdlc_skill_warns_against_compound_autocompact_config
-test_sdlc_skill_frames_opus_1m_as_opt_in
+test_sdlc_skill_frames_model_as_recommendation
 test_wizard_doc_has_browser_tooling_policy_section
 test_wizard_doc_browser_policy_covers_three_way_split
 test_wizard_doc_mcp_profile_isolation_for_concurrent_agents
 test_wizard_doc_notes_playwright_default_isolation_rejected
 test_wizard_doc_real_browser_trigger_examples
-test_sdlc_skill_recommends_opus_1m
+test_sdlc_skill_recommends_opus_or_opusplan
 test_cli_template_has_no_default_model_pin
 test_cli_template_has_no_default_autocompact
 test_setup_skill_mentions_model_pin_in_optin_prompt
 test_repo_settings_match_template_no_model_pin
-test_hooks_recommend_opus_1m_alias
+test_hooks_recommend_model
 test_setup_skill_mentions_less_permission_prompts
 test_wizard_doc_mentions_less_permission_prompts
 test_wizard_doc_mentions_permissions_command

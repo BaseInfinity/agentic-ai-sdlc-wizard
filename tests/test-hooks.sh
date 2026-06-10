@@ -2601,7 +2601,7 @@ test_model_effort_check_stale_effort() {
     rm -rf "$tmpdir"
     if echo "$output" | grep -q '/effort' \
         && echo "$output" | grep -q 'WARNING' \
-        && echo "$output" | grep -qF 'claude-opus-4-6[1m]'; then
+        && echo "$output" | grep -qF 'claude-opus-4-6'; then
         pass "model-effort-check.sh warns on effort=high (only max acceptable)"
     else
         fail "model-effort-check.sh should warn on effort=high, got: $output"
@@ -2663,20 +2663,19 @@ test_model_effort_check_nested_cwd() {
     fi
 }
 
-# Test: settings.json precedence — local overrides project
-test_model_effort_check_local_overrides_project() {
+# Test: env var overrides settings — local settings high + env var max = silent
+test_model_effort_check_env_overrides_settings() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
     echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
-    echo '{"effortLevel":"max"}' > "$tmpdir/.claude/settings.local.json"
     local output
-    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="max" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if ! echo "$output" | grep -q "WARNING"; then
-        pass "model-effort-check.sh respects local override (max from local, no WARNING)"
+    if [ -z "$output" ]; then
+        pass "model-effort-check.sh env var max overrides settings high (silent)"
     else
-        fail "model-effort-check.sh should respect local settings.json override (no WARNING), got: $output"
+        fail "model-effort-check.sh env var max should override settings, got: $output"
     fi
 }
 
@@ -2692,10 +2691,10 @@ test_model_effort_check_max_settings_warns_persistence() {
     local output
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q "session-only"; then
-        pass "#395: effortLevel:max in settings warns about session-only persistence"
+    if echo "$output" | grep -q "WARNING"; then
+        pass "#395: effortLevel:max in settings triggers WARNING (CC ignores it there)"
     else
-        fail "#395: should warn about settings max being session-only, got: $output"
+        fail "#395: settings-only max should trigger WARNING, got: $output"
     fi
 }
 
@@ -2786,7 +2785,7 @@ test_model_effort_check_below_xhigh_loud_warning
 test_model_effort_check_no_stdin
 test_settings_has_session_start_hook
 test_model_effort_check_nested_cwd
-test_model_effort_check_local_overrides_project
+test_model_effort_check_env_overrides_settings
 test_instructions_loaded_no_duplicate_effort_nudge
 
 # #395: CLAUDE_CODE_EFFORT_LEVEL env var takes precedence over effortLevel in settings

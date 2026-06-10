@@ -1035,40 +1035,33 @@ Claude Code supports both 200K and 1M context windows. **`opus[1m]` is an opt-in
 
 **Autocompact pairing (important):** If you opt into `opus[1m]`, also set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — otherwise CC's default autocompact fires at ~76K and destroys the headroom you're paying for. Step 9.5 writes both together when you opt in.
 
-### Mixed-Mode Tier (Sonnet coder + Opus reviewer, roadmap #233)
+### OpusPlan Tier (Opus planner + Sonnet driver, #395)
 
-For trivial / blank / config-only / CRUD-style repos, full Opus 4.6 max on every turn is overkill on the coder leg. The **mixed-mode tier** pins `model: "sonnet[1m]"` for in-session work while keeping the cross-model review layer (Codex / external reviewer) at the flagship — so the reviewer still catches what Sonnet missed.
+For cost-conscious SDLC work, CC's native `opusplan` alias gives you Opus reasoning during Plan Mode (Shift+Tab) and Sonnet execution — both at 200K, Max-bundled, no API credit drain.
 
-**The split:**
+| Layer | OpusPlan tier | Flagship tier |
+|-------|--------------|---------------|
+| Planner | Opus 4.6 max (Plan Mode) | Opus 4.6 max |
+| Driver | Sonnet 4.6 (execute mode) | Opus 4.6 max |
+| Reviewer | GPT-5.5 xhigh | GPT-5.5 xhigh |
+| Effort | max (via `CLAUDE_CODE_EFFORT_LEVEL` env var) | max |
 
-| Layer | Mixed-mode tier | Flagship tier |
-|-------|----------------|---------------|
-| Coder (in-session CC) | `model: "sonnet[1m]"` | `model: "opus[1m]"` |
-| Cross-model reviewer (Codex etc.) | gpt-5.5 xhigh (or Opus 4.6 max via Bash for an in-family second opinion) | gpt-5.5 xhigh (or Opus 4.6 max via Bash for an in-family second opinion) |
-| Effort floor (CC session) | max (persist via CLAUDE_CODE_EFFORT_LEVEL env var) | max |
-
-The reviewer always stays at flagship — the whole point of mixed-mode is that adversarial review catches Sonnet's blind spots, so weakening the review leg defeats the savings.
-
-**When mixed-mode is the right call:**
-- Repo is small (LOC < 10K), few tests (< 30), few hooks (< 5), few workflows (< 5), no `.env` / secrets handling
-- You're on API billing (not Max subscription) and 2× cost on simple repos actually matters
-- Tasks are predominantly mechanical — typo fixes, config tweaks, small CRUD endpoints
-- You're running the SDLC Wizard's setup flow against a sibling repo where the coder doesn't need flagship reasoning
-
-**When to stay flagship:**
-- Stakes-flagged repo: anywhere `.env` / `secrets/` / `credentials/` exists. Force flagship even if LOC is tiny — leaks are catastrophic
-- Architecture work, debugging non-obvious bugs, security review, anything where the *coder's* judgment matters as much as the reviewer's
-- Long shepherd sessions (plan → TDD → review → CI loop) — they cross 100K tokens regularly and Opus 4.6 max fits the window better in a single thread
-
-**Auto-detection:** the setup wizard runs `cli/lib/repo-complexity.js` against the target repo and suggests the tier. Stakes flag (`.env` / `secrets/`) forces complex regardless of size. The user always picks the final answer — the heuristic is a hint, not a gate.
-
-**How to opt in (manual):**
+**How to opt in:**
 ```json
 {
-  "model": "sonnet[1m]"
+  "model": "opusplan",
+  "env": {
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
+    "CLAUDE_CODE_EFFORT_LEVEL": "max"
+  }
 }
 ```
-Don't add `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` — Sonnet's 1M window has different compaction characteristics than Opus's; let upstream defaults ride until we benchmark.
+
+**⚠️ Avoid `sonnet[1m]`** — Sonnet with 1M context draws from usage credits ($3/$15 per Mtok), not your Max subscription (#390). Plain `sonnet` (200K) or `opusplan` stays on Max.
+
+**When to use OpusPlan:** routine SDLC work, simple repos, cost-conscious sessions. Press Shift+Tab before architecture/blast-radius decisions to get Opus reasoning.
+
+**When to stay Flagship:** stakes-flagged repos, architecture work, security review, long shepherd sessions.
 
 **Prove-It Gate (#233 acceptance criterion):** mixed-mode ships only if pair-tested on 3+ simple repos shows Sonnet-coder + Opus-reviewer produces ≥ same SDLC scores as full-Opus baseline. The first version of the heuristic ships v1.38.0; pair-test results land in CHANGELOG before recommending mixed-mode as the default for any tier.
 

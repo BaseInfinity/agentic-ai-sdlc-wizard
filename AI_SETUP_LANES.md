@@ -19,7 +19,7 @@ Quality-first lane. Opus 4.6 max drives both the planning brain and the implemen
 | Role | Model |
 |------|-------|
 | **Planner** | Opus 4.6 max (via Plan Mode — Shift+Tab) |
-| **Driver** | Sonnet 4.6 (auto, execute mode) |
+| **Driver** | Sonnet (latest, auto execute mode) |
 | **Reviewer** | Codex (GPT-5.5) xhigh |
 
 Cost-efficient lane using CC's native `opusplan` alias. Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both 200K context, Max-bundled — no API credit drain. Pin `model: "opusplan"` + `ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-6` + `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block. GPT-5.5 xhigh is the cross-model reviewer.
