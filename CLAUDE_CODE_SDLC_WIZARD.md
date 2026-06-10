@@ -249,13 +249,12 @@ When Anthropic provides official plugins or tools that handle something:
 
 Claude Code's **effort level** controls how much thinking the model does before responding. Higher effort = deeper reasoning but more tokens.
 
-> ⚠️ **On Opus 4.6 max, effort below `xhigh` breaks SDLC compliance in practice.** Inherited from 4.7, Opus 4.6 max respects effort levels *strictly* — at `high` or below it scopes work tighter (shallow reasoning, skipped TDD, no self-review) rather than going above-and-beyond. Treat the table below accordingly: **`max` is the recommended default, `xhigh` is the floor**, `high` or below is for trivial grep/search subagents only.
+> ⚠️ **SDLC requires `max` effort on all Claude models.** Below max = degraded reasoning, shallow TDD, weak self-review. Persist via env var: `CLAUDE_CODE_EFFORT_LEVEL=max` (CC docs: `effortLevel: "max"` in settings.json is **session-only and silently ignored** — the env var is the only way to persist it).
 
 | Level | When to Use | How to Set |
 |-------|-------------|------------|
-| `high` or below | **Not for SDLC work on Opus 4.6 max.** Only for trivial grep/search subagents or one-shot questions that don't require planning | `effort: high` in a specific subagent frontmatter only |
-| `xhigh` | **Floor for SDLC work on Opus 4.6 max.** Long-running tasks, repeated tool calls, deep exploration. Claude Code defaults to this on Opus 4.7+ | `/effort xhigh` or set in skill frontmatter |
-| `max` | **Recommended default for Opus 4.6 max SDLC work.** Multi-file changes, architecture decisions, debugging, cross-model reviews, any task touching wizard/skill/CI code | `/effort max` (session only — resets next session) |
+| `max` | **Required for all SDLC work.** Claude: max. OpenAI/Codex: xhigh (their highest). | `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block |
+| `high` or below | **Not for SDLC work.** Only for trivial grep/search subagents | `effort: high` in a specific subagent frontmatter only |
 
 **Strict effort behavior (Opus 4.7+, carried forward in 4.8 — and why 4.6 max is the wizard's pick):**
 - **`xhigh` was introduced in 4.7** — sits between `high` and `max`, designed for coding and agentic work (30+ minute tasks with token budgets in the millions)
@@ -267,7 +266,7 @@ Claude Code's **effort level** controls how much thinking the model does before 
 
 **Why `high` was the previous default:** Claude Code uses **adaptive thinking** to dynamically allocate reasoning budget per turn. On Pro and Max plans, the default effort level was **medium (85)**, which causes the model to under-allocate reasoning on complex multi-step tasks — leading to shallow analysis, missed edge cases, and "lazy" outputs. This was [confirmed by Anthropic engineer Boris Cherny](https://github.com/anthropics/claude-code/issues/42796) and is documented at [code.claude.com](https://code.claude.com/docs/en/model-config). API, Team, and Enterprise plans default to high effort and are not affected.
 
-**Don't rely on the CC default — set effort yourself.** Anthropic's [2026-04-23 post-mortem](https://www.anthropic.com/engineering/april-23-postmortem) is independent third-party evidence that CC has flipped reasoning_effort defaults across versions (high → medium → xhigh/high). The default has changed before and will change again. The wizard's `model-effort-check.sh` hook nudges to `xhigh`/`max` at session start specifically because the in-product default is not load-bearing — it can shift release-to-release without notice. Set `/effort max` explicitly every session you do SDLC work, and treat any "I assumed the default was X" reasoning as a bug.
+**Don't rely on the CC default — set effort yourself.** Anthropic's [2026-04-23 post-mortem](https://www.anthropic.com/engineering/april-23-postmortem) is independent third-party evidence that CC has flipped reasoning_effort defaults across versions (high → medium → xhigh/high). The default has changed before and will change again. The wizard's `model-effort-check.sh` hook warns on anything below `max` at session start. Set `CLAUDE_CODE_EFFORT_LEVEL=max` in your settings env block, and treat any "I assumed the default was X" reasoning as a bug.
 
 The `/sdlc` skill sets `effort: max` in its frontmatter, overriding the medium default on every SDLC invocation. This matches the wizard's v1.80.0 contract: Opus 4.6 max is the recommended flagship, and `max` is where SDLC-compliant work actually happens on 4.6.
 
@@ -481,7 +480,7 @@ When a cached prompt prefix is re-served after idle pruning, downstream thinking
 
 **Workaround**: if you hit suspicious shallow reasoning mid-session — especially after a long idle gap — start a fresh session with `claude --continue` to reset cache state. The wizard's PreCompact hook gates manual `/compact` precisely because compacting at bad seams can also pull thinking blocks out of context.
 
-**Detection signal**: the wizard's `model-effort-check.sh` already loud-warns below `xhigh`. Combine with token-spike anomaly detection (ROADMAP #220) once shipped.
+**Detection signal**: the wizard's `model-effort-check.sh` loud-warns below `max`. Combine with token-spike anomaly detection (ROADMAP #220) once shipped.
 
 ### Prompt brevity caps can compound across turns (post-mortem 2026-04-23)
 
@@ -1046,7 +1045,7 @@ For trivial / blank / config-only / CRUD-style repos, full Opus 4.6 max on every
 |-------|----------------|---------------|
 | Coder (in-session CC) | `model: "sonnet[1m]"` | `model: "opus[1m]"` |
 | Cross-model reviewer (Codex etc.) | gpt-5.5 xhigh (or Opus 4.6 max via Bash for an in-family second opinion) | gpt-5.5 xhigh (or Opus 4.6 max via Bash for an in-family second opinion) |
-| Effort floor (CC session) | xhigh; max preferred | xhigh; max preferred |
+| Effort floor (CC session) | max (persist via CLAUDE_CODE_EFFORT_LEVEL env var) | max |
 
 The reviewer always stays at flagship — the whole point of mixed-mode is that adversarial review catches Sonnet's blind spots, so weakening the review leg defeats the savings.
 
@@ -1116,7 +1115,7 @@ The `opus[1m]` alias resolves through the env vars, so this combination pins `cl
 }
 ```
 
-**Effort tuning for 4.8:** field signal recommends `xhigh` instead of `max` on 4.8 — the strict-effort behavior overcorrects at `max`. Keep `max` for 4.6, drop to `xhigh` if running 4.8.
+**Effort tuning for 4.8:** always `max`. Earlier field signal suggested xhigh on 4.8 but the wizard standard is max on all Claude models (#395).
 
 **Escape hatch:** flip the env vars back to `claude-opus-4-6` to return to the wizard's recommended default. Or remove them entirely to fall back to Claude Code auto-mode.
 
@@ -2342,7 +2341,7 @@ Before presenting approach, STATE your confidence:
 |-------|---------|--------|--------|
 | HIGH (90%+) | Know exactly what to do | Present approach, proceed after approval | `max` (default) |
 | MEDIUM (60-89%) | Solid approach, some uncertainty | Present approach, highlight uncertainties | `max` (default) |
-| LOW (<60%) | Not sure | ASK USER before proceeding | **Run `/effort xhigh` now** — don't wait |
+| LOW (<60%) | Not sure | ASK USER before proceeding | **Run `/effort max` now** — don't wait |
 | FAILED 2x | Something's wrong | STOP. ASK USER immediately | **Run `/effort max` now** — you're burning cycles at lower effort |
 | CONFUSED | Can't diagnose why something is failing | STOP. Describe what you tried, ask for help | **Run `/effort max` now** — stop spinning |
 

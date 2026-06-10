@@ -144,7 +144,7 @@ test_model_effort_size_cap() {
     mkdir -p "$tmpdir/.claude"
     echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
     local size
-    size=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null | wc -c | tr -d ' ')
+    size=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null | wc -c | tr -d ' ')
     rm -rf "$tmpdir"
     if [ "$size" -lt 500 ]; then
         pass "model-effort-check output is bounded (${size} chars < 500)"
@@ -2597,37 +2597,37 @@ test_model_effort_check_stale_effort() {
     mkdir -p "$tmpdir/.claude"
     echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
     local output
-    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     if echo "$output" | grep -q '/effort' \
-        && echo "$output" | grep -q 'recommended model' \
+        && echo "$output" | grep -q 'WARNING' \
         && echo "$output" | grep -qF 'claude-opus-4-6[1m]'; then
-        pass "model-effort-check.sh nudges effort + recommends claude-opus-4-6[1m] when effort is stale"
+        pass "model-effort-check.sh warns on effort=high (only max acceptable)"
     else
-        fail "model-effort-check.sh should nudge /effort and recommend 'claude-opus-4-6[1m]', got: $output"
+        fail "model-effort-check.sh should warn on effort=high, got: $output"
     fi
 }
 
-# Test: silent when effort is already current
-test_model_effort_check_silent_when_current() {
+# Test: xhigh is NOT silent — only max is acceptable (#395)
+test_model_effort_check_xhigh_warns() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
     echo '{"effortLevel":"xhigh"}' > "$tmpdir/.claude/settings.json"
     local output
-    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if [ -z "$output" ]; then
-        pass "model-effort-check.sh silent when effort is current"
+    if echo "$output" | grep -q "WARNING"; then
+        pass "#395: model-effort-check.sh warns on xhigh (only max acceptable)"
     else
-        fail "model-effort-check.sh should be silent when current, got: $output"
+        fail "#395: xhigh should warn, got: $output"
     fi
 }
 
 # Test: graceful when no JSON stdin (non-blocking)
 test_model_effort_check_no_stdin() {
     local exit_code
-    echo "" | "$HOOKS_DIR/model-effort-check.sh" > /dev/null 2>&1
+    echo "" | CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" > /dev/null 2>&1
     exit_code=$?
     if [ "$exit_code" -eq 0 ]; then
         pass "model-effort-check.sh exits 0 when stdin is empty"
@@ -2654,7 +2654,7 @@ test_model_effort_check_nested_cwd() {
     mkdir -p "$tmpdir/.claude" "$tmpdir/src/deep"
     echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
     local output
-    output=$(cd "$tmpdir/src/deep" && echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    output=$(cd "$tmpdir/src/deep" && echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     if echo "$output" | grep -q '/effort'; then
         pass "model-effort-check.sh finds project settings via CLAUDE_PROJECT_DIR from nested CWD"
@@ -2669,12 +2669,12 @@ test_model_effort_check_local_overrides_project() {
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
     echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
-    echo '{"effortLevel":"xhigh"}' > "$tmpdir/.claude/settings.local.json"
+    echo '{"effortLevel":"max"}' > "$tmpdir/.claude/settings.local.json"
     local output
-    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     if [ -z "$output" ]; then
-        pass "model-effort-check.sh respects local settings override (xhigh from local, silent)"
+        pass "model-effort-check.sh respects local settings override (max from local, silent)"
     else
         fail "model-effort-check.sh should respect local settings.json override, got: $output"
     fi
@@ -2689,7 +2689,7 @@ test_model_effort_check_max_is_silent() {
     mkdir -p "$tmpdir/.claude"
     echo '{"effortLevel":"max"}' > "$tmpdir/.claude/settings.json"
     local output
-    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     if [ -z "$output" ]; then
         pass "model-effort-check.sh silent when effort=max (preferred, above floor)"
@@ -2710,7 +2710,7 @@ test_model_effort_check_below_xhigh_loud_warning() {
         mkdir -p "$tmpdir/.claude"
         echo "{\"effortLevel\":\"$bad_effort\"}" > "$tmpdir/.claude/settings.json"
         local output
-        output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+        output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
         # Must contain: WARNING marker, SDLC mention, explicit /effort max recommendation
         if ! echo "$output" | grep -q 'WARNING'; then
             fails=$((fails+1))
@@ -2762,7 +2762,7 @@ test_instructions_loaded_no_duplicate_effort_nudge() {
 
 test_model_effort_check_exists
 test_model_effort_check_stale_effort
-test_model_effort_check_silent_when_current
+test_model_effort_check_xhigh_warns
 test_model_effort_check_max_is_silent
 test_model_effort_check_below_xhigh_loud_warning
 test_model_effort_check_no_stdin
@@ -2770,6 +2770,24 @@ test_settings_has_session_start_hook
 test_model_effort_check_nested_cwd
 test_model_effort_check_local_overrides_project
 test_instructions_loaded_no_duplicate_effort_nudge
+
+# #395: CLAUDE_CODE_EFFORT_LEVEL env var takes precedence over effortLevel in settings
+test_model_effort_env_var_takes_precedence() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    echo '{"effortLevel":"low"}' > "$tmpdir/.claude/settings.json"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="max" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if [ -z "$output" ]; then
+        pass "#395: CLAUDE_CODE_EFFORT_LEVEL=max overrides effortLevel=low in settings (silent)"
+    else
+        fail "#395: env var should take precedence over settings, got: $output"
+    fi
+}
+
+test_model_effort_env_var_takes_precedence
 
 # ROADMAP token-bloat audit: prevent 2× per-prompt hook print when both
 # project (.claude/settings.json) and plugin (hooks.json) register the same
