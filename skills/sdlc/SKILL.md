@@ -116,7 +116,7 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 **Recommended: `claude-opus-4-6` or `opusplan` (Opus 4.6 max — wizard's flagship).** Pin in settings or `/model claude-opus-4-6` at session start. `opusplan` uses Opus for Plan Mode (Shift+Tab) + Sonnet for execution — both Max-bundled. Persist effort: `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block.
 
-**If pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — default compacts too early at ~76K on 1M. **Not for `opusplan`** — 200K context, 30% = 60K is too aggressive.
+**If pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — default compacts too early at ~76K on 1M. **Do not set this for `opusplan`** — 200K context, 30% = 60K too aggressive.
 
 **Advisor (v2.1.170+):** Flagship → `advisorModel: "fable"`. OpusPlan → `advisorModel: "claude-opus-4-6"`. Set during `/setup-wizard` Step 9.5.
 
