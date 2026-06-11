@@ -114,11 +114,11 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 ## Recommended Model
 
-**Recommended: `claude-opus-4-6` or `opusplan` (Opus 4.6 max — wizard's flagship).** Pin in settings or `/model claude-opus-4-6` at session start. `opusplan` uses Opus for Plan Mode (Shift+Tab) + Sonnet for execution — both Max-bundled. Persist effort: `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block (#395).
+**Recommended: `claude-opus-4-6` or `opusplan` (Opus 4.6 max — wizard's flagship).** Pin in settings or `/model claude-opus-4-6` at session start. `opusplan` uses Opus for Plan Mode (Shift+Tab) + Sonnet for execution — both Max-bundled. Persist effort: `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block.
 
-**If pinning `claude-opus-4-6` (flagship):** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — Opus auto-upgrades to 1M on Max and the default compacts too early at ~76K. **Do NOT set this for `opusplan`** — opusplan uses 200K context and 30% of 200K = 60K would compact too aggressively (#207).
+**If pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — default compacts too early at ~76K on 1M. **Not for `opusplan`** — 200K context, 30% = 60K is too aggressive.
 
-**Advisor model (v2.1.170+):** If your project settings include `advisorModel`, the advisor auto-consults at key decision points (architecture, complexity, blast-radius). Flagship → `advisorModel: "fable"`. OpusPlan → `advisorModel: "claude-opus-4-6"`. Set during `/setup-wizard` Step 9.5. Run `! claude update` if below v2.1.170.
+**Advisor (v2.1.170+):** Flagship → `advisorModel: "fable"`. OpusPlan → `advisorModel: "claude-opus-4-6"`. Set during `/setup-wizard` Step 9.5.
 
 ## Self-Review Loop
 
