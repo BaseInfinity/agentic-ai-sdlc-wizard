@@ -192,11 +192,11 @@ Effort: **always `max`** on all Claude models. Persist it: set `CLAUDE_CODE_EFFO
 
 The wizard defines three AI coding setups in [`AI_SETUP_LANES.md`](AI_SETUP_LANES.md):
 
-| Lane | Planner | Driver | Reviewer | When |
-|------|---------|--------|----------|------|
-| **A — Premium** | Opus 4.6 max | Opus 4.6 max | GPT-5.5 xhigh | Architecture, releases, security, anything high-stakes |
-| **B — Saver** | Opus 4.6 max | Sonnet (latest) | GPT-5.5 xhigh | Routine impl, docs, tests, low-risk edits |
-| **C — Lite** | You | Haiku 4.5 ($1/$5/Mtok) | None | Scripts, deploys to staging, config changes, grunt work |
+| Lane | Planner | Driver | Reviewer | Escalation |
+|------|---------|--------|----------|------------|
+| **A — Premium** | Fable 5 high | Opus 4.6 max | GPT-5.5 xhigh | + Fable review (security/release/architecture) |
+| **B — Saver** | Opus 4.6 (plan mode) | Sonnet | GPT-5.5 xhigh | None |
+| **C — Lite** | You | Sonnet | None | None |
 
 Setup C's whole point: **the discipline of knowing when NOT to use discipline.** When blast radius is low and you just need fast cheap hands, skip the SDLC overhead.
 
