@@ -93,9 +93,10 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.80.0
+Latest:    1.81.0
 
 What changed:
+- [1.81.0] Native `advisorModel` support: Setup A gets Fable advisor, Setup B gets Opus advisor. Replaces manual subagent spawning. Requires CC v2.1.170+.
 - [1.80.0] Flip default: Opus 4.6 max becomes recommended flagship; Opus 4.8 demoted to opt-in `[l] Latest` tier.
 - [1.79.0] Opus 4.6 Stability tier added as flagship alternative (now graduated to default in 1.80.0).
 - [1.78.0] Opus 4.7 → 4.8 model recommendation (#365) + min CC v2.1.154+.
@@ -224,35 +225,15 @@ If `cli/init.js` later adds wizard marketplace names, append verbatim.
 3. For every dead marketplace `<name>`, look for `enabledPlugins["sdlc-wizard@<name>"]` — also flag for removal.
 4. Repeat for **all** allowlist entries; collect the full set of dead pairs before prompting (multiple are common).
 
-**Cleanup (always ask, all-or-nothing per response):**
+**Cleanup:** List all dead pairs, ask `[y/N]`. If yes: `cp ~/.claude/settings.json ~/.claude/settings.json.bak.$(date +%Y%m%dT%H%M%S)`, then single `jq` filter: `del(.enabledPlugins["sdlc-wizard@<name>"]) | del(.extraKnownMarketplaces["<name>"])` for each dead key. Write to temp, validate with `jq empty`, then `mv`. If no: skip.
 
-> Your `~/.claude/settings.json` references wizard plugin marketplaces that don't exist on disk:
->
-> - `extraKnownMarketplaces.sdlc-wizard-local.source.path` → `<resolved-path>` (missing)
-> - `enabledPlugins["sdlc-wizard@sdlc-wizard-local"]` is `true`
-> - (list all dead pairs)
->
-> Causes `Plugin directory does not exist` on every prompt in every CC session.
->
-> Drop these entries from `~/.claude/settings.json`? `[y/N]`
+**Guards:** Idempotent (no-op after clean). Scope: only allowlist matches. Runs regardless of version match. `check-only`: detect only, no mutations.
 
-If yes:
-1. **Backup with timestamp**: `cp ~/.claude/settings.json ~/.claude/settings.json.bak.$(date +%Y%m%dT%H%M%S)` (two cleanups same day don't overwrite each other).
-2. **Single `jq` filter** dropping every dead marketplace + every dead `enabledPlugins` key in one pass: `jq 'del(.enabledPlugins["sdlc-wizard@sdlc-wizard-local"]) | del(.extraKnownMarketplaces["sdlc-wizard-local"]) | del(.enabledPlugins["sdlc-wizard@sdlc-wizard-wrap"]) | del(.extraKnownMarketplaces["sdlc-wizard-wrap"])'` — include only keys actually marked dead.
-3. Write to a temp file, validate with `jq empty` (round-trip parse), then `mv`. Validation fails → restore from backup.
-4. **Formatting note**: `jq` rewrites the whole file. Wizard does NOT preserve comments/trailing commas (CC's settings.json is strict JSON, so safe today). Tell the user.
+### Step 7.8: advisorModel Migration (v2.1.170+)
 
-If no: skip silently. Some users have a recovery plan (re-enable, reinstall).
+If CC < v2.1.170: show "Run `! claude update` to upgrade" and skip. If `.claude/settings.json` already has `advisorModel` or no `model` pin: skip.
 
-**Idempotency:** rerunning Step 7.7 after a clean must be a no-op. Only marketplaces with allowlist match AND missing path qualify.
-
-**Scope guard:** only entries whose marketplace name matches the exact allowlist. Third-party plugin registrations (`legal@knowledge-work-plugins`, etc.) and unrelated `sdlc`-prefixed marketplaces (e.g. `danielscholl/claude-sdlc`) are never the wizard's business.
-
-**Why update, not setup:** setup runs once at install; plugin paths are valid by definition. Dead registrations only appear later, when something disables/renames/deletes the plugin directory. Update is the natural seam.
-
-**Runs regardless of version match:** Step 7.7 is global-settings hygiene, not file-update logic. Must run even when wizard version matches latest (per Step 3 match-branch). Gating Step 7.7 on version mismatch would silently leave the error firing forever.
-
-**`check-only` precedence:** if `check-only` is set (whether versions match or not), Step 7.7 runs in detection-only mode: report dead registrations, do NOT prompt, do NOT execute `jq`, do NOT touch `~/.claude/settings.json`. Check-only must never mutate state.
+If `model` pin exists but no `advisorModel`, suggest: `claude-opus-4-6`/`claude-opus-4-8` → `advisorModel: "fable"`, `opusplan` → `advisorModel: "claude-opus-4-6"`. Ask `[a/S]`, write only `advisorModel` if accepted.
 
 ### Step 8: Apply Selected Changes
 

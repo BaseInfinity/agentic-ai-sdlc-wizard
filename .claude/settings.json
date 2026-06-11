@@ -1,4 +1,6 @@
 {
+  "model": "claude-opus-4-6",
+  "advisorModel": "fable",
   "permissions": {
     "allow": [
       "mcp__playwright__browser_take_screenshot",

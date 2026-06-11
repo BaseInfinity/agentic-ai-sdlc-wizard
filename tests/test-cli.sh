@@ -1497,6 +1497,97 @@ test_merge_does_not_add_model_when_missing
 test_merge_respects_user_model
 test_merge_force_preserves_user_model
 
+# === advisorModel Tests (v1.81.0) ===
+
+test_template_has_no_advisor_model() {
+    local template="$SCRIPT_DIR/../cli/templates/settings.json"
+    local has_advisor
+    has_advisor=$(python3 -c "
+import json
+with open('$template') as f:
+    print('yes' if 'advisorModel' in json.load(f) else 'no')
+" 2>/dev/null)
+    if [ "$has_advisor" = "no" ]; then
+        pass "Template settings.json has no advisorModel (opt-in during setup)"
+    else
+        fail "Template settings.json should not have a default advisorModel"
+    fi
+}
+
+test_fresh_init_does_not_write_advisor_model() {
+    local d
+    d=$(make_temp)
+    (cd "$d" && node "$CLI" init > /dev/null 2>&1)
+    local has_advisor
+    has_advisor=$(python3 -c "
+import json
+with open('$d/.claude/settings.json') as f:
+    print('yes' if 'advisorModel' in json.load(f) else 'no')
+" 2>/dev/null)
+    if [ "$has_advisor" = "no" ]; then
+        pass "Fresh init does NOT write advisorModel to settings.json"
+    else
+        fail "Fresh init should not write advisorModel — it's opt-in during setup"
+    fi
+    rm -rf "$d"
+}
+
+test_merge_preserves_user_advisor_model() {
+    local d
+    d=$(make_temp)
+    mkdir -p "$d/.claude"
+    cat > "$d/.claude/settings.json" << 'FIXTURE'
+{
+  "advisorModel": "fable",
+  "hooks": {}
+}
+FIXTURE
+    (cd "$d" && node "$CLI" init > /dev/null 2>&1)
+    local val
+    val=$(python3 -c "
+import json
+with open('$d/.claude/settings.json') as f:
+    print(json.load(f).get('advisorModel', ''))
+" 2>/dev/null)
+    if [ "$val" = "fable" ]; then
+        pass "Merge preserves user's existing advisorModel (fable)"
+    else
+        fail "Merge should not overwrite user's advisorModel=fable (got: '$val')"
+    fi
+    rm -rf "$d"
+}
+
+test_merge_force_preserves_user_advisor_model() {
+    local d
+    d=$(make_temp)
+    mkdir -p "$d/.claude"
+    cat > "$d/.claude/settings.json" << 'FIXTURE'
+{
+  "advisorModel": "opus",
+  "model": "claude-opus-4-6",
+  "hooks": {}
+}
+FIXTURE
+    (cd "$d" && node "$CLI" init --force > /dev/null 2>&1)
+    local val
+    val=$(python3 -c "
+import json
+with open('$d/.claude/settings.json') as f:
+    print(json.load(f).get('advisorModel', ''))
+" 2>/dev/null)
+    if [ "$val" = "opus" ]; then
+        pass "--force preserves user's advisorModel (template has no advisorModel to reset to)"
+    else
+        fail "--force should preserve user's advisorModel=opus (got: '$val')"
+    fi
+    rm -rf "$d"
+}
+
+test_template_has_no_advisor_model
+test_fresh_init_does_not_write_advisor_model
+test_merge_preserves_user_advisor_model
+test_merge_force_preserves_user_advisor_model
+
 # === Marketplace Path Check Tests (#174) ===
 
 # Test 42: check warns on ephemeral /tmp/ marketplace path (EPHEMERAL — path exists)

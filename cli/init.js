@@ -83,6 +83,10 @@ function mergeSettings(existingPath, templatePath, force) {
       existing.model = template.model;
     }
 
+    if (template.advisorModel && (!('advisorModel' in existing) || force)) {
+      existing.advisorModel = template.advisorModel;
+    }
+
     // Merge cleanupPeriodDays (ROADMAP #225): only set the template default when
     // the user has not chosen a value. NEVER overwrite under --force — retention
     // policy is a user preference (they may want >30 for long pauses, or <30 for
