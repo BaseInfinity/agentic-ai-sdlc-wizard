@@ -225,9 +225,9 @@ If `cli/init.js` later adds wizard marketplace names, append verbatim.
 3. For every dead marketplace `<name>`, look for `enabledPlugins["sdlc-wizard@<name>"]` — also flag for removal.
 4. Repeat for **all** allowlist entries; collect the full set of dead pairs before prompting (multiple are common).
 
-**Cleanup:** List all dead pairs, ask `[y/N]`. If yes: backup with timestamp, single `jq` filter drops dead keys, write to temp + validate with `jq empty` + `mv`. If no: skip.
+**Cleanup:** List all dead pairs, ask `[y/N]`. If yes: `cp ~/.claude/settings.json ~/.claude/settings.json.bak.$(date +%Y%m%dT%H%M%S)`, then single `jq` filter: `del(.enabledPlugins["sdlc-wizard@<name>"]) | del(.extraKnownMarketplaces["<name>"])` for each dead key. Write to temp, validate with `jq empty`, then `mv`. If no: skip.
 
-**Guards:** Idempotent (re-run after clean = no-op). Scope: only allowlist matches. Runs regardless of version match (hygiene, not file-update). `check-only` mode: detect only, no mutations.
+**Guards:** Idempotent (no-op after clean). Scope: only allowlist matches. Runs regardless of version match. `check-only`: detect only, no mutations.
 
 ### Step 7.8: advisorModel Migration (v2.1.170+)
 
