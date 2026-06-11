@@ -429,8 +429,8 @@ test_repo_settings_dogfood_setup_a() {
 test_hooks_recommend_model() {
     local H1="$REPO_ROOT/hooks/model-effort-check.sh"
     if [ ! -f "$H1" ]; then fail "$H1 not found"; return; fi
-    if ! grep -qE 'RECOMMENDED_MODEL="(claude-opus-4-[0-9]+|opusplan)"' "$H1"; then
-        fail "model-effort-check.sh should set RECOMMENDED_MODEL to claude-opus-4-X or opusplan"
+    if ! grep -qE 'RECOMMENDED_MODELS=.*opusplan' "$H1"; then
+        fail "model-effort-check.sh should set RECOMMENDED_MODELS including opusplan (#403)"
         return
     fi
     # instructions-loaded-check.sh must NOT re-declare the variable (would

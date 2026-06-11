@@ -2601,7 +2601,7 @@ test_model_effort_check_stale_effort() {
     rm -rf "$tmpdir"
     if echo "$output" | grep -q '/effort' \
         && echo "$output" | grep -q 'WARNING' \
-        && echo "$output" | grep -qF 'claude-opus-4-6'; then
+        && echo "$output" | grep -qF 'opusplan'; then
         pass "model-effort-check.sh warns on effort=high (only max acceptable)"
     else
         fail "model-effort-check.sh should warn on effort=high, got: $output"

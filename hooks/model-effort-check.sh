@@ -11,7 +11,8 @@
 #
 # Non-blocking: always exits 0.
 
-RECOMMENDED_MODEL="claude-opus-4-6"
+# Multiple wizard-blessed models — don't nudge to a single one (#403)
+RECOMMENDED_MODELS="claude-opus-4-6, opusplan, or fable (run: /model)"
 
 HOOK_DIR="${BASH_SOURCE[0]%/*}"
 [ "$HOOK_DIR" = "${BASH_SOURCE[0]}" ] && HOOK_DIR="."
@@ -63,7 +64,7 @@ echo ""
 echo " Run: /effort max"
 echo " Persist: set CLAUDE_CODE_EFFORT_LEVEL=max in settings env block"
 echo ""
-echo " recommended model: $RECOMMENDED_MODEL (run: /model $RECOMMENDED_MODEL)"
+echo " recommended models: $RECOMMENDED_MODELS"
 echo "=============================================================================="
 
 exit 0
