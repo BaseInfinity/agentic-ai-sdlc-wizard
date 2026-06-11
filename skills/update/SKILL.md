@@ -89,7 +89,9 @@ Extract latest version from the first `## [X.X.X]` line.
 
 ### Step 3: Compare Versions and Show What Changed
 
-Parse CHANGELOG entries between the user's installed version and latest. Present a clear summary:
+**Resolve "latest installable" from npm registry (#405):** Compare the npm registry version (Step 1.5 cache) to the CHANGELOG heading version (Step 2). Use the **lower** of the two as "latest installable" — this prevents showing a version that isn't yet published to npm during the publish window. If CHANGELOG is ahead of npm, note: "v{changelog} is on GitHub but not yet published to npm; showing v{npm} as latest installable."
+
+Parse CHANGELOG entries between the user's installed version and the resolved latest installable. Present a clear summary:
 
 ```
 Installed: 1.42.0
@@ -126,8 +128,8 @@ Read the actual entries from the fetched CHANGELOG; don't paraphrase. The user w
 
 **If versions match:** Step 7.7 (global plugin-registration cleanup) is independent of wizard file versions — it must run even when the user is up-to-date. The `check-only` flag still gates whether cleanup is *applied*:
 
-- **Without `check-only`**: Run Step 7.7 in normal mode (detect, prompt, apply) before stopping. Then say "You're up to date! (version X.X.X)" and stop. Do not run Steps 4–10; only Step 7.7 fires on match.
-- **With `check-only`**: Run Step 7.7 in detection-only mode — report any dead plugin registrations, but do NOT prompt and do NOT mutate `~/.claude/settings.json`. Then say "You're up to date! (version X.X.X)" and stop.
+- **Without `check-only`**: Run Step 7.7 and Step 7.9 in normal mode (detect, prompt, apply) before stopping. Then say "You're up to date! (version X.X.X)" and stop. Do not run Steps 4–10; only Steps 7.7 and 7.9 fire on match.
+- **With `check-only`**: Run Step 7.7 and Step 7.9 in detection-only mode — report findings but do NOT prompt and do NOT mutate settings. Then say "You're up to date! (version X.X.X)" and stop.
 
 **If user passed `check-only` and versions don't match:** Stop after showing what changed. Do not apply anything.
 
@@ -235,6 +237,15 @@ If `cli/init.js` later adds wizard marketplace names, append verbatim.
 If CC < v2.1.170: show "Run `! claude update` to upgrade" and skip. If `.claude/settings.json` already has `advisorModel` or no `model` pin: skip.
 
 If `model` pin exists but no `advisorModel`, suggest: `claude-opus-4-6`/`claude-opus-4-8` → `advisorModel: "fable"`, `opusplan` → `advisorModel: "claude-opus-4-6"`. Ask `[a/S]`, write only `advisorModel` if accepted.
+
+### Step 7.9: Effort Configuration Check (#384)
+
+Runs regardless of version match (like Step 7.7). In `check-only` mode: report only, no mutations.
+
+1. Check `CLAUDE_CODE_EFFORT_LEVEL` env var. If set to `max`: **pass** (silent — this is the correct persistence path).
+2. If env var is unset, check `effortLevel` in settings cascade (`.claude/settings.local.json` → `.claude/settings.json` → `~/.claude/settings.json`).
+3. If `effortLevel` is `max` but `CLAUDE_CODE_EFFORT_LEVEL` env var is unset: warn that CC ignores session-only max in settings — only the env var persists it. Suggest adding to the `env` block in `.claude/settings.json`.
+4. If effort is unset or below `max`: warn "SDLC requires max effort" and suggest `/effort max` + env var persistence.
 
 ### Step 8: Apply Selected Changes
 
