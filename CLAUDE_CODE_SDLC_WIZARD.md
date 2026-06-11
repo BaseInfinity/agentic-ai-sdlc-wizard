@@ -1081,7 +1081,7 @@ The wizard's flagship recommendation is Opus 4.6 max (see "Choosing Your Model" 
 
 **Tradeoffs (be honest):**
 - **Documented 40-60× cache token jump** vs 4.7 at HIGH effort ([AI Weekly](https://aiweekly.co/alerts/claude-opus-48-thinking-burns-900k-tokens-per-turn) — up to 900K cache tokens per turn). Burns Max 5-hour limits 2-3× faster than 4.6
-- **`max` effort is *worse* than `high` on 4.8** per [Andon Labs Vending-Bench](https://andonlabs.com/blog/opus-4-8-vending-bench) ("Max reasoning is not the best reasoning effort") — context fills faster
+- **Earlier field signal suggested xhigh over max on 4.8** per [Andon Labs Vending-Bench](https://andonlabs.com/blog/opus-4-8-vending-bench), but wizard standard is now `max` on all Claude models (#395)
 - Active GitHub regressions still open: false-greens ([#63861](https://github.com/anthropics/claude-code/issues/63861)), 2-3× token burn ([#64961](https://github.com/anthropics/claude-code/issues/64961)), 46K tokens for simple coding turn ([#64153](https://github.com/anthropics/claude-code/issues/64153)), dropped constraints ([#65932](https://github.com/anthropics/claude-code/issues/65932))
 - [Tech.yahoo review](https://tech.yahoo.com/ai/claude/articles/claude-opus-4-8-review-130106963.html): "Anthropic deliberately made Opus's new tokenizer less efficient" — not a transient bug, structural pricing change
 - Anthropic-supported until ≥ May 28, 2027 (longer runway than 4.6)

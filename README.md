@@ -168,23 +168,23 @@ Six independent sources converging on the same conclusion: **4.6 is the only Opu
 
 ### Latest tier — Opus 4.8 (opt-in)
 
-If you want the newest benchmarks and you're comfortable with the token-burn tradeoff, pick `[l] Latest` in the setup wizard. Recommended effort is `xhigh`, not `max`, on 4.8 — Andon Labs' data is explicit that `max` on 4.8 is worse than `xhigh`. The [`Latest tier — Opus 4.8`](CLAUDE_CODE_SDLC_WIZARD.md) section has the full opt-in instructions.
+If you want the newest benchmarks and you're comfortable with the token-burn tradeoff, pick `[l] Latest` in the setup wizard. Always `max` effort on all Claude models (#395). The [`Latest tier — Opus 4.8`](CLAUDE_CODE_SDLC_WIZARD.md) section has the full opt-in instructions.
 
 ### Switch any time
 
 ```bash
-/model claude-opus-4-6[1m]   # wizard's recommended flagship (default in v1.80.0+)
-/model claude-opus-4-8[1m]   # Anthropic's latest, opt-in via Latest tier
-/model opus[1m]              # whatever your env-var resolves to (alias)
+/model claude-opus-4-6   # wizard's recommended flagship (default in v1.80.0+)
+/model opusplan          # Opus plans (Shift+Tab), Sonnet executes — both Max-bundled
+/model claude-opus-4-8   # Anthropic's latest, opt-in via Latest tier
 ```
 
 Or pin in `.claude/settings.json`:
 
 ```json
-{ "model": "claude-opus-4-6[1m]" }
+{ "model": "claude-opus-4-6", "env": { "CLAUDE_CODE_EFFORT_LEVEL": "max" } }
 ```
 
-Or sweep all your projects from one place by setting `ANTHROPIC_DEFAULT_OPUS_MODEL` in `~/.claude/settings.json` — the `opus[1m]` alias resolves through it, so flipping one env var switches every repo at once.
+Or sweep all your projects by setting `ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-6` in `~/.claude/settings.json`.
 
 Effort: **always `max`** on all Claude models. Persist it: set `CLAUDE_CODE_EFFORT_LEVEL=max` in your settings env block (CC docs: `effortLevel: "max"` in settings.json is session-only and silently ignored). OpenAI/Codex: `xhigh` (their highest).
 
