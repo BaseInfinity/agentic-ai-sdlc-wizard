@@ -95,9 +95,10 @@ Parse CHANGELOG entries between the user's installed version and the resolved la
 
 ```
 Installed: 1.42.0
-Latest:    1.82.0
+Latest:    1.83.0
 
 What changed:
+- [1.83.0] Model config batch: multi-model hook recommendation (#403), global [1m] pin detection (#391), version race fix (#405), effort config check (#384).
 - [1.82.0] Usage diagnostics: fix /usage row, Reading Usage Signals guide, advisor fallback procedure, Fable effort guidance, autocompact cross-reference.
 - [1.81.0] Native `advisorModel` support: Setup A gets Fable advisor, Setup B gets Opus advisor. Replaces manual subagent spawning. Requires CC v2.1.170+.
 - [1.80.0] Flip default: Opus 4.6 max becomes recommended flagship; Opus 4.8 demoted to opt-in `[l] Latest` tier.
