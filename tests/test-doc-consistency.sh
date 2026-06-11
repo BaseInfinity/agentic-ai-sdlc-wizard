@@ -412,16 +412,16 @@ test_setup_skill_mentions_model_pin_in_optin_prompt() {
 
 # Repo's tracked .claude/settings.json must match the template it ships —
 # after #198, neither should contain a model or env block.
-test_repo_settings_match_template_no_model_pin() {
+test_repo_settings_dogfood_setup_a() {
     local SETTINGS="$REPO_ROOT/.claude/settings.json"
     if [ ! -f "$SETTINGS" ]; then fail ".claude/settings.json not found"; return; fi
-    local has_model has_env
-    has_model=$(jq 'has("model")' "$SETTINGS" 2>/dev/null)
-    has_env=$(jq 'has("env")' "$SETTINGS" 2>/dev/null)
-    if [ "$has_model" = "false" ] && [ "$has_env" = "false" ]; then
-        pass ".claude/settings.json matches template (no model pin, no default env)"
+    local model advisor
+    model=$(jq -r '.model // ""' "$SETTINGS" 2>/dev/null)
+    advisor=$(jq -r '.advisorModel // ""' "$SETTINGS" 2>/dev/null)
+    if [ "$model" = "claude-opus-4-6" ] && [ "$advisor" = "fable" ]; then
+        pass ".claude/settings.json dogfoods Setup A (Opus 4.6 + Fable advisor)"
     else
-        fail ".claude/settings.json must not pin model/env (has_model=$has_model has_env=$has_env)"
+        fail ".claude/settings.json should dogfood Setup A (model=$model advisorModel=$advisor)"
     fi
 }
 
@@ -620,7 +620,7 @@ test_sdlc_skill_recommends_opus_or_opusplan
 test_cli_template_has_no_default_model_pin
 test_cli_template_has_no_default_autocompact
 test_setup_skill_mentions_model_pin_in_optin_prompt
-test_repo_settings_match_template_no_model_pin
+test_repo_settings_dogfood_setup_a
 test_hooks_recommend_model
 test_setup_skill_mentions_less_permission_prompts
 test_wizard_doc_mentions_less_permission_prompts

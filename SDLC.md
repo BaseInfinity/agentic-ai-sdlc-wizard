@@ -1,7 +1,7 @@
 <!-- SDLC Wizard Version: 1.81.0 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
-<!-- Claude Code Baseline: v2.1.159 -->
+<!-- Claude Code Baseline: v2.1.170 -->
 <!-- ROADMAP #350: this single-line anchor is the source of truth for cc-version-drift.yml. -->
 <!-- Update both this comment AND the "Claude Code Recommended" row when bumping CC support. -->
 # SDLC Configuration
@@ -11,9 +11,9 @@
 | Property | Value |
 |----------|-------|
 | Wizard Version | 1.81.0 |
-| Last Updated | 2026-06-09 |
+| Last Updated | 2026-06-10 |
 | Claude Code Minimum | v2.1.154+ (required for `opus[1m]` alias resolution); v2.1.105+ for `PreCompact` hook |
-| Claude Code Recommended | v2.1.159+ (latest at 2026-06-02) — `.claude/skills` plugin auto-load (v2.1.157), enriched `tool_decision` telemetry via `OTEL_LOG_TOOL_DETAILS=1` (v2.1.157), native `/goal` (v2.1.139), `/code-review --comment` (v2.1.147), per-category `/usage` (v2.1.149), `$CLAUDE_EFFORT` env var for hooks (v2.1.133) |
+| Claude Code Recommended | v2.1.170+ — native `advisorModel` support (v2.1.170), `.claude/skills` plugin auto-load (v2.1.157), native `/goal` (v2.1.139), `/code-review --comment` (v2.1.147) |
 | Recommended Model | `claude-opus-4-6` or `opusplan` — run `/model claude-opus-4-6` or `/model opusplan` |
 | Recommended Effort | `max` — persist via `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block |
 

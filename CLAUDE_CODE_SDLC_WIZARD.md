@@ -994,14 +994,16 @@ Override the default auto-compact threshold with environment variables. These ar
 | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Trigger compaction at this % of context capacity (1-100) | ~95% |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | Override context capacity in tokens (useful for 1M models) | Model default |
 
-**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model` or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 asks whether to opt into `"model": "opus[1m]"` + `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (tuned for the 1M window — compacts at ~300K). Default answer is **No**. Pinning the model at the top level tells Claude Code you've explicitly chosen a model and turns off per-turn model auto-selection — a real tradeoff, so we ask. Power users who want guaranteed Opus 4.6 max + 1M context answer yes.
+**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model`, `advisorModel`, or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 offers four choices: `[N]` no pin, `[o]` opusplan + Opus advisor, `[f]` flagship Opus 4.6 + Fable advisor, `[l]` latest Opus 4.8 + Fable advisor. Default is **No**. Pinning the model turns off per-turn auto-selection — a real tradeoff, so we ask.
 
-To opt in by hand, edit `.claude/settings.json`:
+To opt in by hand, edit `.claude/settings.json` (flagship example):
 
 ```json
 {
-  "model": "opus[1m]",
+  "model": "claude-opus-4-6",
+  "advisorModel": "fable",
   "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "max",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
   }
 }

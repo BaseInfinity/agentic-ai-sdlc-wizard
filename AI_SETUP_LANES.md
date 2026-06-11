@@ -121,7 +121,7 @@ The reviewer (GPT-5.5 xhigh) is billed against your OpenAI account, separately. 
 
 A common question: **"does the `[1m]` model alias get billed differently? Does it pull from my Max plan or from API credits?"**
 
-The short answer: **Setup A uses Fable planner (free during trial, API post-June 22) + Opus driver (Max-bundled). Setup B is fully Max-bundled via opusplan.** Here's the detail.
+The short answer: **Setup A uses Fable advisor + Opus driver (both Max-bundled in interactive sessions). Setup B is fully Max-bundled via opusplan + Opus advisor.** Here's the detail.
 
 ### 1M context is free on Max — no API premium
 
