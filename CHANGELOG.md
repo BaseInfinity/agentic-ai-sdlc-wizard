@@ -4,6 +4,28 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.82.0] - 2026-06-11
+
+### Added
+
+- **"Reading Usage Signals" subsection** in Token Efficiency section. Maps community-observed session signals (subagent-heavy, >150K context, 8+ hour sessions) to SDLC actions per setup lane. Marked as community-observed, not official CC docs.
+
+- **Advisor fallback procedure** in AI_SETUP_LANES.md. Escalation ladder: restart session → Fable driver fallback → `-p` last resort (with billing caveat). Documented after advisor was unavailable for a full session during API incident (2026-06-11).
+
+- **Fable effort guidance** in Setup A description. Opus stays at `max`; Fable at `high` (exceeds prior models at `max`). Unset `CLAUDE_CODE_EFFORT_LEVEL` env var if switching driver to Fable temporarily.
+
+- **Autocompact Thresholds cross-reference** in AI_SETUP_LANES.md. Numbers-free pointer to wizard doc to prevent dual-source drift.
+
+### Fixed
+
+- **Stale `/usage` row** in Monitor Costs table. Was "Session total: USD, API time, code changes" — now accurately describes plan usage limits and per-category breakdown (skill, subagent, plugin, MCP server). Added `/status` row (settings panel) to prevent future confusion.
+
+- **`/usage` mention in SKILL.md** Context Management section. Folded into existing auto-compact bullet within 20K char budget.
+
+### Why
+
+- Token-burn spike (1.36M costly tokens vs ~86K median) in session 98d6c7b0 surfaced that the wizard's usage guidance was stale and didn't help diagnose the cause. The Monitor Costs table described `/usage` incorrectly, and no wizard prose mapped usage signals to SDLC actions. The advisor fallback procedure is a direct lesson from the same session where the Fable advisor was unavailable for the entire duration.
+
 ## [1.81.0] - 2026-06-10
 
 ### Changed

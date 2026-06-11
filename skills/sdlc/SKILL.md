@@ -267,7 +267,7 @@ Don't fix only the symptom. Add a gate so it can't happen again. Example: PR #14
 
 - `/compact` between planning and implementation (plan preserved in summary)
 - `/clear` between unrelated tasks; after 2+ failed corrections (context polluted)
-- Auto-compact fires at ~95% capacity
+- Auto-compact fires at ~95%; `/usage` shows what's driving token spend
 - After committing a PR, `/clear` before next feature
 - `--bare` mode (v2.1.81+) skips ALL hooks/skills/LSP/plugins. Scripted headless only — never normal development.
 - Custom subagents (`.claude/agents/`) run autonomously and return results. Skills guide behavior; agents do work. Use for parallel tasks or fresh context. Examples: `sdlc-reviewer`, `ci-debug`, `test-writer`.
