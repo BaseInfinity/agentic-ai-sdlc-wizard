@@ -8,7 +8,7 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
 | Role | Model |
 |------|-------|
-| **Planner** | Fable 5 high (via `claude --model claude-fable-5 --print`) |
+| **Planner** | Fable 5 high (via `Agent(model: "fable")` subagent or `/model fable` + Shift+Tab) |
 | **Driver** | Opus 4.6 max |
 | **Reviewer** | Codex (GPT-5.5) xhigh |
 | **Escalation** | + Fable 5 review (security, releases, wide-blast architecture only) |
@@ -136,7 +136,7 @@ Credit allocations: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. **No rollover.*
 
 ### What this means for the lanes
 
-- **Setup A — Premium (Fable planner + Opus driver):** Opus 4.6 max driver runs on your Max subscription. Fable 5 planner runs via `claude --model claude-fable-5 --print` (free during trial through June 22; post-trial uses headless credit pool). GPT-5.5 xhigh reviewer is on your ChatGPT subscription.
+- **Setup A — Premium (Fable planner + Opus driver):** Fable 5 planner via `Agent(model: "fable")` subagent stays on Max subscription (interactive, not headless). Opus 4.6 max driver on Max. GPT-5.5 xhigh reviewer on ChatGPT subscription. Avoid `claude --print` for Fable — headless moves to credit pool June 15.
 - **Setup B — Saver (OpusPlan):** **fully Max-bundled.** `opusplan` uses Opus (plan mode) + Sonnet (execute mode), both at 200K context — no `[1m]` variants, no credit drain. This is why Setup B now recommends `opusplan` instead of the old `sonnet[1m]` pin (#390).
   - **⚠️ Avoid `sonnet[1m]`:** Sonnet with 1M context draws from your usage credits pool ($3/$15 per Mtok), NOT your Max subscription. The `/model` picker shows this explicitly. Plain `sonnet` (200K) or `opusplan` stays on Max.
 - **Reviewer (GPT-5.5 xhigh) in both lanes:** billed against your OpenAI account, completely separate from Anthropic.
