@@ -100,7 +100,7 @@ Setups A and B use Opus 4.6 max for at least the planner — that's the expensiv
 - Or drop to Setup C for grunt work that doesn't need Opus reasoning
 - Or use Sonnet directly for the final mechanical edits, then run the GPT-5.5 reviewer over the whole diff at the end
 
-**Setup C is the cheapest option** — Haiku at $1/$5 per Mtok is 5× cheaper than Opus. For high-volume operational work, this is where the savings are.
+**Setup C uses Sonnet** — same model as Setup B's driver, Max-bundled. One less model to manage.
 
 The reviewer (GPT-5.5 xhigh) is billed against your OpenAI account, separately. Watch both bills.
 
@@ -108,7 +108,7 @@ The reviewer (GPT-5.5 xhigh) is billed against your OpenAI account, separately. 
 
 A common question: **"does the `[1m]` model alias get billed differently? Does it pull from my Max plan or from API credits?"**
 
-The short answer: **Setup A (Opus planner + driver) runs entirely on your Max subscription, including 1M context, with no premium surcharge. Setup B's Sonnet driver has a billing caveat when using 1M context — see the "Caveat" section below.** Here's the detail.
+The short answer: **Setup A uses Fable planner (free during trial, API post-June 22) + Opus driver (Max-bundled). Setup B is fully Max-bundled via opusplan.** Here's the detail.
 
 ### 1M context is free on Max — no API premium
 
@@ -136,7 +136,7 @@ Credit allocations: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. **No rollover.*
 
 ### What this means for the lanes
 
-- **Setup A — Premium (Opus 4.6 max planner + driver):** all interactive `/sdlc` work in Claude Code runs on your Max subscription. No API charges for the Claude side. Opus 4.6 / 4.7 / 4.8 at 1M context are all included in Max — confirmed by Claude Code's own `/model` picker which shows no credit warning for any 1M Opus variant.
+- **Setup A — Premium (Fable planner + Opus driver):** Opus 4.6 max driver runs on your Max subscription. Fable 5 planner runs via `claude --model claude-fable-5 --print` (free during trial through June 22; post-trial uses headless credit pool). GPT-5.5 xhigh reviewer is on your ChatGPT subscription.
 - **Setup B — Saver (OpusPlan):** **fully Max-bundled.** `opusplan` uses Opus (plan mode) + Sonnet (execute mode), both at 200K context — no `[1m]` variants, no credit drain. This is why Setup B now recommends `opusplan` instead of the old `sonnet[1m]` pin (#390).
   - **⚠️ Avoid `sonnet[1m]`:** Sonnet with 1M context draws from your usage credits pool ($3/$15 per Mtok), NOT your Max subscription. The `/model` picker shows this explicitly. Plain `sonnet` (200K) or `opusplan` stays on Max.
 - **Reviewer (GPT-5.5 xhigh) in both lanes:** billed against your OpenAI account, completely separate from Anthropic.
