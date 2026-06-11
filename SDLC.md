@@ -10,8 +10,8 @@
 
 | Property | Value |
 |----------|-------|
-| Wizard Version | 1.81.0 |
-| Last Updated | 2026-06-10 |
+| Wizard Version | 1.82.0 |
+| Last Updated | 2026-06-11 |
 | Claude Code Minimum | v2.1.154+ (required for `opus[1m]` alias resolution); v2.1.105+ for `PreCompact` hook |
 | Claude Code Recommended | v2.1.170+ — native `advisorModel` support (v2.1.170), `.claude/skills` plugin auto-load (v2.1.157), native `/goal` (v2.1.139), `/code-review --comment` (v2.1.147) |
 | Recommended Model | `claude-opus-4-6` or `opusplan` — run `/model claude-opus-4-6` or `/model opusplan` |

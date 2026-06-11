@@ -15,6 +15,8 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
 Quality-first lane. Fable 5 advises automatically at key decision points (architecture, complexity, blast-radius) via native `advisorModel` (v2.1.170+), Opus 4.6 max implements (stable, Max-bundled), GPT-5.5 xhigh reviews (cross-family, free on ChatGPT sub, catches blind spots Fable can't see in its own work). Escalate to Fable review for the ~5% of PRs where stakes justify it.
 
+**Effort levels:** Opus driver at `max` (standing default). Fable advisor runs at its own effort level server-side. If switching driver to Fable temporarily (fallback), use `/effort high` — Fable `high` already exceeds prior models at `max`. Unset `CLAUDE_CODE_EFFORT_LEVEL` env var if it forces `max`.
+
 ## Setup B — Claude Saver (OpusPlan)
 
 | Role | Model |
@@ -105,6 +107,25 @@ The `!` prefix runs shell commands inside your CC session — no need to exit an
 
 Fable 5 as advisor also requires Fable 5 access for your organization/plan (free on Max through June 22, 2026).
 
+## When the Advisor Is Unavailable
+
+If the advisor returns "Advisor unavailable," the server-side harness failed to initialize. No in-session action (`/model`, `/clear`) can recover it.
+
+**Step 1 — restart the session.** Exit and run `claude` (not `--resume`). A fresh process re-initializes the server handshake. This resolves most advisor failures.
+
+**Step 2 — if the API incident persists:**
+
+- `/model fable` + `/effort high` for the planning phase, then `/model claude-opus-4-6` for implementation. Interactive — stays on your Max subscription.
+- Or proceed with Opus only and let the Codex xhigh PR gate catch issues.
+
+**Last resort (scripted/CI only):**
+
+- `claude --model fable --effort high -p "$(cat <file>)"` — headless mode bills API credits, not your Max subscription.
+
+Check [status.claude.com](https://status.claude.com) if the advisor fails across multiple fresh sessions.
+
+Whichever path you use, the cross-model PR review gate still applies.
+
 ## Credit-Spend Warning
 
 Setups A and B use Opus 4.6 max for at least the planner — that's the expensive half. On Max-plan subscriptions, **Premium can burn the 5-hour cap faster than Saver** because Opus 4.6 max drives implementation too. If you're hitting the cap mid-session:
@@ -116,6 +137,10 @@ Setups A and B use Opus 4.6 max for at least the planner — that's the expensiv
 **Setup C uses Sonnet** — same model as Setup B's driver, Max-bundled. One less model to manage.
 
 The reviewer (GPT-5.5 xhigh) is billed against your OpenAI account, separately. Watch both bills.
+
+## Autocompact Thresholds
+
+For recommended `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` values per context window and task shape, see [CLAUDE_CODE_SDLC_WIZARD.md → Autocompact Tuning](CLAUDE_CODE_SDLC_WIZARD.md#autocompact-tuning).
 
 ## How Billing Works — 1M Context, Max Plan, and the June 15 Split
 
