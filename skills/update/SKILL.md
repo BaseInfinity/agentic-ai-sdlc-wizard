@@ -225,64 +225,15 @@ If `cli/init.js` later adds wizard marketplace names, append verbatim.
 3. For every dead marketplace `<name>`, look for `enabledPlugins["sdlc-wizard@<name>"]` — also flag for removal.
 4. Repeat for **all** allowlist entries; collect the full set of dead pairs before prompting (multiple are common).
 
-**Cleanup (always ask, all-or-nothing per response):**
+**Cleanup:** List all dead pairs, ask `[y/N]`. If yes: backup with timestamp, single `jq` filter drops dead keys, write to temp + validate with `jq empty` + `mv`. If no: skip.
 
-> Your `~/.claude/settings.json` references wizard plugin marketplaces that don't exist on disk:
->
-> - `extraKnownMarketplaces.sdlc-wizard-local.source.path` → `<resolved-path>` (missing)
-> - `enabledPlugins["sdlc-wizard@sdlc-wizard-local"]` is `true`
-> - (list all dead pairs)
->
-> Causes `Plugin directory does not exist` on every prompt in every CC session.
->
-> Drop these entries from `~/.claude/settings.json`? `[y/N]`
-
-If yes:
-1. **Backup with timestamp**: `cp ~/.claude/settings.json ~/.claude/settings.json.bak.$(date +%Y%m%dT%H%M%S)` (two cleanups same day don't overwrite each other).
-2. **Single `jq` filter** dropping every dead marketplace + every dead `enabledPlugins` key in one pass: `jq 'del(.enabledPlugins["sdlc-wizard@sdlc-wizard-local"]) | del(.extraKnownMarketplaces["sdlc-wizard-local"]) | del(.enabledPlugins["sdlc-wizard@sdlc-wizard-wrap"]) | del(.extraKnownMarketplaces["sdlc-wizard-wrap"])'` — include only keys actually marked dead.
-3. Write to a temp file, validate with `jq empty` (round-trip parse), then `mv`. Validation fails → restore from backup.
-4. **Formatting note**: `jq` rewrites the whole file. Wizard does NOT preserve comments/trailing commas (CC's settings.json is strict JSON, so safe today). Tell the user.
-
-If no: skip silently. Some users have a recovery plan (re-enable, reinstall).
-
-**Idempotency:** rerunning Step 7.7 after a clean must be a no-op. Only marketplaces with allowlist match AND missing path qualify.
-
-**Scope guard:** only entries whose marketplace name matches the exact allowlist. Third-party plugin registrations (`legal@knowledge-work-plugins`, etc.) and unrelated `sdlc`-prefixed marketplaces (e.g. `danielscholl/claude-sdlc`) are never the wizard's business.
-
-**Why update, not setup:** setup runs once at install; plugin paths are valid by definition. Dead registrations only appear later, when something disables/renames/deletes the plugin directory. Update is the natural seam.
-
-**Runs regardless of version match:** Step 7.7 is global-settings hygiene, not file-update logic. Must run even when wizard version matches latest (per Step 3 match-branch). Gating Step 7.7 on version mismatch would silently leave the error firing forever.
-
-**`check-only` precedence:** if `check-only` is set (whether versions match or not), Step 7.7 runs in detection-only mode: report dead registrations, do NOT prompt, do NOT execute `jq`, do NOT touch `~/.claude/settings.json`. Check-only must never mutate state.
+**Guards:** Idempotent (re-run after clean = no-op). Scope: only allowlist matches. Runs regardless of version match (hygiene, not file-update). `check-only` mode: detect only, no mutations.
 
 ### Step 7.8: advisorModel Migration (v2.1.170+)
 
-Claude Code v2.1.170+ introduced native `advisorModel` support — a stronger model auto-consults at key decision points (architecture, complexity, blast-radius). This replaces manual `Agent(model: "fable")` subagent spawning.
+If CC < v2.1.170: show "Run `! claude update` to upgrade" and skip. If `.claude/settings.json` already has `advisorModel` or no `model` pin: skip.
 
-**Version gate:** Check CC version first. If below v2.1.170, show: "advisorModel requires CC v2.1.170+. Run `! claude update` from inside a CC session to upgrade, then re-run /update-wizard." Skip the rest of Step 7.8.
-
-**Detection** — check `.claude/settings.json`:
-
-1. **Has `model` pin but no `advisorModel`** — suggest adding the right advisor:
-   - `model: "claude-opus-4-6"` or `model: "claude-opus-4-8"` → suggest `advisorModel: "fable"`
-   - `model: "opusplan"` → suggest `advisorModel: "claude-opus-4-6"`
-   - Other model values → skip (can't infer the right advisor)
-
-2. **Already has `advisorModel`** — skip (already configured or intentional choice)
-
-3. **No `model` pin** (auto-mode) — skip (advisor without a model pin is a weird combo; they can add it via `/setup-wizard` Step 9.5)
-
-**Prompt (when suggesting):**
-
-> Your project pins `model: "{model}"` but has no `advisorModel`.
-> CC v2.1.170+ supports native advisor — auto-consults a stronger model at key decisions.
-> Recommended: `advisorModel: "{suggested}"`
->
-> - **Add** (recommended): write `advisorModel` to `.claude/settings.json`
-> - **Skip**: keep current setup
-> `[a/S]`
-
-If add: write only `advisorModel` key to `.claude/settings.json`. Do not touch other keys.
+If `model` pin exists but no `advisorModel`, suggest: `claude-opus-4-6`/`claude-opus-4-8` → `advisorModel: "fable"`, `opusplan` → `advisorModel: "claude-opus-4-6"`. Ask `[a/S]`, write only `advisorModel` if accepted.
 
 ### Step 8: Apply Selected Changes
 
