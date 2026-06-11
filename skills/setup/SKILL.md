@@ -232,6 +232,20 @@ The CLI ships `cli/templates/settings.json` with **no** `model` or `env` pin by 
 
 **Why this is opt-in (issue #198):** A top-level `"model"` in `settings.json` disables auto-mode for the session. Pinning is only worth it when you want consistent model behavior (opusplan or flagship) rather than per-turn auto-selection.
 
+**Check for global `[1m]` model pin first (#391):**
+
+Before prompting the user, read `~/.claude/settings.json` (if it exists). If the `model` key contains `[1m]` (e.g., `"opus[1m]"`, `"claude-opus-4-6[1m]"`, `"sonnet[1m]"`), warn:
+
+> **Global model pin detected:** `~/.claude/settings.json` has `model: "{value}"`.
+> A global `[1m]` pin forces 1M context on EVERY repo that doesn't override with its own project pin. Interactive CC sessions on Max include 1M at standard rates, but headless surfaces (`-p`, Agent SDK, GitHub Actions) bill against usage credits after the June 15 split. This pin may be a leftover from older wizard versions.
+>
+> - **[r] Remove** (recommended) — deletes the global model pin, restores auto-mode
+> - **[k] Keep** — you intentionally want 1M API-billed context globally
+>
+> `[r/k]`
+
+If `r`: remove the `model` key from `~/.claude/settings.json`. If `k`: log the choice and continue.
+
 **Run the complexity heuristic first (roadmap #233):**
 
 ```bash
