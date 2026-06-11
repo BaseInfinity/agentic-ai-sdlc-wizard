@@ -4,6 +4,28 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.81.0] - 2026-06-10
+
+### Changed
+
+- **Native `advisorModel` support (CC v2.1.170+).** Setup A (Premium) now uses `advisorModel: "fable"` in project settings instead of manual `Agent(model: "fable")` subagent spawning. Fable 5 auto-consults at key decision points (architecture, complexity, blast-radius). Setup B (Saver) gains `advisorModel: "claude-opus-4-6"` — Opus advisor compensates for Sonnet driver's lighter reasoning.
+
+- **Settings are project-level by default.** The setup skill writes `model` + `advisorModel` to `.claude/settings.json` (project-scoped, committed, shared with team). After writing, asks if user also wants `advisorModel` in global `~/.claude/settings.json`. Never nukes global settings without consent.
+
+- **Update skill gains Step 7.8 (advisorModel migration).** Detects projects with a model pin but no `advisorModel` and suggests the right advisor pairing. Version-gated to CC v2.1.170+.
+
+- **CLI init.js smart-merge handles `advisorModel`.** Same pattern as `model` — only set if missing, preserve on `--force`.
+
+- **This repo dogfoods Setup A.** Project settings now include `model: "claude-opus-4-6"` + `advisorModel: "fable"`.
+
+- **Documented `! claude update` tip** for users needing v2.1.170+ — the `!` prefix runs shell commands inside a CC session without exiting.
+
+### Why
+
+- The advisor tool (API beta `advisor-tool-2026-03-01`) graduated to native CC support as `advisorModel` in v2.1.170+. Native advisor is strictly better than manual subagent spawning: automatic consultation at key decision points, no headless billing risk, persists across sessions via settings.json, and integrates with CC's settings precedence (project > global).
+
+- Project-level settings prevent the wizard from overwriting a multi-project user's global model config. Settings precedence: Managed > CLI flags > Local > Project > User (global). Writing project-level means each repo picks its own lane independently.
+
 ## [1.80.0] - 2026-06-09
 
 ### Changed

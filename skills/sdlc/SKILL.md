@@ -118,6 +118,8 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 **If pinning `claude-opus-4-6` (flagship):** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — Opus auto-upgrades to 1M on Max and the default compacts too early at ~76K. **Do NOT set this for `opusplan`** — opusplan uses 200K context and 30% of 200K = 60K would compact too aggressively (#207).
 
+**Advisor model (v2.1.170+):** If your project settings include `advisorModel`, the advisor auto-consults at key decision points (architecture, complexity, blast-radius). Flagship → `advisorModel: "fable"`. OpusPlan → `advisorModel: "claude-opus-4-6"`. Set during `/setup-wizard` Step 9.5. Run `! claude update` if below v2.1.170.
+
 ## Self-Review Loop
 
 ```

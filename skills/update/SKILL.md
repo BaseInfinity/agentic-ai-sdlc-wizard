@@ -93,9 +93,10 @@ Parse CHANGELOG entries between the user's installed version and latest. Present
 
 ```
 Installed: 1.42.0
-Latest:    1.80.0
+Latest:    1.81.0
 
 What changed:
+- [1.81.0] Native `advisorModel` support: Setup A gets Fable advisor, Setup B gets Opus advisor. Replaces manual subagent spawning. Requires CC v2.1.170+.
 - [1.80.0] Flip default: Opus 4.6 max becomes recommended flagship; Opus 4.8 demoted to opt-in `[l] Latest` tier.
 - [1.79.0] Opus 4.6 Stability tier added as flagship alternative (now graduated to default in 1.80.0).
 - [1.78.0] Opus 4.7 → 4.8 model recommendation (#365) + min CC v2.1.154+.
@@ -253,6 +254,35 @@ If no: skip silently. Some users have a recovery plan (re-enable, reinstall).
 **Runs regardless of version match:** Step 7.7 is global-settings hygiene, not file-update logic. Must run even when wizard version matches latest (per Step 3 match-branch). Gating Step 7.7 on version mismatch would silently leave the error firing forever.
 
 **`check-only` precedence:** if `check-only` is set (whether versions match or not), Step 7.7 runs in detection-only mode: report dead registrations, do NOT prompt, do NOT execute `jq`, do NOT touch `~/.claude/settings.json`. Check-only must never mutate state.
+
+### Step 7.8: advisorModel Migration (v2.1.170+)
+
+Claude Code v2.1.170+ introduced native `advisorModel` support — a stronger model auto-consults at key decision points (architecture, complexity, blast-radius). This replaces manual `Agent(model: "fable")` subagent spawning.
+
+**Version gate:** Check CC version first. If below v2.1.170, show: "advisorModel requires CC v2.1.170+. Run `! claude update` from inside a CC session to upgrade, then re-run /update-wizard." Skip the rest of Step 7.8.
+
+**Detection** — check `.claude/settings.json`:
+
+1. **Has `model` pin but no `advisorModel`** — suggest adding the right advisor:
+   - `model: "claude-opus-4-6"` or `model: "claude-opus-4-8"` → suggest `advisorModel: "fable"`
+   - `model: "opusplan"` → suggest `advisorModel: "claude-opus-4-6"`
+   - Other model values → skip (can't infer the right advisor)
+
+2. **Already has `advisorModel`** — skip (already configured or intentional choice)
+
+3. **No `model` pin** (auto-mode) — skip (advisor without a model pin is a weird combo; they can add it via `/setup-wizard` Step 9.5)
+
+**Prompt (when suggesting):**
+
+> Your project pins `model: "{model}"` but has no `advisorModel`.
+> CC v2.1.170+ supports native advisor — auto-consults a stronger model at key decisions.
+> Recommended: `advisorModel: "{suggested}"`
+>
+> - **Add** (recommended): write `advisorModel` to `.claude/settings.json`
+> - **Skip**: keep current setup
+> `[a/S]`
+
+If add: write only `advisorModel` key to `.claude/settings.json`. Do not touch other keys.
 
 ### Step 8: Apply Selected Changes
 

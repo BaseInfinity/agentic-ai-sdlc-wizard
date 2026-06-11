@@ -392,6 +392,34 @@ New built-in commands available to use alongside the wizard:
 
 **Tip**: `/simplify` pairs well with the self-review phase. Run it after implementation as an additional quality check.
 
+### Advisor Model (v2.1.170+)
+
+**What changed**: `advisorModel` in settings.json configures a stronger model that Claude Code automatically consults at key decision points — before committing to an approach, when stuck on recurring errors, or before declaring a task done. Replaces manual `Agent(model: "fable")` subagent spawning for planning.
+
+**Three ways to enable:**
+
+| Method | Scope | Persists? |
+|--------|-------|-----------|
+| `"advisorModel": "fable"` in `.claude/settings.json` | Project | Yes (committed, shared with team) |
+| `/advisor fable` | User (global `~/.claude/settings.json`) | Yes (all projects) |
+| `--advisor fable` CLI flag | Session | No |
+
+**Recommended pairings:**
+
+| Driver | Advisor | Lane |
+|--------|---------|------|
+| Opus 4.6 (`claude-opus-4-6`) | Fable (`"fable"`) | Setup A — Premium |
+| Sonnet via opusplan | Opus (`"claude-opus-4-6"`) | Setup B — Saver |
+| Opus 4.8 (`claude-opus-4-8`) | Fable (`"fable"`) | Latest tier |
+
+**Settings precedence:** Managed > CLI flags > Local (`.claude/settings.local.json`) > Project (`.claude/settings.json`) > User (`~/.claude/settings.json`). The wizard writes project-level by default — never nukes global settings. Setup skill Step 9.5 asks if you also want global.
+
+**Important:** Fable does NOT appear in the `/advisor` interactive picker. Set it via `/advisor fable`, `--advisor fable`, or `advisorModel: "fable"` in settings.json.
+
+**Billing:** Advisor queries in interactive sessions are Max-bundled (same pool as the driver). The advisor does not trigger headless/credit-pool billing.
+
+**To update:** Run `! claude update` from inside a CC session to get v2.1.170+. The `!` prefix runs shell commands inline — no need to exit.
+
 ### Skill Frontmatter Fields (v2.1.80+)
 
 Skills support these frontmatter fields:
@@ -4456,7 +4484,7 @@ The wizard watches the **Anthropic API changelog** — not just Claude Code CLI 
 
 When that issue is open, the session-start hook nudges you. The session (not the workflow) does the deep research + adoption via the full SDLC loop. This mirrors the "local shepherd" pattern used for CI fixes: cheap Action-layer detection + session-time analysis beats expensive Action-layer LLM calls.
 
-The gap this closes: the advisor tool (API beta, `advisor-tool-2026-03-01`) shipped and was missed for several days before manual discovery. Detector would have flagged it on the next weekly tick.
+The gap this closes: the advisor tool (API beta, `advisor-tool-2026-03-01`) shipped and was missed for several days before manual discovery. Detector would have flagged it on the next weekly tick. **Update (v1.81.0):** The API beta graduated to native CC support as `advisorModel` in settings.json (v2.1.170+). See [Advisor Model (v2.1.170+)](#advisor-model-v21170) above.
 
 **Complementary native skills worth knowing:**
 
