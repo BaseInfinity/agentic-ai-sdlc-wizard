@@ -4,6 +4,17 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.83.0] - 2026-06-11
+
+### Fixed
+- **#403**: Hook lists multiple wizard-blessed models (claude-opus-4-6, opusplan, fable) instead of hardcoded single-model nudge
+- **#391**: Setup Step 9.5 detects global `[1m]` model pin and warns about billing implications
+- **#405**: Update Step 3 uses `min(npm, CHANGELOG)` as "latest installable" — prevents version race during publish window
+- **#384**: Update Step 7.9 checks effort configuration regardless of version match
+
+### Why
+Model config batch — first trial of the confidence ramp pattern (Opus research → Fable batch review → 95% → TDD → Codex safety check). All 4 issues reached 95% confidence before implementation.
+
 ## [1.82.0] - 2026-06-11
 
 ### Added
