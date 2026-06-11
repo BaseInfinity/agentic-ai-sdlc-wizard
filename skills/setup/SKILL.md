@@ -260,6 +260,7 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 ```json
 {
   "model": "opusplan",
+  "advisorModel": "claude-opus-4-6",
   "env": {
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
     "CLAUDE_CODE_EFFORT_LEVEL": "max"
@@ -267,13 +268,14 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 }
 ```
 
-Tell the user: "Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both Max-bundled at 200K — no API credit drain. Press Shift+Tab before architecture/blast-radius decisions to get Opus reasoning. Cross-model reviews still run at GPT-5.5 xhigh."
+Tell the user: "Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both Max-bundled at 200K — no API credit drain. The Opus advisor auto-compensates for Sonnet's lighter reasoning at key decision points. Cross-model reviews still run at GPT-5.5 xhigh. Requires CC v2.1.170+ — run `! claude update` if needed."
 
 **If the user answers `f` (flagship):** Edit `.claude/settings.json` and add:
 
 ```json
 {
   "model": "claude-opus-4-6",
+  "advisorModel": "fable",
   "env": {
     "CLAUDE_CODE_EFFORT_LEVEL": "max",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
@@ -281,20 +283,21 @@ Tell the user: "Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both
 }
 ```
 
-Tell the user: "Opus 4.6 max everywhere. On Max plans, Opus auto-upgrades to 1M context — the autocompact override prevents early compaction at ~76K (default fires too soon on 1M)."
+Tell the user: "Opus 4.6 max everywhere with Fable 5 advisor. Fable auto-consults at key decision points (architecture, complexity, blast-radius). On Max plans, Opus auto-upgrades to 1M context — the autocompact override prevents early compaction at ~76K. Requires CC v2.1.170+ — run `! claude update` if needed."
 
 **If the user answers `l` (latest):** Edit `.claude/settings.json` and add:
 
 ```json
 {
   "model": "claude-opus-4-8",
+  "advisorModel": "fable",
   "env": {
     "CLAUDE_CODE_EFFORT_LEVEL": "max"
   }
 }
 ```
 
-Tell the user: "Always max effort on all Claude models (#395). Escape hatch: change `model` back to `claude-opus-4-6` or remove to fall back to auto-mode."
+Tell the user: "Always max effort on all Claude models (#395) with Fable 5 advisor. Fable auto-consults at key decision points. Requires CC v2.1.170+ — run `! claude update` if needed. Escape hatch: change `model` back to `claude-opus-4-6` or remove to fall back to auto-mode."
 
 Mention the escape hatch in all four cases:
 - To opt out later: remove the `model` line (and optionally the `env` block) from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".
@@ -302,6 +305,16 @@ Mention the escape hatch in all four cases:
 - For CI pipelines with short tasks (flagship only), consider `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=60` — compact early to stay fast.
 
 This is project-scoped and shared with the team via git.
+
+**After writing project settings (for `[o]`, `[f]`, or `[l]`), ask once:**
+
+> Also set `advisorModel` in your global `~/.claude/settings.json`?
+> (Applies advisor to ALL your projects. Project-level always overrides.)
+> `[y/N]`
+
+Default No. If yes, read `~/.claude/settings.json`, add/update only the `advisorModel` key (do NOT touch other keys), write back. This is the only global settings mutation in setup besides Step 7.7's dead plugin cleanup.
+
+**Note:** Flagship, OpusPlan, and Latest choices include an advisor model that auto-consults at key decision points. Requires CC v2.1.170+ — run `! claude update` from inside a CC session if needed.
 
 ### Step 10: Customize Hooks
 

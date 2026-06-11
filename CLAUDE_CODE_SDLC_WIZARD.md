@@ -392,6 +392,34 @@ New built-in commands available to use alongside the wizard:
 
 **Tip**: `/simplify` pairs well with the self-review phase. Run it after implementation as an additional quality check.
 
+### Advisor Model (v2.1.170+)
+
+**What changed**: `advisorModel` in settings.json configures a stronger model that Claude Code automatically consults at key decision points — before committing to an approach, when stuck on recurring errors, or before declaring a task done. Replaces manual `Agent(model: "fable")` subagent spawning for planning.
+
+**Three ways to enable:**
+
+| Method | Scope | Persists? |
+|--------|-------|-----------|
+| `"advisorModel": "fable"` in `.claude/settings.json` | Project | Yes (committed, shared with team) |
+| `/advisor fable` | User (global `~/.claude/settings.json`) | Yes (all projects) |
+| `--advisor fable` CLI flag | Session | No |
+
+**Recommended pairings:**
+
+| Driver | Advisor | Lane |
+|--------|---------|------|
+| Opus 4.6 (`claude-opus-4-6`) | Fable (`"fable"`) | Setup A — Premium |
+| Sonnet via opusplan | Opus (`"claude-opus-4-6"`) | Setup B — Saver |
+| Opus 4.8 (`claude-opus-4-8`) | Fable (`"fable"`) | Latest tier |
+
+**Settings precedence:** Managed > CLI flags > Local (`.claude/settings.local.json`) > Project (`.claude/settings.json`) > User (`~/.claude/settings.json`). The wizard writes project-level by default — never nukes global settings. Setup skill Step 9.5 asks if you also want global.
+
+**Important:** Fable does NOT appear in the `/advisor` interactive picker. Set it via `/advisor fable`, `--advisor fable`, or `advisorModel: "fable"` in settings.json.
+
+**Billing:** Advisor queries in interactive sessions are Max-bundled (same pool as the driver). The advisor does not trigger headless/credit-pool billing.
+
+**To update:** Run `! claude update` from inside a CC session to get v2.1.170+. The `!` prefix runs shell commands inline — no need to exit.
+
 ### Skill Frontmatter Fields (v2.1.80+)
 
 Skills support these frontmatter fields:
@@ -966,14 +994,16 @@ Override the default auto-compact threshold with environment variables. These ar
 | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Trigger compaction at this % of context capacity (1-100) | ~95% |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | Override context capacity in tokens (useful for 1M models) | Model default |
 
-**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model` or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 asks whether to opt into `"model": "opus[1m]"` + `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (tuned for the 1M window — compacts at ~300K). Default answer is **No**. Pinning the model at the top level tells Claude Code you've explicitly chosen a model and turns off per-turn model auto-selection — a real tradeoff, so we ask. Power users who want guaranteed Opus 4.6 max + 1M context answer yes.
+**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model`, `advisorModel`, or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 offers four choices: `[N]` no pin, `[o]` opusplan + Opus advisor, `[f]` flagship Opus 4.6 + Fable advisor, `[l]` latest Opus 4.8 + Fable advisor. Default is **No**. Pinning the model turns off per-turn auto-selection — a real tradeoff, so we ask.
 
-To opt in by hand, edit `.claude/settings.json`:
+To opt in by hand, edit `.claude/settings.json` (flagship example):
 
 ```json
 {
-  "model": "opus[1m]",
+  "model": "claude-opus-4-6",
+  "advisorModel": "fable",
   "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "max",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
   }
 }
@@ -3011,7 +3041,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.80.0 -->
+<!-- SDLC Wizard Version: 1.81.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
@@ -4456,7 +4486,7 @@ The wizard watches the **Anthropic API changelog** — not just Claude Code CLI 
 
 When that issue is open, the session-start hook nudges you. The session (not the workflow) does the deep research + adoption via the full SDLC loop. This mirrors the "local shepherd" pattern used for CI fixes: cheap Action-layer detection + session-time analysis beats expensive Action-layer LLM calls.
 
-The gap this closes: the advisor tool (API beta, `advisor-tool-2026-03-01`) shipped and was missed for several days before manual discovery. Detector would have flagged it on the next weekly tick.
+The gap this closes: the advisor tool (API beta, `advisor-tool-2026-03-01`) shipped and was missed for several days before manual discovery. Detector would have flagged it on the next weekly tick. **Update (v1.81.0):** The API beta graduated to native CC support as `advisorModel` in settings.json (v2.1.170+). See [Advisor Model (v2.1.170+)](#advisor-model-v21170) above.
 
 **Complementary native skills worth knowing:**
 

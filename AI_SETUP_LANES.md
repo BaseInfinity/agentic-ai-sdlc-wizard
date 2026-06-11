@@ -8,22 +8,23 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
 | Role | Model |
 |------|-------|
-| **Planner** | Fable 5 high (via `claude --model claude-fable-5 --print`) |
+| **Advisor** | Fable 5 (via `advisorModel: "fable"` in project settings — auto-consults at key decisions) |
 | **Driver** | Opus 4.6 max |
 | **Reviewer** | Codex (GPT-5.5) xhigh |
 | **Escalation** | + Fable 5 review (security, releases, wide-blast architecture only) |
 
-Quality-first lane. Fable 5 plans (best planner tested — deeper reasoning, finds architectural issues early), Opus 4.6 max implements (stable, Max-bundled), GPT-5.5 xhigh reviews (cross-family, free on ChatGPT sub, catches plan-level blind spots Fable can't see in its own work). Escalate to Fable review for the ~5% of PRs where stakes justify it.
+Quality-first lane. Fable 5 advises automatically at key decision points (architecture, complexity, blast-radius) via native `advisorModel` (v2.1.170+), Opus 4.6 max implements (stable, Max-bundled), GPT-5.5 xhigh reviews (cross-family, free on ChatGPT sub, catches blind spots Fable can't see in its own work). Escalate to Fable review for the ~5% of PRs where stakes justify it.
 
 ## Setup B — Claude Saver (OpusPlan)
 
 | Role | Model |
 |------|-------|
 | **Planner** | Opus 4.6 max (via Plan Mode — Shift+Tab) |
+| **Advisor** | Opus 4.6 (via `advisorModel: "claude-opus-4-6"` — compensates for Sonnet driver) |
 | **Driver** | Sonnet (latest, auto execute mode) |
 | **Reviewer** | Codex (GPT-5.5) xhigh |
 
-Cost-efficient lane using CC's native `opusplan` alias. Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both 200K context, Max-bundled — no API credit drain. Pin `model: "opusplan"` + `ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-6` + `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block. GPT-5.5 xhigh is the cross-model reviewer.
+Cost-efficient lane using CC's native `opusplan` alias. Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both 200K context, Max-bundled — no API credit drain. Pin `model: "opusplan"` + `advisorModel: "claude-opus-4-6"` + `CLAUDE_CODE_EFFORT_LEVEL=max` in project settings. The Opus advisor auto-compensates for Sonnet's lighter reasoning at key decision points. GPT-5.5 xhigh is the cross-model reviewer.
 
 ## When to Use Setup A
 
@@ -92,6 +93,18 @@ Setup C is for work where SDLC discipline overhead exceeds the value:
 
 If GPT-5.5 isn't available on your OpenAI account, Codex auto-falls back to GPT-5.4 — still keep `model_reasoning_effort="xhigh"`. Lower reasoning misses subtle bugs that the reviewer is the last gate to catch.
 
+## Version Requirement
+
+`advisorModel` in settings.json requires **Claude Code v2.1.170+**. Check your version with `claude --version`. If below v2.1.170, update from inside a CC session:
+
+```
+! claude update
+```
+
+The `!` prefix runs shell commands inside your CC session — no need to exit and re-enter. After updating, restart the session for the advisor to activate.
+
+Fable 5 as advisor also requires Fable 5 access for your organization/plan (free on Max through June 22, 2026).
+
 ## Credit-Spend Warning
 
 Setups A and B use Opus 4.6 max for at least the planner — that's the expensive half. On Max-plan subscriptions, **Premium can burn the 5-hour cap faster than Saver** because Opus 4.6 max drives implementation too. If you're hitting the cap mid-session:
@@ -108,7 +121,7 @@ The reviewer (GPT-5.5 xhigh) is billed against your OpenAI account, separately. 
 
 A common question: **"does the `[1m]` model alias get billed differently? Does it pull from my Max plan or from API credits?"**
 
-The short answer: **Setup A uses Fable planner (free during trial, API post-June 22) + Opus driver (Max-bundled). Setup B is fully Max-bundled via opusplan.** Here's the detail.
+The short answer: **Setup A uses Fable advisor + Opus driver (both Max-bundled in interactive sessions). Setup B is fully Max-bundled via opusplan + Opus advisor.** Here's the detail.
 
 ### 1M context is free on Max — no API premium
 
@@ -136,7 +149,7 @@ Credit allocations: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. **No rollover.*
 
 ### What this means for the lanes
 
-- **Setup A — Premium (Fable planner + Opus driver):** Opus 4.6 max driver runs on your Max subscription. Fable 5 planner runs via `claude --model claude-fable-5 --print` (free during trial through June 22; post-trial uses headless credit pool). GPT-5.5 xhigh reviewer is on your ChatGPT subscription.
+- **Setup A — Premium (Fable advisor + Opus driver):** Fable 5 advisor via `advisorModel: "fable"` in project settings — interactive session, Max-bundled. Opus 4.6 max driver on Max. GPT-5.5 xhigh reviewer on ChatGPT subscription.
 - **Setup B — Saver (OpusPlan):** **fully Max-bundled.** `opusplan` uses Opus (plan mode) + Sonnet (execute mode), both at 200K context — no `[1m]` variants, no credit drain. This is why Setup B now recommends `opusplan` instead of the old `sonnet[1m]` pin (#390).
   - **⚠️ Avoid `sonnet[1m]`:** Sonnet with 1M context draws from your usage credits pool ($3/$15 per Mtok), NOT your Max subscription. The `/model` picker shows this explicitly. Plain `sonnet` (200K) or `opusplan` stays on Max.
 - **Reviewer (GPT-5.5 xhigh) in both lanes:** billed against your OpenAI account, completely separate from Anthropic.
