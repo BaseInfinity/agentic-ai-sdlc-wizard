@@ -265,6 +265,9 @@ jobs:
       - name: Run Cowork plugin drift tests
         run: ./tests/test-cowork-drift.sh
 
+      - name: Run skill graduation tests
+        run: ./tests/test-skill-graduations.sh
+
   # Clean up old bot comments on PR push (keeps PRs tidy)
   # Also runs on workflow_dispatch (no-op) so branch protection doesn't block auto-merge.
   cleanup-old-comments:
