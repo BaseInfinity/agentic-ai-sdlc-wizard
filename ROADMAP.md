@@ -22,10 +22,10 @@ Add entries when a candidate is mid-evidence (one signal exists but doesn't yet 
 | Idea | Why parked | Revisit trigger | Expiry | Source |
 |---|---|---|---|---|
 | Default to Opus 4.6 1M context (not 200K) | Maintainer hit this: project `settings.json` pinned `claude-opus-4-6` (200K) instead of the `/model` default which gives 1M on Max. Users should get 1M by default; allow opt-out to 200K. Pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` for 1M. | Second user reports same config trap OR #403 model-config cleanup lands | 2026-07-11 | v1.82.0 session 2026-06-11 |
-| Confidence Ramp Pattern for SDLC skill | Workflow: Opus researches issues → batch-consult Fable advisor → build 95%+ confidence task list → `/goal` churn. Trialing on #395/#403/#391 model-config batch. If clean (no CI failures, no review findings), graduate to wizard doc as a new SDLC phase. | Model-config batch ships clean | 2026-07-11 | v1.82.0 triage session 2026-06-11 |
-| Advisor auto-fallback in SDLC skill | When `advisor()` fails, the SDLC skill should automatically spawn a Fable subagent as fallback — proved in v1.82.0 triage (batch-reviewed 4 issues, caught #395 already fixed). Currently this pattern lives only in private memory; needs to be in `skills/sdlc/SKILL.md` so every project gets it. Also: auto-try advisor before every plan, not just when user asks. | Confidence ramp trial ships clean | 2026-07-11 | v1.82.0 triage session 2026-06-11 |
+| Confidence Ramp Pattern for SDLC skill | **TRIGGER FIRED 2026-06-11.** Workflow: Opus researches issues → batch-consult Fable advisor → build 95%+ confidence task list → `/goal` churn. Trialing on #395/#403/#391 model-config batch. If clean (no CI failures, no review findings), graduate to wizard doc as a new SDLC phase. | Model-config batch ships clean | 2026-07-11 | v1.82.0 triage session 2026-06-11 |
+| Advisor auto-fallback in SDLC skill | **TRIGGER FIRED 2026-06-11.** When `advisor()` fails, the SDLC skill should automatically spawn a Fable subagent as fallback — proved in v1.82.0 triage (batch-reviewed 4 issues, caught #395 already fixed). Currently this pattern lives only in private memory; needs to be in `skills/sdlc/SKILL.md` so every project gets it. Also: auto-try advisor before every plan, not just when user asks. | Confidence ramp trial ships clean | 2026-07-11 | v1.82.0 triage session 2026-06-11 |
 | Memory audit + repo efficiency pass with Fable | Run Memory Audit Protocol on private memory files — promote portable lessons, delete stale entries. Then: Fable batch-review the full repo (SKILL.md files, hooks, wizard doc) for efficiency, dead code, stale references, and consolidation opportunities. Goal: build a 95% confidence task list of cleanup items that can be worked in parallel. | Next triage session | 2026-07-11 | v1.82.0 triage session 2026-06-11 |
-| Sync AI Setup Lanes to Claude-family sibling wizards | `claude-gdlc-wizard` (v0.2.2) and `claude-rdlc-wizard` (v0.6.1) have stale 69-70 line AI_SETUP_LANES.md vs sdlc-wizard's 217 lines. Missing: 3-lane structure (Premium/Saver/Lite), advisor fallback escalation, Fable effort guidance, usage signals, autocompact cross-ref. Each needs a tailored port — gdlc is game-dev domain, rdlc is research domain. Codex/xdlc/ldlc out of scope (different ecosystem). When people run `/update` in those repos they should get the same Premium lane experience. | Next release of either sibling | 2026-07-11 | v1.82.0 triage session 2026-06-11 |
+| ~~Sync AI Setup Lanes to Claude-family sibling wizards~~ | **DONE 2026-06-11.** gdlc v0.3.0, rdlc v0.7.0 shipped with AI Setup Lanes v2. Cowork plugin port in PR #410. Originally: `claude-gdlc-wizard` (v0.2.2) and `claude-rdlc-wizard` (v0.6.1) have stale 69-70 line AI_SETUP_LANES.md vs sdlc-wizard's 217 lines. Missing: 3-lane structure (Premium/Saver/Lite), advisor fallback escalation, Fable effort guidance, usage signals, autocompact cross-ref. Each needs a tailored port — gdlc is game-dev domain, rdlc is research domain. Codex/xdlc/ldlc out of scope (different ecosystem). When people run `/update` in those repos they should get the same Premium lane experience. | Next release of either sibling | 2026-07-11 | v1.82.0 triage session 2026-06-11 |
 
 > **Maintenance rule:** during quarterly ROADMAP triage, prune any row past expiry. Logged removals go in the commit message (`docs(roadmap): prune parking lot — <N> expired entries`) so deletions are traceable.
 
@@ -204,7 +204,7 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 
 | Project | Repo | Status |
 |---------|------|--------|
-| SDLC Wizard itself | BaseInfinity/claude-sdlc-wizard | Dogfooded, v1.64.0 |
+| SDLC Wizard itself | BaseInfinity/claude-sdlc-wizard | Dogfooded, v1.83.0 |
 | Codex SDLC Adapter | BaseInfinity/codex-sdlc-wizard | v0.7.x, shipped with SDLC workflow |
 | GDLC Wizard (games sibling) | BaseInfinity/claude-gdlc-wizard | v0.2.x, persona-driven playtest cycles |
 | _(add as projects are marked)_ | | |
@@ -315,72 +315,3 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 | 347 | Goal-mode checkpoint workflow (Codex `$gdlc` equivalent) — **CORRECTED 2026-05-24: native `/goal` exists, scope shrunk to ~30-line skill wrapper** | GH issue #347 asks whether Claude Code has a native primitive for long-running goal-bound work (Codex `$sdlc + $gdlc` pattern with persistent constraints, checkpoint cadence, explicit stop boundaries). **2026-05-23 research was WRONG** — claude-code-guide subagent said no native primitive, but CC **v2.1.139 shipped native `/goal`** (confirmed via raw changelog curl; docs at [code.claude.com/docs/en/goal.md](https://code.claude.com/docs/en/goal.md); follow-up fixes v2.1.140 hook-disabled hang + v2.1.143 subagent race). Corrected research at [`.reviews/347-goal-mode-research-CORRECTED.md`](.reviews/347-goal-mode-research-CORRECTED.md). **What `/goal` does:** session-scoped, evaluator-driven (Haiku default judges transcript after each turn yes/no), survives `--resume` but not `/clear`, no disk writes, no native turn/time cap. UX = `/goal <condition>` + `/goal` (status) + `/goal clear`. **Old verdict OBE.** **Corrected scope = ~30-line skill wrapper in existing `/sdlc` (NOT a `GOAL.md` template — `/goal` writes nothing to disk).** Per [`.reviews/347-goal-mode-research-CORRECTED.md`](.reviews/347-goal-mode-research-CORRECTED.md), the wizard should add: (a) **pre-flight checklist** — workspace trusted, hooks not disabled at any settings layer, CC ≥ v2.1.143; (b) **condition-writing guidance** mirroring SDLC reporting standards (measurable end state + check + constraints + hard turn/time bound since `/goal` has no native cap); (c) **compose-with-hooks note** — `UserPromptSubmit`/`SessionStart`/`PreCompact` fire normally inside the goal loop, so `sdlc-prompt-check.sh` + `precompact-seam-check.sh` keep gating each turn; (d) **resume caveat** — `--resume` resets turn/time counters; (e) **anti-pattern callout** — don't use `/goal` for "doneness" the evaluator can't see in the transcript (evaluator can't call tools). **Status:** DONE 2026-05-24 (PR #351, v1.76.0 — `/goal` wrapper section added to `/sdlc` skill + `/update` skill changelog entry; followed by PR #355 v1.77.0 adding HIGH-95% confidence gate + DLC-binding requirement + condition-as-contract guidance). **Original 5-step plan + `GOAL.md` template scaffolding OBE.** **Meta-lesson captured in CORRECTED doc:** require explicit citation of an authoritative source (docs index, raw changelog grep) before accepting a "feature does not exist" claim — negative claims are easier to fake than positive ones. **Process gap also caught:** auto-update PR workflow stopped flagging features at CC v2.1.118 (2026-04-23, last PR #210) because #231 Phase 3d (v1.54.0) gutted the in-CI LLM-ranker to $0. Manual replacement (`claude --print --allowedTools "WebFetch,Read,Bash" "$(cat .github/prompts/analyze-release.md)"`) was supposed to run weekly on Max — it didn't, which is how `/goal` slipped past unnoticed for ~5 weeks. See #350 for the cadence fix. |
 | 350 | CC feature-discovery cadence — replacement-for-#231 ranker has no enforced cadence | **Process gap discovered 2026-05-24 via #347 correction.** #231 Phase 3d (v1.54.0, 2026-04-29) deleted the in-CI Claude ranker from `weekly-update.yml` to take it to $0/week. The fallback was "maintainer runs `claude --print "$(cat .github/prompts/analyze-release.md)"` weekly on Max." That ran zero times in 5 weeks. Consequence: native CC `/goal` shipped in v2.1.139 (~mid-May) and was missed until a user asked a related question 2026-05-24 — wizard then published wrong research saying "no /goal exists." 39 CC versions accumulated since the last auto-PR (v2.1.118 → v2.1.150). **Scope (Actionable now, low-cost cleanup):** (a) restore a thin cron — `weekly-update.yml` still runs detection ($0 GH API call); add a single follow-up step that opens a "CC version drift" GitHub issue when our `<!-- SDLC Wizard Version -->` baseline is >5 minor versions behind latest npm — pure GitHub API, no LLM, no API spend; (b) the issue body links the maintainer to the on-Max command + the changelog URL + a one-line "what to do" reminder; (c) session-start `instructions-loaded-check.sh` already has the staleness nudge (#196 — "N minor versions behind") — verify it actually fires when the gap is ≥3 minor AND link to the analyze-release runbook in the loud branch. **Why this beats #85 Phase 2** (which we killed 2026-05-24): #85 Phase 2 was "auto-rank features in CI via LLM" — expensive and conflicted with #231. This is "open a stale-baseline issue when we detect drift" — cheap, GH API only, just a maintainer reminder. **Status:** DONE 2026-05-25 (PR #354, v1.77.0 — `.github/workflows/cc-version-drift.yml` ships: Mon 09:30 UTC cron + workflow_dispatch, `scripts/cc-drift-check.sh` SemVer-delta logic, machine-readable issue marker for idempotent edits, only re-opens closed issues when delta WIDENED. Verified live 2026-05-25 via manual workflow_dispatch on main: ran clean, "Open or update tracking issue" step SKIPPED — silent when no drift, as designed). Paired with #347 in same release arc. |
 
-## Review Pipeline
-
-### Now
-
-- Keep local review loop as the default quality bar: Claude self-review first, then local Codex `xhigh` for independent cross-model review on substantial changes.
-- Keep GitHub PR automation on the existing Claude review pipeline so SDLC checks continue to work.
-- Pin the GitHub PR reviewer to `claude-opus-4-7` for maximum current Claude review quality.
-- Enable Codex GitHub review manually and use it on high-risk PRs first rather than every PR.
-
-### Next: Codex vs Claude Review Experiment
-
-- Evaluate the next 10-20 non-trivial PRs.
-- Use the current Claude PR review on all of them.
-- Manually trigger Codex review on epic/high-risk PRs with `@codex review`.
-- Track for each PR:
-  - unique findings from Claude
-  - unique findings from Codex
-  - false positives / low-value noise
-  - merge delay / workflow friction
-  - whether findings were severe enough to change the merge decision
-  - relative cost and review frequency
-
-### Decision Gate
-
-- If Codex consistently finds higher-value issues with acceptable noise, promote it from optional cross-reviewer to a first-class review provider.
-- If Claude remains better for SDLC/process/testing guidance, keep Claude as the default PR reviewer and use Codex only as a selective second opinion.
-- If both are valuable, design a graded review policy instead of double-running on every PR.
-
-### Future Work
-
-- Add a dedicated PR label such as `cross-review` or `epic-review` for elevated review requirements.
-- Make the PR review layer provider-swappable instead of coupling to a Claude-specific markdown format.
-- Move toward a normalized review artifact or check-run parser so Claude and Codex can plug into the same automation.
-- Revisit whether default review should be single-provider, dual-provider for labeled PRs, or manual Codex-only cross-review.
-
-## Item 13.5: Live-Fire CI Job Audit
-
-Every CI workflow/job must succeed at least once post-changes before distribution. Current gaps:
-
-| Job/Trigger | Last Green | Gap | Action |
-|---|---|---|---|
-| `e2e-full-evaluation` (merge-ready label) | Mar 28 (PR #102) | Bug found: missing `git remote add origin` in Tier 2 init | VERIFIED — fix merged, 5-trial Tier 2 passed in 9m5s |
-| `weekly-update.yml` schedule trigger | Mar 27 (manual dispatch) | Schedule trigger untested since label fix | VERIFIED — dispatch passed Mar 27 |
-| `monthly-research.yml` schedule trigger | Mar 27 (manual dispatch) | Schedule trigger passed Mar 27 | VERIFIED — dispatch passed Mar 27 |
-| Stale `ci-autofix.yml` (ID 232420762) | Never (dead workflow) | Orphaned after rename to ci-self-heal.yml | DONE — disabled Mar 28, ci-self-heal.yml deleted Mar 31 |
-| Node.js 20 deprecation | N/A | `actions/checkout@v4` + `oven-sh/setup-bun` will be forced to Node 24 on June 2, 2026 | Moved to Next Release (#93) |
-
-## Back Burner
-
-- ~~Node.js 20 deprecation~~ → moved to Next Release as #93 (deadline approaching)
-- ~~Chaos/Resilience Testing~~ **KILLED 2026-05-24** — 1.8 months back-burner since 2026-03-30, no concrete escaped defect points at fault-injection-shaped gaps, mutation tests + scoreboard + local shepherd already cover the practical risk surface. Per [`.reviews/roadmap-prio-codex.md`](.reviews/roadmap-prio-codex.md) kill list.
-- ~~Agent-agnostic SDLC~~ **TRACKED ELSEWHERE 2026-05-24** — adapter/sibling strategy, not claude-sdlc-wizard work. Codex done (`codex-sdlc-wizard`), OpenCode in progress (`opencode-sdlc-wizard`). Any future adapter would be its own sibling repo. Per [`.reviews/roadmap-prio-codex.md`](.reviews/roadmap-prio-codex.md) excise list.
-- ~~Subagent Model Compliance Audit~~ **KILLED 2026-05-24** — prototype script `scripts/audit-subagent-models.sh` deleted via #236 orphan sweep 2026-05-05 after sitting 3+ months with 0 references and no demand signal. If a user reports the Haiku-4.5 routing issue, restore from git history. Per [`.reviews/roadmap-prio-codex.md`](.reviews/roadmap-prio-codex.md) kill list.
-
-## Monthly Research #84 Triage (March 2026)
-
-| # | Recommendation | Verdict | Notes |
-|---|---------------|---------|-------|
-| 1 | Extended thinking for planning | Skip | Already covered: Recommended Effort Level section + `effort: high` frontmatter |
-| 2 | Sub-agent TDD hooks | Absorb into #45 | `/agents` Subagent Exploration already covers this research |
-| 3 | CLAUDE.md best practices | Done | #43 + #25 + setup wizard Step 8 CLAUDE.md generation |
-| 4 | Onboarding realism | Done | #31 (blank repo) + #22 (setup wizard) + #25 (docs audit) |
-| 5 | Adversarial review framing | Done | Cross-model review protocol IS adversarial framing |
-| 6 | Vibe coding positioning | New #54 | Prototype mode — relaxed SDLC for rapid iteration |
-| 7 | Prompt injection resistance | Skip | Out of scope — wizard is a dev process tool, not runtime security |
-| 8 | Multi-agent SDLC docs | Absorb into #45 + Back Burner | Already tracked in agent-agnostic SDLC |
-| 9 | Competitive audit updates | Done | #8 + weekly auto-scan covers this |
-
-**Result:** 4 already done, 2 absorbed into existing items, 1 new unprioritized (#54), 2 skipped.
