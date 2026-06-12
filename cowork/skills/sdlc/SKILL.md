@@ -139,7 +139,7 @@ PROTOCOL is universal across domains; only `review_instructions` and `verificati
 1. **Preflight** (`.reviews/preflight-{review_id}.md`) — what you already checked: `/code-review` passed, tests passing, manual verifications, known limits. Reduces reviewer findings to 0-1/round.
 2. **Mission-first handoff** (`.reviews/handoff.json`) — required keys: `"review_id"`, `"status": "PENDING_REVIEW"`, `"round": 1`, `"mission"`/`"success"`/`"failure"` (without them you get "looks good"), `"files_changed"`, `"verification_checklist"` (verification checklist with file:line refs — NOT generic), `"review_instructions"`, `"preflight_path"`. Optional `"pr_number":` opts into PreCompact self-heal (#209: PR MERGED → implicit CERTIFIED).
 3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `xhigh`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; append `< /dev/null` always. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; `run_in_background: true` avoids the Bash 10-min (`600000` ms) `timeout` cap that force-kills foreground codex (multi-artifact bundles take 5–30 min). xhigh 1–30 min; wrapper's `STALL_SECONDS=1800` is the real control. Heartbeat: `scripts/codex-review-with-progress.sh`. Foreground burned 70 min on a 7-min review (#364).
-4. **Dialogue loop:** per-finding response (`{"finding": "1", "action": "FIXED|DISPUTED|ACCEPTED", "summary": "..."}` in `.reviews/response.json`). Bump round, set status `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. No new findings unless P0."
+4. **Dialogue loop:** per-finding response (`{"finding": "1", "action": "FIXED|DISPUTED|ACCEPTED", "summary": "..."}` in `.reviews/response.json`). Bump round, set status `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. No new findings unless P0." **NEVER unilaterally dismiss** — always run the recheck. It's a conversation: the reviewer may accept your dispute or counter with evidence you missed.
 
 **Convergence:** 2 rounds sweet spot, 3 max. After 3 NOT CERTIFIED → escalate.
 
@@ -165,7 +165,7 @@ Standard pattern: `*_DOCS.md` — living documents that grow with the feature (`
 4. No `*_DOCS.md` exists and feature touches 3+ files → create one
 5. Project has `ROADMAP.md` → mark items done, add new items (ROADMAP feeds CHANGELOG)
 
-`/claude-md-improver` audits CLAUDE.md structure. Run it periodically. It does NOT cover feature docs — the SDLC workflow handles those.
+`/claude-md-improver` audits CLAUDE.md structure periodically. Does NOT cover feature docs.
 
 ## CI Feedback Loop — Local Shepherd
 
@@ -175,7 +175,7 @@ Mandatory steps:
 1. Push to remote
 2. `gh pr checks --watch`
 3. **Read CI logs whether pass or fail** (`gh run view <RUN_ID> --log`, not just `--log-failed`). Passing CI hides warnings, skipped steps, degraded scores
-4. **Cross-model audit the CI logs** — pipe to a tmp file, run `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access "<audit prompt>" < /dev/null` (always append `< /dev/null` — stdin-hang fix) with *"Audit for silent failures, skipped tests, degraded metrics, warnings-that-should-be-errors."* Tier 1 + Tier 2 separately
+4. **Cross-model audit the CI logs** — same `codex exec` pattern (see Cross-Model Review §3). Prompt: *"Audit for silent failures, skipped tests, degraded metrics, warnings-that-should-be-errors."* Tier 1 + Tier 2 separately
 5. CI fails → diagnose, fix, push (max 2 attempts)
 6. CI passes → `gh api repos/OWNER/REPO/pulls/PR/comments` for review feedback
 7. Implement valid suggestions (bugs, perf, missing error handling, dedup, coverage). Skip opinions/style. Max 3 iterations
