@@ -56,6 +56,7 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-agents-md-interop.sh && \
    ./tests/test-self-pr-review-skip.sh && \
    ./tests/test-cowork-drift.sh && \
+   ./tests/test-skill-graduations.sh && \
    ./tests/e2e/run-simulation.sh && \
    ./tests/e2e/test-deterministic-checks.sh && \
    ./tests/e2e/test-scenario-rotation.sh && \
@@ -205,6 +206,7 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 ./tests/test-degradation-detection.sh
 ./tests/test-local-shepherd.sh
 ./tests/test-cowork-drift.sh
+./tests/test-skill-graduations.sh
 ./tests/e2e/run-simulation.sh
 ./tests/e2e/test-deterministic-checks.sh
 ./tests/e2e/test-scenario-rotation.sh
