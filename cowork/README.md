@@ -21,6 +21,16 @@ This plugin ships skills only. You get the methodology guidance; enforcement rel
 
 The `/setup` and `/update` skills are CLI-specific — they read version markers, write hooks to `.claude/`, and run shell commands. These don't translate to Cowork's sandboxed environment. Use the full wizard via `npx agentic-sdlc-wizard init` in a Claude Code session if you need setup/update.
 
+### CLI-Dependent Sections in the SDLC Skill
+
+The `/sdlc` skill references shell tooling you may not have in Cowork:
+
+- **Cross-model review** (`codex exec`) — requires Codex CLI + OpenAI API key + shell access. In Cowork, skip this or use ChatGPT/Codex web manually as your cross-model check.
+- **CI shepherd** (`gh pr`, `git push`) — requires terminal. In Cowork, these steps happen outside your session.
+- **`/code-review`** — works in Cowork if the plugin is loaded; runs against your session context.
+
+The methodology (plan → TDD → self-review → confidence check) is universal. The tooling commands are Claude Code shortcuts for steps you can do manually in any surface.
+
 ## Installation
 
 ### From GitHub (recommended)
