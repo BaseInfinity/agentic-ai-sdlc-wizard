@@ -35,6 +35,7 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-degradation-detection.sh && \
    ./tests/test-doc-consistency.sh && \
    ./tests/test-usage-diagnostics.sh && \
+   ./tests/test-model-config-batch.sh && \
    ./tests/test-api-feature-detection.sh && \
    ./tests/test-memory-audit-protocol.sh && \
    ./tests/test-community-paths.sh && \
