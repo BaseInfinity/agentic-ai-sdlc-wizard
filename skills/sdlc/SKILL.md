@@ -255,7 +255,7 @@ Per-user memory at `~/.claude/projects/<proj>/memory/` accumulates private learn
 - `type: project` → manual review (mixed state + portable lesson)
 - `type: feedback` → manual review (mixed personal preference + portable rule)
 
-**Destinations for promote entries** (no new files): tool/platform gotchas → `SDLC.md` `## Lessons Learned`. Testing → `TESTING.md`. Tool quirks tied to a skill → that `SKILL.md`. Process rules → `CLAUDE.md`.
+**Destinations** (no new files): gotchas → `SDLC.md`. Testing → `TESTING.md`. Skill quirks → that `SKILL.md`. Process rules → `/sdlc`. **Memory that's a process rule = /sdlc gap — use /feedback.**
 
 **Tracking:** `promoted_to: <path>` in the memory file's YAML frontmatter; later audits skip already-promoted entries.
 
