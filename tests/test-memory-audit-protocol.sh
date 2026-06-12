@@ -46,7 +46,7 @@ test_protocol_section_exists() {
 
 test_protocol_subsections_present() {
     local missing=""
-    for keyword in "When to run" "Rule-based denylist" "Destinations for" "Tracking" "Human gate"; do
+    for keyword in "When to run" "Rule-based denylist" "Destinations" "Tracking" "Human gate"; do
         if ! grep -qF "$keyword" "$SKILL"; then
             missing="${missing:+${missing}, }$keyword"
         fi
