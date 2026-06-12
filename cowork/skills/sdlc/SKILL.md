@@ -102,7 +102,11 @@ State your confidence before presenting an approach:
 | FAILED 2x | Something's wrong | Codex for fresh perspective; if still stuck, STOP | **`/effort max` now** |
 | CONFUSED | Can't diagnose | Codex; if still confused, STOP and describe | **`/effort max` now** |
 
-**Dynamic effort bumping is NOT optional.** "Consider max effort" is the same as "ignore this." Bump BEFORE the next attempt, not after a third failure.
+**Effort bumping is NOT optional.** Bump BEFORE the next attempt, not after a third failure.
+
+**Confidence ramp:** Opus researches → Fable batch review → 95% list → /goal TDD → Codex check.
+
+**Advisor:** `advisor()` before plans; if down, spawn Fable subagent.
 
 ## Plan Mode
 
@@ -132,7 +136,7 @@ The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confi
 
 ## Cross-Model Review (REQUIRED for High-Stakes)
 
-**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI (`npm i -g @openai/codex`) + OpenAI API key. **Reviewer at flagship tier (#233):** even on `opusplan` (Sonnet driver), reviewer runs `gpt-5.5` xhigh — adversarial diversity is the point.
+**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI + OpenAI API key. **Reviewer:** `gpt-5.5` xhigh — adversarial diversity.
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 

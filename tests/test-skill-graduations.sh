@@ -30,18 +30,18 @@ else
   fail "confidence ramp missing batch review step"
 fi
 
-# Test 3: Mentions the 95% threshold before /goal
-if grep -q "95%.*goal\|95%.*confidence.*goal\|goal.*95%" "$SKILL"; then
-  pass "confidence ramp gates /goal on 95%"
+# Test 3: Confidence ramp line includes /goal and Codex check
+if grep -qi "confidence ramp" "$SKILL" | head -1 && grep -i "confidence ramp" "$SKILL" | grep -q "/goal" && grep -i "confidence ramp" "$SKILL" | grep -q "Codex"; then
+  pass "confidence ramp includes /goal + Codex check"
 else
-  fail "confidence ramp missing 95% /goal gate"
+  fail "confidence ramp missing /goal or Codex check on the ramp line"
 fi
 
 echo ""
 echo "--- Advisor Auto-Fallback ---"
 
 # Test 4: SKILL.md documents advisor fallback
-if grep -q "advisor.*fallback\|advisor.*unavailable\|fallback.*advisor" "$SKILL"; then
+if grep -qi "advisor.*if down\|advisor.*fallback\|advisor.*unavailable\|fallback.*advisor" "$SKILL"; then
   pass "SKILL.md documents advisor fallback"
 else
   fail "SKILL.md missing advisor fallback"

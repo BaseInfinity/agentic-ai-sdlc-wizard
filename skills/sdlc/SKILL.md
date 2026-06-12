@@ -104,7 +104,9 @@ State your confidence before presenting an approach:
 
 **Effort bumping is NOT optional.** Bump BEFORE the next attempt, not after a third failure.
 
-**Confidence ramp (multi-issue triage):** Opus researches → batch-consult Fable advisor → build 95%+ list → TDD each.
+**Confidence ramp:** Opus researches → Fable batch review → 95% list → /goal TDD → Codex check.
+
+**Advisor:** `advisor()` before plans; if down, spawn Fable subagent.
 
 ## Plan Mode
 
@@ -134,7 +136,7 @@ The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confi
 
 ## Cross-Model Review (REQUIRED for High-Stakes)
 
-**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI (`npm i -g @openai/codex`) + OpenAI API key. **Reviewer:** `gpt-5.5` xhigh — adversarial diversity is the point. **Advisor fallback:** if `advisor()` is unavailable, spawn a Fable subagent (`model: "fable"`) as the planning reviewer.
+**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI + OpenAI API key. **Reviewer:** `gpt-5.5` xhigh — adversarial diversity.
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
