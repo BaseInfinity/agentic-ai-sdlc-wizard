@@ -1,0 +1,12 @@
+{
+  "name": "sdlc-wizard-cowork",
+  "version": "1.83.0",
+  "description": "SDLC methodology guidance for Claude Cowork — TDD, planning, self-review, confidence-driven development",
+  "author": {
+    "name": "Stefan Ayala",
+    "url": "https://github.com/BaseInfinity"
+  },
+  "repository": "https://github.com/BaseInfinity/claude-sdlc-wizard",
+  "license": "MIT",
+  "keywords": ["sdlc", "tdd", "code-quality", "methodology", "cowork"]
+}
