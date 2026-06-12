@@ -34,6 +34,7 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-firmware-fixture.sh && \
    ./tests/test-degradation-detection.sh && \
    ./tests/test-doc-consistency.sh && \
+   ./tests/test-usage-diagnostics.sh && \
    ./tests/test-api-feature-detection.sh && \
    ./tests/test-memory-audit-protocol.sh && \
    ./tests/test-community-paths.sh && \

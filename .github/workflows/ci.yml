@@ -199,6 +199,9 @@ jobs:
       - name: Run doc consistency tests
         run: ./tests/test-doc-consistency.sh
 
+      - name: Run usage diagnostics tests (v1.82.0)
+        run: ./tests/test-usage-diagnostics.sh
+
       - name: Run API feature detection tests
         run: ./tests/test-api-feature-detection.sh
 

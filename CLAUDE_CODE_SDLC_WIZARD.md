@@ -3041,7 +3041,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.81.0 -->
+<!-- SDLC Wizard Version: 1.82.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
@@ -3691,9 +3691,20 @@ Practical techniques to reduce token consumption without sacrificing quality.
 
 | Tool | What It Shows | When to Use |
 |------|---------------|-------------|
-| `/usage` | Session total: USD, API time, code changes (aliases: `/cost`, `/stats`) | After a session to review spend |
+| `/usage` | Session cost, plan usage limits, and per-category breakdown (skill, subagent, plugin, MCP server). Aliases: `/cost`, `/stats` | After heavy subagent work, before/after workflow runs, when approaching rate limits |
+| `/status` | Settings panel — version, model, account, connectivity | Confirm setup before starting work |
 | `/context` | What's consuming context window space | When hitting context limits |
 | Status line | Real-time `cost.total_cost_usd` + token counts | Continuous monitoring |
+
+### Reading Usage Signals
+
+These signals are community-observed behavior on paid plans (Max/Team) — not in official CC docs. They are independent dimensions, not a single breakdown. A single session can contribute to all three. Run `/usage` to see the per-category breakdown.
+
+| Signal | What It Means | SDLC Action |
+|--------|---------------|-------------|
+| **Subagent-heavy** | Each subagent runs its own context. The advisor is a separate server-side consultation (full transcript forwarded, different token profile). Explore agents, full Agent delegates, and workflow agents each spawn separate contexts. | Expected in Setup A (Fable advisor fires per-decision). If unexpectedly high: use `subagent_type: "Explore"` for search (lighter), reserve full agents for implementation. |
+| **>150K context** | Sessions staying large between compactions. | **Context-window dependent.** On 1M (Setup A): >150K is expected at 30% compact threshold — the real question is whether the task needed 1M headroom. On 200K (Setup B/C): lower `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` toward 75%. `/compact` between planning and implementation. |
+| **8+ hour sessions** | Long-running sessions accumulate stale context. | `/clear` between unrelated tasks. Split multi-feature work into separate sessions. After committing a PR, start fresh. Background `/loop` sessions count toward this — audit which are still needed. |
 
 ### Reduce Consumption
 
