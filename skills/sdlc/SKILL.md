@@ -120,7 +120,7 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 **Recommended: `claude-opus-4-6` or `opusplan` (Opus 4.6 max).** Pin in settings or `/model` at session start. `opusplan` = Opus Plan Mode + Sonnet execute — both Max-bundled. Persist effort: `CLAUDE_CODE_EFFORT_LEVEL=max` in env block.
 
-**Session gotcha:** `/model` does not survive exit+continue. Re-run at session start or pin in project settings.json.
+**Session gotcha:** `/model` persists by default, but project/managed settings can override. Picker `s` (session-only) does not.
 
 **If pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (1M). **Do not set this for `opusplan`** — 200K, 30% too aggressive.
 
