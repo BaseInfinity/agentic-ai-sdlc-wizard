@@ -17,6 +17,8 @@ $ARGUMENTS
 
 Operational checklist. Full protocol lives in `CLAUDE_CODE_SDLC_WIZARD.md` — read it for depth.
 
+**If the user requests /sdlc, ALWAYS run the full workflow — even for mechanical tasks.** Never silently skip; if overkill, say so and ask.
+
 ## Full SDLC Checklist
 
 Your FIRST action must be a TodoWrite covering every phase below. Compact form (omit `activeForm` to use the subject as the spinner label):
@@ -198,7 +200,7 @@ Mandatory steps:
 
 ## Debugging Workflow (Systematic)
 
-Reproduce → Isolate → Root Cause → Fix → Regression Test. This is the systematic debugging methodology — do not skip steps. Regressions: `git bisect`. Env-specific: check env vars/OS/deps/permissions, reproduce locally, log at the failure point. 2 failed attempts → STOP and ASK USER.
+Reproduce → Isolate → Root Cause → Fix → Regression Test. Do not skip steps. `git bisect` for regressions. 2 failed attempts → STOP and ASK USER.
 
 ## Release Planning (Task Ships a Release)
 
