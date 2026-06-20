@@ -78,26 +78,22 @@ fi
 echo ""
 echo "--- Content Validation Tests ---"
 
-# Test 7: README documents prompt-based hooks
+# Test 7: README documents the enforcement gap (no hooks)
 if [ -f "$PROJECT_ROOT/cowork/README.md" ]; then
-  if grep -qi "prompt.*hook\|prompt-based" "$PROJECT_ROOT/cowork/README.md"; then
-    pass "README documents prompt-based hooks"
+  if grep -qi "hook" "$PROJECT_ROOT/cowork/README.md"; then
+    pass "README mentions hooks (enforcement gap documented)"
   else
-    fail "README does not document prompt-based hooks"
+    fail "README does not mention hooks — must document enforcement gap"
   fi
 else
   fail "README missing (skipping content check)"
 fi
 
-# Test 8: hooks/hooks.json exists and is valid JSON
-if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
-  if python3 -c "import json; json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))" 2>/dev/null; then
-    pass "cowork hooks/hooks.json exists and is valid JSON"
-  else
-    fail "cowork hooks/hooks.json is not valid JSON"
-  fi
+# Test 8: No hooks directory in cowork (deliberate omission)
+if [ ! -d "$PROJECT_ROOT/cowork/hooks" ]; then
+  pass "cowork has no hooks/ directory (deliberate — enforcement gap)"
 else
-  fail "cowork/hooks/hooks.json missing — prompt-based hooks required"
+  fail "cowork has hooks/ directory — Cowork hook support is unverified, remove"
 fi
 
 # Test 9: plugin.json version matches root package.json
@@ -114,111 +110,23 @@ else
 fi
 
 echo ""
-echo "--- Hook Quality Tests ---"
-
-# Test 10: hooks.json has correct wrapper structure (events under "hooks" key)
-if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
-  if python3 -c "
-import json
-d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))
-assert 'hooks' in d, 'missing top-level hooks key'
-assert isinstance(d['hooks'], dict), 'hooks must be a dict'
-" 2>/dev/null; then
-    pass "hooks.json has correct wrapper structure (events under 'hooks' key)"
-  else
-    fail "hooks.json has wrong structure — events must be under 'hooks' key, not at root"
-  fi
-else
-  fail "hooks.json not found (skipping structure check)"
-fi
-
-# Test 11: hooks.json has PreToolUse TDD hook
-if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
-  if python3 -c "
-import json
-d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-ptus=d.get('PreToolUse',[])
-assert any('Write' in h.get('matcher','') or 'Edit' in h.get('matcher','') for h in ptus), 'no Write/Edit matcher'
-assert any(hk.get('type')=='prompt' for h in ptus for hk in h.get('hooks',[])), 'no prompt type'
-" 2>/dev/null; then
-    pass "hooks.json has PreToolUse TDD prompt hook for Write/Edit"
-  else
-    fail "hooks.json missing PreToolUse TDD prompt hook for Write/Edit"
-  fi
-else
-  fail "hooks.json not found (skipping PreToolUse check)"
-fi
-
-# Test 12: hooks.json has UserPromptSubmit SDLC baseline hook
-if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
-  if python3 -c "
-import json
-d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-ups=d.get('UserPromptSubmit',[])
-assert len(ups)>0, 'no UserPromptSubmit hooks'
-assert any(hk.get('type')=='prompt' for h in ups for hk in h.get('hooks',[])), 'no prompt type'
-" 2>/dev/null; then
-    pass "hooks.json has UserPromptSubmit SDLC baseline prompt hook"
-  else
-    fail "hooks.json missing UserPromptSubmit SDLC baseline prompt hook"
-  fi
-else
-  fail "hooks.json not found (skipping UserPromptSubmit check)"
-fi
-
-# Test 13: hooks.json has Stop confidence check hook
-if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
-  if python3 -c "
-import json
-d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-stops=d.get('Stop',[])
-assert len(stops)>0, 'no Stop hooks'
-assert any(hk.get('type')=='prompt' for h in stops for hk in h.get('hooks',[])), 'no prompt type'
-" 2>/dev/null; then
-    pass "hooks.json has Stop confidence check prompt hook"
-  else
-    fail "hooks.json missing Stop confidence check prompt hook"
-  fi
-else
-  fail "hooks.json not found (skipping Stop check)"
-fi
-
-# Test 14: All hooks are prompt type (no command type — Cowork has no shell)
-if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
-  if python3 -c "
-import json
-d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-for event, matchers in d.items():
-  for m in matchers:
-    for h in m.get('hooks',[]):
-      assert h.get('type')=='prompt', f'{event} has non-prompt hook type: {h.get(\"type\")}'
-" 2>/dev/null; then
-    pass "all cowork hooks are prompt type (no shell dependency)"
-  else
-    fail "cowork has non-prompt hook types — Cowork has no shell access"
-  fi
-else
-  fail "hooks.json not found (skipping type check)"
-fi
-
-echo ""
 echo "--- ROADMAP Tracking Tests ---"
 
-# Test 15: ROADMAP has a Cowork enhancement entry
+# Test 10: ROADMAP has a Cowork enhancement entry
 if grep -q "Cowork plugin enhancement" "$PROJECT_ROOT/ROADMAP.md" 2>/dev/null; then
   pass "ROADMAP tracks Cowork plugin enhancement"
 else
   fail "ROADMAP missing Cowork plugin enhancement entry"
 fi
 
-# Test 16: ROADMAP Cowork entry mentions prompt-based hooks specifically
+# Test 11: ROADMAP Cowork entry mentions prompt-based hooks specifically
 if grep -A10 "Cowork plugin enhancement" "$PROJECT_ROOT/ROADMAP.md" 2>/dev/null | grep -qi "prompt.*hook\|prompt-based"; then
   pass "ROADMAP Cowork entry mentions prompt-based hooks"
 else
   fail "ROADMAP Cowork entry does not mention prompt-based hooks — key deliverable missing"
 fi
 
-# Test 17: ROADMAP has Dynamic Workflows evaluation entry
+# Test 12: ROADMAP has Dynamic Workflows evaluation entry
 if grep -q "Dynamic Workflows" "$PROJECT_ROOT/ROADMAP.md" 2>/dev/null; then
   pass "ROADMAP tracks Dynamic Workflows evaluation"
 else
