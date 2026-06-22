@@ -26,6 +26,8 @@ This plugin ships 3 **prompt-based hooks** (`"type": "prompt"`) that enforce SDL
 
 Prompt hooks work by injecting instructions into Claude's context at the right moment — no bash, no shell, no filesystem access needed.
 
+> **Note:** These hooks use the same format as Claude Code plugin hooks and match the spec documented in Anthropic's `cowork-plugin-management` plugin. However, they have not yet been tested in a live Cowork session. If hooks don't fire after install, file a bug on the [wizard repo](https://github.com/BaseInfinity/claude-sdlc-wizard/issues).
+
 ### What's NOT Ported (and Why)
 
 | Claude Code Hook | Why Not Ported |
