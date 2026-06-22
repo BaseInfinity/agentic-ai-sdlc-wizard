@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "SDLC BASELINE: Before proceeding with this task, ensure you follow the SDLC workflow: 1. TodoWrite FIRST (plan tasks before coding). 2. STATE CONFIDENCE: HIGH/MEDIUM/LOW. 3. LOW confidence? ASK USER before proceeding. 4. FAILED 2x? STOP and ASK USER. 5. ALL TESTS MUST PASS BEFORE COMMIT - NO EXCEPTIONS.",
+            "prompt": "SDLC BASELINE: Before proceeding with this task, ensure you follow the SDLC workflow: 1. Plan tasks FIRST (outline steps before coding). 2. STATE CONFIDENCE: HIGH/MEDIUM/LOW. 3. LOW confidence? ASK USER before proceeding. 4. FAILED 2x? STOP and ASK USER. 5. ALL TESTS MUST PASS BEFORE COMMIT - NO EXCEPTIONS.",
             "timeout": 10
           }
         ]
