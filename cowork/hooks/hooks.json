@@ -1,0 +1,39 @@
+{
+  "description": "SDLC Wizard enforcement hooks — prompt-based (no shell access needed)",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "TDD CHECK: Before this file edit, verify: Is there a FAILING TEST for this change? If you are writing implementation code before a failing test exists, STOP. Write the test first (TDD RED), then implement (TDD GREEN). If the test already exists and fails, proceed with the implementation.",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "SDLC BASELINE: Before proceeding with this task, ensure you follow the SDLC workflow: 1. TodoWrite FIRST (plan tasks before coding). 2. STATE CONFIDENCE: HIGH/MEDIUM/LOW. 3. LOW confidence? ASK USER before proceeding. 4. FAILED 2x? STOP and ASK USER. 5. ALL TESTS MUST PASS BEFORE COMMIT - NO EXCEPTIONS.",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "COMPLETION CHECK: Before finishing, verify: 1. Did you state your confidence level (HIGH/MEDIUM/LOW)? 2. Did you read back the files you modified (self-review)? 3. Are all tests passing? 4. Is there any dead code, legacy fallbacks, or scope creep in your changes? If any check fails, address it before presenting your response.",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
