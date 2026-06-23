@@ -1,35 +1,52 @@
 # SDLC Wizard — Cowork Plugin
 
-Methodology guidance for Claude Cowork sessions. Provides the SDLC workflow and community feedback skills without enforcement hooks.
+SDLC enforcement for Claude Cowork sessions. Provides methodology guidance via skills AND prompt-based hooks that enforce discipline without shell access.
+
+> **Claude Cowork** is a separate product from Claude Code — it's a desktop application for knowledge workers. This plugin targets the shared plugin format that works in both Code and Cowork.
 
 ## What You Get
 
-| Skill | Invocation | Purpose |
-|-------|------------|---------|
-| SDLC | `/sdlc-wizard-cowork:sdlc` | Full SDLC workflow: planning, TDD, self-review, CI shepherd |
-| Feedback | `/sdlc-wizard-cowork:feedback` | Privacy-first community feedback and pattern sharing |
+| Component | Invocation / Event | Purpose |
+|-----------|-------------------|---------|
+| SDLC skill | `/sdlc-wizard-cowork:sdlc` | Full SDLC workflow: planning, TDD, self-review |
+| Feedback skill | `/sdlc-wizard-cowork:feedback` | Privacy-first community feedback and pattern sharing |
+| TDD hook | `PreToolUse` (Write/Edit) | Reminds you to write failing tests before implementation |
+| SDLC baseline hook | `UserPromptSubmit` | Injects the SDLC checklist at every prompt |
+| Completion hook | `Stop` | Checks confidence stated, self-review done, tests passing |
 
-## What You Don't Get (and Why)
+## Hooks — Prompt-Based Enforcement
 
-### No Hooks (Enforcement Gap)
+This plugin ships 3 **prompt-based hooks** (`"type": "prompt"`) that enforce SDLC discipline without shell access. These are the Cowork equivalents of Claude Code's bash hooks:
 
-The full SDLC wizard uses 6 lifecycle hooks to enforce discipline at every interaction (TDD reminders before file edits, model/effort checks at session start, etc.). **Cowork hook support is unverified** — the plugin system is shared between Code and Cowork, but hook execution in Cowork sessions has not been confirmed.
+| Cowork Hook | Claude Code Equivalent | Event |
+|-------------|----------------------|-------|
+| TDD check | `tdd-pretool-check.sh` | `PreToolUse` (Write/Edit/MultiEdit) |
+| SDLC baseline | `sdlc-prompt-check.sh` | `UserPromptSubmit` |
+| Completion check | _(new — no CC equivalent)_ | `Stop` |
 
-This plugin ships skills only. You get the methodology guidance; enforcement relies on you following it rather than hooks forcing it.
+Prompt hooks work by injecting instructions into Claude's context at the right moment — no bash, no shell, no filesystem access needed.
 
-### No Setup or Update Skills
+> **Note:** These hooks use the same format as Claude Code plugin hooks and match the spec documented in Anthropic's `cowork-plugin-management` plugin. However, they have not yet been tested in a live Cowork session. If hooks don't fire after install, file a bug on the [wizard repo](https://github.com/BaseInfinity/claude-sdlc-wizard/issues).
 
-The `/setup` and `/update` skills are CLI-specific — they read version markers, write hooks to `.claude/`, and run shell commands. These don't translate to Cowork's sandboxed environment. Use the full wizard via `npx agentic-sdlc-wizard init` in a Claude Code session if you need setup/update.
+### What's NOT Ported (and Why)
 
-### CLI-Dependent Sections in the SDLC Skill
+| Claude Code Hook | Why Not Ported |
+|-----------------|----------------|
+| `instructions-loaded-check.sh` | `InstructionsLoaded` event not available in Cowork plugin hooks |
+| `model-effort-check.sh` | Effort levels are CC-specific; Cowork doesn't expose model config |
+| `precompact-seam-check.sh` | Depends on `.reviews/handoff.json` on disk; Cowork may not have filesystem |
 
-The `/sdlc` skill references shell tooling you may not have in Cowork:
+### What's NOT Included (and Why)
 
-- **Cross-model review** (`codex exec`) — requires Codex CLI + OpenAI API key + shell access. In Cowork, skip this or use ChatGPT/Codex web manually as your cross-model check.
-- **CI shepherd** (`gh pr`, `git push`) — requires terminal. In Cowork, these steps happen outside your session.
-- **`/code-review`** — works in Cowork if the plugin is loaded; runs against your session context.
+**No Setup or Update skills** — these are CLI-specific (read version markers, write hooks to `.claude/`, run shell commands). Use the full wizard via `npx agentic-sdlc-wizard init` in a Claude Code session.
 
-The methodology (plan → TDD → self-review → confidence check) is universal. The tooling commands are Claude Code shortcuts for steps you can do manually in any surface.
+**CLI-dependent SDLC sections** — the `/sdlc` skill references tools you may not have in Cowork:
+
+- **Cross-model review** (`codex exec`) — use ChatGPT/Codex web manually as your cross-model check
+- **CI shepherd** (`gh pr`, `git push`) — these steps happen outside your Cowork session
+- **`/code-review`** — works in Cowork if the plugin is loaded
+
+The methodology (plan → TDD → self-review → confidence check) is universal. The hooks enforce it; the tooling commands are Claude Code shortcuts for steps you can do manually.
 
 ## Installation
 
@@ -51,16 +68,16 @@ claude --plugin-dir ./cowork
 
 This is a **subset** of the [SDLC Wizard](https://github.com/BaseInfinity/claude-sdlc-wizard). The full wizard provides:
 
-- 6 lifecycle hooks (enforcement)
+- 6 lifecycle hooks (command-based, bash)
 - 4 skills (sdlc, setup, update, feedback)
 - CLI installer (`npx agentic-sdlc-wizard init`)
 - npm package distribution
 
-This Cowork plugin provides the 2 portable skills (sdlc + feedback) that work without shell access or hook enforcement.
+This Cowork plugin provides 2 portable skills + 3 prompt-based hooks — enforcement without shell access.
 
 ### Drift Prevention
 
-The skills in this package are **copies** of the canonical skills in `skills/`. A CI test (`tests/test-cowork-drift.sh`) fails if they diverge. When the canonical skills update, the test forces this package to sync.
+The skills in this package are **copies** of the canonical skills in `skills/`. A CI test (`tests/test-cowork-drift.sh`) fails if they diverge. The test also validates hook format (prompt-only, correct events, valid JSON). When the canonical skills update, the test forces this package to sync.
 
 ## For Claude Code Users
 
