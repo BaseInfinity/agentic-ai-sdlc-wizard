@@ -247,8 +247,8 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 | 63 | ~~Evaluate: Batched Codex Release Review~~ KILLED | Per-PR review + release review checklist already covers it. No evidence of gap. The roadmap item itself says "may not be needed" — that's the answer |
 | 65 | ~~Testing Diamond Boundary~~ DONE | Completed in v1.23.0 |
 | 66 | ~~Convert to Plugin Format~~ Absorbed into #89 | Plugin format + marketplace submission combined into single item #89. Plugins now support hooks (updated finding from 2026-04-03 research) |
-| 67 | Add Agent Team Hooks | DEFERRED — Agent Teams requires experimental feature flag (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). Hooks would be inert for most users. Main session enforcement already covers subagent workflows (subagents do what the main session tells them). Revisit when Agent Teams exits experimental. Prove It Gate: can't prove value without GA feature |
-| 68 | ~~Hook `if` Conditionals~~ DONE | PR #151. PreToolUse tdd-pretool-check.sh wired with CC v2.1.85 `if:` field in .claude/settings.json to filter Write/Edit/MultiEdit by path glob |
+| 67 | ~~Add Agent Team Hooks~~ KILLED | Agent Teams API changed in v2.1.178: `TeamCreate`/`TeamDelete` removed, teams are now implicit. Main session enforcement covers subagent workflows. Dynamic Workflows (#425) is the public multi-agent orchestration path. No demand signal for team-specific hooks. |
+| 68 | ~~Hook `if` Conditionals~~ DONE | PR #151. PreToolUse tdd-pretool-check.sh wired with CC v2.1.85 `if:` field in .claude/settings.json to filter Write/Edit/MultiEdit by path glob. Note: file-path `if` matching was buggy until v2.1.176 fix — minimum CC version for reliable path filtering. |
 | 69 | ~~Skill Frontmatter Docs~~ DONE | Completed in v1.23.0 |
 | 70 | ~~`--bare` Docs~~ DONE | Completed in v1.23.0 |
 | 71 | Monitor KAIROS/Coordinator Mode | Proactive always-on agent mode and multi-agent coordination. Wizard's enforcement model (hooks on tool calls) needs to scale to always-on monitoring. Track feature flags, prepare skill content for both contexts. Spawned from #59 research |
