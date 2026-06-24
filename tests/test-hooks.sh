@@ -3541,6 +3541,103 @@ test_goal_confidence_check_silent_when_confidence_present
 test_goal_confidence_check_dlc_binding_warning
 test_goal_confidence_check_silent_on_status_and_clear
 
+# ---- codex-gate-check.sh tests ----
+echo ""
+echo "--- codex-gate-check.sh ---"
+
+test_codex_gate_blocks_commit_without_review() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir"
+    # No .reviews/handoff.json — should block
+    local out
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    rm -rf "$tmpdir"
+    if echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate blocks commit without review artifact"
+    else
+        fail "codex gate should block commit without review artifact (got: $out)"
+    fi
+}
+
+test_codex_gate_allows_commit_with_certified_review() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"CERTIFIED","score":9}' > "$tmpdir/.reviews/handoff.json"
+    local out
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "codex gate allows commit with CERTIFIED review"
+    else
+        fail "codex gate should be silent with CERTIFIED review (got: $out)"
+    fi
+}
+
+test_codex_gate_allows_commit_with_reviewed_status() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"REVIEWED"}' > "$tmpdir/.reviews/handoff.json"
+    local out
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "codex gate allows commit with REVIEWED status"
+    else
+        fail "codex gate should be silent with REVIEWED review (got: $out)"
+    fi
+}
+
+test_codex_gate_silent_on_non_commit_commands() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out
+    out=$(printf '%s' '{"tool_input":{"command":"git status"}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "codex gate silent on non-commit commands"
+    else
+        fail "codex gate should be silent on git status (got: $out)"
+    fi
+}
+
+test_codex_gate_blocks_on_invalid_status() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING"}' > "$tmpdir/.reviews/handoff.json"
+    local out
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: thing\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    rm -rf "$tmpdir"
+    if echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate blocks commit with PENDING status"
+    else
+        fail "codex gate should block with non-certified status (got: $out)"
+    fi
+}
+
+test_codex_gate_skip_override() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && CODEX_GATE_SKIP=1 "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "codex gate respects CODEX_GATE_SKIP=1 override"
+    else
+        fail "codex gate should be silent with CODEX_GATE_SKIP=1 (got: $out)"
+    fi
+}
+
+test_codex_gate_blocks_commit_without_review
+test_codex_gate_allows_commit_with_certified_review
+test_codex_gate_allows_commit_with_reviewed_status
+test_codex_gate_silent_on_non_commit_commands
+test_codex_gate_blocks_on_invalid_status
+test_codex_gate_skip_override
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
