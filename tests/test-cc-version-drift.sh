@@ -262,16 +262,35 @@ test_no_silent_failures() {
         pass "no active || true / || echo failure-suppression (comments allowed)"
         return
     fi
-    # Allow ONE exception: closed-issue marker parsing has a sentinel
-    # default that intentionally falls back when the marker is missing
-    # (first cron run after introducing the marker format). Allow
-    # `|| echo '-1'` ONLY.
+    # Allow sentinel exceptions: closed-issue marker parsing has
+    # defaults that fall back when markers are missing (first cron
+    # run or legacy issues). `|| echo '-1'` for CLOSED_DELTA,
+    # `|| echo 'unknown'` for CLOSED_BASELINE.
     local non_sentinel
-    non_sentinel=$(echo "$hits" | grep -vE "echo '-1'" || true)
+    non_sentinel=$(echo "$hits" | grep -vE "echo '-1'|echo 'unknown'" || true)
     if [ -z "$non_sentinel" ]; then
-        pass "no active || true / || echo (one sentinel echo '-1' exception accepted)"
+        pass "no active || true / || echo (sentinel echo '-1' and echo 'unknown' exceptions accepted)"
     else
         fail "found || true / || echo suppression in active code: $non_sentinel"
+    fi
+}
+
+# ----------------------------------------------------------------------
+# 11. Baseline-aware re-open after bump (bug fix 2026-06-27)
+# ----------------------------------------------------------------------
+
+test_baseline_aware_reopen() {
+    # Bug: after bumping the SDLC.md baseline, the delta resets (e.g.
+    # old: baseline=170, latest=185, delta=15 → closed issue has delta=15;
+    # new: baseline=185, latest=195, delta=10). The workflow compared
+    # 10 > 15 → false → stayed silent. Fix: also extract the baseline
+    # version from the closed issue marker and re-alert when the baseline
+    # has changed (meaning we bumped and the delta is fresh).
+    if grep -qE 'baseline=' "$WF" \
+        && grep -qE 'CLOSED_BASELINE' "$WF"; then
+        pass "workflow extracts baseline from closed issue for baseline-aware comparison"
+    else
+        fail "workflow must extract CLOSED_BASELINE from closed issue marker — delta-only comparison is fooled by baseline bumps"
     fi
 }
 
@@ -300,6 +319,7 @@ test_threshold_default_5
 test_threshold_input_override
 test_invokes_drift_script
 test_drift_script_exists_and_executable
+test_baseline_aware_reopen
 test_no_silent_failures
 
 echo ""

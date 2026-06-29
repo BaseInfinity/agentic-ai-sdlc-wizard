@@ -410,18 +410,18 @@ test_setup_skill_mentions_model_pin_in_optin_prompt() {
     fi
 }
 
-# Repo's tracked .claude/settings.json must match the template it ships —
-# after #198, neither should contain a model or env block.
+# Repo's tracked .claude/settings.json must have advisorModel=fable and
+# NO model pin (pin = 200K; omitting = 1M default on Max per feedback_model_pin_1m).
 test_repo_settings_dogfood_setup_a() {
     local SETTINGS="$REPO_ROOT/.claude/settings.json"
     if [ ! -f "$SETTINGS" ]; then fail ".claude/settings.json not found"; return; fi
     local model advisor
     model=$(jq -r '.model // ""' "$SETTINGS" 2>/dev/null)
     advisor=$(jq -r '.advisorModel // ""' "$SETTINGS" 2>/dev/null)
-    if [ "$model" = "claude-opus-4-6" ] && [ "$advisor" = "fable" ]; then
-        pass ".claude/settings.json dogfoods Setup A (Opus 4.6 + Fable advisor)"
+    if [ "$model" = "" ] && [ "$advisor" = "fable" ]; then
+        pass ".claude/settings.json dogfoods Setup A (no model pin + Fable advisor)"
     else
-        fail ".claude/settings.json should dogfood Setup A (model=$model advisorModel=$advisor)"
+        fail ".claude/settings.json should have no model pin and advisorModel=fable (model=$model advisorModel=$advisor)"
     fi
 }
 
