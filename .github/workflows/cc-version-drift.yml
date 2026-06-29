@@ -224,9 +224,12 @@ jobs:
             --jq '.[0] // {}')
           CLOSED_DELTA=$(echo "$CLOSED" | jq -r '.body // ""' | grep -oE 'delta=[0-9]+' | head -1 | sed 's/delta=//' || echo '-1')
           CLOSED_DELTA="${CLOSED_DELTA:--1}"
-          # Components other than patch always alert again; for patch,
-          # only re-open if PATCH_DELTA > closed delta.
-          if [ "$COMPONENT" != "patch" ] || [ "$PATCH_DELTA" -gt "$CLOSED_DELTA" ]; then
+          CLOSED_BASELINE=$(echo "$CLOSED" | jq -r '.body // ""' | grep -oE 'baseline=v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/baseline=v//' || echo 'unknown')
+          CLOSED_BASELINE="${CLOSED_BASELINE:-unknown}"
+          # Re-alert if: (a) non-patch component, OR (b) delta widened
+          # past the closed issue's delta, OR (c) baseline changed since
+          # the closed issue (meaning we bumped — delta reset is fresh).
+          if [ "$COMPONENT" != "patch" ] || [ "$PATCH_DELTA" -gt "$CLOSED_DELTA" ] || [ "$CLOSED_BASELINE" != "$BASELINE" ]; then
             echo "Creating new tracking issue (closed delta=${CLOSED_DELTA}, current=${PATCH_DELTA}, component=${COMPONENT})"
             gh issue create \
               --repo "${REPO}" \
