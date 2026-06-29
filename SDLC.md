@@ -1,7 +1,7 @@
 <!-- SDLC Wizard Version: 1.83.0 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
-<!-- Claude Code Baseline: v2.1.185 -->
+<!-- Claude Code Baseline: v2.1.195 -->
 <!-- ROADMAP #350: this single-line anchor is the source of truth for cc-version-drift.yml. -->
 <!-- Update both this comment AND the "Claude Code Recommended" row when bumping CC support. -->
 # SDLC Configuration
@@ -13,7 +13,7 @@
 | Wizard Version | 1.83.0 |
 | Last Updated | 2026-06-11 |
 | Claude Code Minimum | v2.1.154+ (required for `opus[1m]` alias resolution); v2.1.105+ for `PreCompact` hook |
-| Claude Code Recommended | v2.1.185+ — hook `if` path-filter fix (v2.1.176), `Tool(param:value)` permission rules (v2.1.178), TUI stability under subagent load (v2.1.183), auto-mode safety hardening (v2.1.183) |
+| Claude Code Recommended | v2.1.195+ — comma-separated hook matcher fix (v2.1.191), hyphenated matcher exact-match fix (v2.1.195), `sandbox.credentials` setting (v2.1.187), `autoMode.classifyAllShell` setting (v2.1.193) |
 | Recommended Model | `claude-opus-4-6` or `opusplan` — run `/model claude-opus-4-6` or `/model opusplan` |
 | Recommended Effort | `max` — persist via `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block |
 
