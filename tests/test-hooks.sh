@@ -1254,6 +1254,99 @@ test_tdd_hook_missing_path() {
     fi
 }
 
+# #436 P0 (matching codex-gate bug class): tdd-pretool-check.sh printed a TDD
+# reminder but never exited 2 — pure prose despite tdd_red being CRITICAL in
+# the SDLC scoring rubric. Fable's proposed mechanism: block writing to src/**
+# unless a test file was touched earlier this session (edit-ordering gate,
+# not full "does a failing test exist" verification — that's out of a bash
+# hook's reach, but ordering is a real, checkable proxy).
+
+test_tdd_gate_blocks_src_write_when_no_test_touched() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"session_id":"sess-block-1","tool_input":{"file_path":"/project/src/app.js"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "test"; then
+        pass "tdd gate BLOCKS (exit 2) src/ write when no test touched yet this session"
+    else
+        fail "tdd gate should exit 2 mentioning test-first, got exit=$exit_code out: $out"
+    fi
+}
+
+test_tdd_gate_allows_src_write_after_test_touched() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local sid="sess-block-2"
+    # First: touch a test file (plants the sentinel)
+    echo "{\"session_id\":\"$sid\",\"tool_input\":{\"file_path\":\"/project/src/__tests__/app.test.js\"}}" \
+        | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" > /dev/null 2>&1
+    # Then: write to src/ in the same session
+    local out exit_code
+    out=$(echo "{\"session_id\":\"$sid\",\"tool_input\":{\"file_path\":\"/project/src/app.js\"}}" \
+        | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ]; then
+        pass "tdd gate allows src/ write after a test file was touched this session"
+    else
+        fail "tdd gate should exit 0 once a test file was touched, got exit=$exit_code out: $out"
+    fi
+}
+
+test_tdd_gate_allows_test_file_writes_unconditionally() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"session_id":"sess-block-3","tool_input":{"file_path":"/project/src/__tests__/app.test.js"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ]; then
+        pass "tdd gate always allows writing test files themselves (exit 0)"
+    else
+        fail "tdd gate should never block a test-file write, got exit=$exit_code out: $out"
+    fi
+}
+
+test_tdd_gate_recognizes_test_patterns() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local fails=0
+    for test_path in "/p/src/foo.test.js" "/p/src/foo.spec.ts" "/p/src/test_foo.py" "/p/src/__tests__/foo.js"; do
+        local sid
+        sid="sess-pattern-$(printf '%s' "$test_path" | tr -cd 'A-Za-z0-9')"
+        echo "{\"session_id\":\"$sid\",\"tool_input\":{\"file_path\":\"$test_path\"}}" \
+            | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" > /dev/null 2>&1
+        local out exit_code
+        out=$(echo "{\"session_id\":\"$sid\",\"tool_input\":{\"file_path\":\"/p/src/impl.js\"}}" \
+            | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+        if [ "$exit_code" -ne 0 ]; then
+            fails=$((fails+1))
+            echo "  [$test_path] did not unlock src/ writes, exit=$exit_code out: $out" >&2
+        fi
+    done
+    rm -rf "$tmpdir"
+    if [ "$fails" -eq 0 ]; then
+        pass "tdd gate recognizes .test./.spec./test_*/__tests__/ as test files"
+    else
+        fail "tdd gate missed $fails test-file naming conventions"
+    fi
+}
+
+test_tdd_gate_no_block_without_session_id() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"tool_input":{"file_path":"/project/src/app.js"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ]; then
+        pass "tdd gate degrades gracefully (no block) without session_id — no way to track ordering"
+    else
+        fail "tdd gate should not block when session_id is absent (can't track state), got exit=$exit_code out: $out"
+    fi
+}
+
 # ---- instructions-loaded-check.sh tests ----
 
 # Test 12: Script exists and is executable
@@ -1924,6 +2017,11 @@ test_tdd_hook_valid_json
 test_tdd_hook_test_file_ok
 test_tdd_hook_other_file_ok
 test_tdd_hook_missing_path
+test_tdd_gate_blocks_src_write_when_no_test_touched
+test_tdd_gate_allows_src_write_after_test_touched
+test_tdd_gate_allows_test_file_writes_unconditionally
+test_tdd_gate_recognizes_test_patterns
+test_tdd_gate_no_block_without_session_id
 test_instructions_hook_exists
 test_instructions_hook_missing_sdlc
 test_instructions_hook_missing_testing
@@ -3587,18 +3685,22 @@ test_goal_confidence_check_silent_on_status_and_clear
 echo ""
 echo "--- codex-gate-check.sh ---"
 
+# #436 P0: the gate must actually DENY the tool call (exit 2), not just print
+# scary text and exit 0. A PreToolUse hook only blocks Claude Code when it
+# exits 2 with the reason on stderr — exit 0 always lets the command through
+# regardless of what's echoed. This is the same bug class the codex gate
+# exists to prevent (a safety check that looks real but doesn't act real).
 test_codex_gate_blocks_commit_without_review() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir"
-    # No .reviews/handoff.json — should block
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if echo "$out" | grep -qi "cross-model review"; then
-        pass "codex gate blocks commit without review artifact"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate BLOCKS (exit 2) commit without review artifact"
     else
-        fail "codex gate should block commit without review artifact (got: $out)"
+        fail "codex gate should exit 2 + mention cross-model review, got exit=$exit_code out: $out"
     fi
 }
 
@@ -3607,13 +3709,14 @@ test_codex_gate_allows_commit_with_certified_review() {
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.reviews"
     printf '{"status":"CERTIFIED","score":9}' > "$tmpdir/.reviews/handoff.json"
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
+    exit_code=$?
     rm -rf "$tmpdir"
-    if [ -z "$out" ]; then
-        pass "codex gate allows commit with CERTIFIED review"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate allows (exit 0) commit with CERTIFIED review"
     else
-        fail "codex gate should be silent with CERTIFIED review (got: $out)"
+        fail "codex gate should exit 0 silent with CERTIFIED review, got exit=$exit_code out: $out"
     fi
 }
 
@@ -3622,26 +3725,28 @@ test_codex_gate_allows_commit_with_reviewed_status() {
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.reviews"
     printf '{"status":"REVIEWED"}' > "$tmpdir/.reviews/handoff.json"
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
+    exit_code=$?
     rm -rf "$tmpdir"
-    if [ -z "$out" ]; then
-        pass "codex gate allows commit with REVIEWED status"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate allows (exit 0) commit with REVIEWED status"
     else
-        fail "codex gate should be silent with REVIEWED review (got: $out)"
+        fail "codex gate should exit 0 silent with REVIEWED review, got exit=$exit_code out: $out"
     fi
 }
 
 test_codex_gate_silent_on_non_commit_commands() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git status"}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git status"}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
+    exit_code=$?
     rm -rf "$tmpdir"
-    if [ -z "$out" ]; then
-        pass "codex gate silent on non-commit commands"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate silent + exit 0 on non-commit commands"
     else
-        fail "codex gate should be silent on git status (got: $out)"
+        fail "codex gate should exit 0 silent on git status, got exit=$exit_code out: $out"
     fi
 }
 
@@ -3650,26 +3755,27 @@ test_codex_gate_blocks_on_invalid_status() {
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.reviews"
     printf '{"status":"PENDING"}' > "$tmpdir/.reviews/handoff.json"
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: thing\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: thing\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if echo "$out" | grep -qi "cross-model review"; then
-        pass "codex gate blocks commit with PENDING status"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate BLOCKS (exit 2) commit with PENDING status"
     else
-        fail "codex gate should block with non-certified status (got: $out)"
+        fail "codex gate should exit 2 with non-certified status, got exit=$exit_code out: $out"
     fi
 }
 
 test_codex_gate_skip_override() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && CODEX_GATE_SKIP=1 "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && CODEX_GATE_SKIP=1 "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
+    exit_code=$?
     rm -rf "$tmpdir"
-    if [ -z "$out" ]; then
-        pass "codex gate respects CODEX_GATE_SKIP=1 override"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate respects CODEX_GATE_SKIP=1 override (exit 0)"
     else
-        fail "codex gate should be silent with CODEX_GATE_SKIP=1 (got: $out)"
+        fail "codex gate should exit 0 silent with CODEX_GATE_SKIP=1, got exit=$exit_code out: $out"
     fi
 }
 
