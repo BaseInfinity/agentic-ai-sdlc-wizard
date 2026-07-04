@@ -2609,7 +2609,7 @@ test_model_effort_check_stale_effort() {
 }
 
 # Test: xhigh is NOT silent — only max is acceptable (#395)
-test_model_effort_check_xhigh_warns() {
+test_model_effort_check_xhigh_silent() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
@@ -2617,10 +2617,48 @@ test_model_effort_check_xhigh_warns() {
     local output
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q "WARNING"; then
-        pass "#395: model-effort-check.sh warns on xhigh (only max acceptable)"
+    if [ -z "$output" ]; then
+        pass "#434: model-effort-check.sh is silent on xhigh (Sonnet 5/Opus 4.8 recommended level, not just max)"
     else
-        fail "#395: xhigh should warn, got: $output"
+        fail "#434: xhigh should be silent (acceptable floor), got: $output"
+    fi
+}
+
+# Same as above but via env var (the persisted path)
+test_model_effort_check_xhigh_env_var_silent() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    echo '{}' > "$tmpdir/.claude/settings.json"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="xhigh" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if [ -z "$output" ]; then
+        pass "#434: CLAUDE_CODE_EFFORT_LEVEL=xhigh is silent (acceptable floor)"
+    else
+        fail "#434: env var xhigh should be silent, got: $output"
+    fi
+}
+
+# RECOMMENDED_MODELS must include Sonnet 5 — it's now the recommended default
+# driver (beats Opus 4.6 on every coding benchmark, ~5x lighter Max quota).
+test_model_effort_check_recommends_sonnet_5() {
+    if grep -qi 'sonnet' "$HOOKS_DIR/model-effort-check.sh"; then
+        pass "#434: model-effort-check.sh recommends Sonnet 5 (new default driver)"
+    else
+        fail "#434: model-effort-check.sh must mention Sonnet in RECOMMENDED_MODELS"
+    fi
+}
+
+# The hook must NOT blanket-recommend persisting max via a shell-rc env var.
+# That advice bit a real user: CLAUDE_CODE_EFFORT_LEVEL=max in .zshrc silently
+# overrode /effort xhigh after switching from Opus 4.6 to Sonnet 5. The hook
+# should point to model-aware guidance instead of a one-size-fits-all env var.
+test_model_effort_check_no_blanket_max_persist_advice() {
+    if grep -qE 'CLAUDE_CODE_EFFORT_LEVEL=max in settings env block' "$HOOKS_DIR/model-effort-check.sh"; then
+        fail "#434: hook must not blanket-recommend persisting max via env var — see AI_SETUP_LANES.md instead"
+    else
+        pass "#434: hook does not blanket-recommend persisting max via env var"
     fi
 }
 
@@ -2714,10 +2752,11 @@ test_model_effort_check_max_env_var_silent() {
     fi
 }
 
-# Test: below-xhigh produces LOUD warning mentioning SDLC compliance + /effort max
-# Per ROADMAP #217: below-xhigh breaks SDLC compliance on Opus 4.8 (shallow reasoning,
-# skipped TDD, dropped self-review). Hook must produce a distinguishable WARNING that
-# recommends /effort max (not just the soft "upgrade available" nudge).
+# Test: below-xhigh produces LOUD warning mentioning SDLC compliance + /effort xhigh
+# Per #434: xhigh is the floor (not max-only) — max is only the Opus 4.6 sweet
+# spot, and blanket-recommending max regressed on Sonnet 5/Opus 4.8. Hook must
+# produce a distinguishable WARNING that recommends /effort xhigh (not just the
+# soft "upgrade available" nudge).
 test_model_effort_check_below_xhigh_loud_warning() {
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -2727,7 +2766,7 @@ test_model_effort_check_below_xhigh_loud_warning() {
         echo "{\"effortLevel\":\"$bad_effort\"}" > "$tmpdir/.claude/settings.json"
         local output
         output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
-        # Must contain: WARNING marker, SDLC mention, explicit /effort max recommendation
+        # Must contain: WARNING marker, SDLC mention, explicit /effort xhigh recommendation
         if ! echo "$output" | grep -q 'WARNING'; then
             fails=$((fails+1))
             echo "  [$bad_effort] missing WARNING marker: $output" >&2
@@ -2736,15 +2775,15 @@ test_model_effort_check_below_xhigh_loud_warning() {
             fails=$((fails+1))
             echo "  [$bad_effort] missing SDLC mention: $output" >&2
         fi
-        if ! echo "$output" | grep -q '/effort max'; then
+        if ! echo "$output" | grep -q '/effort xhigh'; then
             fails=$((fails+1))
-            echo "  [$bad_effort] missing '/effort max' recommendation: $output" >&2
+            echo "  [$bad_effort] missing '/effort xhigh' recommendation: $output" >&2
         fi
         rm -rf "$tmpdir/.claude"
     done
     rm -rf "$tmpdir"
     if [ "$fails" -eq 0 ]; then
-        pass "model-effort-check.sh produces LOUD WARNING + SDLC + /effort max for high/medium/low"
+        pass "model-effort-check.sh produces LOUD WARNING + SDLC + /effort xhigh for high/medium/low"
     else
         fail "model-effort-check.sh LOUD warning has $fails missing markers across high/medium/low"
     fi
@@ -2778,7 +2817,10 @@ test_instructions_loaded_no_duplicate_effort_nudge() {
 
 test_model_effort_check_exists
 test_model_effort_check_stale_effort
-test_model_effort_check_xhigh_warns
+test_model_effort_check_xhigh_silent
+test_model_effort_check_xhigh_env_var_silent
+test_model_effort_check_recommends_sonnet_5
+test_model_effort_check_no_blanket_max_persist_advice
 test_model_effort_check_max_settings_warns_persistence
 test_model_effort_check_max_env_var_silent
 test_model_effort_check_below_xhigh_loud_warning
