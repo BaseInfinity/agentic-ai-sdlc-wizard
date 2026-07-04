@@ -880,6 +880,59 @@ test_cross_model_review_required_not_optional() {
 test_cross_model_review_required_not_optional
 
 # ────────────────────────────────────────────
+# AI Setup Lanes — Sonnet 5 + model-aware effort (July 2026 update)
+# ────────────────────────────────────────────
+
+echo ""
+echo "--- AI Setup Lanes ---"
+
+test_setup_lanes_references_sonnet_5() {
+    local LANES="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$LANES" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    if grep -qE 'Sonnet 5|claude-sonnet-5' "$LANES"; then
+        pass "AI_SETUP_LANES.md references Sonnet 5"
+    else
+        fail "AI_SETUP_LANES.md must reference Sonnet 5 (launched June 30, replaces Sonnet 4.6)"
+    fi
+}
+
+test_setup_lanes_has_model_aware_effort() {
+    local LANES="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$LANES" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    if grep -qE 'xhigh.*Opus 4\.8|Opus 4\.8.*xhigh' "$LANES" \
+        && grep -qE 'high.*Sonnet 5|Sonnet 5.*high' "$LANES"; then
+        pass "AI_SETUP_LANES.md has model-aware effort (xhigh for Opus 4.8, high for Sonnet 5)"
+    else
+        fail "AI_SETUP_LANES.md must recommend effort per model (xhigh for Opus 4.8, high for Sonnet 5)"
+    fi
+}
+
+test_setup_lanes_no_blanket_max() {
+    local LANES="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$LANES" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    if grep -qE 'max.*all models|always.*max|max.*every' "$LANES"; then
+        fail "AI_SETUP_LANES.md must NOT recommend blanket max for all models (max overthinks on Opus 4.8 and Sonnet 5)"
+    else
+        pass "AI_SETUP_LANES.md does not blanket-recommend max for all models"
+    fi
+}
+
+test_setup_lanes_effort_escalation_ladder() {
+    local LANES="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$LANES" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    if grep -qiE 'escalat|ramp|bump.*effort|raise.*effort|ladder' "$LANES"; then
+        pass "AI_SETUP_LANES.md documents effort escalation (start at default, raise when needed)"
+    else
+        fail "AI_SETUP_LANES.md must document effort escalation strategy"
+    fi
+}
+
+test_setup_lanes_references_sonnet_5
+test_setup_lanes_has_model_aware_effort
+test_setup_lanes_no_blanket_max
+test_setup_lanes_effort_escalation_ladder
+
+# ────────────────────────────────────────────
 # Summary
 # ────────────────────────────────────────────
 
