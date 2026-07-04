@@ -4,29 +4,45 @@ Three recommended AI coding setups for this repo. Setups A and B are complete tr
 
 This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
-## Setup A — Claude Premium
+## Setup A — Sonnet 5 + Fable Advisor (Recommended)
 
-| Role | Model |
-|------|-------|
-| **Advisor** | Fable 5 (via `advisorModel: "fable"` in project settings — auto-consults at key decisions) |
-| **Driver** | Opus 4.6 max |
-| **Reviewer** | Codex (GPT-5.5) xhigh |
-| **Escalation** | + Fable 5 review (security, releases, wide-blast architecture only) |
+| Role | Model | Effort |
+|------|-------|--------|
+| **Advisor** | Fable 5 (via `advisorModel: "fable"`) | `high` (server-side) |
+| **Driver** | Sonnet 5 (`claude-sonnet-5`) | `high` default, `/effort xhigh` for hard tasks |
+| **Reviewer** | Codex (GPT-5.5) xhigh | — |
+| **Escalation** | Opus 4.8 xhigh or Fable 5 review | When stuck or high-stakes |
 
-Quality-first lane. Fable 5 advises automatically at key decision points (architecture, complexity, blast-radius) via native `advisorModel` (v2.1.170+), Opus 4.6 max implements (stable, Max-bundled), GPT-5.5 xhigh reviews (cross-family, free on ChatGPT sub, catches blind spots Fable can't see in its own work). Escalate to Fable review for the ~5% of PRs where stakes justify it.
+The new standard. Sonnet 5 beats Opus 4.6 on every coding benchmark (SWE-bench Verified 85.2% vs 80.8%, Terminal-Bench 80.4% vs 65.4%) while using ~5x less Max quota per turn. Fable 5 advises at key decision points via native `advisorModel` (v2.1.170+). GPT-5.5 xhigh reviews cross-family. Escalate to Opus 4.8 xhigh for the hardest debugging or architecture decisions — don't run Opus as the daily driver (burns Max limits 2-3x faster).
 
-**Effort levels:** Opus driver at `max` (standing default). Fable advisor runs at its own effort level server-side. If switching driver to Fable temporarily (fallback), use `/effort high` — Fable `high` already exceeds prior models at `max`. Unset `CLAUDE_CODE_EFFORT_LEVEL` env var if it forces `max`.
+**Effort escalation ladder:** Start at `high` (Sonnet 5's default and sweet spot). Raise to `xhigh` when doing hard debugging, multi-file migrations, or long agent runs. `max` is rarely worth it — doubles cost for marginal gains per CodeRabbit testing.
 
-## Setup B — Claude Saver (OpusPlan)
+**Requires:** Claude Code v2.1.197+ (Sonnet 5 alias resolution), Fable 5 access for advisor.
 
-| Role | Model |
-|------|-------|
-| **Planner** | Opus 4.6 max (via Plan Mode — Shift+Tab) |
-| **Advisor** | Opus 4.6 (via `advisorModel: "claude-opus-4-6"` — compensates for Sonnet driver) |
-| **Driver** | Sonnet (latest, auto execute mode) |
-| **Reviewer** | Codex (GPT-5.5) xhigh |
+## Setup B — Opus 4.6 Stability (Legacy Flagship)
 
-Cost-efficient lane using CC's native `opusplan` alias. Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both 200K context, Max-bundled — no API credit drain. Pin `model: "opusplan"` + `advisorModel: "claude-opus-4-6"` + `CLAUDE_CODE_EFFORT_LEVEL=max` in project settings. The Opus advisor auto-compensates for Sonnet's lighter reasoning at key decision points. GPT-5.5 xhigh is the cross-model reviewer.
+| Role | Model | Effort |
+|------|-------|--------|
+| **Advisor** | Fable 5 (via `advisorModel: "fable"`) | `high` (server-side) |
+| **Driver** | Opus 4.6 (`claude-opus-4-6`) | `max` |
+| **Reviewer** | Codex (GPT-5.5) xhigh | — |
+
+The consistency-first lane. Opus 4.6 is the only model where `max` effort works without overthinking — months of field data, Active through at least Feb 2027, proven predictable. Lower benchmark scores than Sonnet 5 but higher consistency. Choose this when you've tuned prompts to Opus 4.6 behavior and reliability matters more than peak capability.
+
+**Effort:** Opus 4.6 at `max` (no xhigh support — only low/medium/high/max). This is the sweet spot; community reports confirm 4.6 is the only Opus where `max` doesn't over-engineer.
+
+## Setup C — OpusPlan Hybrid (Saver)
+
+| Role | Model | Effort |
+|------|-------|--------|
+| **Planner** | Opus 4.8 (via Plan Mode — Shift+Tab) | `xhigh` |
+| **Advisor** | Fable 5 or Opus 4.8 (via `advisorModel`) | — |
+| **Driver** | Sonnet 5 (auto execute mode) | `high` |
+| **Reviewer** | Codex (GPT-5.5) xhigh | — |
+
+Cost-efficient hybrid using CC's native `opusplan` alias. Opus 4.8 reasons during Plan Mode, Sonnet 5 executes. Max-bundled — no API credit drain. Pin `model: "opusplan"` + `advisorModel: "fable"` in project settings. Sonnet 5 now uses 1M context natively (no `[1m]` suffix needed). GPT-5.5 xhigh is the cross-model reviewer.
+
+**Note:** Opus 4.6 cannot advise Sonnet 5 (rejected in the advisor pairing table). Use Fable 5 or Opus 4.8 as advisor for this lane.
 
 ## When to Use Setup A
 
@@ -54,13 +70,13 @@ Setup B is sufficient for routine work where a Sonnet driver can ship with a str
 - Low-risk methodology edits
 - Mechanical refactors
 
-## Setup C — Claude Lite
+## Setup D — Claude Lite
 
-| Role | Model | Notes |
-|------|-------|-------|
-| **Planner** | You (the user) | Task is pre-planned, no model reasoning needed |
-| **Driver** | Sonnet 4.6 | Same model as Setup B driver — Max-bundled, no extra model to manage |
-| **Reviewer** | None | Blast radius too low for cross-model overhead |
+| Role | Model | Effort | Notes |
+|------|-------|--------|-------|
+| **Planner** | You (the user) | — | Task is pre-planned, no model reasoning needed |
+| **Driver** | Sonnet 5 | `medium` | Max-bundled, ≈ Sonnet 4.6 at high quality |
+| **Reviewer** | None | — | Blast radius too low for cross-model overhead |
 
 The "just do the thing" lane. No TDD enforcement, no cross-model review, no planning phase. You already know what to do — you just need a fast, cheap pair of hands.
 
