@@ -51,7 +51,11 @@ fi
 
 # CUSTOMIZE: Change this pattern to match YOUR source directory
 # Examples: "/src/", "/app/", "/lib/", "/packages/", "/server/"
-if [[ "$FILE_PATH" == *"/src/"* ]]; then
+# Codex review finding (hook-enforcement-436, round 1): "*/src/*" requires a
+# slash BEFORE "src", so a cwd-relative file_path like "src/app.js" (no
+# leading slash) never matched and the whole gate silently no-op'd. Second
+# clause catches the relative form.
+if [[ "$FILE_PATH" == *"/src/"* || "$FILE_PATH" == "src/"* ]]; then
   # #436 gate: block implementation-first edits when no test file has been
   # touched yet this session. Degrades to allow without session_id.
   if [ -n "$SESSION_ID" ]; then

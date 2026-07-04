@@ -25,6 +25,15 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/tdd-pretool-check.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-gate-check.sh"
+          }
+        ]
       }
     ],
     "InstructionsLoaded": [
@@ -58,6 +67,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/precompact-seam-check.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-review-stop-check.sh"
           }
         ]
       }

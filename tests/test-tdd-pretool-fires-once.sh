@@ -43,6 +43,19 @@ invoke() {
     SDLC_WIZARD_CACHE_DIR="$cache" bash "$HOOK" <<<"$payload" 2>/dev/null
 }
 
+# #436 added a src/ edit-ordering gate that blocks (exit 2) when no test file
+# has been touched yet this session — it runs BEFORE the nudge-once logic
+# these tests exercise. Prime the "test touched" sentinel per session/cache
+# so payloads reach the nudge code, same as a real session would after
+# writing its failing test first.
+prime_test_touched() {
+    local cache="$1"
+    local sid="$2"
+    SDLC_WIZARD_CACHE_DIR="$cache" bash "$HOOK" \
+        <<<"{\"tool_input\":{\"file_path\":\"/proj/src/__tests__/prime.test.ts\"},\"session_id\":\"$sid\"}" \
+        > /dev/null 2>&1
+}
+
 SRC_PAYLOAD_A='{"tool_input":{"file_path":"/proj/src/foo.ts"},"session_id":"sess-A"}'
 SRC_PAYLOAD_A2='{"tool_input":{"file_path":"/proj/src/bar.ts"},"session_id":"sess-A"}'
 SRC_PAYLOAD_B='{"tool_input":{"file_path":"/proj/src/baz.ts"},"session_id":"sess-B"}'
@@ -53,6 +66,7 @@ NO_SID_PAYLOAD='{"tool_input":{"file_path":"/proj/src/foo.ts"}}'
 test_first_fire_emits() {
     local cache="$WORKSPACE/cache-1"
     rm -rf "$cache"
+    prime_test_touched "$cache" "sess-A"
     local out
     out=$(invoke "$cache" "$SRC_PAYLOAD_A")
     if echo "$out" | grep -q "TDD CHECK"; then
@@ -66,6 +80,7 @@ test_first_fire_emits() {
 test_second_fire_suppresses() {
     local cache="$WORKSPACE/cache-2"
     rm -rf "$cache"
+    prime_test_touched "$cache" "sess-A"
     invoke "$cache" "$SRC_PAYLOAD_A" > /dev/null
     local out
     out=$(invoke "$cache" "$SRC_PAYLOAD_A2")
@@ -80,6 +95,8 @@ test_second_fire_suppresses() {
 test_different_session_re_emits() {
     local cache="$WORKSPACE/cache-3"
     rm -rf "$cache"
+    prime_test_touched "$cache" "sess-A"
+    prime_test_touched "$cache" "sess-B"
     invoke "$cache" "$SRC_PAYLOAD_A" > /dev/null
     local out
     out=$(invoke "$cache" "$SRC_PAYLOAD_B")
@@ -124,6 +141,7 @@ test_non_src_never_emits() {
 test_non_src_doesnt_consume_sentinel() {
     local cache="$WORKSPACE/cache-6"
     rm -rf "$cache"
+    prime_test_touched "$cache" "sess-A"
     invoke "$cache" "$NON_SRC_PAYLOAD" > /dev/null  # README — should not claim sentinel
     local out
     out=$(invoke "$cache" "$SRC_PAYLOAD_A")
@@ -139,6 +157,8 @@ test_sentinel_isolated_per_cache() {
     local cache_a="$WORKSPACE/cache-7a"
     local cache_b="$WORKSPACE/cache-7b"
     rm -rf "$cache_a" "$cache_b"
+    prime_test_touched "$cache_a" "sess-A"
+    prime_test_touched "$cache_b" "sess-A"
     invoke "$cache_a" "$SRC_PAYLOAD_A" > /dev/null
     local out
     out=$(invoke "$cache_b" "$SRC_PAYLOAD_A")
@@ -153,6 +173,7 @@ test_sentinel_isolated_per_cache() {
 test_concurrency_same_session_emits_once() {
     local cache="$WORKSPACE/cache-8"
     rm -rf "$cache"
+    prime_test_touched "$cache" "sess-A"
     local agg="$WORKSPACE/cache-8-outputs"
     rm -f "$agg"
     local i pids=()
@@ -176,6 +197,7 @@ test_concurrency_same_session_emits_once() {
 test_suppressed_fire_is_empty() {
     local cache="$WORKSPACE/cache-9"
     rm -rf "$cache"
+    prime_test_touched "$cache" "sess-A"
     invoke "$cache" "$SRC_PAYLOAD_A" > /dev/null
     local out
     out=$(invoke "$cache" "$SRC_PAYLOAD_A2")
