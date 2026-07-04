@@ -1,6 +1,15 @@
 #!/bin/bash
 # PreToolUse hook - TDD enforcement before editing source files
 # Fires before Write/Edit/MultiEdit tools
+#
+# #436 fix: this hook printed a TDD reminder but never exited 2 — pure prose
+# despite tdd_red being CRITICAL in the SDLC scoring rubric. It now blocks
+# (exit 2) writes to src/** unless a test file was touched earlier this
+# session. This is an edit-ordering proxy, not full "does a failing test
+# exist" verification — a bash hook can't run the suite and confirm RED.
+# Session-scoped (degrades to allow when session_id is absent — no cross-call
+# state to track without it, matching the back-compat stance already taken
+# for the nudge below).
 
 # Token-bloat fix: when both project + plugin register this hook, plugin yields.
 # Parameter-expansion-safe (no `dirname` dep): `%/*` strips trailing `/file`.
@@ -25,9 +34,35 @@ SESSION_ID=$(printf '%s' "$TOOL_INPUT" \
     | head -1 \
     | sed 's/.*"\([^"]*\)"$/\1/')
 
+# Test-file detection: always allowed, and marks "a test was touched" for
+# this session so the src/ gate below can unlock. Priority over the src/
+# check since many conventions nest tests inside src/ (e.g. src/__tests__/).
+if [[ "$FILE_PATH" =~ (\.test\.|\.spec\.|/__tests__/|/tests?/|/test_|^test_) ]]; then
+  if [ -n "$SESSION_ID" ]; then
+    CACHE_DIR="${SDLC_WIZARD_CACHE_DIR:-$HOME/.cache/sdlc-wizard}"
+    SAFE_SID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9._-')
+    if [ -n "$SAFE_SID" ]; then
+      mkdir -p "$CACHE_DIR" 2>/dev/null || true
+      : > "$CACHE_DIR/tdd-test-touched-${SAFE_SID}" 2>/dev/null || true
+    fi
+  fi
+  exit 0
+fi
+
 # CUSTOMIZE: Change this pattern to match YOUR source directory
 # Examples: "/src/", "/app/", "/lib/", "/packages/", "/server/"
 if [[ "$FILE_PATH" == *"/src/"* ]]; then
+  # #436 gate: block implementation-first edits when no test file has been
+  # touched yet this session. Degrades to allow without session_id.
+  if [ -n "$SESSION_ID" ]; then
+    CACHE_DIR="${SDLC_WIZARD_CACHE_DIR:-$HOME/.cache/sdlc-wizard}"
+    SAFE_SID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9._-')
+    if [ -n "$SAFE_SID" ] && [ ! -f "$CACHE_DIR/tdd-test-touched-${SAFE_SID}" ]; then
+      echo "TDD RED REQUIRED: no test file touched yet this session. Write or edit a failing test before implementing in src/." >&2
+      exit 2
+    fi
+  fi
+
   # Token-bloat fix (v1.70.0): nudge fires once per CC session. Once Claude
   # has the SDLC skill auto-invoked (covers TDD RED/GREEN), the per-Edit
   # nudge becomes duplicate context — typical session has 10-30 src Edits
