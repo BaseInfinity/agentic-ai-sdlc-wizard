@@ -1347,6 +1347,24 @@ test_tdd_gate_no_block_without_session_id() {
     fi
 }
 
+# Codex review finding (hook-enforcement-436, round 1): the src/ gate matches
+# `*"/src/"*`, which requires a slash BEFORE "src". A relative path like
+# "src/app.js" (no leading slash — a plausible cwd-relative file_path) never
+# matches, so the entire gate silently no-ops for relative src/ paths.
+test_tdd_gate_blocks_relative_src_path() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"session_id":"sess-relative-1","tool_input":{"file_path":"src/app.js"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "test"; then
+        pass "tdd gate BLOCKS (exit 2) relative src/ path when no test touched yet"
+    else
+        fail "tdd gate should exit 2 for relative 'src/app.js' path, got exit=$exit_code out: $out"
+    fi
+}
+
 # ---- instructions-loaded-check.sh tests ----
 
 # Test 12: Script exists and is executable
@@ -2022,6 +2040,7 @@ test_tdd_gate_allows_src_write_after_test_touched
 test_tdd_gate_allows_test_file_writes_unconditionally
 test_tdd_gate_recognizes_test_patterns
 test_tdd_gate_no_block_without_session_id
+test_tdd_gate_blocks_relative_src_path
 test_instructions_hook_exists
 test_instructions_hook_missing_sdlc
 test_instructions_hook_missing_testing
@@ -3779,12 +3798,185 @@ test_codex_gate_skip_override() {
     fi
 }
 
+# Codex review finding (hook-enforcement-436, round 1): a quote appearing
+# BEFORE "git commit" in the command (e.g. `cd "$dir" && git commit ...`)
+# breaks the grep/sed extraction — `[^"]*` stops at the first embedded quote
+# regardless of JSON escaping, truncating the captured command before it ever
+# reaches "git commit". The gate then falls through to the silent-allow
+# default. Real false negative: a review-less commit slips through untouched.
+test_codex_gate_blocks_commit_with_quote_before_git_commit() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"cd \"$dir\" && git commit -m \"message\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate BLOCKS (exit 2) commit even when an earlier quote precedes 'git commit'"
+    else
+        fail "codex gate should exit 2 despite embedded quote before git commit, got exit=$exit_code out: $out"
+    fi
+}
+
+# Codex review finding (hook-enforcement-436, round 2): the round-1 fix
+# (match "git commit" against the whole raw TOOL_INPUT) traded the false
+# negative for a false positive — a non-commit command is blocked if ANY
+# other field (e.g. the Bash tool's own "description") happens to mention
+# "git commit" in prose. The gate must only look inside the "command" value.
+test_codex_gate_silent_when_only_description_mentions_commit() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git status","description":"check status before next git commit"}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate silent on non-commit command even when description mentions 'git commit'"
+    else
+        fail "codex gate should exit 0 silent (only 'description' mentions commit, not 'command'), got exit=$exit_code out: $out"
+    fi
+}
+
 test_codex_gate_blocks_commit_without_review
 test_codex_gate_allows_commit_with_certified_review
 test_codex_gate_allows_commit_with_reviewed_status
 test_codex_gate_silent_on_non_commit_commands
 test_codex_gate_blocks_on_invalid_status
 test_codex_gate_skip_override
+test_codex_gate_blocks_commit_with_quote_before_git_commit
+test_codex_gate_silent_when_only_description_mentions_commit
+
+# ---- codex-review-stop-check.sh tests ----
+# Fable self-enforcement audit finding: a full SDLC workflow can complete —
+# Claude presents "done, here's what I changed" — without ever running
+# `git commit`. codex-gate-check.sh only fires on that one command, so the
+# gate never triggers and cross-model review is silently skippable. This
+# Stop hook closes that gap: non-blocking warning (Stop hooks shouldn't
+# prevent the user from getting their response) when significant uncommitted
+# changes exist with no REVIEWED/CERTIFIED review artifact.
+echo ""
+echo "--- codex-review-stop-check.sh ---"
+
+test_stop_hook_exists() {
+    if [ -x "$HOOKS_DIR/codex-review-stop-check.sh" ]; then
+        pass "codex-review-stop-check.sh exists and is executable"
+    else
+        fail "codex-review-stop-check.sh not found or not executable"
+    fi
+}
+
+test_stop_hook_silent_no_git_repo() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out
+    out=$(printf '%s' '{"session_id":"s1"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook silent outside a git repo"
+    else
+        fail "stop hook should be silent outside a git repo, got: $out"
+    fi
+}
+
+test_stop_hook_silent_clean_tree() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
+    local out
+    out=$(printf '%s' '{"session_id":"s2"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook silent on a clean working tree"
+    else
+        fail "stop hook should be silent when nothing changed, got: $out"
+    fi
+}
+
+test_stop_hook_silent_doc_only_changes() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && echo "# doc" > README.md && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo "updated" >> "$tmpdir/README.md"
+    local out
+    out=$(printf '%s' '{"session_id":"s3"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook silent on doc-only (*.md) changes"
+    else
+        fail "stop hook should be silent on doc-only changes, got: $out"
+    fi
+}
+
+test_stop_hook_warns_significant_uncommitted_no_review() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && echo "x=1" > app.sh && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo "x=2" >> "$tmpdir/app.sh"
+    local out
+    out=$(printf '%s' '{"session_id":"s4"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if echo "$out" | grep -qi "review"; then
+        pass "stop hook warns on significant uncommitted changes with no review artifact"
+    else
+        fail "stop hook should mention review, got: $out"
+    fi
+}
+
+test_stop_hook_silent_with_certified_review() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && echo "x=1" > app.sh && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo "x=2" >> "$tmpdir/app.sh"
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"CERTIFIED"}' > "$tmpdir/.reviews/handoff.json"
+    local out
+    out=$(printf '%s' '{"session_id":"s5"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook silent when review is CERTIFIED"
+    else
+        fail "stop hook should be silent with a CERTIFIED review, got: $out"
+    fi
+}
+
+test_stop_hook_ignores_reviews_dir_changes() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && mkdir -p .reviews && echo '{}' > .reviews/response.json && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo '{"a":1}' > "$tmpdir/.reviews/response.json"
+    local out
+    out=$(printf '%s' '{"session_id":"s6"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook ignores changes confined to .reviews/ (metadata, not reviewed work)"
+    else
+        fail "stop hook should ignore .reviews/-only changes, got: $out"
+    fi
+}
+
+test_stop_hook_fires_once_per_session() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && echo "x=1" > app.sh && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo "x=2" >> "$tmpdir/app.sh"
+    local cache="$tmpdir/cache"
+    local first second
+    first=$(printf '%s' '{"session_id":"s7"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    second=$(printf '%s' '{"session_id":"s7"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -n "$first" ] && [ -z "$second" ]; then
+        pass "stop hook warns once per session, silent on repeat Stop events"
+    else
+        fail "stop hook should warn once then go silent same session, got first: '$first' second: '$second'"
+    fi
+}
+
+test_stop_hook_exists
+test_stop_hook_silent_no_git_repo
+test_stop_hook_silent_clean_tree
+test_stop_hook_silent_doc_only_changes
+test_stop_hook_warns_significant_uncommitted_no_review
+test_stop_hook_silent_with_certified_review
+test_stop_hook_ignores_reviews_dir_changes
+test_stop_hook_fires_once_per_session
 
 echo ""
 echo "=== Results ==="

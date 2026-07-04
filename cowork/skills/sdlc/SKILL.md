@@ -120,15 +120,11 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 ## Recommended Model
 
-**Recommended: Sonnet 5 at `xhigh`** — beats Opus 4.6 on every coding benchmark while using ~5x less Max quota. Escalate to **Opus 4.8 at `xhigh`** when stuck or doing multi-file architecture work. **Opus 4.6 at `max`** remains valid for users who prefer its proven consistency (no `xhigh` support — `max` is its sweet spot). See `AI_SETUP_LANES.md` for the full lane comparison and when to use each.
+**Recommended: Sonnet 5 `xhigh`** — beats Opus 4.6 on benchmarks, ~5x less quota. Escalate to **Opus 4.8 `xhigh`** when stuck. **Opus 4.6 `max`** valid for consistency. See `AI_SETUP_LANES.md`.
 
-**Effort is model-aware, not blanket `max`.** `max` overthinks on Sonnet 5 and Opus 4.8 (doubles cost, marginal gains per Anthropic's own effort docs) — it's only the right floor on Opus 4.6. Set effort per-session with `/effort`, matched to your active model. **Do not persist `CLAUDE_CODE_EFFORT_LEVEL=max` in a shell-rc file** — it silently overrides `/effort` after you switch models (real incident, 2026-07-04).
+**Effort is model-aware, not blanket `max`** — `max` overthinks on Sonnet 5/Opus 4.8. Set via `/effort` per session, not a shell-rc env var (overrides post-switch — see SDLC.md). `/model` persists; picker `s` does not.
 
-**Session gotcha:** `/model` persists by default, but project/managed settings can override. Picker `s` (session-only) does not.
-
-**If pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (1M). **Do not set this for `opusplan`** — 200K, 30% too aggressive.
-
-**Advisor (v2.1.170+):** `advisorModel: "fable"` works with Sonnet 5, Opus 4.6, and Opus 4.8 drivers. Set during `/setup-wizard` Step 9.5.
+**Pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (1M) — do not set this for `opusplan` (200K, too aggressive). **Advisor (v2.1.170+):** `advisorModel: "fable"` works with all drivers above; set in `/setup-wizard` Step 9.5.
 
 ## Self-Review Loop
 

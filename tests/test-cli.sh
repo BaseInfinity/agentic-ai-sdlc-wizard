@@ -264,8 +264,8 @@ test_wizard_doc() {
     rm -rf "$d"
 }
 
-# Test 10: settings.json is valid JSON with 5 hook events
-# (UserPromptSubmit, PreToolUse, InstructionsLoaded, SessionStart, PreCompact)
+# Test 10: settings.json is valid JSON with 6 hook events
+# (UserPromptSubmit, PreToolUse, InstructionsLoaded, SessionStart, PreCompact, Stop)
 test_settings_json() {
     local d
     d=$(make_temp)
@@ -278,10 +278,10 @@ with open('$d/.claude/settings.json') as f:
 hooks = data.get('hooks', {})
 print(len(hooks))
 " 2>/dev/null)
-    if [ "$hook_count" = "5" ]; then
-        pass "settings.json is valid JSON with 5 hook events"
+    if [ "$hook_count" = "6" ]; then
+        pass "settings.json is valid JSON with 6 hook events"
     else
-        fail "settings.json should have 5 hook events, found: $hook_count"
+        fail "settings.json should have 6 hook events (added Stop, #436), found: $hook_count"
     fi
     rm -rf "$d"
 }
