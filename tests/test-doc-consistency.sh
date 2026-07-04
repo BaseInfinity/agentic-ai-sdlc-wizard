@@ -508,17 +508,18 @@ test_sdlc_skill_warns_against_compound_autocompact_config() {
     fi
 }
 
-# Test (#207, Codex round 1 finding 2): the shipped `/sdlc` skill must frame
-# the Opus pin as opt-in (matching the wizard doc post-#198), not default.
-# v1.80.0 flipped from opus[1m] alias to explicit claude-opus-4-6[1m] —
-# both forms are acceptable references to the opt-in pin.
+# Test (#207, Codex round 1 finding 2; updated #434 for Sonnet 5): the shipped
+# `/sdlc` skill must frame the model pin as a recommendation, not a silent
+# default. v1.80.0 flipped opus[1m] -> claude-opus-4-6[1m]; #434 (2026-07-04)
+# made Sonnet 5 the new recommended driver. Any of the three is acceptable —
+# what matters is the section explicitly frames it as "Recommended:".
 test_sdlc_skill_frames_model_as_recommendation() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
-    if grep -qE 'Recommended:.*claude-opus|Recommended:.*opusplan|opusplan.*claude-opus' "$SKILL"; then
+    if grep -qE 'Recommended:.*claude-opus|Recommended:.*opusplan|Recommended:.*Sonnet|opusplan.*claude-opus' "$SKILL"; then
         pass "skills/sdlc/SKILL.md frames model pin as recommendation"
     else
-        fail "skills/sdlc/SKILL.md must recommend opusplan or claude-opus-4-X"
+        fail "skills/sdlc/SKILL.md must recommend Sonnet 5, opusplan, or claude-opus-4-X"
     fi
 }
 
@@ -931,6 +932,34 @@ test_setup_lanes_references_sonnet_5
 test_setup_lanes_has_model_aware_effort
 test_setup_lanes_no_blanket_max
 test_setup_lanes_effort_escalation_ladder
+
+# The /sdlc skill's "Recommended Model" section is read on every /sdlc
+# invocation — it must not enshrine the same blanket-max bug the hook had.
+# Real incident: a user's ~/.zshrc had CLAUDE_CODE_EFFORT_LEVEL=max from
+# this exact advice, and it silently overrode /effort xhigh after they
+# switched to Sonnet 5 (2026-07-04).
+test_sdlc_skill_recommended_model_is_model_aware() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    if grep -qE 'CLAUDE_CODE_EFFORT_LEVEL.?=.?max.? in (settings )?env block' "$SKILL"; then
+        fail "skills/sdlc/SKILL.md must not blanket-recommend persisting max via env var (bit a real user, 2026-07-04)"
+    else
+        pass "skills/sdlc/SKILL.md does not blanket-recommend persisting max via env var"
+    fi
+}
+
+test_sdlc_skill_recommended_model_mentions_sonnet_5() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    if grep -qE 'Sonnet 5|claude-sonnet-5' "$SKILL"; then
+        pass "skills/sdlc/SKILL.md Recommended Model section mentions Sonnet 5"
+    else
+        fail "skills/sdlc/SKILL.md must mention Sonnet 5 in Recommended Model section"
+    fi
+}
+
+test_sdlc_skill_recommended_model_is_model_aware
+test_sdlc_skill_recommended_model_mentions_sonnet_5
 
 # ────────────────────────────────────────────
 # Summary
