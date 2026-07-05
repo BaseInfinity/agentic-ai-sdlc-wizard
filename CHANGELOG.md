@@ -4,6 +4,19 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.85.0] - 2026-07-05
+
+### Fixed
+- **Post-ship retrospective on v1.84.0** (independent Fable + Codex audits, both verified against primary sources before acting on them): `CLAUDE_CODE_SDLC_WIZARD.md`'s "Exception — known-large migrations" example still cited the wrong round count ("7 rounds... round 5") after the review ran to 11 rounds and round 8 turned out to be the more consequential find — corrected to the actual numbers.
+- The `### Convergence` section had no record of this release's own sharpest lesson: cross-model review and CI are different verification layers. Round-11 CERTIFIED plus a full local sweep still missed 3 real bugs (a content regression, an npm-version JSON format change, a missing executable bit) that only surfaced once the PR was actually pushed and CI ran. Added a "CERTIFIED is not the finish line" callout so this isn't relearned per-release.
+- `## CI Feedback Loop — Local Shepherd` (the portable wizard doc's version) was measurably weaker than `skills/sdlc/SKILL.md`'s own copy of the same section — missing "read CI logs even when green" (a green checkmark hides warnings/skipped steps/degraded scores — see v1.24.0), missing the cross-model CI-log-audit step, missing explicit "NEVER AUTO-MERGE" language (PR #145 evidence). Synced to match.
+- `Release Review Focus` had no "Policy Migration Inventory" checklist item, despite the wizard doc itself documenting (in `SDLC.md`'s Lessons Learned) that exactly this gap is what turned v1.84.0's migration into an 11-round review instead of ~4-5. Added, with v1.84.0 as the cited evidence.
+- `ROADMAP.md` #437 (the codex-gate handoff-staleness gap, filed 2026-07-04) settled its previously-open design question: `commit_sha`-in-`handoff.json` compared against current HEAD, not a branch/files-changed heuristic — simpler, and directly answers the "how do legitimate follow-up commits not false-positive" question the original entry raised. Implementation is a separate, standalone TDD PR (not bundled with this doc-only release).
+- **Codex round 1 caught 2 more stale `1.84.0` version pointers this release's own version-bump checklist didn't cover:** `ROADMAP.md`'s "Built With SDLC Wizard" living-tracker row (this repo's own entry) and `cowork/README.md`'s "Version" section — neither matches the canonical checklist's two string patterns (`SDLC Wizard Version:` prefix or a `"version":` JSON key), since both read as plain prose. Fixed, and `SDLC.md`'s version-bump-checklist lesson updated with a broader canonical grep (`grep -rn "<previous-version>" . --include="*.md" --include="*.json"`, manually triage every hit) so the narrower two-pattern grep isn't the only check next release.
+
+### Why
+Same-session retrospective (2026-07-05) on the just-shipped v1.84.0: the user asked Fable and Codex, independently, "how well did this release follow its own `/sdlc` checklist, and what's missing from the doc itself." Both converged on real, independently-verified findings — this release fixes the doc-only subset; the hook-behavior fix (#437) and any sibling-repo (`claude-gdlc-wizard`, `claude-rdlc-wizard`, etc.) sync follow as separate, explicitly-scoped work per Fable's own recommendation to split rather than bundle.
+
 ## [1.84.0] - 2026-07-04
 
 ### Fixed
