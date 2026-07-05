@@ -1,6 +1,6 @@
 {
   "name": "sdlc-wizard-cowork",
-  "version": "1.85.0",
+  "version": "1.86.0",
   "description": "SDLC enforcement for Claude Cowork — TDD, planning, self-review via prompt-based hooks and skills",
   "author": {
     "name": "Stefan Ayala",

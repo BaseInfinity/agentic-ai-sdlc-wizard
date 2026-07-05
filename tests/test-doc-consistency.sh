@@ -1026,6 +1026,47 @@ test_wizard_doc_autocompact_mentions_sonnet_5() {
 
 test_wizard_doc_autocompact_mentions_sonnet_5
 
+# ROADMAP #437: the wizard doc has 2 separate copies of the cross-model
+# review protocol (a condensed summary section and a fuller tutorial
+# section), each with its own prose instruction AND its own flow diagram —
+# 3 prose "If CERTIFIED" lines plus 4 diagram terminal states (2 per
+# section), 7 decision points total. The v1.86.0 codex-gate-check.sh fix
+# requires every one of them to write commit_sha into handoff.json.
+#
+# Codex round 1 caught 2 of 3 prose lines fixed (1 missed); a global-count
+# comparison (commit_sha mentions >= "If CERTIFIED" mentions) briefly
+# replaced it but round 2's mutation testing proved that heuristic has slack
+# — extra commit_sha mentions elsewhere in the doc could mask an individual
+# line silently losing its own instruction, and it never covered the
+# diagram terminal states at all (round 2 also found a 3rd, entirely
+# separate diagram — the first section's own flow chart at lines ~2515/2526
+# — that neither the prose fix nor the original test had ever touched).
+#
+# Per-line check instead: every line matching one of the 3 known decision-
+# point shapes (prose "If CERTIFIED", diagram "CERTIFIED? ", or diagram
+# "→ CERTIFIED") must contain "commit_sha" on that SAME line — no aggregate
+# slack possible. Verified the exact pattern below matches all 7 real
+# decision-point lines and none of the ~13 other CERTIFIED mentions in the
+# doc (explanatory prose, reviewer-prompt "End with CERTIFIED or NOT
+# CERTIFIED" text, unrelated "implicit CERTIFIED" references).
+test_wizard_doc_certified_paths_all_mention_commit_sha() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    local decision_lines total missing offenders
+    decision_lines=$(grep -nE "If CERTIFIED|CERTIFIED\? |→ CERTIFIED" "$DOC" 2>/dev/null || true)
+    total=$(echo "$decision_lines" | { grep -c . || true; })
+    offenders=$(echo "$decision_lines" | { grep -v "commit_sha" || true; })
+    missing=$(echo "$offenders" | { grep -c . || true; })
+    if [ "$total" -gt 0 ] && [ "$missing" -eq 0 ]; then
+        pass "every CERTIFIED decision point in the wizard doc mentions commit_sha on the same line ($total checked)"
+    else
+        fail "$missing of $total CERTIFIED decision points in the wizard doc are missing a same-line commit_sha mention — at least one path silently skips the ROADMAP #437 staleness-fix instruction. Offending lines:
+$offenders"
+    fi
+}
+
+test_wizard_doc_certified_paths_all_mention_commit_sha
+
 # ────────────────────────────────────────────
 # Summary
 # ────────────────────────────────────────────

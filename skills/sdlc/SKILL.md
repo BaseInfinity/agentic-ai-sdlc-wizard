@@ -9,7 +9,7 @@ argument-hint: [task description]
 
 This skill is loaded from **`.claude/skills/sdlc/SKILL.md`** in the active repo (symlinked to `skills/sdlc/SKILL.md` in the wizard's source tree). Claude Code prefers repo-local skills over global (`~/.claude/skills/sdlc/SKILL.md`) when both exist with the same name — the repo-local copy is the project's authoritative workflow contract. Use global skills only for cross-repo personal tooling (e.g. `feedback`, `revise-claude-md`); use repo-local for implementation, tests, release, and verification in this repo.
 
-If unsure which copy is active, compare `head -5 .claude/skills/sdlc/SKILL.md` against `head -5 ~/.claude/skills/sdlc/SKILL.md`. The repo-local copy wins. Don't mix guidance from both — pick the source for this repo and stay there.
+If unsure which copy is active, compare `head -5` of both — the repo-local copy wins. Don't mix guidance from both.
 
 ## Task
 $ARGUMENTS
@@ -143,14 +143,14 @@ PROTOCOL is universal across domains; only `review_instructions` and `verificati
 
 1. **Preflight** (`.reviews/preflight-{review_id}.md`) — what you already checked: `/code-review` passed, tests passing, manual verifications, known limits. Reduces reviewer findings to 0-1/round.
 2. **Mission-first handoff** (`.reviews/handoff.json`) — required keys: `"review_id"`, `"status": "PENDING_REVIEW"`, `"round": 1`, `"mission"`/`"success"`/`"failure"` (without them you get "looks good"), `"files_changed"`, `"verification_checklist"` (verification checklist with file:line refs — NOT generic), `"review_instructions"`, `"preflight_path"`. Optional `"pr_number":` opts into PreCompact self-heal (#209: MERGED → implicit CERTIFIED).
-3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `xhigh`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; `run_in_background: true` avoids the Bash 10-min (`600000` ms) `timeout` cap that force-kills foreground codex (multi-artifact bundles take 5–30 min). xhigh 1–30 min; wrapper's `STALL_SECONDS=1800` controls it. Heartbeat: `scripts/codex-review-with-progress.sh`. Foreground burned 70 min on a 7-min review (#364).
-4. **Dialogue loop:** per-finding response (`{"finding": "1", "action": "FIXED|DISPUTED|ACCEPTED", "summary": "..."}` in `.reviews/response.json`). Bump round, set status `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. No new findings unless P0." **NEVER unilaterally dismiss** — always run the recheck. It's a conversation: the reviewer may accept your dispute or counter with evidence you missed.
+3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `xhigh`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; `run_in_background: true` avoids the Bash 10-min (`600000` ms) `timeout` cap that force-kills foreground codex (multi-artifact bundles take 5–30 min). xhigh 1–30 min; wrapper's `STALL_SECONDS=1800` controls it. Foreground burned 70 min on a 7-min review (#364).
+4. **Dialogue loop:** per-finding response (`{"finding": "1", "action": "FIXED|DISPUTED|ACCEPTED", "summary": "..."}` in `.reviews/response.json`). Bump round, set status `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. No new findings unless P0." **NEVER unilaterally dismiss** — always run the recheck. It's a conversation: the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED, write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
 
 **Convergence:** 2 rounds sweet spot, 3 max, escalate after — except large migrations: judge by finding trend, not count.
 
 **Enforcement:** `hooks/goal-confidence-check.sh` warns when `/goal` skips the 95%-confidence or DLC-binding gates (#360).
 
-**Multi-reviewer:** respond to each independently (no shared anchoring). **Non-code domains:** add `"audience"`/`"stakes"` keys.
+**Multi-reviewer:** respond to each independently. **Non-code domains:** add `"audience"`/`"stakes"` keys.
 
 ### Release Review Focus
 
@@ -275,7 +275,7 @@ Don't fix only the symptom. Add a gate so it can't happen again. Example: PR #14
 - Auto-compact fires at ~95%; `/usage` shows what's driving token spend
 - After committing a PR, `/clear` before next feature
 - `--bare` mode (v2.1.81+) skips ALL hooks/skills/LSP/plugins. Scripted headless only — never normal development.
-- Custom subagents (`.claude/agents/`) run autonomously and return results. Skills guide behavior; agents do work. Use for parallel tasks or fresh context. Examples: `sdlc-reviewer`, `ci-debug`, `test-writer`.
+- Custom subagents (`.claude/agents/`) run autonomously and return results. Skills guide behavior; agents do work. Use for parallel tasks or fresh context.
 
 ## Design System Check (UI Changes Only)
 

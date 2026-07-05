@@ -95,16 +95,16 @@ Parse CHANGELOG entries between the user's installed version and the resolved la
 
 ```
 Installed: 1.42.0
-Latest:    1.85.0
+Latest:    1.86.0
 
 What changed:
-- [1.85.0] Post-ship retrospective fixes: CI Feedback Loop synced to SKILL.md's stronger version (NEVER AUTO-MERGE, read-logs-even-when-green, cross-model CI audit), CERTIFIED≠CI lesson, Policy Migration Inventory checklist, stale round-count correction (#437 hook-staleness fix follows separately).
+- [1.86.0] Fix #437: codex-gate-check.sh now blocks stale certifications — a CERTIFIED handoff.json no longer sails through forever; it records commit_sha at cert time and blocks once HEAD moves past it without a re-cert.
+- [1.85.0] Post-ship retrospective: CI Feedback Loop synced to SKILL.md's stronger version, CERTIFIED≠CI lesson, Policy Migration Inventory checklist, stale round-count correction.
 - [1.84.0] Hook enforcement fix: cross-model review gate + TDD RED gate now actually block (#436); model-aware effort docs replace blanket max recommendation.
 - [1.83.0] Model config batch: multi-model hook recommendation (#403), global [1m] pin detection (#391), version race fix (#405), effort config check (#384).
 - [1.82.0] Usage diagnostics: fix /usage row, Reading Usage Signals guide, advisor fallback procedure, Fable effort guidance, autocompact cross-reference.
 - [1.81.0] Native `advisorModel` support: Setup A gets Fable advisor, Setup B gets Opus advisor. Replaces manual subagent spawning. Requires CC v2.1.170+.
 - [1.80.0] Flip default: Opus 4.6 max becomes recommended flagship; Opus 4.8 demoted to opt-in `[l] Latest` tier.
-- [1.77.0] release-dry-run.yml + cc-version-drift.yml (#350) + /goal SDLC gates (95% + DLC binding).
 - [1.75.1] release-workflow fix — Node 22 → 24 (ships npm 11.x), dropped flaky `npm install -g` self-upgrade (hit MODULE_NOT_FOUND on v1.75.0 publish). Explicit npm-version guard.
 - [1.75.0] npm Trusted Publishing — `release.yml` swapped from `NPM_TOKEN` to OIDC. No more token rotation. Requires one-time publisher config on the npm package page.
 - [1.74.0] v1.43 salvage: #338 precedence preamble; #235ab `/insights`; codex `< /dev/null` stdin-hang fix; test env-isolation.
