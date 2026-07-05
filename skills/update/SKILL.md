@@ -117,9 +117,7 @@ What changed:
 - [1.61.0] calibration scenarios for #96 Phase 3 PR 2 — `tests/e2e/scenarios/calibration-careful-read.md` (parsePrice with 5 edge-case formats) tests whether self-review catches missed requirements. Score delta between SDLC and naive agents on this scenario is a calibration signal for `lift-proof.sh`
 - [1.60.0] wizard-installation lift-proof harness (#96 Phase 3 PR 1) — `tests/e2e/lift-proof.sh` runs same scenario on bare vs wizard-installed fixture, emits score delta. Closes the "does the wizard work?" question. Honestly zero-API (sim + eval on Max)
 - [1.59.0] evaluator on Max via `claude --print` (#228) — `EVAL_USE_CLI=1` swaps `evaluate.sh`'s per-criterion judge transport from `curl` → API to `claude --print --output-format json`. local-shepherd.sh sets it by default, so the local path is honestly zero-API
-- [1.58.0] ground-truth gate for E2E benchmark (#96 Phase 2) — `tests/e2e/ground-truth.sh` runs `npm test` post-sim; final score capped at 5 if tests fail. Catches "agent followed protocol but produced broken code"
-- [1.57.0] de-coach E2E benchmark prompt (#96 Phase 1) — remove answer-key leakage that saturated benchmark scores at 10/10; new neutral task framing measures organic SDLC behavior
-... (older entries omitted — read the full CHANGELOG.md for anything pre-1.57.0)
+... (older entries omitted — read the full CHANGELOG.md for anything pre-1.59.0)
 ```
 
 Read the actual entries from the fetched CHANGELOG; don't paraphrase. The user wants to see exactly what shipped.
@@ -241,7 +239,7 @@ If `model` pin exists but no `advisorModel`, suggest per driver: `sonnet`/`claud
 Runs regardless of version match (like Step 7.7). `check-only`: report only. Effort is model-aware (v1.84.0+, see `AI_SETUP_LANES.md`), not blanket `max` — this step detects the anti-pattern, doesn't push everyone toward `max`.
 
 1. Read `model` from the settings cascade to find the driver. No pin / `sonnet` / `opusplan` = Sonnet 5; `claude-opus-4-6` = Opus 4.6; `claude-opus-4-8` = Opus 4.8.
-2. **Opus 4.6 driver:** `CLAUDE_CODE_EFFORT_LEVEL=max` in the project's `env` block → pass (silent; `max` is 4.6's actual sweet spot, no `xhigh`). Unset or below `max` → suggest `/effort max` + that env entry.
+2. **Opus 4.6 driver:** `CLAUDE_CODE_EFFORT_LEVEL=max` in the project's `env` block → pass (silent; `max` is 4.6's actual sweet spot, no `xhigh`). If only `effortLevel: "max"` is set in `settings.json` (not the env var) → warn: CC ignores session-only `max` in settings, only the env var actually persists it — suggest moving it into the `env` block instead. Unset entirely or below `max` → suggest `/effort max` + that env entry.
 3. **Sonnet 5 or Opus 4.8 driver:** `CLAUDE_CODE_EFFORT_LEVEL=max` set anywhere → warn. This is the exact incident that motivated this check: a stale `max` env var silently overrides `/effort xhigh` after switching off Opus 4.6. Recommend removing it and using `/effort` per-session instead. Unset → pass (silent).
 4. Never suggest a shell-rc (`.zshrc`/`.bashrc`) export — only the project's `env` block, and only for Opus 4.6.
 

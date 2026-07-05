@@ -120,10 +120,12 @@ jobs:
           set -euo pipefail
           missing=()
           for path in cli/ skills/ hooks/ .claude-plugin/ CLAUDE_CODE_SDLC_WIZARD.md AI_SETUP_LANES.md CHANGELOG.md; do
-            # `npm publish --dry-run --json` includes a `files[]` array
-            # listing every shipped file path. Match the path prefix to
-            # detect at least one file from each entry.
-            if ! jq -e --arg p "$path" '.files[]?.path | select(startswith($p))' dry-run-output.json >/dev/null; then
+            # `npm publish --dry-run --json` wraps the result under the
+            # package name key (e.g. {"agentic-sdlc-wizard": {"files": [...]}}),
+            # not a flat top-level `files[]` — `.[]` iterates the single
+            # top-level value regardless of the package name, so this
+            # doesn't need to hardcode it.
+            if ! jq -e --arg p "$path" '.[] | .files[]?.path | select(startswith($p))' dry-run-output.json >/dev/null; then
               missing+=("$path")
             fi
           done
