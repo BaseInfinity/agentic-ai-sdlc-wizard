@@ -142,7 +142,9 @@ test_model_effort_size_cap() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
-    echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
+    # "medium" (below the high/xhigh/max floor) so the hook actually emits a
+    # warning to size-cap — "high" is silent as of v1.84.0.
+    echo '{"effortLevel":"medium"}' > "$tmpdir/.claude/settings.json"
     local size
     size=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null | wc -c | tr -d ' ')
     rm -rf "$tmpdir"
@@ -1672,43 +1674,40 @@ test_wizard_effort_level_section() {
     fi
 }
 
-# Test 32: Wizard doc recommends max as default effort (v1.80.0+: 4.6 max flagship)
+# Test 32: Wizard doc recommends model-aware effort (v1.84.0+: Sonnet 5 default)
 # Also accepts "high" references since the wizard discusses effort floors.
 test_wizard_effort_high_default() {
     local wizard="$SCRIPT_DIR/../CLAUDE_CODE_SDLC_WIZARD.md"
     if grep -qi "max.*default\|default.*max\|recommended default" "$wizard" && grep -qE "effort.*(max|high)" "$wizard"; then
-        pass "Wizard doc recommends max as default effort (v1.80.0+)"
+        pass "Wizard doc recommends a default effort level (v1.84.0+)"
     else
-        fail "Wizard doc should recommend max as the default effort level"
+        fail "Wizard doc should recommend a default effort level"
     fi
 }
 
-# Test 33: Wizard confidence table mentions /effort max for LOW confidence
+# Test 33: Wizard confidence table mentions escalating effort for LOW confidence
+# (v1.84.0: model-aware, not a blanket /effort max)
 test_wizard_confidence_effort_max() {
     local wizard="$SCRIPT_DIR/../CLAUDE_CODE_SDLC_WIZARD.md"
-    if grep -q '/effort max' "$wizard" && grep -q 'LOW' "$wizard"; then
-        # Verify they appear in proximity (within the confidence table area)
-        local section
-        section=$(sed -n '/## Confidence Check/,/^## /p' "$wizard")
-        if echo "$section" | grep -q '/effort max'; then
-            pass "Wizard confidence table mentions /effort max"
-        else
-            fail "Wizard confidence table should mention /effort max for LOW confidence"
-        fi
+    local section
+    section=$(sed -n '/## Confidence Check/,/^## /p' "$wizard")
+    if echo "$section" | grep -qi 'escalate effort' && echo "$section" | grep -q 'LOW'; then
+        pass "Wizard confidence table mentions escalating effort for LOW confidence"
     else
-        fail "Wizard should mention /effort max in confidence section"
+        fail "Wizard confidence table should mention escalating effort for LOW confidence"
     fi
 }
 
-# Test 34: SDLC skill confidence table mentions /effort max for LOW confidence
+# Test 34: SDLC skill confidence table mentions escalating effort for LOW confidence
+# (v1.84.0: model-aware, not a blanket /effort max)
 test_skill_confidence_effort_max() {
     local skill="$SCRIPT_DIR/../.claude/skills/sdlc/SKILL.md"
     local section
     section=$(sed -n '/## Confidence Check/,/^## /p' "$skill")
-    if echo "$section" | grep -q '/effort max'; then
-        pass "SDLC skill confidence table mentions /effort max"
+    if echo "$section" | grep -qi 'escalate now'; then
+        pass "SDLC skill confidence table mentions escalating effort for LOW confidence"
     else
-        fail "SDLC skill confidence table should mention /effort max for LOW confidence"
+        fail "SDLC skill confidence table should mention escalating effort for LOW confidence"
     fi
 }
 
@@ -2705,10 +2704,30 @@ test_model_effort_check_exists() {
     fi
 }
 
-# Test: detects stale effort and outputs upgrade nudge with model recommendation.
-# The nudge must name the wizard's recommended model alias so the command is copy-pasteable.
-# Wizard's flagship recommendation is claude-opus-4-6[1m] (v1.80.0+).
+# Test: detects genuinely stale (below-floor) effort and outputs upgrade nudge
+# with model recommendation. The nudge must name the wizard's recommended
+# model alias so the command is copy-pasteable.
+# v1.84.0: `high` is now an acceptable floor (Sonnet 5's/Fable's tested
+# default) — only `medium`/`low`/unset should still warn.
 test_model_effort_check_stale_effort() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    echo '{"effortLevel":"medium"}' > "$tmpdir/.claude/settings.json"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if echo "$output" | grep -q '/effort' \
+        && echo "$output" | grep -q 'WARNING' \
+        && echo "$output" | grep -qF 'opusplan'; then
+        pass "model-effort-check.sh warns on effort=medium (below the high/xhigh/max floor)"
+    else
+        fail "model-effort-check.sh should warn on effort=medium, got: $output"
+    fi
+}
+
+# Test: high is silent — it's Sonnet 5's and Fable's tested default (v1.84.0)
+test_model_effort_check_high_silent() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
@@ -2716,16 +2735,14 @@ test_model_effort_check_stale_effort() {
     local output
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q '/effort' \
-        && echo "$output" | grep -q 'WARNING' \
-        && echo "$output" | grep -qF 'opusplan'; then
-        pass "model-effort-check.sh warns on effort=high (only max acceptable)"
+    if [ -z "$output" ]; then
+        pass "v1.84.0: model-effort-check.sh is silent on high (Sonnet 5/Fable tested default)"
     else
-        fail "model-effort-check.sh should warn on effort=high, got: $output"
+        fail "v1.84.0: high should be silent (acceptable floor), got: $output"
     fi
 }
 
-# Test: xhigh is NOT silent — only max is acceptable (#395)
+# Test: xhigh is silent — Opus 4.8's floor, and Sonnet 5's escalation level (#434)
 test_model_effort_check_xhigh_silent() {
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -2735,7 +2752,7 @@ test_model_effort_check_xhigh_silent() {
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     if [ -z "$output" ]; then
-        pass "#434: model-effort-check.sh is silent on xhigh (Sonnet 5/Opus 4.8 recommended level, not just max)"
+        pass "#434: model-effort-check.sh is silent on xhigh (Opus 4.8 floor, Sonnet 5 escalation level)"
     else
         fail "#434: xhigh should be silent (acceptable floor), got: $output"
     fi
@@ -2803,11 +2820,13 @@ test_settings_has_session_start_hook() {
 }
 
 # Test: nested CWD uses CLAUDE_PROJECT_DIR for settings (Codex P0 fix)
+# Uses "medium" (below the high/xhigh/max floor) so the hook still warns —
+# "high" is now silent (v1.84.0), which would defeat this test's purpose.
 test_model_effort_check_nested_cwd() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude" "$tmpdir/src/deep"
-    echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
+    echo '{"effortLevel":"medium"}' > "$tmpdir/.claude/settings.json"
     local output
     output=$(cd "$tmpdir/src/deep" && echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
@@ -2869,16 +2888,17 @@ test_model_effort_check_max_env_var_silent() {
     fi
 }
 
-# Test: below-xhigh produces LOUD warning mentioning SDLC compliance + /effort xhigh
-# Per #434: xhigh is the floor (not max-only) — max is only the Opus 4.6 sweet
-# spot, and blanket-recommending max regressed on Sonnet 5/Opus 4.8. Hook must
-# produce a distinguishable WARNING that recommends /effort xhigh (not just the
-# soft "upgrade available" nudge).
+# Test: below-high produces LOUD warning mentioning SDLC compliance + /effort xhigh
+# Per v1.84.0: high is now an acceptable floor too (Sonnet 5's/Fable's tested
+# default, see test_model_effort_check_high_silent) — only medium/low should
+# still warn. max is the Opus 4.6 sweet spot; blanket-recommending max
+# regressed on Sonnet 5/Opus 4.8. Hook must produce a distinguishable WARNING
+# that recommends /effort xhigh (not just the soft "upgrade available" nudge).
 test_model_effort_check_below_xhigh_loud_warning() {
     local tmpdir
     tmpdir=$(mktemp -d)
     local fails=0
-    for bad_effort in high medium low; do
+    for bad_effort in medium low; do
         mkdir -p "$tmpdir/.claude"
         echo "{\"effortLevel\":\"$bad_effort\"}" > "$tmpdir/.claude/settings.json"
         local output
@@ -2900,9 +2920,9 @@ test_model_effort_check_below_xhigh_loud_warning() {
     done
     rm -rf "$tmpdir"
     if [ "$fails" -eq 0 ]; then
-        pass "model-effort-check.sh produces LOUD WARNING + SDLC + /effort xhigh for high/medium/low"
+        pass "model-effort-check.sh produces LOUD WARNING + SDLC + /effort xhigh for medium/low"
     else
-        fail "model-effort-check.sh LOUD warning has $fails missing markers across high/medium/low"
+        fail "model-effort-check.sh LOUD warning has $fails missing markers across medium/low"
     fi
 }
 
@@ -2934,6 +2954,7 @@ test_instructions_loaded_no_duplicate_effort_nudge() {
 
 test_model_effort_check_exists
 test_model_effort_check_stale_effort
+test_model_effort_check_high_silent
 test_model_effort_check_xhigh_silent
 test_model_effort_check_xhigh_env_var_silent
 test_model_effort_check_recommends_sonnet_5
