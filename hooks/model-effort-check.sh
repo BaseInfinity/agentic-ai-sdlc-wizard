@@ -1,18 +1,23 @@
 #!/bin/bash
 # SessionStart hook — effort/model nudge.
 #
-# Behavior (#395 update):
+# Behavior (v1.84.0 update — model-aware floor):
 #   CLAUDE_CODE_EFFORT_LEVEL env var takes precedence over effortLevel in settings.
 #   CC docs: max is session-only in settings.json — only the env var persists it.
-#   Opus 4.6 supports: low, medium, high, max (NO xhigh — falls back to high).
+#   This hook cannot detect the active model (SessionStart payload has no model
+#   field, per ROADMAP #180), so it uses a floor that's correct across models:
+#   `high` is Sonnet 5's and Fable's tested default (escalate to xhigh for hard
+#   tasks); xhigh is Opus 4.8's floor; max remains the sweet spot on Opus 4.6
+#   (no xhigh support). Blanket max is WRONG for Sonnet 5/Opus 4.8 (wastes
+#   tokens for no quality gain — see AI_SETUP_LANES.md per-model table).
 #
-#   effort=max   -> silent (only acceptable level)
-#   anything else -> LOUD WARNING
+#   effort=high, xhigh, or max -> silent (all acceptable — model-dependent)
+#   anything else               -> LOUD WARNING
 #
 # Non-blocking: always exits 0.
 
-# Multiple wizard-blessed models — don't nudge to a single one (#403)
-RECOMMENDED_MODELS="claude-opus-4-6, opusplan, or fable (run: /model)"
+# Multiple wizard-blessed models — don't nudge to a single one (#403, #434)
+RECOMMENDED_MODELS="sonnet, opus, opusplan, or fable (run: /model)"
 
 HOOK_DIR="${BASH_SOURCE[0]%/*}"
 [ "$HOOK_DIR" = "${BASH_SOURCE[0]}" ] && HOOK_DIR="."
@@ -44,7 +49,12 @@ if [ -z "$effort" ]; then
     done
 fi
 
-# Only env-var max is truly silent.
+# high/xhigh are always silent (persist fine via settings.json, no CC quirk).
+# max is silent EXCEPT when it's settings-only — CC docs: max is session-only
+# in settings.json, only the env var actually persists it.
+if [ "$effort" = "high" ] || [ "$effort" = "xhigh" ]; then
+    exit 0
+fi
 if [ "$effort" = "max" ] && [ "$settings_max" -eq 0 ]; then
     exit 0
 fi
@@ -58,11 +68,11 @@ else
 fi
 
 echo "=============================================================================="
-echo " WARNING: effort '$effort_display' — SDLC requires max."
-echo " Below max = degraded reasoning, shallow TDD, weak self-review."
+echo " WARNING: effort '$effort_display' — SDLC requires high, xhigh, or max."
+echo " Below high = degraded reasoning, shallow TDD, weak self-review."
 echo ""
-echo " Run: /effort max"
-echo " Persist: set CLAUDE_CODE_EFFORT_LEVEL=max in settings env block"
+echo " Run: /effort xhigh (or /effort high — see AI_SETUP_LANES.md)"
+echo " Avoid shell-rc env var persistence — silently overrides model switches."
 echo ""
 echo " recommended models: $RECOMMENDED_MODELS"
 echo "=============================================================================="

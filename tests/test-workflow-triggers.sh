@@ -1551,6 +1551,28 @@ test_no_orphaned_test_scripts() {
 
 test_no_orphaned_test_scripts
 
+# Test 122: All test-*.sh scripts are executable (ci.yml invokes them as
+# ./tests/foo.sh, not `bash tests/foo.sh` — a script committed without the
+# executable bit passes locally (bash tests/foo.sh doesn't need it) but
+# fails CI with "Permission denied", exit 126.
+test_all_test_scripts_executable() {
+    local non_exec=""
+    for script in "$REPO_ROOT"/tests/test-*.sh "$REPO_ROOT"/tests/e2e/test-*.sh; do
+        [ -f "$script" ] || continue
+        if [ ! -x "$script" ]; then
+            non_exec="$non_exec $(basename "$script")"
+        fi
+    done
+
+    if [ -z "$non_exec" ]; then
+        pass "All test-*.sh scripts have the executable bit"
+    else
+        fail "Scripts missing executable bit (chmod +x):$non_exec"
+    fi
+}
+
+test_all_test_scripts_executable
+
 # ============================================
 # Codex Cross-Model Review Findings (Tests 124-130)
 # Validates fixes for issues found by independent Codex audit

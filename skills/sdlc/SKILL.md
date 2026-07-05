@@ -2,7 +2,6 @@
 name: sdlc
 description: Full SDLC workflow for implementing features, fixing bugs, refactoring code, testing, releasing, publishing, and deploying. Use this skill when implementing, fixing, refactoring, testing, adding features, building new code, or releasing/publishing/deploying.
 argument-hint: [task description]
-effort: max
 ---
 # SDLC Skill - Full Development Workflow
 
@@ -98,11 +97,11 @@ State your confidence before presenting an approach:
 
 | Level | Meaning | Action | Effort |
 |-------|---------|--------|--------|
-| HIGH (90%+) | Know exactly what to do | Present, proceed after approval | `max` (default) |
-| MEDIUM (60-89%) | Solid approach, some uncertainty | Present, highlight uncertainties | `max` (default) |
-| LOW (<60%) | Not sure | Research or try Codex; if still LOW, ASK USER | **`/effort max` now** |
-| FAILED 2x | Something's wrong | Codex for fresh perspective; if still stuck, STOP | **`/effort max` now** |
-| CONFUSED | Can't diagnose | Codex; if still confused, STOP and describe | **`/effort max` now** |
+| HIGH (90%+) | Know exactly what to do | Present, proceed after approval | Model default |
+| MEDIUM (60-89%) | Solid approach, some uncertainty | Present, highlight uncertainties | Model default |
+| LOW (<60%) | Not sure | Research or try Codex; if still LOW, ASK USER | **escalate now** (per model, see above) |
+| FAILED 2x | Something's wrong | Codex for fresh perspective; if still stuck, STOP | **escalate now** |
+| CONFUSED | Can't diagnose | Codex; if still confused, STOP and describe | **escalate now** |
 
 **Effort bumping is NOT optional.** Bump BEFORE the next attempt, not after a third failure.
 
@@ -120,13 +119,11 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 ## Recommended Model
 
-**Recommended: `claude-opus-4-6` or `opusplan` (Opus 4.6 max).** Pin in settings or `/model` at session start. `opusplan` = Opus Plan Mode + Sonnet execute — both Max-bundled. Persist effort: `CLAUDE_CODE_EFFORT_LEVEL=max` in env block.
+**Recommended: Sonnet 5 `high`→`xhigh`** — beats Opus 4.6, ~5x less quota. Escalate to **Opus 4.8 `xhigh`** when stuck. **Opus 4.6 `max`** valid for consistency. See `AI_SETUP_LANES.md`.
 
-**Session gotcha:** `/model` persists by default, but project/managed settings can override. Picker `s` (session-only) does not.
+**Effort is model-aware, not blanket `max`** — `max` overthinks on Sonnet 5/Opus 4.8. Set via `/effort` per session, not a shell-rc env var (overrides post-switch — see SDLC.md). `/model` persists; picker `s` does not.
 
-**If pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (1M). **Do not set this for `opusplan`** — 200K, 30% too aggressive.
-
-**Advisor (v2.1.170+):** Flagship → `advisorModel: "fable"`. OpusPlan → `advisorModel: "claude-opus-4-6"`. Set during `/setup-wizard` Step 9.5.
+**Pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (1M) — do not set this for `opusplan` (200K, too aggressive). **Advisor (v2.1.170+):** `advisorModel: "fable"` works with all drivers above; set in `/setup-wizard` Step 9.5.
 
 ## Self-Review Loop
 
@@ -145,15 +142,15 @@ The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confi
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
 1. **Preflight** (`.reviews/preflight-{review_id}.md`) — what you already checked: `/code-review` passed, tests passing, manual verifications, known limits. Reduces reviewer findings to 0-1/round.
-2. **Mission-first handoff** (`.reviews/handoff.json`) — required keys: `"review_id"`, `"status": "PENDING_REVIEW"`, `"round": 1`, `"mission"`/`"success"`/`"failure"` (without them you get "looks good"), `"files_changed"`, `"verification_checklist"` (verification checklist with file:line refs — NOT generic), `"review_instructions"`, `"preflight_path"`. Optional `"pr_number":` opts into PreCompact self-heal (#209: PR MERGED → implicit CERTIFIED).
-3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `xhigh`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; append `< /dev/null` always. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; `run_in_background: true` avoids the Bash 10-min (`600000` ms) `timeout` cap that force-kills foreground codex (multi-artifact bundles take 5–30 min). xhigh 1–30 min; wrapper's `STALL_SECONDS=1800` is the real control. Heartbeat: `scripts/codex-review-with-progress.sh`. Foreground burned 70 min on a 7-min review (#364).
+2. **Mission-first handoff** (`.reviews/handoff.json`) — required keys: `"review_id"`, `"status": "PENDING_REVIEW"`, `"round": 1`, `"mission"`/`"success"`/`"failure"` (without them you get "looks good"), `"files_changed"`, `"verification_checklist"` (verification checklist with file:line refs — NOT generic), `"review_instructions"`, `"preflight_path"`. Optional `"pr_number":` opts into PreCompact self-heal (#209: MERGED → implicit CERTIFIED).
+3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `xhigh`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; `run_in_background: true` avoids the Bash 10-min (`600000` ms) `timeout` cap that force-kills foreground codex (multi-artifact bundles take 5–30 min). xhigh 1–30 min; wrapper's `STALL_SECONDS=1800` controls it. Heartbeat: `scripts/codex-review-with-progress.sh`. Foreground burned 70 min on a 7-min review (#364).
 4. **Dialogue loop:** per-finding response (`{"finding": "1", "action": "FIXED|DISPUTED|ACCEPTED", "summary": "..."}` in `.reviews/response.json`). Bump round, set status `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. No new findings unless P0." **NEVER unilaterally dismiss** — always run the recheck. It's a conversation: the reviewer may accept your dispute or counter with evidence you missed.
 
-**Convergence:** 2 rounds sweet spot, 3 max. After 3 NOT CERTIFIED → escalate.
+**Convergence:** 2 rounds sweet spot, 3 max, escalate after — except large migrations: judge by finding trend, not count.
 
 **Enforcement:** `hooks/goal-confidence-check.sh` warns when `/goal` skips the 95%-confidence or DLC-binding gates (#360).
 
-**Multi-reviewer:** respond to each reviewer independently (no shared anchoring). **Non-code domains:** add `"audience"`/`"stakes"` keys to handoff.
+**Multi-reviewer:** respond to each independently (no shared anchoring). **Non-code domains:** add `"audience"`/`"stakes"` keys.
 
 ### Release Review Focus
 

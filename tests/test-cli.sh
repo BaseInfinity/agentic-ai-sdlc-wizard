@@ -264,8 +264,8 @@ test_wizard_doc() {
     rm -rf "$d"
 }
 
-# Test 10: settings.json is valid JSON with 5 hook events
-# (UserPromptSubmit, PreToolUse, InstructionsLoaded, SessionStart, PreCompact)
+# Test 10: settings.json is valid JSON with 6 hook events
+# (UserPromptSubmit, PreToolUse, InstructionsLoaded, SessionStart, PreCompact, Stop)
 test_settings_json() {
     local d
     d=$(make_temp)
@@ -278,10 +278,10 @@ with open('$d/.claude/settings.json') as f:
 hooks = data.get('hooks', {})
 print(len(hooks))
 " 2>/dev/null)
-    if [ "$hook_count" = "5" ]; then
-        pass "settings.json is valid JSON with 5 hook events"
+    if [ "$hook_count" = "6" ]; then
+        pass "settings.json is valid JSON with 6 hook events"
     else
-        fail "settings.json should have 5 hook events, found: $hook_count"
+        fail "settings.json should have 6 hook events (added Stop, #436), found: $hook_count"
     fi
     rm -rf "$d"
 }
@@ -343,12 +343,13 @@ test_skill_frontmatter() {
     (cd "$d" && node "$CLI" init > /dev/null 2>&1)
     local ok=true
     grep -q "^name: sdlc$" "$d/.claude/skills/sdlc/SKILL.md" || ok=false
-    # v1.80.0: frontmatter effort is max (wizard's recommended default for 4.6 max flagship)
-    grep -qE "^effort: max$" "$d/.claude/skills/sdlc/SKILL.md" || ok=false
+    # v1.84.0: effort is model-aware (see AI_SETUP_LANES.md), so frontmatter
+    # deliberately omits a blanket effort field
+    grep -qE "^effort:" "$d/.claude/skills/sdlc/SKILL.md" && ok=false
     if [ "$ok" = true ]; then
-        pass "Template skills have correct frontmatter (name + effort: max)"
+        pass "Template skills have correct frontmatter (name, no blanket effort field)"
     else
-        fail "Skills should have name: sdlc and effort: max in frontmatter"
+        fail "Skills should have name: sdlc and no blanket effort: field in frontmatter"
     fi
     rm -rf "$d"
 }

@@ -508,17 +508,18 @@ test_sdlc_skill_warns_against_compound_autocompact_config() {
     fi
 }
 
-# Test (#207, Codex round 1 finding 2): the shipped `/sdlc` skill must frame
-# the Opus pin as opt-in (matching the wizard doc post-#198), not default.
-# v1.80.0 flipped from opus[1m] alias to explicit claude-opus-4-6[1m] —
-# both forms are acceptable references to the opt-in pin.
+# Test (#207, Codex round 1 finding 2; updated #434 for Sonnet 5): the shipped
+# `/sdlc` skill must frame the model pin as a recommendation, not a silent
+# default. v1.80.0 flipped opus[1m] -> claude-opus-4-6[1m]; #434 (2026-07-04)
+# made Sonnet 5 the new recommended driver. Any of the three is acceptable —
+# what matters is the section explicitly frames it as "Recommended:".
 test_sdlc_skill_frames_model_as_recommendation() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
-    if grep -qE 'Recommended:.*claude-opus|Recommended:.*opusplan|opusplan.*claude-opus' "$SKILL"; then
+    if grep -qE 'Recommended:.*claude-opus|Recommended:.*opusplan|Recommended:.*Sonnet|opusplan.*claude-opus' "$SKILL"; then
         pass "skills/sdlc/SKILL.md frames model pin as recommendation"
     else
-        fail "skills/sdlc/SKILL.md must recommend opusplan or claude-opus-4-X"
+        fail "skills/sdlc/SKILL.md must recommend Sonnet 5, opusplan, or claude-opus-4-X"
     fi
 }
 
@@ -878,6 +879,152 @@ test_cross_model_review_required_not_optional() {
 }
 
 test_cross_model_review_required_not_optional
+
+# ────────────────────────────────────────────
+# AI Setup Lanes — Sonnet 5 + model-aware effort (July 2026 update)
+# ────────────────────────────────────────────
+
+echo ""
+echo "--- AI Setup Lanes ---"
+
+test_setup_lanes_references_sonnet_5() {
+    local LANES="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$LANES" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    if grep -qE 'Sonnet 5|claude-sonnet-5' "$LANES"; then
+        pass "AI_SETUP_LANES.md references Sonnet 5"
+    else
+        fail "AI_SETUP_LANES.md must reference Sonnet 5 (launched June 30, replaces Sonnet 4.6)"
+    fi
+}
+
+test_setup_lanes_has_model_aware_effort() {
+    local LANES="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$LANES" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    if grep -qE 'xhigh.*Opus 4\.8|Opus 4\.8.*xhigh' "$LANES" \
+        && grep -qE 'high.*Sonnet 5|Sonnet 5.*high' "$LANES"; then
+        pass "AI_SETUP_LANES.md has model-aware effort (xhigh for Opus 4.8, high for Sonnet 5)"
+    else
+        fail "AI_SETUP_LANES.md must recommend effort per model (xhigh for Opus 4.8, high for Sonnet 5)"
+    fi
+}
+
+test_setup_lanes_no_blanket_max() {
+    local LANES="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$LANES" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    if grep -qE 'max.*all models|always.*max|max.*every' "$LANES"; then
+        fail "AI_SETUP_LANES.md must NOT recommend blanket max for all models (max overthinks on Opus 4.8 and Sonnet 5)"
+    else
+        pass "AI_SETUP_LANES.md does not blanket-recommend max for all models"
+    fi
+}
+
+test_setup_lanes_effort_escalation_ladder() {
+    local LANES="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$LANES" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    if grep -qiE 'escalat|ramp|bump.*effort|raise.*effort|ladder' "$LANES"; then
+        pass "AI_SETUP_LANES.md documents effort escalation (start at default, raise when needed)"
+    else
+        fail "AI_SETUP_LANES.md must document effort escalation strategy"
+    fi
+}
+
+test_setup_lanes_references_sonnet_5
+test_setup_lanes_has_model_aware_effort
+test_setup_lanes_no_blanket_max
+test_setup_lanes_effort_escalation_ladder
+
+# The /sdlc skill's "Recommended Model" section is read on every /sdlc
+# invocation — it must not enshrine the same blanket-max bug the hook had.
+# Real incident: a user's ~/.zshrc had CLAUDE_CODE_EFFORT_LEVEL=max from
+# this exact advice, and it silently overrode /effort xhigh after they
+# switched to Sonnet 5 (2026-07-04).
+test_sdlc_skill_recommended_model_is_model_aware() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    if grep -qE 'CLAUDE_CODE_EFFORT_LEVEL.?=.?max.? in (settings )?env block' "$SKILL"; then
+        fail "skills/sdlc/SKILL.md must not blanket-recommend persisting max via env var (bit a real user, 2026-07-04)"
+    else
+        pass "skills/sdlc/SKILL.md does not blanket-recommend persisting max via env var"
+    fi
+}
+
+test_sdlc_skill_recommended_model_mentions_sonnet_5() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    if grep -qE 'Sonnet 5|claude-sonnet-5' "$SKILL"; then
+        pass "skills/sdlc/SKILL.md Recommended Model section mentions Sonnet 5"
+    else
+        fail "skills/sdlc/SKILL.md must mention Sonnet 5 in Recommended Model section"
+    fi
+}
+
+test_sdlc_skill_recommended_model_is_model_aware
+test_sdlc_skill_recommended_model_mentions_sonnet_5
+
+# This repo's own dogfooded SDLC.md has the identical table/callout pattern
+# as skills/sdlc/SKILL.md had — same blanket-max bug, same stale opus-4-6
+# recommendation. It also already has a "Lessons Learned" entry (added
+# 2026-07-04) explaining why blanket max is wrong, which the table
+# contradicted until fixed. Found while shipping #436/#437, 2026-07-05.
+test_sdlc_config_recommended_effort_is_model_aware() {
+    local CONFIG="$REPO_ROOT/SDLC.md"
+    if [ ! -f "$CONFIG" ]; then fail "SDLC.md not found"; return; fi
+    if grep -qE 'CLAUDE_CODE_EFFORT_LEVEL.?=.?max.? in (settings )?env block' "$CONFIG"; then
+        fail "SDLC.md must not blanket-recommend persisting max via env var (contradicts its own Lessons Learned entry)"
+    else
+        pass "SDLC.md does not blanket-recommend persisting max via env var"
+    fi
+}
+
+test_sdlc_config_recommended_model_mentions_sonnet_5() {
+    local CONFIG="$REPO_ROOT/SDLC.md"
+    if [ ! -f "$CONFIG" ]; then fail "SDLC.md not found"; return; fi
+    if grep -qE 'Sonnet 5|claude-sonnet-5' "$CONFIG"; then
+        pass "SDLC.md Recommended Model row mentions Sonnet 5"
+    else
+        fail "SDLC.md must mention Sonnet 5 in its Recommended Model row"
+    fi
+}
+
+test_sdlc_config_recommended_effort_is_model_aware
+test_sdlc_config_recommended_model_mentions_sonnet_5
+
+# Cowork plugin (cowork/) shipped in PR #410 (ROADMAP #424) with working
+# skills + prompt-based hooks and its own README, but was never
+# cross-referenced from the main wizard doc — invisible to anyone who
+# only reads CLAUDE_CODE_SDLC_WIZARD.md. Found 2026-07-05.
+test_wizard_doc_has_cowork_section() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    if grep -qiE '^#+ .*Cowork' "$DOC"; then
+        pass "CLAUDE_CODE_SDLC_WIZARD.md has a Cowork section"
+    else
+        fail "CLAUDE_CODE_SDLC_WIZARD.md must have a Cowork section cross-referencing cowork/README.md"
+    fi
+}
+
+test_wizard_doc_has_cowork_section
+
+# Autocompact Tuning table previously blanket-recommended 30% for "any 1M
+# model" — this was Opus-specific (opus[1m] needed an opt-in pin for
+# extended context). Sonnet 5 always runs 1M natively with its own
+# proactive-compaction default (~967K, per code.claude.com/docs/en/
+# model-config#sonnet-5-context-window) — the 30% figure was never
+# re-derived for it and doesn't apply. Verified via live research
+# 2026-07-05, not carried over from the Opus-era table unexamined.
+test_wizard_doc_autocompact_mentions_sonnet_5() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    local section
+    section=$(awk '/^### Autocompact Tuning/{f=1} f && /^###[^#]/ && !/^### Autocompact Tuning/{f=0} f' "$DOC")
+    if echo "$section" | grep -qE 'Sonnet 5'; then
+        pass "Autocompact Tuning section addresses Sonnet 5 specifically"
+    else
+        fail "Autocompact Tuning section must address Sonnet 5's native 1M/967K default, not just Opus-era guidance"
+    fi
+}
+
+test_wizard_doc_autocompact_mentions_sonnet_5
 
 # ────────────────────────────────────────────
 # Summary

@@ -130,11 +130,7 @@ Default if no response: **A** (dual-maintain). Document the user's choice as a o
 
 **If NO `AGENTS.md` exists**: skip this step silently. Phase (b) of #205 (offer to ALSO generate AGENTS.md alongside CLAUDE.md) is deferred — not in v1.42.0 scope.
 
-**Phase scope honest summary**:
-- Phase (a) — DONE in v1.42.0: detection + decision surfacing only.
-- Phase (b) — deferred: write/symlink AGENTS.md when generating CLAUDE.md fresh.
-- Phase (c) — partial: this step IS the setup-skill update.
-- Phase (d) — deferred: cross-document-consistency drift test.
+**Scope**: phase (a) only — detection + surfacing (v1.42.0). Phases (b) symlink-write, (c) partial (this step), (d) drift test are deferred.
 
 ### Step 5: Generate SDLC.md
 
@@ -228,9 +224,9 @@ Present suggestions and let the user confirm.
 
 ### Step 9.5: Context Window + Mixed-Mode Configuration (Opt-In)
 
-The CLI ships `cli/templates/settings.json` with **no** `model` or `env` pin by default. This preserves Claude Code's built-in model auto-selection. Power users can opt into a pin during setup — `opusplan` for cost-conscious SDLC, or `claude-opus-4-6` for full flagship.
+The CLI ships `cli/templates/settings.json` with **no** `model` or `env` pin by default. This preserves Claude Code's built-in model auto-selection. Power users can opt into a pin during setup — see `AI_SETUP_LANES.md` for the full lane comparison (Setup A: Sonnet 5 + Fable, recommended if pinning at all; Setup B: Opus 4.6 Stability, legacy flagship; Setup C: OpusPlan Hybrid).
 
-**Why this is opt-in (issue #198):** A top-level `"model"` in `settings.json` disables auto-mode for the session. Pinning is only worth it when you want consistent model behavior (opusplan or flagship) rather than per-turn auto-selection.
+**Why this is opt-in (issue #198):** A top-level `"model"` in `settings.json` disables auto-mode for the session. Pinning is only worth it when you want consistent model behavior rather than per-turn auto-selection.
 
 **Check for global `[1m]` model pin (#391):** Read `~/.claude/settings.json`. If `model` contains `[1m]`, warn: global pin forces 1M on every repo; headless surfaces bill against credits after June 15. Offer `[r] Remove / [k] Keep`. If `r`: delete the `model` key.
 
@@ -248,31 +244,45 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 >
 > How do you want to configure the model for this repo?
 >
-> - **[N] No pin (default):** Auto-mode. CC picks model per turn. Simplest.
-> - **[o] OpusPlan** *(recommended for cost-conscious SDLC):* Pins `model: "opusplan"`. Opus plans (Shift+Tab), Sonnet executes. Both 200K, Max-bundled. No API credit drain (#390).
-> - **[f] Flagship full** *(recommended for complex / high-stakes):* Pins `model: "claude-opus-4-6"`. Opus 4.6 max everywhere. Max-bundled (auto-upgrades to 1M on Max plans).
-> - **[l] Latest** *(opt-in bleeding-edge):* Pins `model: "claude-opus-4-8"`. Effort: always max (#395).
+> - **[N] No pin (default):** Auto-mode. CC picks model per turn. Simplest, no advisor.
+> - **[s] Sonnet 5 + Fable** *(Setup A — recommended if you want a pin):* Pins `model: "sonnet"`, `advisorModel: "fable"`. Native 1M context, no `[1m]` suffix needed. Beats Opus 4.6 on every coding benchmark at ~5x less Max quota per turn. Effort: `high`, escalate to `xhigh` for hard tasks.
+> - **[o] OpusPlan Hybrid** *(Setup C — cost-conscious, still want Opus reasoning):* Pins `model: "opusplan"`. Opus 4.8 plans (Shift+Tab), Sonnet 5 executes. Max-bundled. No API credit drain (#390).
+> - **[b] Opus 4.6 Stability** *(Setup B — legacy flagship, proven consistency for high-stakes/complex repos):* Pins `model: "claude-opus-4-6"`. Opus 4.6 max everywhere. Max-bundled (auto-upgrades to 1M on Max plans).
 >
-> `[N/o/f/l]`
+> `[N/s/o/b]`
 
 **If the user answers `N` (default):** Make no edits to `.claude/settings.json`. Auto-mode stays on. Done.
+
+**If the user answers `s` (Sonnet 5 + Fable):** Edit `.claude/settings.json` and add:
+
+```json
+{
+  "model": "sonnet",
+  "advisorModel": "fable",
+  "effortLevel": "high",
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"
+  }
+}
+```
+
+Tell the user: "Sonnet 5 + Fable — the wizard's recommended pin (Setup A). Effort defaults to `high`, escalate via `/effort xhigh` for hard tasks. Requires CC v2.1.170+ — run `! claude update` if needed."
 
 **If the user answers `o` (opusplan):** Edit `.claude/settings.json` and add:
 
 ```json
 {
   "model": "opusplan",
-  "advisorModel": "claude-opus-4-6",
+  "advisorModel": "claude-opus-4-8",
   "env": {
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
-    "CLAUDE_CODE_EFFORT_LEVEL": "max"
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8"
   }
 }
 ```
 
-Tell the user: "Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both Max-bundled at 200K — no API credit drain. The Opus advisor auto-compensates for Sonnet's lighter reasoning at key decision points. Cross-model reviews still run at GPT-5.5 xhigh. Requires CC v2.1.170+ — run `! claude update` if needed."
+Tell the user: "Opus 4.8 plans (Shift+Tab), Sonnet 5 executes — both Max-bundled, no API credit drain (Setup C). Set effort per-session with `/effort` rather than a shell-rc env var. Requires CC v2.1.170+ — run `! claude update` if needed."
 
-**If the user answers `f` (flagship):** Edit `.claude/settings.json` and add:
+**If the user answers `b` (Opus 4.6 Stability):** Edit `.claude/settings.json` and add:
 
 ```json
 {
@@ -285,30 +295,16 @@ Tell the user: "Opus reasons during Plan Mode (Shift+Tab), Sonnet executes. Both
 }
 ```
 
-Tell the user: "Opus 4.6 max everywhere with Fable 5 advisor. Fable auto-consults at key decision points (architecture, complexity, blast-radius). On Max plans, Opus auto-upgrades to 1M context — the autocompact override prevents early compaction at ~76K. Requires CC v2.1.170+ — run `! claude update` if needed."
-
-**If the user answers `l` (latest):** Edit `.claude/settings.json` and add:
-
-```json
-{
-  "model": "claude-opus-4-8",
-  "advisorModel": "fable",
-  "env": {
-    "CLAUDE_CODE_EFFORT_LEVEL": "max"
-  }
-}
-```
-
-Tell the user: "Always max effort on all Claude models (#395) with Fable 5 advisor. Fable auto-consults at key decision points. Requires CC v2.1.170+ — run `! claude update` if needed. Escape hatch: change `model` back to `claude-opus-4-6` or remove to fall back to auto-mode."
+Tell the user: "Opus 4.6 max everywhere with Fable advisor — legacy flagship (Setup B), still valid for proven consistency on high-stakes work. `max` is Opus 4.6's own sweet spot (no `xhigh` support), so a persistent env pin is fine here, unlike other models. Requires CC v2.1.170+ — run `! claude update` if needed."
 
 Mention the escape hatch in all four cases:
-- To opt out later: remove the `model` line (and optionally the `env` block) from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".
+- To opt out later: remove the `model` line (and optionally the `env`/`effortLevel` keys) from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".
 - To switch tiers later: edit `.claude/settings.json` and replace the `model` value, or re-run `/setup-wizard` Step 9.5.
-- For CI pipelines with short tasks (flagship only), consider `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=60` — compact early to stay fast.
+- For CI pipelines with short tasks (Setup B only), consider `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=60` — compact early to stay fast.
 
 This is project-scoped and shared with the team via git.
 
-**After writing project settings (for `[o]`, `[f]`, or `[l]`), ask once:**
+**After writing project settings (for `[s]`, `[o]`, or `[b]`), ask once:**
 
 > Also set `advisorModel` in your global `~/.claude/settings.json`?
 > (Applies advisor to ALL your projects. Project-level always overrides.)
@@ -316,9 +312,11 @@ This is project-scoped and shared with the team via git.
 
 Default No. If yes, read `~/.claude/settings.json`, add/update only the `advisorModel` key (do NOT touch other keys), write back. This is the only global settings mutation in setup besides Step 7.7's dead plugin cleanup.
 
-**Note:** Flagship, OpusPlan, and Latest choices include an advisor model that auto-consults at key decision points. Requires CC v2.1.170+ — run `! claude update` from inside a CC session if needed.
+**Note:** Sonnet 5, OpusPlan, and Opus 4.6 Stability choices include an advisor model that auto-consults at key decision points. Requires CC v2.1.170+ — run `! claude update` from inside a CC session if needed.
 
 ### Step 10: Customize Hooks
+
+If `.claude/hooks/` has fewer than 9 files, hooks were never installed — tell the user to run `npx agentic-sdlc-wizard@latest init` first (the wizard doc's hook code blocks are illustrative, not a full template set).
 
 Update `tdd-pretool-check.sh` with the actual source directory (replace generic `/src/` pattern).
 
