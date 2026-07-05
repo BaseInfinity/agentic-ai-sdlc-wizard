@@ -142,7 +142,9 @@ test_model_effort_size_cap() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
-    echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
+    # "medium" (below the high/xhigh/max floor) so the hook actually emits a
+    # warning to size-cap — "high" is silent as of v1.84.0.
+    echo '{"effortLevel":"medium"}' > "$tmpdir/.claude/settings.json"
     local size
     size=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null | wc -c | tr -d ' ')
     rm -rf "$tmpdir"
@@ -1254,6 +1256,117 @@ test_tdd_hook_missing_path() {
     fi
 }
 
+# #436 P0 (matching codex-gate bug class): tdd-pretool-check.sh printed a TDD
+# reminder but never exited 2 — pure prose despite tdd_red being CRITICAL in
+# the SDLC scoring rubric. Fable's proposed mechanism: block writing to src/**
+# unless a test file was touched earlier this session (edit-ordering gate,
+# not full "does a failing test exist" verification — that's out of a bash
+# hook's reach, but ordering is a real, checkable proxy).
+
+test_tdd_gate_blocks_src_write_when_no_test_touched() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"session_id":"sess-block-1","tool_input":{"file_path":"/project/src/app.js"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "test"; then
+        pass "tdd gate BLOCKS (exit 2) src/ write when no test touched yet this session"
+    else
+        fail "tdd gate should exit 2 mentioning test-first, got exit=$exit_code out: $out"
+    fi
+}
+
+test_tdd_gate_allows_src_write_after_test_touched() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local sid="sess-block-2"
+    # First: touch a test file (plants the sentinel)
+    echo "{\"session_id\":\"$sid\",\"tool_input\":{\"file_path\":\"/project/src/__tests__/app.test.js\"}}" \
+        | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" > /dev/null 2>&1
+    # Then: write to src/ in the same session
+    local out exit_code
+    out=$(echo "{\"session_id\":\"$sid\",\"tool_input\":{\"file_path\":\"/project/src/app.js\"}}" \
+        | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ]; then
+        pass "tdd gate allows src/ write after a test file was touched this session"
+    else
+        fail "tdd gate should exit 0 once a test file was touched, got exit=$exit_code out: $out"
+    fi
+}
+
+test_tdd_gate_allows_test_file_writes_unconditionally() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"session_id":"sess-block-3","tool_input":{"file_path":"/project/src/__tests__/app.test.js"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ]; then
+        pass "tdd gate always allows writing test files themselves (exit 0)"
+    else
+        fail "tdd gate should never block a test-file write, got exit=$exit_code out: $out"
+    fi
+}
+
+test_tdd_gate_recognizes_test_patterns() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local fails=0
+    for test_path in "/p/src/foo.test.js" "/p/src/foo.spec.ts" "/p/src/test_foo.py" "/p/src/__tests__/foo.js"; do
+        local sid
+        sid="sess-pattern-$(printf '%s' "$test_path" | tr -cd 'A-Za-z0-9')"
+        echo "{\"session_id\":\"$sid\",\"tool_input\":{\"file_path\":\"$test_path\"}}" \
+            | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" > /dev/null 2>&1
+        local out exit_code
+        out=$(echo "{\"session_id\":\"$sid\",\"tool_input\":{\"file_path\":\"/p/src/impl.js\"}}" \
+            | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+        if [ "$exit_code" -ne 0 ]; then
+            fails=$((fails+1))
+            echo "  [$test_path] did not unlock src/ writes, exit=$exit_code out: $out" >&2
+        fi
+    done
+    rm -rf "$tmpdir"
+    if [ "$fails" -eq 0 ]; then
+        pass "tdd gate recognizes .test./.spec./test_*/__tests__/ as test files"
+    else
+        fail "tdd gate missed $fails test-file naming conventions"
+    fi
+}
+
+test_tdd_gate_no_block_without_session_id() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"tool_input":{"file_path":"/project/src/app.js"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ]; then
+        pass "tdd gate degrades gracefully (no block) without session_id — no way to track ordering"
+    else
+        fail "tdd gate should not block when session_id is absent (can't track state), got exit=$exit_code out: $out"
+    fi
+}
+
+# Codex review finding (hook-enforcement-436, round 1): the src/ gate matches
+# `*"/src/"*`, which requires a slash BEFORE "src". A relative path like
+# "src/app.js" (no leading slash — a plausible cwd-relative file_path) never
+# matches, so the entire gate silently no-ops for relative src/ paths.
+test_tdd_gate_blocks_relative_src_path() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"session_id":"sess-relative-1","tool_input":{"file_path":"src/app.js"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "test"; then
+        pass "tdd gate BLOCKS (exit 2) relative src/ path when no test touched yet"
+    else
+        fail "tdd gate should exit 2 for relative 'src/app.js' path, got exit=$exit_code out: $out"
+    fi
+}
+
 # ---- instructions-loaded-check.sh tests ----
 
 # Test 12: Script exists and is executable
@@ -1561,43 +1674,40 @@ test_wizard_effort_level_section() {
     fi
 }
 
-# Test 32: Wizard doc recommends max as default effort (v1.80.0+: 4.6 max flagship)
+# Test 32: Wizard doc recommends model-aware effort (v1.84.0+: Sonnet 5 default)
 # Also accepts "high" references since the wizard discusses effort floors.
 test_wizard_effort_high_default() {
     local wizard="$SCRIPT_DIR/../CLAUDE_CODE_SDLC_WIZARD.md"
     if grep -qi "max.*default\|default.*max\|recommended default" "$wizard" && grep -qE "effort.*(max|high)" "$wizard"; then
-        pass "Wizard doc recommends max as default effort (v1.80.0+)"
+        pass "Wizard doc recommends a default effort level (v1.84.0+)"
     else
-        fail "Wizard doc should recommend max as the default effort level"
+        fail "Wizard doc should recommend a default effort level"
     fi
 }
 
-# Test 33: Wizard confidence table mentions /effort max for LOW confidence
+# Test 33: Wizard confidence table mentions escalating effort for LOW confidence
+# (v1.84.0: model-aware, not a blanket /effort max)
 test_wizard_confidence_effort_max() {
     local wizard="$SCRIPT_DIR/../CLAUDE_CODE_SDLC_WIZARD.md"
-    if grep -q '/effort max' "$wizard" && grep -q 'LOW' "$wizard"; then
-        # Verify they appear in proximity (within the confidence table area)
-        local section
-        section=$(sed -n '/## Confidence Check/,/^## /p' "$wizard")
-        if echo "$section" | grep -q '/effort max'; then
-            pass "Wizard confidence table mentions /effort max"
-        else
-            fail "Wizard confidence table should mention /effort max for LOW confidence"
-        fi
+    local section
+    section=$(sed -n '/## Confidence Check/,/^## /p' "$wizard")
+    if echo "$section" | grep -qi 'escalate effort' && echo "$section" | grep -q 'LOW'; then
+        pass "Wizard confidence table mentions escalating effort for LOW confidence"
     else
-        fail "Wizard should mention /effort max in confidence section"
+        fail "Wizard confidence table should mention escalating effort for LOW confidence"
     fi
 }
 
-# Test 34: SDLC skill confidence table mentions /effort max for LOW confidence
+# Test 34: SDLC skill confidence table mentions escalating effort for LOW confidence
+# (v1.84.0: model-aware, not a blanket /effort max)
 test_skill_confidence_effort_max() {
     local skill="$SCRIPT_DIR/../.claude/skills/sdlc/SKILL.md"
     local section
     section=$(sed -n '/## Confidence Check/,/^## /p' "$skill")
-    if echo "$section" | grep -q '/effort max'; then
-        pass "SDLC skill confidence table mentions /effort max"
+    if echo "$section" | grep -qi 'escalate now'; then
+        pass "SDLC skill confidence table mentions escalating effort for LOW confidence"
     else
-        fail "SDLC skill confidence table should mention /effort max for LOW confidence"
+        fail "SDLC skill confidence table should mention escalating effort for LOW confidence"
     fi
 }
 
@@ -1924,6 +2034,12 @@ test_tdd_hook_valid_json
 test_tdd_hook_test_file_ok
 test_tdd_hook_other_file_ok
 test_tdd_hook_missing_path
+test_tdd_gate_blocks_src_write_when_no_test_touched
+test_tdd_gate_allows_src_write_after_test_touched
+test_tdd_gate_allows_test_file_writes_unconditionally
+test_tdd_gate_recognizes_test_patterns
+test_tdd_gate_no_block_without_session_id
+test_tdd_gate_blocks_relative_src_path
 test_instructions_hook_exists
 test_instructions_hook_missing_sdlc
 test_instructions_hook_missing_testing
@@ -2588,10 +2704,30 @@ test_model_effort_check_exists() {
     fi
 }
 
-# Test: detects stale effort and outputs upgrade nudge with model recommendation.
-# The nudge must name the wizard's recommended model alias so the command is copy-pasteable.
-# Wizard's flagship recommendation is claude-opus-4-6[1m] (v1.80.0+).
+# Test: detects genuinely stale (below-floor) effort and outputs upgrade nudge
+# with model recommendation. The nudge must name the wizard's recommended
+# model alias so the command is copy-pasteable.
+# v1.84.0: `high` is now an acceptable floor (Sonnet 5's/Fable's tested
+# default) — only `medium`/`low`/unset should still warn.
 test_model_effort_check_stale_effort() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    echo '{"effortLevel":"medium"}' > "$tmpdir/.claude/settings.json"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if echo "$output" | grep -q '/effort' \
+        && echo "$output" | grep -q 'WARNING' \
+        && echo "$output" | grep -qF 'opusplan'; then
+        pass "model-effort-check.sh warns on effort=medium (below the high/xhigh/max floor)"
+    else
+        fail "model-effort-check.sh should warn on effort=medium, got: $output"
+    fi
+}
+
+# Test: high is silent — it's Sonnet 5's and Fable's tested default (v1.84.0)
+test_model_effort_check_high_silent() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
@@ -2599,17 +2735,15 @@ test_model_effort_check_stale_effort() {
     local output
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q '/effort' \
-        && echo "$output" | grep -q 'WARNING' \
-        && echo "$output" | grep -qF 'opusplan'; then
-        pass "model-effort-check.sh warns on effort=high (only max acceptable)"
+    if [ -z "$output" ]; then
+        pass "v1.84.0: model-effort-check.sh is silent on high (Sonnet 5/Fable tested default)"
     else
-        fail "model-effort-check.sh should warn on effort=high, got: $output"
+        fail "v1.84.0: high should be silent (acceptable floor), got: $output"
     fi
 }
 
-# Test: xhigh is NOT silent — only max is acceptable (#395)
-test_model_effort_check_xhigh_warns() {
+# Test: xhigh is silent — Opus 4.8's floor, and Sonnet 5's escalation level (#434)
+test_model_effort_check_xhigh_silent() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
@@ -2617,10 +2751,48 @@ test_model_effort_check_xhigh_warns() {
     local output
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q "WARNING"; then
-        pass "#395: model-effort-check.sh warns on xhigh (only max acceptable)"
+    if [ -z "$output" ]; then
+        pass "#434: model-effort-check.sh is silent on xhigh (Opus 4.8 floor, Sonnet 5 escalation level)"
     else
-        fail "#395: xhigh should warn, got: $output"
+        fail "#434: xhigh should be silent (acceptable floor), got: $output"
+    fi
+}
+
+# Same as above but via env var (the persisted path)
+test_model_effort_check_xhigh_env_var_silent() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    echo '{}' > "$tmpdir/.claude/settings.json"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="xhigh" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if [ -z "$output" ]; then
+        pass "#434: CLAUDE_CODE_EFFORT_LEVEL=xhigh is silent (acceptable floor)"
+    else
+        fail "#434: env var xhigh should be silent, got: $output"
+    fi
+}
+
+# RECOMMENDED_MODELS must include Sonnet 5 — it's now the recommended default
+# driver (beats Opus 4.6 on every coding benchmark, ~5x lighter Max quota).
+test_model_effort_check_recommends_sonnet_5() {
+    if grep -qi 'sonnet' "$HOOKS_DIR/model-effort-check.sh"; then
+        pass "#434: model-effort-check.sh recommends Sonnet 5 (new default driver)"
+    else
+        fail "#434: model-effort-check.sh must mention Sonnet in RECOMMENDED_MODELS"
+    fi
+}
+
+# The hook must NOT blanket-recommend persisting max via a shell-rc env var.
+# That advice bit a real user: CLAUDE_CODE_EFFORT_LEVEL=max in .zshrc silently
+# overrode /effort xhigh after switching from Opus 4.6 to Sonnet 5. The hook
+# should point to model-aware guidance instead of a one-size-fits-all env var.
+test_model_effort_check_no_blanket_max_persist_advice() {
+    if grep -qE 'CLAUDE_CODE_EFFORT_LEVEL=max in settings env block' "$HOOKS_DIR/model-effort-check.sh"; then
+        fail "#434: hook must not blanket-recommend persisting max via env var — see AI_SETUP_LANES.md instead"
+    else
+        pass "#434: hook does not blanket-recommend persisting max via env var"
     fi
 }
 
@@ -2648,11 +2820,13 @@ test_settings_has_session_start_hook() {
 }
 
 # Test: nested CWD uses CLAUDE_PROJECT_DIR for settings (Codex P0 fix)
+# Uses "medium" (below the high/xhigh/max floor) so the hook still warns —
+# "high" is now silent (v1.84.0), which would defeat this test's purpose.
 test_model_effort_check_nested_cwd() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude" "$tmpdir/src/deep"
-    echo '{"effortLevel":"high"}' > "$tmpdir/.claude/settings.json"
+    echo '{"effortLevel":"medium"}' > "$tmpdir/.claude/settings.json"
     local output
     output=$(cd "$tmpdir/src/deep" && echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
@@ -2714,20 +2888,22 @@ test_model_effort_check_max_env_var_silent() {
     fi
 }
 
-# Test: below-xhigh produces LOUD warning mentioning SDLC compliance + /effort max
-# Per ROADMAP #217: below-xhigh breaks SDLC compliance on Opus 4.8 (shallow reasoning,
-# skipped TDD, dropped self-review). Hook must produce a distinguishable WARNING that
-# recommends /effort max (not just the soft "upgrade available" nudge).
+# Test: below-high produces LOUD warning mentioning SDLC compliance + /effort xhigh
+# Per v1.84.0: high is now an acceptable floor too (Sonnet 5's/Fable's tested
+# default, see test_model_effort_check_high_silent) — only medium/low should
+# still warn. max is the Opus 4.6 sweet spot; blanket-recommending max
+# regressed on Sonnet 5/Opus 4.8. Hook must produce a distinguishable WARNING
+# that recommends /effort xhigh (not just the soft "upgrade available" nudge).
 test_model_effort_check_below_xhigh_loud_warning() {
     local tmpdir
     tmpdir=$(mktemp -d)
     local fails=0
-    for bad_effort in high medium low; do
+    for bad_effort in medium low; do
         mkdir -p "$tmpdir/.claude"
         echo "{\"effortLevel\":\"$bad_effort\"}" > "$tmpdir/.claude/settings.json"
         local output
         output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
-        # Must contain: WARNING marker, SDLC mention, explicit /effort max recommendation
+        # Must contain: WARNING marker, SDLC mention, explicit /effort xhigh recommendation
         if ! echo "$output" | grep -q 'WARNING'; then
             fails=$((fails+1))
             echo "  [$bad_effort] missing WARNING marker: $output" >&2
@@ -2736,17 +2912,17 @@ test_model_effort_check_below_xhigh_loud_warning() {
             fails=$((fails+1))
             echo "  [$bad_effort] missing SDLC mention: $output" >&2
         fi
-        if ! echo "$output" | grep -q '/effort max'; then
+        if ! echo "$output" | grep -q '/effort xhigh'; then
             fails=$((fails+1))
-            echo "  [$bad_effort] missing '/effort max' recommendation: $output" >&2
+            echo "  [$bad_effort] missing '/effort xhigh' recommendation: $output" >&2
         fi
         rm -rf "$tmpdir/.claude"
     done
     rm -rf "$tmpdir"
     if [ "$fails" -eq 0 ]; then
-        pass "model-effort-check.sh produces LOUD WARNING + SDLC + /effort max for high/medium/low"
+        pass "model-effort-check.sh produces LOUD WARNING + SDLC + /effort xhigh for medium/low"
     else
-        fail "model-effort-check.sh LOUD warning has $fails missing markers across high/medium/low"
+        fail "model-effort-check.sh LOUD warning has $fails missing markers across medium/low"
     fi
 }
 
@@ -2778,7 +2954,11 @@ test_instructions_loaded_no_duplicate_effort_nudge() {
 
 test_model_effort_check_exists
 test_model_effort_check_stale_effort
-test_model_effort_check_xhigh_warns
+test_model_effort_check_high_silent
+test_model_effort_check_xhigh_silent
+test_model_effort_check_xhigh_env_var_silent
+test_model_effort_check_recommends_sonnet_5
+test_model_effort_check_no_blanket_max_persist_advice
 test_model_effort_check_max_settings_warns_persistence
 test_model_effort_check_max_env_var_silent
 test_model_effort_check_below_xhigh_loud_warning
@@ -3545,18 +3725,22 @@ test_goal_confidence_check_silent_on_status_and_clear
 echo ""
 echo "--- codex-gate-check.sh ---"
 
+# #436 P0: the gate must actually DENY the tool call (exit 2), not just print
+# scary text and exit 0. A PreToolUse hook only blocks Claude Code when it
+# exits 2 with the reason on stderr — exit 0 always lets the command through
+# regardless of what's echoed. This is the same bug class the codex gate
+# exists to prevent (a safety check that looks real but doesn't act real).
 test_codex_gate_blocks_commit_without_review() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir"
-    # No .reviews/handoff.json — should block
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if echo "$out" | grep -qi "cross-model review"; then
-        pass "codex gate blocks commit without review artifact"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate BLOCKS (exit 2) commit without review artifact"
     else
-        fail "codex gate should block commit without review artifact (got: $out)"
+        fail "codex gate should exit 2 + mention cross-model review, got exit=$exit_code out: $out"
     fi
 }
 
@@ -3565,13 +3749,14 @@ test_codex_gate_allows_commit_with_certified_review() {
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.reviews"
     printf '{"status":"CERTIFIED","score":9}' > "$tmpdir/.reviews/handoff.json"
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
+    exit_code=$?
     rm -rf "$tmpdir"
-    if [ -z "$out" ]; then
-        pass "codex gate allows commit with CERTIFIED review"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate allows (exit 0) commit with CERTIFIED review"
     else
-        fail "codex gate should be silent with CERTIFIED review (got: $out)"
+        fail "codex gate should exit 0 silent with CERTIFIED review, got exit=$exit_code out: $out"
     fi
 }
 
@@ -3580,26 +3765,28 @@ test_codex_gate_allows_commit_with_reviewed_status() {
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.reviews"
     printf '{"status":"REVIEWED"}' > "$tmpdir/.reviews/handoff.json"
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
+    exit_code=$?
     rm -rf "$tmpdir"
-    if [ -z "$out" ]; then
-        pass "codex gate allows commit with REVIEWED status"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate allows (exit 0) commit with REVIEWED status"
     else
-        fail "codex gate should be silent with REVIEWED review (got: $out)"
+        fail "codex gate should exit 0 silent with REVIEWED review, got exit=$exit_code out: $out"
     fi
 }
 
 test_codex_gate_silent_on_non_commit_commands() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git status"}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git status"}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
+    exit_code=$?
     rm -rf "$tmpdir"
-    if [ -z "$out" ]; then
-        pass "codex gate silent on non-commit commands"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate silent + exit 0 on non-commit commands"
     else
-        fail "codex gate should be silent on git status (got: $out)"
+        fail "codex gate should exit 0 silent on git status, got exit=$exit_code out: $out"
     fi
 }
 
@@ -3608,26 +3795,64 @@ test_codex_gate_blocks_on_invalid_status() {
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.reviews"
     printf '{"status":"PENDING"}' > "$tmpdir/.reviews/handoff.json"
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: thing\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: thing\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if echo "$out" | grep -qi "cross-model review"; then
-        pass "codex gate blocks commit with PENDING status"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate BLOCKS (exit 2) commit with PENDING status"
     else
-        fail "codex gate should block with non-certified status (got: $out)"
+        fail "codex gate should exit 2 with non-certified status, got exit=$exit_code out: $out"
     fi
 }
 
 test_codex_gate_skip_override() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    local out
-    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && CODEX_GATE_SKIP=1 "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && CODEX_GATE_SKIP=1 "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
+    exit_code=$?
     rm -rf "$tmpdir"
-    if [ -z "$out" ]; then
-        pass "codex gate respects CODEX_GATE_SKIP=1 override"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate respects CODEX_GATE_SKIP=1 override (exit 0)"
     else
-        fail "codex gate should be silent with CODEX_GATE_SKIP=1 (got: $out)"
+        fail "codex gate should exit 0 silent with CODEX_GATE_SKIP=1, got exit=$exit_code out: $out"
+    fi
+}
+
+# Codex review finding (hook-enforcement-436, round 1): a quote appearing
+# BEFORE "git commit" in the command (e.g. `cd "$dir" && git commit ...`)
+# breaks the grep/sed extraction — `[^"]*` stops at the first embedded quote
+# regardless of JSON escaping, truncating the captured command before it ever
+# reaches "git commit". The gate then falls through to the silent-allow
+# default. Real false negative: a review-less commit slips through untouched.
+test_codex_gate_blocks_commit_with_quote_before_git_commit() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"cd \"$dir\" && git commit -m \"message\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate BLOCKS (exit 2) commit even when an earlier quote precedes 'git commit'"
+    else
+        fail "codex gate should exit 2 despite embedded quote before git commit, got exit=$exit_code out: $out"
+    fi
+}
+
+# Codex review finding (hook-enforcement-436, round 2): the round-1 fix
+# (match "git commit" against the whole raw TOOL_INPUT) traded the false
+# negative for a false positive — a non-commit command is blocked if ANY
+# other field (e.g. the Bash tool's own "description") happens to mention
+# "git commit" in prose. The gate must only look inside the "command" value.
+test_codex_gate_silent_when_only_description_mentions_commit() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git status","description":"check status before next git commit"}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate silent on non-commit command even when description mentions 'git commit'"
+    else
+        fail "codex gate should exit 0 silent (only 'description' mentions commit, not 'command'), got exit=$exit_code out: $out"
     fi
 }
 
@@ -3637,6 +3862,142 @@ test_codex_gate_allows_commit_with_reviewed_status
 test_codex_gate_silent_on_non_commit_commands
 test_codex_gate_blocks_on_invalid_status
 test_codex_gate_skip_override
+test_codex_gate_blocks_commit_with_quote_before_git_commit
+test_codex_gate_silent_when_only_description_mentions_commit
+
+# ---- codex-review-stop-check.sh tests ----
+# Fable self-enforcement audit finding: a full SDLC workflow can complete —
+# Claude presents "done, here's what I changed" — without ever running
+# `git commit`. codex-gate-check.sh only fires on that one command, so the
+# gate never triggers and cross-model review is silently skippable. This
+# Stop hook closes that gap: non-blocking warning (Stop hooks shouldn't
+# prevent the user from getting their response) when significant uncommitted
+# changes exist with no REVIEWED/CERTIFIED review artifact.
+echo ""
+echo "--- codex-review-stop-check.sh ---"
+
+test_stop_hook_exists() {
+    if [ -x "$HOOKS_DIR/codex-review-stop-check.sh" ]; then
+        pass "codex-review-stop-check.sh exists and is executable"
+    else
+        fail "codex-review-stop-check.sh not found or not executable"
+    fi
+}
+
+test_stop_hook_silent_no_git_repo() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out
+    out=$(printf '%s' '{"session_id":"s1"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook silent outside a git repo"
+    else
+        fail "stop hook should be silent outside a git repo, got: $out"
+    fi
+}
+
+test_stop_hook_silent_clean_tree() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
+    local out
+    out=$(printf '%s' '{"session_id":"s2"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook silent on a clean working tree"
+    else
+        fail "stop hook should be silent when nothing changed, got: $out"
+    fi
+}
+
+test_stop_hook_silent_doc_only_changes() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && echo "# doc" > README.md && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo "updated" >> "$tmpdir/README.md"
+    local out
+    out=$(printf '%s' '{"session_id":"s3"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook silent on doc-only (*.md) changes"
+    else
+        fail "stop hook should be silent on doc-only changes, got: $out"
+    fi
+}
+
+test_stop_hook_warns_significant_uncommitted_no_review() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && echo "x=1" > app.sh && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo "x=2" >> "$tmpdir/app.sh"
+    local out
+    out=$(printf '%s' '{"session_id":"s4"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if echo "$out" | grep -qi "review"; then
+        pass "stop hook warns on significant uncommitted changes with no review artifact"
+    else
+        fail "stop hook should mention review, got: $out"
+    fi
+}
+
+test_stop_hook_silent_with_certified_review() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && echo "x=1" > app.sh && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo "x=2" >> "$tmpdir/app.sh"
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"CERTIFIED"}' > "$tmpdir/.reviews/handoff.json"
+    local out
+    out=$(printf '%s' '{"session_id":"s5"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook silent when review is CERTIFIED"
+    else
+        fail "stop hook should be silent with a CERTIFIED review, got: $out"
+    fi
+}
+
+test_stop_hook_ignores_reviews_dir_changes() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && mkdir -p .reviews && echo '{}' > .reviews/response.json && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo '{"a":1}' > "$tmpdir/.reviews/response.json"
+    local out
+    out=$(printf '%s' '{"session_id":"s6"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -z "$out" ]; then
+        pass "stop hook ignores changes confined to .reviews/ (metadata, not reviewed work)"
+    else
+        fail "stop hook should ignore .reviews/-only changes, got: $out"
+    fi
+}
+
+test_stop_hook_fires_once_per_session() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && echo "x=1" > app.sh && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo "x=2" >> "$tmpdir/app.sh"
+    local cache="$tmpdir/cache"
+    local first second
+    first=$(printf '%s' '{"session_id":"s7"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    second=$(printf '%s' '{"session_id":"s7"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>&1)
+    rm -rf "$tmpdir"
+    if [ -n "$first" ] && [ -z "$second" ]; then
+        pass "stop hook warns once per session, silent on repeat Stop events"
+    else
+        fail "stop hook should warn once then go silent same session, got first: '$first' second: '$second'"
+    fi
+}
+
+test_stop_hook_exists
+test_stop_hook_silent_no_git_repo
+test_stop_hook_silent_clean_tree
+test_stop_hook_silent_doc_only_changes
+test_stop_hook_warns_significant_uncommitted_no_review
+test_stop_hook_silent_with_certified_review
+test_stop_hook_ignores_reviews_dir_changes
+test_stop_hook_fires_once_per_session
 
 echo ""
 echo "=== Results ==="

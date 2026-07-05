@@ -207,6 +207,7 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 ./tests/test-local-shepherd.sh
 ./tests/test-cowork-drift.sh
 ./tests/test-skill-graduations.sh
+./tests/test-wizard-doc-hook-templates.sh
 ./tests/e2e/run-simulation.sh
 ./tests/e2e/test-deterministic-checks.sh
 ./tests/e2e/test-scenario-rotation.sh

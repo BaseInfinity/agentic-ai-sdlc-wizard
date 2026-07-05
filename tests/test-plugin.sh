@@ -155,7 +155,7 @@ test_hooks_json_uses_plugin_root() {
     fi
 }
 
-test_hooks_json_five_events() {
+test_hooks_json_six_events() {
     local file="$REPO_ROOT/hooks/hooks.json"
     [ -f "$file" ] || { fail "hooks.json missing"; return; }
     local count
@@ -166,10 +166,10 @@ with open('$file') as f:
 hooks = d.get('hooks', {})
 print(len(hooks))
 " 2>/dev/null)
-    if [ "$count" = "5" ]; then
-        pass "hooks.json has 5 hook events"
+    if [ "$count" = "6" ]; then
+        pass "hooks.json has 6 hook events"
     else
-        fail "hooks.json should have 5 hook events, got $count"
+        fail "hooks.json should have 6 hook events (added Stop, #436), got $count"
     fi
 }
 
@@ -198,6 +198,64 @@ print(' '.join(sorted(d.get('hooks', {}).keys())))
     fi
 }
 
+# #436: event-name parity alone is too weak — an event key can exist in both
+# files while the actual registered SCRIPTS under it differ (this is exactly
+# how codex-gate-check.sh shipped in .claude/settings.json + CLI template but
+# was never added to the plugin's hooks/hooks.json — "PreToolUse" existed in
+# both, so the weaker test above passed while plugin users silently got no
+# cross-model gate at all). This compares the actual basename set of scripts
+# referenced per event across all three distribution channels.
+test_hooks_json_script_parity() {
+    local hooks_file="$REPO_ROOT/hooks/hooks.json"
+    local project_file="$REPO_ROOT/.claude/settings.json"
+    local cli_file="$REPO_ROOT/cli/templates/settings.json"
+    for f in "$hooks_file" "$project_file" "$cli_file"; do
+        [ -f "$f" ] || { fail "$f missing"; return; }
+    done
+    local hooks_scripts project_scripts cli_scripts
+    hooks_scripts=$(python3 -c "
+import json
+with open('$hooks_file') as f:
+    d = json.load(f)
+scripts = set()
+for entries in d.get('hooks', {}).values():
+    for entry in entries:
+        for h in entry.get('hooks', []):
+            cmd = h.get('command', '')
+            scripts.add(cmd.rsplit('/', 1)[-1])
+print(' '.join(sorted(scripts)))
+" 2>/dev/null)
+    project_scripts=$(python3 -c "
+import json
+with open('$project_file') as f:
+    d = json.load(f)
+scripts = set()
+for entries in d.get('hooks', {}).values():
+    for entry in entries:
+        for h in entry.get('hooks', []):
+            cmd = h.get('command', '')
+            scripts.add(cmd.rsplit('/', 1)[-1])
+print(' '.join(sorted(scripts)))
+" 2>/dev/null)
+    cli_scripts=$(python3 -c "
+import json
+with open('$cli_file') as f:
+    d = json.load(f)
+scripts = set()
+for entries in d.get('hooks', {}).values():
+    for entry in entries:
+        for h in entry.get('hooks', []):
+            cmd = h.get('command', '')
+            scripts.add(cmd.rsplit('/', 1)[-1])
+print(' '.join(sorted(scripts)))
+" 2>/dev/null)
+    if [ "$hooks_scripts" = "$project_scripts" ] && [ "$project_scripts" = "$cli_scripts" ]; then
+        pass "hooks.json, .claude/settings.json, and CLI template register the same hook scripts"
+    else
+        fail "Script mismatch across distribution channels: hooks.json='$hooks_scripts' project='$project_scripts' cli='$cli_scripts'"
+    fi
+}
+
 # --- Plugin directory structure ---
 
 test_plugin_skills_exist() {
@@ -215,11 +273,11 @@ test_plugin_skills_exist() {
 test_plugin_hook_scripts_exist() {
     local ok=true
     local missing=""
-    for script in sdlc-prompt-check.sh tdd-pretool-check.sh instructions-loaded-check.sh model-effort-check.sh precompact-seam-check.sh; do
+    for script in sdlc-prompt-check.sh tdd-pretool-check.sh instructions-loaded-check.sh model-effort-check.sh precompact-seam-check.sh goal-confidence-check.sh codex-gate-check.sh token-spike-check.sh codex-review-stop-check.sh; do
         [ -f "$REPO_ROOT/hooks/$script" ] || { ok=false; missing="$missing $script"; }
     done
     if [ "$ok" = true ]; then
-        pass "All 5 hook scripts exist at hooks/"
+        pass "All 9 hook scripts exist at hooks/"
     else
         fail "hooks/ missing scripts:$missing"
     fi
@@ -228,11 +286,11 @@ test_plugin_hook_scripts_exist() {
 test_plugin_hook_scripts_executable() {
     local ok=true
     local missing=""
-    for script in sdlc-prompt-check.sh tdd-pretool-check.sh instructions-loaded-check.sh model-effort-check.sh precompact-seam-check.sh; do
+    for script in sdlc-prompt-check.sh tdd-pretool-check.sh instructions-loaded-check.sh model-effort-check.sh precompact-seam-check.sh goal-confidence-check.sh codex-gate-check.sh token-spike-check.sh codex-review-stop-check.sh; do
         [ -x "$REPO_ROOT/hooks/$script" ] || { ok=false; missing="$missing $script"; }
     done
     if [ "$ok" = true ]; then
-        pass "All 5 hook scripts are executable"
+        pass "All 9 hook scripts are executable"
     else
         fail "hooks/ non-executable:$missing"
     fi
@@ -409,8 +467,9 @@ test_plugin_json_kebab_case_name
 test_hooks_json_exists
 test_hooks_json_valid
 test_hooks_json_uses_plugin_root
-test_hooks_json_five_events
+test_hooks_json_six_events
 test_hooks_json_event_parity
+test_hooks_json_script_parity
 test_plugin_skills_exist
 test_plugin_hook_scripts_exist
 test_plugin_hook_scripts_executable
