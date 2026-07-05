@@ -2503,7 +2503,9 @@ When the reviewer finds issues, respond per-finding instead of silently fixing e
 
 3 recheck rounds (4 total including initial review) is the default budget for a typical change. If still NOT CERTIFIED after round 4, escalate to the user with a summary of open findings rather than spinning indefinitely.
 
-**Exception — known-large migrations:** the round cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop. Judge convergence by the *trend* in finding quality, not the round number: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 7 rounds, each finding something real; round 5 found a live `SessionStart` hook actively contradicting the new policy, more consequential than anything rounds 1-3 found. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
+**Exception — known-large migrations:** the round cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop. Judge convergence by the *trend* in finding quality, not the round number: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
+
+**CERTIFIED is not the finish line.** A CERTIFIED verdict and a green CI run are different verification layers that catch different bug classes — a CERTIFIED review does not substitute for actually pushing and watching CI. Confirmed on the same v1.84.0 release: after round-11 CERTIFIED and a full local test sweep, real CI still caught 3 more genuine bugs the review never touched — a content regression in an unrelated section silently dropped by an earlier edit (caught by a pre-existing local test that simply hadn't been re-run since), an environment-specific CLI output-format change invisible to any local run against an older tool version, and a new test file committed without the executable bit (passes every local `bash tests/foo.sh` invocation, only fails when CI runs it as `./tests/foo.sh`). Budget for at least one more fix-push-recheck cycle after CERTIFIED, and don't treat CERTIFIED as license to skip reading the actual CI logs — see the CI Feedback Loop section below.
 
 ```
 Self-review passes → handoff.json (round 1, PENDING_REVIEW)
@@ -2539,8 +2541,9 @@ Before any release/publish, add these to `review_instructions`:
 - **Stale examples** — hardcoded version strings in docs match current release
 - **Docs accuracy** — README, ARCHITECTURE.md reflect current feature set
 - **CLI-distributed file parity** — live skills, hooks, settings match CLI templates
+- **Policy Migration Inventory** — for a repo-wide blanket-recommendation migration (e.g. changing a default model, effort level, or policy referenced in many places), enumerate every surface it could touch *before* the first review round: skill frontmatter, setup/update wizard menus, live hooks, tutorial doc templates, CHANGELOG. Discovering surfaces one review round at a time is what turns a 4-5 round review into an 11-round one.
 
-Evidence: v1.20.0 cross-model review caught CHANGELOG section loss and stale wizard version examples that passed all tests and self-review.
+Evidence: v1.20.0 cross-model review caught CHANGELOG section loss and stale wizard version examples that passed all tests and self-review. v1.84.0's Sonnet-5-default migration ran 11 rounds because each round surfaced a new, previously-uninventoried surface (skill frontmatter, then setup wizard, then a live hook, then tutorial templates) rather than catching them all upfront.
 
 ### Multiple Reviewers (N-Reviewer Pipeline)
 
@@ -2663,12 +2666,12 @@ Reproduce → Isolate → Root Cause → Fix → Regression Test
 
 **This is the "local shepherd" — your CI fix mechanism.** It runs in your active session with full context.
 
-**The SDLC doesn't end at local tests.** CI must pass too.
+**The SDLC doesn't end at local tests.** CI must pass too. **NEVER AUTO-MERGE — do NOT run `gh pr merge --auto`.** Auto-merge fires before review feedback can be read; the shepherd loop below IS the process. (Evidence: PR #145 auto-merged before its review was read — a reviewer-found P1 dead-code bug shipped as a result.)
 
 ```
 Local tests pass -> Commit -> Push -> Watch CI
                                          |
-                              CI passes? -+-> YES -> Present for review
+                              CI passes? -+-> YES -> Read logs anyway -> Cross-model audit -> Present for review
                                          |
                                          +-> NO -> Fix -> Push -> Watch CI
                                                            |
@@ -2697,7 +2700,9 @@ Local tests pass -> Commit -> Push -> Watch CI
    - Diagnose root cause (same philosophy as local test failures)
    - Fix and push again
 4. Max 2 fix attempts - if still failing, ASK USER
-5. If CI passes - proceed to present final summary
+5. **Read CI logs whether pass or fail — not just on failure.** A green checkmark hides warnings, skipped steps, and degraded scores (v1.24.0 shipped a degraded E2E score and a silently excluded test suite behind a passing check). Use `gh run view <RUN_ID> --log`, not just `--log-failed`.
+6. **Cross-model audit the CI logs** — same `codex exec` pattern as the Cross-Model Review Loop above. Prompt: *"Audit for silent failures, skipped tests, degraded metrics, warnings-that-should-be-errors."* Do this even when every check is green.
+7. Only after logs are read and audited — proceed to present final summary
 
 **Context GC (compact during idle):** While waiting for CI (typically 3-5 min), suggest `/compact` if the conversation is long. Think of it like a time-based garbage collector — idle time + high memory pressure = good time to collect. Don't suggest on short conversations.
 
@@ -3070,7 +3075,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.84.0 -->
+<!-- SDLC Wizard Version: 1.85.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
