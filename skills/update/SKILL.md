@@ -95,15 +95,14 @@ Parse CHANGELOG entries between the user's installed version and the resolved la
 
 ```
 Installed: 1.42.0
-Latest:    1.83.0
+Latest:    1.84.0
 
 What changed:
+- [1.84.0] Hook enforcement fix: cross-model review gate + TDD RED gate now actually block (#436); model-aware effort docs replace blanket max recommendation.
 - [1.83.0] Model config batch: multi-model hook recommendation (#403), global [1m] pin detection (#391), version race fix (#405), effort config check (#384).
 - [1.82.0] Usage diagnostics: fix /usage row, Reading Usage Signals guide, advisor fallback procedure, Fable effort guidance, autocompact cross-reference.
 - [1.81.0] Native `advisorModel` support: Setup A gets Fable advisor, Setup B gets Opus advisor. Replaces manual subagent spawning. Requires CC v2.1.170+.
 - [1.80.0] Flip default: Opus 4.6 max becomes recommended flagship; Opus 4.8 demoted to opt-in `[l] Latest` tier.
-- [1.79.0] Opus 4.6 Stability tier added as flagship alternative (now graduated to default in 1.80.0).
-- [1.78.0] Opus 4.7 → 4.8 model recommendation (#365) + min CC v2.1.154+.
 - [1.77.0] release-dry-run.yml + cc-version-drift.yml (#350) + /goal SDLC gates (95% + DLC binding).
 - [1.76.0] /goal /sdlc wrapper (#347) + CC v2.1.150 feature adoption + ROADMAP demand-signal gate (4 excise, 4 kill).
 - [1.75.1] release-workflow fix — Node 22 → 24 (ships npm 11.x), dropped flaky `npm install -g` self-upgrade (hit MODULE_NOT_FOUND on v1.75.0 publish). Explicit npm-version guard.
@@ -120,9 +119,7 @@ What changed:
 - [1.59.0] evaluator on Max via `claude --print` (#228) — `EVAL_USE_CLI=1` swaps `evaluate.sh`'s per-criterion judge transport from `curl` → API to `claude --print --output-format json`. local-shepherd.sh sets it by default, so the local path is honestly zero-API
 - [1.58.0] ground-truth gate for E2E benchmark (#96 Phase 2) — `tests/e2e/ground-truth.sh` runs `npm test` post-sim; final score capped at 5 if tests fail. Catches "agent followed protocol but produced broken code"
 - [1.57.0] de-coach E2E benchmark prompt (#96 Phase 1) — remove answer-key leakage that saturated benchmark scores at 10/10; new neutral task framing measures organic SDLC behavior
-- [1.56.0] community feature-discovery fetcher (#207) — `tests/e2e/fetch-community.sh` pulls Reddit + HN; pipe to `scan-community.sh` to surface candidate /slash-commands
-- [1.55.0–1.51.0] ROADMAP #231 weekly-update.yml dismantle (Phase 2 → Phase 4): five releases, each deleting a cron-API job in favor of manual local-Max replacements. End state: weekly-update.yml shrunk from ~1670 → 161 lines (-90%), zero API spend, only `check-updates` release detection survives.
-... (older entries omitted — read the full CHANGELOG.md for anything pre-1.51.0)
+... (older entries omitted — read the full CHANGELOG.md for anything pre-1.57.0)
 ```
 
 Read the actual entries from the fetched CHANGELOG; don't paraphrase. The user wants to see exactly what shipped.
@@ -177,7 +174,7 @@ Check user's `.claude/settings.json`:
 1. **`model: "opus[1m]"` AND `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "30"`** — likely the old wizard-installed pair, not an intentional choice. Ask:
    > Your `.claude/settings.json` pins `model: "opus[1m]"` with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. This pair was the wizard default in 1.31.0–1.33.x, but it disables Claude Code's auto-mode (issue #198).
    > - **Remove the pin** (recommended) — keeps auto-mode enabled
-   > - **Keep the pin** — guaranteed Opus 4.6 max + 1M, OK with no auto-selection
+   > - **Keep the pin** — guaranteed 1M on whichever Opus `opus[1m]` currently resolves to (now Opus 4.8, not 4.6 — swap to `claude-opus-4-6` if you want 4.6 specifically), OK with no auto-selection
    > Remove, keep, or decide later? `[r/k/l]`
 
 2. **Only one of the two fields matches** — treat as intentional customization. Do not prompt.
@@ -237,16 +234,16 @@ If `cli/init.js` later adds wizard marketplace names, append verbatim.
 
 If CC < v2.1.170: show "Run `! claude update` to upgrade" and skip. If `.claude/settings.json` already has `advisorModel` or no `model` pin: skip.
 
-If `model` pin exists but no `advisorModel`, suggest: `claude-opus-4-6`/`claude-opus-4-8` → `advisorModel: "fable"`, `opusplan` → `advisorModel: "claude-opus-4-6"`. Ask `[a/S]`, write only `advisorModel` if accepted.
+If `model` pin exists but no `advisorModel`, suggest per driver: `sonnet`/`claude-opus-4-6`/`claude-opus-4-8` → `advisorModel: "fable"`, `opusplan` → `advisorModel: "claude-opus-4-8"`. Ask `[a/S]`, write only `advisorModel` if accepted.
 
 ### Step 7.9: Effort Configuration Check (#384)
 
-Runs regardless of version match (like Step 7.7). In `check-only` mode: report only, no mutations.
+Runs regardless of version match (like Step 7.7). `check-only`: report only. Effort is model-aware (v1.84.0+, see `AI_SETUP_LANES.md`), not blanket `max` — this step detects the anti-pattern, doesn't push everyone toward `max`.
 
-1. Check `CLAUDE_CODE_EFFORT_LEVEL` env var. If set to `max`: **pass** (silent — this is the correct persistence path).
-2. If env var is unset, check `effortLevel` in settings cascade (`.claude/settings.local.json` → `.claude/settings.json` → `~/.claude/settings.json`).
-3. If `effortLevel` is `max` but `CLAUDE_CODE_EFFORT_LEVEL` env var is unset: warn that CC ignores session-only max in settings — only the env var persists it. Suggest adding to the `env` block in `.claude/settings.json`.
-4. If effort is unset or below `max`: warn "SDLC requires max effort" and suggest `/effort max` + env var persistence.
+1. Read `model` from the settings cascade to find the driver. No pin / `sonnet` / `opusplan` = Sonnet 5; `claude-opus-4-6` = Opus 4.6; `claude-opus-4-8` = Opus 4.8.
+2. **Opus 4.6 driver:** `CLAUDE_CODE_EFFORT_LEVEL=max` in the project's `env` block → pass (silent; `max` is 4.6's actual sweet spot, no `xhigh`). Unset or below `max` → suggest `/effort max` + that env entry.
+3. **Sonnet 5 or Opus 4.8 driver:** `CLAUDE_CODE_EFFORT_LEVEL=max` set anywhere → warn. This is the exact incident that motivated this check: a stale `max` env var silently overrides `/effort xhigh` after switching off Opus 4.6. Recommend removing it and using `/effort` per-session instead. Unset → pass (silent).
+4. Never suggest a shell-rc (`.zshrc`/`.bashrc`) export — only the project's `env` block, and only for Opus 4.6.
 
 ### Step 8: Apply Selected Changes
 

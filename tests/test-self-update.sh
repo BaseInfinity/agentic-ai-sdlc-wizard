@@ -1724,11 +1724,16 @@ test_frontmatter_docs() {
     fi
 }
 
-# Test: All distributed skills have effort: high in frontmatter
+# Test: All distributed skills have effort: frontmatter, except sdlc which
+# deliberately omits it (v1.84.0: effort is model-aware, see AI_SETUP_LANES.md,
+# not a fixed value the skill can hardcode)
 test_skills_have_effort() {
     local missing=""
     for skill_dir in skills/*/; do
         local skill_file="$skill_dir/SKILL.md"
+        if [ "$(basename "$skill_dir")" = "sdlc" ]; then
+            continue
+        fi
         if [ -f "$skill_file" ]; then
             if ! grep -q "^effort:" "$skill_file"; then
                 missing="${missing:+${missing}, }$(basename "$skill_dir")"
@@ -1736,7 +1741,7 @@ test_skills_have_effort() {
         fi
     done
     if [ -z "$missing" ]; then
-        pass "All distributed skills have effort: frontmatter"
+        pass "All distributed skills (except model-aware sdlc) have effort: frontmatter"
     else
         fail "Skills missing effort: frontmatter: $missing"
     fi

@@ -220,7 +220,7 @@ echo "PR #$PR_NUMBER → scenario: $SCENARIO_NAME" >&2
 # the CI block to catch drift.
 # Model is NOT pinned explicitly — CI relies on the action's default model,
 # so shepherd does too. If Anthropic changes the default, both paths shift
-# together. Wizard recommends Opus 4.6 max locally (v1.80.0+).
+# together. Wizard recommends Sonnet 5 locally (v1.84.0+, see AI_SETUP_LANES.md Setup A).
 PARITY_MAX_TURNS=55
 PARITY_ALLOWED_TOOLS='Read,Edit,Write,Bash(npm *),Bash(node *),Bash(git *),Glob,Grep,TodoWrite,TaskCreate,Task'
 

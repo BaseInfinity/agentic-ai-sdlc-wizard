@@ -249,30 +249,30 @@ When Anthropic provides official plugins or tools that handle something:
 
 Claude Code's **effort level** controls how much thinking the model does before responding. Higher effort = deeper reasoning but more tokens.
 
-> ⚠️ **SDLC requires `max` effort on all Claude models.** Below max = degraded reasoning, shallow TDD, weak self-review. Persist via env var: `CLAUDE_CODE_EFFORT_LEVEL=max` (CC docs: `effortLevel: "max"` in settings.json is **session-only and silently ignored** — the env var is the only way to persist it).
+> ⚠️ **SDLC requires model-appropriate effort, not a blanket setting.** Below the model's own sweet spot = degraded reasoning, shallow TDD, weak self-review. **Above** it (`max` on a model that only supports up to `xhigh`, or `max` on a model where it overthinks) wastes tokens for no quality gain — this is not a "more is always better" knob. See `AI_SETUP_LANES.md` for the current per-model recommendation.
 
-| Level | When to Use | How to Set |
-|-------|-------------|------------|
-| `max` | **Required for all SDLC work.** Claude: max. OpenAI/Codex: xhigh (their highest). | `CLAUDE_CODE_EFFORT_LEVEL=max` in settings env block |
-| `high` or below | **Not for SDLC work.** Only for trivial grep/search subagents | `effort: high` in a specific subagent frontmatter only |
+| Model | Recommended Effort | Why |
+|-------|--------------------|-----|
+| Sonnet 5 (recommended default) | `high`, escalate to `xhigh` for hard tasks | `xhigh` as a blanket default doubles cost for marginal gains per CodeRabbit testing; `high` is the tested sweet spot |
+| Opus 4.8 (escalation only) | `xhigh` | `max` triggers excessive reasoning on 4.7/4.8 — documented 40-60x cache-token jump vs `high` (see "Opus 4.6 Stability" tier below) |
+| Fable 5 (advisor) | `high` (its own designed default) | Adaptive thinking always on; `xhigh`/`max` mainly move the thinking-token budget with small marginal gain for review work |
+| Opus 4.6 (Stability lane) | `max` | The one model where `max` doesn't overthink — no `xhigh` support at all (only low/medium/high/max) |
+| OpenAI/Codex (cross-model reviewer) | `xhigh` (their highest) | Always — lower reasoning misses subtle bugs the reviewer exists to catch |
 
-**Strict effort behavior (Opus 4.7+, carried forward in 4.8 — and why 4.6 max is the wizard's pick):**
+**Strict effort behavior (Opus 4.7+, carried forward in 4.8):**
 - **`xhigh` was introduced in 4.7** — sits between `high` and `max`, designed for coding and agentic work (30+ minute tasks with token budgets in the millions)
 - **Claude Code defaults to `xhigh`** on Opus 4.7+ for all plans
 - **Opus 4.7+ respects effort levels more strictly** than 4.6 — at lower levels it scopes work tighter instead of going above and beyond. If you see shallow reasoning, raise effort rather than prompting around it
 - **`budget_tokens` is deprecated** on Opus 4.7+ — use adaptive thinking with effort instead
-- **4.6 max is the wizard's flagship pick despite this:** community signal converges on 4.6 being the only Opus version where `max` effort tolerates without overthinking (Andon Labs Vending-Bench, Paweł Huryn's 4.7 guide, BSWEN effort decision guide, r/Claudeopus field reports). On 4.7 and 4.8, `max` triggers excessive reasoning that hits context limits faster and burns more tokens per turn — making the strict-effort behavior backfire. 4.6 max stays in the sweet spot. See [README → "Choosing Your Model"](../README.md#choosing-your-model) for the full evidence
 - When running at `xhigh` or `max`, set a large `max_tokens` (64k+) so the model has room to think across subagents and tool calls
 
-**Why `high` was the previous default:** Claude Code uses **adaptive thinking** to dynamically allocate reasoning budget per turn. On Pro and Max plans, the default effort level was **medium (85)**, which causes the model to under-allocate reasoning on complex multi-step tasks — leading to shallow analysis, missed edge cases, and "lazy" outputs. This was [confirmed by Anthropic engineer Boris Cherny](https://github.com/anthropics/claude-code/issues/42796) and is documented at [code.claude.com](https://code.claude.com/docs/en/model-config). API, Team, and Enterprise plans default to high effort and are not affected.
+**Why `high` was the previous CC-wide default (now largely superseded by the table above):** Claude Code uses **adaptive thinking** to dynamically allocate reasoning budget per turn. On Pro and Max plans, the default effort level was **medium (85)**, which causes the model to under-allocate reasoning on complex multi-step tasks — leading to shallow analysis, missed edge cases, and "lazy" outputs. This was [confirmed by Anthropic engineer Boris Cherny](https://github.com/anthropics/claude-code/issues/42796) and is documented at [code.claude.com](https://code.claude.com/docs/en/model-config). API, Team, and Enterprise plans default to high effort and are not affected.
 
-**Don't rely on the CC default — set effort yourself.** Anthropic's [2026-04-23 post-mortem](https://www.anthropic.com/engineering/april-23-postmortem) is independent third-party evidence that CC has flipped reasoning_effort defaults across versions (high → medium → xhigh/high). The default has changed before and will change again. The wizard's `model-effort-check.sh` hook warns on anything below `max` at session start. Set `CLAUDE_CODE_EFFORT_LEVEL=max` in your settings env block, and treat any "I assumed the default was X" reasoning as a bug.
+**Don't rely on the CC default — set effort yourself, matched to your model.** Anthropic's [2026-04-23 post-mortem](https://www.anthropic.com/engineering/april-23-postmortem) is independent third-party evidence that CC has flipped reasoning_effort defaults across versions. The default has changed before and will change again. The wizard's `model-effort-check.sh` hook warns when effort falls below the model-appropriate floor at session start. Set effort per-session with `/effort`, not a shell-rc or settings `env` block — persisting it that way silently overrides a later `/effort` change after you switch models (a real incident, documented in `SDLC.md`'s Lessons Learned).
 
-The `/sdlc` skill sets `effort: max` in its frontmatter, overriding the medium default on every SDLC invocation. This matches the wizard's v1.80.0 contract: Opus 4.6 max is the recommended flagship, and `max` is where SDLC-compliant work actually happens on 4.6.
+**Nuclear option — disable adaptive thinking entirely:** Set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` in your environment or settings.json `env` block. This forces a fixed reasoning budget per turn instead of letting the model dynamically allocate. Use this if you observe persistent quality issues even at the model-appropriate effort ceiling. See [Claude Code model config docs](https://code.claude.com/docs/en/model-config) for details.
 
-**Nuclear option — disable adaptive thinking entirely:** Set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` in your environment or settings.json `env` block. This forces a fixed reasoning budget per turn instead of letting the model dynamically allocate. Use this if you observe persistent quality issues even at `max` effort. See [Claude Code model config docs](https://code.claude.com/docs/en/model-config) for details.
-
-**When to escalate to `max`:**
+**When to escalate effort:**
 - You hit LOW confidence on your approach — deeper thinking may find clarity
 - You've failed the same thing twice — something non-obvious is wrong
 - Architecture decisions with wide blast radius
@@ -280,28 +280,29 @@ The `/sdlc` skill sets `effort: max` in its frontmatter, overriding the medium d
 - Cross-model review analysis (reading and evaluating external reviewer findings)
 
 **How it works:**
-- `/effort max` changes effort for the current session only (resets next session)
-- `effort: max` in SKILL.md frontmatter persists — every `/sdlc` invocation uses `max`
+- `/effort <level>` changes effort for the current session only (resets next session)
+- An `effort:` field in a skill's frontmatter persists across every invocation of that skill — the `/sdlc` skill deliberately does NOT set one, since the right effort depends on which model is driving, not which skill is running
 - You can also type `ultrathink` in any prompt for a single high-effort turn
 
-**Cost note:** `max` uses more tokens than lower efforts. Always `max` on all Claude models (#395). Token burn is higher on 4.7/4.8 than 4.6 — that's why 4.6 is the wizard's flagship.
+**Cost note:** higher effort uses more tokens. Match effort to your model per the table above — a blanket `max` wastes tokens on models where it overthinks, without any quality gain to show for it.
 
-> See also: the **Effort** column in the [Confidence Check table](#confidence-check-required) below for per-confidence-level guidance on when to escalate to `max`.
+> See also: the **Effort** column in the [Confidence Check table](#confidence-check-required) below for per-confidence-level guidance on when to escalate.
 
 ### Anti-Laziness Guidance for CLAUDE.md
 
-If you notice Claude Code producing shallow outputs despite `effort: max`, add these instructions to your project's `CLAUDE.md`. These target the **specific mechanisms** behind quality degradation — adaptive thinking and effort levels — rather than vague directives:
+If you notice Claude Code producing shallow outputs at your model's recommended effort (see "Recommended Effort Level" above), add these instructions to your project's `CLAUDE.md`. These target the **specific mechanisms** behind quality degradation — adaptive thinking and effort levels — rather than vague directives:
 
 ```markdown
 ## Quality Anchoring
-- This project uses effort: max via SDLC skill frontmatter. Do not reduce reasoning depth.
+- This project sets effort per-session with /effort, matched to the active model
+  (see AI_SETUP_LANES.md). Do not reduce reasoning depth below that level.
 - Adaptive thinking may under-allocate your thinking budget on complex tasks. When working on
   multi-file changes, architecture decisions, or debugging: reason through the full problem
   before acting, even if the system prompt suggests taking the "simplest approach first."
 - If you catch yourself skipping steps, re-read the task requirements and verify completeness.
 ```
 
-**Why this works:** Claude Code's hidden system prompt includes "Go straight to the point. Try the simplest approach first." This is good for simple queries but causes the model to under-invest in reasoning on complex SDLC tasks. The instructions above don't fight the system prompt — they provide task-specific context that justifies deeper reasoning. Note that CLAUDE.md instructions can be partially overridden by the system prompt, so `effort: max` in skill frontmatter remains the primary defense.
+**Why this works:** Claude Code's hidden system prompt includes "Go straight to the point. Try the simplest approach first." This is good for simple queries but causes the model to under-invest in reasoning on complex SDLC tasks. The instructions above don't fight the system prompt — they provide task-specific context that justifies deeper reasoning. Note that CLAUDE.md instructions can be partially overridden by the system prompt, so the per-session `/effort` level (not a skill-frontmatter field — the `/sdlc` skill deliberately omits one, since effort is model-aware) remains the primary defense; `hooks/model-effort-check.sh` nudges at session start if it drops below your model's floor.
 
 ---
 
@@ -408,9 +409,10 @@ New built-in commands available to use alongside the wizard:
 
 | Driver | Advisor | Lane |
 |--------|---------|------|
-| Opus 4.6 (`claude-opus-4-6`) | Fable (`"fable"`) | Setup A — Premium |
-| Sonnet via opusplan | Opus (`"claude-opus-4-6"`) | Setup B — Saver |
-| Opus 4.8 (`claude-opus-4-8`) | Fable (`"fable"`) | Latest tier |
+| Sonnet 5 (`sonnet`) | Fable (`"fable"`) | Setup A — default |
+| Opus 4.6 (`claude-opus-4-6`) | Fable (`"fable"`) | Setup B — Stability |
+| Sonnet via opusplan | Opus 4.8 (`"claude-opus-4-8"`) | Setup C — OpusPlan Hybrid |
+| Opus 4.8 (`claude-opus-4-8`) | Fable (`"fable"`) | Escalation tier |
 
 **Settings precedence:** Managed > CLI flags > Local (`.claude/settings.local.json`) > Project (`.claude/settings.json`) > User (`~/.claude/settings.json`). The wizard writes project-level by default — never nukes global settings. Setup skill Step 9.5 asks if you also want global.
 
@@ -428,14 +430,14 @@ Skills support these frontmatter fields:
 |-------|---------|---------|
 | `name` | Skill name (matches `/command`) | `name: sdlc` |
 | `description` | Trigger description for auto-invocation | `description: Full SDLC workflow...` |
-| `effort` | Set reasoning effort level | `effort: max` |
+| `effort` | Set reasoning effort level | `effort: high` |
 | `paths` | Restrict skill to specific file patterns | `paths: ["src/**/*.ts", "tests/**"]` |
 | `context` | Context mode (`fork` = isolated subagent) | `context: fork` |
 | `argument-hint` | Hint for `$ARGUMENTS` placeholder | `argument-hint: [task description]` |
 | `disable-model-invocation` | Prevent skill from being auto-invoked by model | `disable-model-invocation: true` |
 
 **Key fields explained:**
-- **`effort: max`** — The wizard's `/sdlc` skill uses this to ensure Claude gives full attention at the recommended effort level for Opus 4.6 max (v1.80.0+).
+- **`effort:`** — Use sparingly on skills that run under many different driver models. The wizard's own `/sdlc` skill deliberately omits this field — the right effort level depends on which model is driving (see "Recommended Effort Level" above), not on which skill is running, so a fixed frontmatter value would fight `/effort`'s per-session, per-model guidance.
 - **`paths:`** — Limits when a skill activates based on files being worked on. Useful for language-specific or directory-specific skills.
 - **`context: fork`** — Runs the skill in an isolated subagent context. The subagent gets its own context window, so it won't pollute the main conversation. Useful for review skills or analysis that should run independently.
 
@@ -508,7 +510,7 @@ When a cached prompt prefix is re-served after idle pruning, downstream thinking
 
 **Workaround**: if you hit suspicious shallow reasoning mid-session — especially after a long idle gap — start a fresh session with `claude --continue` to reset cache state. The wizard's PreCompact hook gates manual `/compact` precisely because compacting at bad seams can also pull thinking blocks out of context.
 
-**Detection signal**: the wizard's `model-effort-check.sh` loud-warns below `max`. Combine with token-spike anomaly detection (ROADMAP #220) once shipped.
+**Detection signal**: the wizard's `model-effort-check.sh` loud-warns below `high` (the model-aware floor — see "Recommended Effort Level" above). Combine with token-spike anomaly detection (ROADMAP #220) once shipped.
 
 ### Prompt brevity caps can compound across turns (post-mortem 2026-04-23)
 
@@ -524,7 +526,7 @@ See the dedicated subsection under [Tasks System](#tasks-system-v2116) (above, i
 
 ### MCP-tool hooks audit (ROADMAP #218, CC 2.1.118)
 
-CC 2.1.118 introduced `type: "mcp_tool"` for hooks — a hook can now directly invoke an MCP tool instead of running a bash script. **Audit (2026-04-26) of all 5 wizard hooks concluded: none migrate, all stay bash.** This subsection documents the per-hook reasoning so future audits don't redo the work; if a future PR migrates a hook to MCP, update this entry with the new rationale rather than deleting it.
+CC 2.1.118 introduced `type: "mcp_tool"` for hooks — a hook can now directly invoke an MCP tool instead of running a bash script. **Audit (2026-04-26) of the 5 wizard hooks that existed at the time concluded: none migrate, all stay bash.** This subsection documents the per-hook reasoning so future audits don't redo the work; if a future PR migrates a hook to MCP, update this entry with the new rationale rather than deleting it. **Not yet re-audited**: 4 hooks shipped since 2026-04-26 (`goal-confidence-check.sh`, `codex-gate-check.sh`, `token-spike-check.sh`, `codex-review-stop-check.sh`) — the project now registers 9 hooks total (see `.claude/settings.json`), but this table only covers the original 5.
 
 **Decision criteria applied** (any one rules out MCP):
 
@@ -536,8 +538,8 @@ CC 2.1.118 introduced `type: "mcp_tool"` for hooks — a hook can now directly i
 
 - **`sdlc-prompt-check.sh`** (UserPromptSubmit, ~132 lines) — emits the SDLC BASELINE text on every prompt; writes effort-bump signals to `~/.cache/sdlc-wizard/effort-signals.log` for self-consumption on next invocation. Decision: **Stay bash.** Portability criterion: same script ships to Codex sibling unchanged. Local-state criterion: signal log is local-only.
 - **`instructions-loaded-check.sh`** (~202 lines) — InstructionsLoaded event; validates SDLC files exist, fetches npm `latest` with daily file cache (`~/.cache/sdlc-wizard/npm-latest.json`), emits staleness warnings. Decision: **Stay bash.** Portability criterion: Codex sibling has its own equivalent of session-start validation; bash port is direct. Local-state criterion: cache file is local.
-- **`tdd-pretool-check.sh`** (~29 lines) — PreToolUse on Write/Edit/MultiEdit; emits the TDD reminder text. Decision: **Stay bash.** Portability criterion: trivially portable (one-screen text emit). Gating criterion: not applicable (this hook does not block, it advises). MCP would add a runtime dependency for zero functional gain.
-- **`model-effort-check.sh`** (~69 lines) — SessionStart event; reads `CLAUDE_CODE_EFFORT` env var, emits silent/soft/loud nudge per-tier. Decision: **Stay bash.** Portability criterion: env-var read maps 1:1 to any agent runtime. Local-state criterion: not applicable, hook is stateless.
+- **`tdd-pretool-check.sh`** (~115 lines) — PreToolUse on Write/Edit/MultiEdit; emits a TDD reminder, and (since #436) **blocks** with `exit 2` when a `src/**` write happens before any test file was touched this session (an edit-ordering proxy for TDD RED, session-scoped via a cache-dir sentinel). Decision: **Stay bash.** Fail-closed gating criterion applies now that this hook blocks: bash `exit 2` fails closed by definition, whereas an `mcp_tool` hook's block decision is lost if the MCP server errors — wrong default for a gate. Portability criterion: still trivially portable.
+- **`model-effort-check.sh`** (~80 lines) — SessionStart event; reads `CLAUDE_CODE_EFFORT_LEVEL` env var (falling back to `effortLevel` in the settings cascade), emits nothing when effort is `high`/`xhigh`/`max`, otherwise a loud warning. Decision: **Stay bash.** Portability criterion: env-var read maps 1:1 to any agent runtime. Local-state criterion: not applicable, hook is stateless.
 - **`precompact-seam-check.sh`** (~125 lines) — PreCompact event (matcher: `manual`); reads `.reviews/handoff.json` via jq, blocks manual `/compact` with exit 2 + stderr message when status is `PENDING_*` and the linked PR (if any) isn't merged. Decision: **Stay bash.** Fail-closed gating criterion: bash exit 2 fails closed by definition; an MCP `mcp_tool` hook returning `decision: "block"` works on the happy path, but if the MCP server crashes/times out the action proceeds — that flips the safety property from fail-closed to fail-open. For a hook whose entire job is to prevent context loss at bad seams, fail-open is the wrong default.
 
 **When to revisit this audit:**
@@ -987,16 +989,31 @@ Override: resolve the blocker (certify the review, finish the rebase), or tempor
 
 ### Autocompact Tuning
 
-Override the default auto-compact threshold with environment variables. These are community-discovered settings referenced in upstream issues ([#34332](https://github.com/anthropics/claude-code/issues/34332), [#42375](https://github.com/anthropics/claude-code/issues/42375)) — not yet officially documented by Anthropic. For a rigorous benchmarking methodology to validate these thresholds, see [AUTOCOMPACT_BENCHMARK.md](AUTOCOMPACT_BENCHMARK.md).
+Override the default auto-compact threshold with environment variables. Per official docs ([model-config](https://code.claude.com/docs/en/model-config#sonnet-5-context-window), [env-vars](https://code.claude.com/docs/en/env-vars)): `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` is applied as a percentage of `CLAUDE_CODE_AUTO_COMPACT_WINDOW` — which itself defaults to the model's own tuned threshold, not necessarily the raw context capacity. **The override can only lower the threshold; values above the model's default have no effect.** For a rigorous benchmarking methodology to validate these thresholds, see [AUTOCOMPACT_BENCHMARK.md](AUTOCOMPACT_BENCHMARK.md).
 
 | Variable | What It Does | Default |
 |----------|-------------|---------|
-| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Trigger compaction at this % of context capacity (1-100) | ~95% |
-| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | Override context capacity in tokens (useful for 1M models) | Model default |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Trigger compaction at this % of `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (1-100). Lower-only. | Model-dependent (see below) |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | Override context capacity in tokens used for compaction math | Model's context window — **except Sonnet 5**, which has its own default |
 
-**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model`, `advisorModel`, or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 offers four choices: `[N]` no pin, `[o]` opusplan + Opus advisor, `[f]` flagship Opus 4.6 + Fable advisor, `[l]` latest Opus 4.8 + Fable advisor. Default is **No**. Pinning the model turns off per-turn auto-selection — a real tradeoff, so we ask.
+**Sonnet 5 specifics:** Sonnet 5 always runs at 1M context (no 200K variant, no `[1m]` suffix needed) and proactively compacts at its own tuned default of **~967K tokens (96.7%)** — not the generic 1M ceiling. `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` on Sonnet 5 fires at ~75% *of that 967K*, i.e. ~725K tokens — earlier and safer than the native default, not later. **Do not carry over an `opus[1m]`-era `30%` setting to Sonnet 5** — that figure was derived for `opus[1m]`'s older extended-context opt-in, never re-derived for Sonnet 5's smarter native default, and is needlessly conservative here (verified 2026-07-05).
 
-To opt in by hand, edit `.claude/settings.json` (flagship example):
+**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model`, `advisorModel`, or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 offers four choices: no pin (default, auto-mode), Sonnet 5 + Fable advisor (recommended if pinning at all, Setup A), OpusPlan Hybrid with an Opus 4.8 advisor (Setup C), and Opus 4.6 Stability + Fable advisor (legacy flagship, Setup B). Opus 4.8 itself is an escalation model, not a persistent Step 9.5 pin — reach for it per-session via `/model claude-opus-4-8` when Sonnet 5 gets stuck (see "Latest tier" below). Default is **No pin**. Pinning the model turns off per-turn auto-selection — a real tradeoff, so we ask.
+
+To opt in by hand, edit `.claude/settings.json` (Sonnet 5 example — the recommended default):
+
+```json
+{
+  "model": "sonnet",
+  "advisorModel": "fable",
+  "effortLevel": "xhigh",
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"
+  }
+}
+```
+
+For `opus[1m]` instead (older pin, still valid for proven stability), pair with a lower override since it lacks Sonnet 5's smarter native default:
 
 ```json
 {
@@ -1009,17 +1026,14 @@ To opt in by hand, edit `.claude/settings.json` (flagship example):
 }
 ```
 
-If you switch back to the 200K model (`opus`), raise the override to `75` — otherwise 30% of 200K = 60K compacts too early. Alternatively, set via shell profile (`~/.bashrc`, `~/.zshrc`) or per-project `.envrc`:
+If you switch back to the 200K model (`opus`, no `[1m]`), raise the override to `75` — otherwise 30% of 200K = 60K compacts too early.
 
-```bash
-export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30
-```
-
-**Community-recommended thresholds by use case:**
+**Recommended thresholds by use case:**
 
 | Use Case | AUTOCOMPACT % | Why |
 |----------|--------------|-----|
-| **Opt-in SDLC setup (`opus[1m]`)** | **30%** | **Fires at ~300K on 1M — right balance for plan + TDD + review sessions. Paired with the opt-in `opus[1m]` pin (see issue #198)** |
+| **Sonnet 5 (default driver)** | **75%** | Fires at ~75% of its native ~967K threshold (~725K tokens) — safe margin without being overly conservative. Verified against official docs 2026-07-05. |
+| `opus[1m]` (opt-in extended context) | 30% | Fires at ~300K on 1M — right balance for plan + TDD + review sessions. Paired with the opt-in `opus[1m]` pin (see issue #198) |
 | General development (200K `opus`) | 75% | Leaves room for implementation after planning |
 | Complex refactors (200K `opus`) | 80% | Slightly more context before compaction |
 | CI pipelines | 60% | Short tasks, compact early to stay fast |
@@ -1035,7 +1049,7 @@ The thresholds above are community consensus — not empirically validated. For 
 
 ### 1M vs 200K Context Window
 
-Claude Code supports both 200K and 1M context windows. **`opus[1m]` is an opt-in power-user pin** — ask yourself whether you actually need the headroom before setting it, because pinning the model at the top level disables Claude Code's auto-mode (see issue #198).
+Claude Code supports both 200K and 1M context windows. **This section is about Opus** — `opus[1m]` is an opt-in power-user pin, and ask yourself whether you actually need the headroom before setting it, because pinning the model at the top level disables Claude Code's auto-mode (see issue #198). **Sonnet 5 is a different case: it always runs at 1M natively** (no `[1m]` suffix, no opt-in decision, no auto-mode tradeoff) — see [`code.claude.com/docs/en/model-config#sonnet-5-context-window`](https://code.claude.com/docs/en/model-config#sonnet-5-context-window). The table below applies to choosing whether to pin Opus at 1M, not to Sonnet 5.
 
 | | 200K Context (default / auto-mode) | 1M Context (`opus[1m]`, opt-in) |
 |---|---|---|
@@ -1051,13 +1065,13 @@ Claude Code supports both 200K and 1M context windows. **`opus[1m]` is an opt-in
 **Why `opus[1m]` is opt-in (issue #198):**
 - **Pinning disables auto-mode.** Max-plan users pay for Claude Code's per-turn model selection (Sonnet for cheap tasks, Opus for hard ones, plus weekly-limit smoothing). A top-level `model` gives that up.
 - **The 1M headroom has to earn it.** If your typical session stays under 150K, you're giving up auto-mode for headroom you're not using.
-- **Power users who want guaranteed Opus 4.6 max + 1M** — go ahead, it's a real win for long shepherding sessions. Just make it a conscious choice, not a silent default.
+- **⚠️ `opus[1m]` is NOT guaranteed to mean Opus 4.6.** The alias auto-resolves to whichever Opus model Claude Code currently considers "latest" — that was Opus 4.6 when this alias was introduced, but it now means **Opus 4.8**. If you specifically want Opus 4.6 (Setup B — Stability, proven consistency), pin the explicit model string `claude-opus-4-6`, not the `opus[1m]` alias.
 
-**Opt in when:** you routinely cross 100K tokens in a single session (plan → TDD → review → CI shepherd on one feature), you want Opus 4.6 max specifically (not Sonnet), and you're OK losing auto-mode.
+**Opt in when:** you routinely cross 100K tokens in a single session (plan → TDD → review → CI shepherd on one feature), you want guaranteed 1M context on whichever Opus is current (or `claude-opus-4-6` explicitly if you want Opus 4.6 specifically), and you're OK losing auto-mode.
 
 **Stay on auto-mode (default) when:** you're unsure, your work is mixed short/long, or you want Claude Code to do the model math for you.
 
-**How to opt in:** run `/model opus[1m]` in your session (transient), or set `"model": "opus[1m]"` in `.claude/settings.json` (persistent). Requires Claude Code v2.1.154+ for Opus 4.6 max (the `opus[1m]` alias auto-resolves to the latest Opus). The setup wizard's Step 9.5 also asks once, with default No.
+**How to opt in:** run `/model opus[1m]` in your session (transient) for whichever Opus is current, or `/model claude-opus-4-6` if you specifically want Opus 4.6; set `"model"` to either value in `.claude/settings.json` for a persistent pin. Requires Claude Code v2.1.154+ for the `opus[1m]` alias. The setup wizard's Step 9.5 also asks once, with default No.
 
 **How to opt out:** remove the `model` line from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".
 
@@ -1065,74 +1079,70 @@ Claude Code supports both 200K and 1M context windows. **`opus[1m]` is an opt-in
 
 **Autocompact pairing (important):** If you opt into `opus[1m]`, also set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — otherwise CC's default autocompact fires at ~76K and destroys the headroom you're paying for. Step 9.5 writes both together when you opt in.
 
-### OpusPlan Tier (Opus planner + Sonnet driver, #395)
+### OpusPlan Tier (Opus planner + Sonnet driver, #395) — Setup C
 
-For cost-conscious SDLC work, CC's native `opusplan` alias gives you Opus reasoning during Plan Mode (Shift+Tab) and Sonnet execution — both at 200K, Max-bundled, no API credit drain.
+This is **Setup C (OpusPlan Hybrid/Saver)** in `AI_SETUP_LANES.md`. CC's native `opusplan` alias gives you Opus reasoning during Plan Mode (Shift+Tab) and Sonnet execution — both Max-bundled, no API credit drain.
 
-| Layer | OpusPlan tier | Flagship tier |
-|-------|--------------|---------------|
-| Planner | Opus 4.6 max (Plan Mode) | Opus 4.6 max |
-| Driver | Sonnet 4.6 (execute mode) | Opus 4.6 max |
-| Reviewer | GPT-5.5 xhigh | GPT-5.5 xhigh |
-| Effort | max (via `CLAUDE_CODE_EFFORT_LEVEL` env var) | max |
+| Layer | Setup C (OpusPlan) | Setup A (default) | Setup B (Stability) |
+|-------|--------------------|--------------------|----------------------|
+| Planner | Opus 4.8 `xhigh` (Plan Mode) | Sonnet 5 `high`→`xhigh` | Opus 4.6 `max` |
+| Driver | Sonnet 5 `high` (execute mode) | Sonnet 5 `high`→`xhigh` | Opus 4.6 `max` |
+| Reviewer | GPT-5.5 xhigh | GPT-5.5 xhigh | GPT-5.5 xhigh |
 
 **How to opt in:**
 ```json
 {
   "model": "opusplan",
   "env": {
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6",
-    "CLAUDE_CODE_EFFORT_LEVEL": "max"
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8"
   }
 }
 ```
 
+Set effort per-session with `/effort` (planner `xhigh`, driver `high`) rather than a shell-rc env var — see "Recommended Effort Level" above for why.
+
 **⚠️ Avoid `sonnet[1m]`** — Sonnet with 1M context draws from usage credits ($3/$15 per Mtok), not your Max subscription (#390). Plain `sonnet` (200K) or `opusplan` stays on Max.
 
-**When to use OpusPlan:** routine SDLC work, simple repos, cost-conscious sessions. Press Shift+Tab before architecture/blast-radius decisions to get Opus reasoning.
+**When to use OpusPlan (Setup C):** routine SDLC work, simple repos, cost-conscious sessions where you still want an Opus plan-mode pass. Press Shift+Tab before architecture/blast-radius decisions to get Opus reasoning. For most day-to-day work, Setup A (Sonnet 5 + Fable) is the simpler default — see "Choosing Your Model" in [README.md](../README.md).
 
-**When to stay Flagship:** stakes-flagged repos, architecture work, security review, long shepherd sessions.
+**When to stay on Setup B (Stability):** stakes-flagged repos, architecture work, security review, long shepherd sessions where you want proven Opus 4.6 consistency end-to-end rather than a split planner/driver.
 
 **Prove-It Gate (#233 acceptance criterion):** mixed-mode ships only if pair-tested on 3+ simple repos shows Sonnet-coder + Opus-reviewer produces ≥ same SDLC scores as full-Opus baseline. The first version of the heuristic ships v1.38.0; pair-test results land in CHANGELOG before recommending mixed-mode as the default for any tier.
 
 **Tradeoffs (be honest):**
-- Sonnet 4.6 will drop some fine-grained self-review moves (it's fast, less deliberate). The Opus reviewer catches them — but you'll see more "fix in round 2" cycles compared to Opus-coder runs.
-- Mixed-mode disables auto-mode (same as flagship pin). The Sonnet pin is per-session — to switch back, remove the `model` line.
+- The Sonnet driver will drop some fine-grained self-review moves compared to an Opus-coder run — it's fast, less deliberate. The Opus planner and GPT-5.5 reviewer catch them, but expect more "fix in round 2" cycles.
+- Mixed-mode disables auto-mode (same as any pinned model). The pin is per-session — to switch back, remove the `model` line.
 
-### Latest tier — Opus 4.8 (opt-in for bleeding-edge)
+### Latest tier — Opus 4.8 (escalation model, #395)
 
-The wizard's flagship recommendation is Opus 4.6 max (see "Choosing Your Model" in [README.md](../README.md) for the full evidence). Some maintainers will want Anthropic's newest Opus instead — **Opus 4.8** ships SWE-Bench Pro / Terminal-Bench 2.1 gains, dynamic-workflows, and parallel-subagent-swarm features 4.6 doesn't have.
+The wizard's default is **Sonnet 5** (Setup A — see "Choosing Your Model" in [README.md](../README.md) for the full evidence). **Opus 4.8** is the escalation model: reach for it when Sonnet 5 stalls on architecture, a stuck bug, or anything needing deeper reasoning — not as a daily driver. It ships SWE-Bench Pro / Terminal-Bench 2.1 gains, dynamic-workflows, and parallel-subagent-swarm features 4.6 doesn't have.
 
-**When the Latest tier is the right call:**
-- You want Anthropic's newest benchmark wins (SWE-Bench Pro 69.2% vs 4.7's 64.3%, Terminal-Bench 2.1 74.6% vs 4.7's 66.1%)
+**When Opus 4.8 is the right call:**
+- Sonnet 5 is stuck (2+ failed attempts) and you want a fresh, deeper-reasoning pass
 - You use dynamic workflows / parallel subagent swarms — introduced in 4.8, not available in 4.6
-- You're on the launch-week mailing list and want to validate the newest model against your workflow
+- You want Anthropic's newest benchmark wins (SWE-Bench Pro 69.2% vs 4.7's 64.3%, Terminal-Bench 2.1 74.6% vs 4.7's 66.1%) for a specific hard task
 - You haven't hit 4.7/4.8 token burn / false-green / dropped-constraint regressions in your own work
 
 **Tradeoffs (be honest):**
-- **Documented 40-60× cache token jump** vs 4.7 at HIGH effort ([AI Weekly](https://aiweekly.co/alerts/claude-opus-48-thinking-burns-900k-tokens-per-turn) — up to 900K cache tokens per turn). Burns Max 5-hour limits 2-3× faster than 4.6
-- **Earlier field signal suggested xhigh over max on 4.8** per [Andon Labs Vending-Bench](https://andonlabs.com/blog/opus-4-8-vending-bench), but wizard standard is now `max` on all Claude models (#395)
+- **Documented 40-60× cache token jump** vs 4.7 at HIGH effort ([AI Weekly](https://aiweekly.co/alerts/claude-opus-48-thinking-burns-900k-tokens-per-turn) — up to 900K cache tokens per turn). Burns Max 5-hour limits 2-3× faster than 4.6 — this is exactly why it's an escalation model, not a daily driver
 - Active GitHub regressions still open: false-greens ([#63861](https://github.com/anthropics/claude-code/issues/63861)), 2-3× token burn ([#64961](https://github.com/anthropics/claude-code/issues/64961)), 46K tokens for simple coding turn ([#64153](https://github.com/anthropics/claude-code/issues/64153)), dropped constraints ([#65932](https://github.com/anthropics/claude-code/issues/65932))
 - [Tech.yahoo review](https://tech.yahoo.com/ai/claude/articles/claude-opus-4-8-review-130106963.html): "Anthropic deliberately made Opus's new tokenizer less efficient" — not a transient bug, structural pricing change
 - Anthropic-supported until ≥ May 28, 2027 (longer runway than 4.6)
 
-**How to opt in (global, sweeps every project):**
+**How to opt in for a session (escalate, don't pin globally):**
 
-Edit `~/.claude/settings.json`:
+`/model claude-opus-4-8` at the start of the session, then `/effort xhigh`. Reserve a global pin in `~/.claude/settings.json` for maintainers who've decided Opus 4.8 is their permanent driver, understanding the cost tradeoff above:
 ```json
 {
-  "model": "claude-opus-4-8",
-  "env": {
-    "CLAUDE_CODE_EFFORT_LEVEL": "max"
-  }
+  "model": "claude-opus-4-8"
 }
 ```
 
 On Max plans, Opus auto-upgrades to 1M context. No `[1m]` suffix needed.
 
-**Effort tuning for 4.8:** always `max`. Earlier field signal suggested xhigh on 4.8 but the wizard standard is max on all Claude models (#395).
+**Effort tuning for 4.8:** `xhigh` (see the per-model effort table in "Recommended Effort Level" above — Opus 4.8 is escalation-only, so it doesn't get its own `max` tier the way Opus 4.6 does).
 
-**Escape hatch:** flip the env vars back to `claude-opus-4-6` to return to the wizard's recommended default. Or remove them entirely to fall back to Claude Code auto-mode.
+**Escape hatch:** remove the `model` line (or run `/model sonnet`) to return to Sonnet 5, the wizard's recommended default.
 
 ### Community Feature-Discovery Scanner (roadmap #207)
 
@@ -2147,7 +2157,7 @@ The light hook outputs text that **instructs Claude** to invoke skills:
 
 ```
 AUTO-INVOKE SKILL (Claude MUST do this FIRST):
-- implement/fix/refactor/feature/bug/build/test/TDD → Invoke: Skill tool, skill="sdlc"
+- implement/fix/refactor/feature/bug/build/test/TDD/release/publish/deploy → Invoke: Skill tool, skill="sdlc"
 ```
 
 **This is text-based, not programmatic.** Claude reads this instruction and follows it. When Claude sees your message is an implementation task, it invokes the sdlc skill using the Skill tool. This loads the full SDLC guidance into context.
@@ -2180,7 +2190,7 @@ SDLC BASELINE:
 5. 🛑 ALL TESTS MUST PASS BEFORE COMMIT - NO EXCEPTIONS
 
 AUTO-INVOKE SKILL (Claude MUST do this FIRST):
-- implement/fix/refactor/feature/bug/build/test/TDD → Invoke: Skill tool, skill="sdlc"
+- implement/fix/refactor/feature/bug/build/test/TDD/release/publish/deploy → Invoke: Skill tool, skill="sdlc"
 - DON'T invoke for: questions, explanations, reading/exploring code, simple queries
 - DON'T wait for user to type /sdlc - AUTO-INVOKE based on task type
 
@@ -2203,6 +2213,8 @@ chmod +x .claude/hooks/sdlc-prompt-check.sh
 
 ## Step 5: Create the TDD Hook
 
+**Illustrative, not exhaustive:** this teaches the PreToolUse/exit-2 blocking mechanic with one hook. The wizard ships **9 production hooks total** — only this one and Step 4's light hook have hand-typed templates in this doc; the other 7 (`codex-gate-check.sh`, `goal-confidence-check.sh`, `instructions-loaded-check.sh`, `model-effort-check.sh`, `precompact-seam-check.sh`, `codex-review-stop-check.sh`, `token-spike-check.sh`) don't, because there's no substitute for the real files. **For the complete, always-in-sync set, run `npx agentic-sdlc-wizard@latest init`** instead of hand-building hooks 3-9 from prose descriptions elsewhere in this doc.
+
 Create `.claude/hooks/tdd-pretool-check.sh`:
 
 ```bash
@@ -2215,22 +2227,35 @@ TOOL_INPUT=$(cat)
 
 # Extract the file path being edited (requires jq)
 FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.tool_input.file_path // empty')
+MARKER="$CLAUDE_PROJECT_DIR/.claude/.tdd-test-touched"
+
+# A test file was touched — mark it and allow.
+if [[ "$FILE_PATH" =~ (\.test\.|\.spec\.|/__tests__/|/tests?/) ]]; then
+  touch "$MARKER" 2>/dev/null
+  exit 0
+fi
 
 # CUSTOMIZE: Change this pattern to match YOUR source directory
 # Examples: "/src/", "/app/", "/lib/", "/packages/", "/server/"
-if [[ "$FILE_PATH" == *"/src/"* ]]; then
-  # Output additionalContext that Claude will read
-  cat << 'EOF'
-{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "TDD CHECK: Are you writing IMPLEMENTATION before a FAILING TEST? If yes, STOP. Write the test first (TDD RED), then implement (TDD GREEN)."}}
-EOF
+# Match BOTH absolute (*/src/*) and cwd-relative (src/*) forms — a
+# leading-slash-only pattern silently no-ops on relative file_paths
+# like "src/app.js" (Codex finding, #436 round 1).
+if [[ "$FILE_PATH" == *"/src/"* || "$FILE_PATH" == "src/"* ]]; then
+  if [ ! -f "$MARKER" ]; then
+    # exit 2 + stderr = BLOCK. Claude Code only denies a tool call on exit 2
+    # with stderr output — exit 0 always allows regardless of stdout content.
+    echo "TDD RED REQUIRED: no test file touched yet. Write a failing test before implementing in src/." >&2
+    exit 2
+  fi
 fi
 
 # No output = allow the tool to proceed
 ```
 
 **CUSTOMIZE:**
-1. Replace `"/src/"` with your source directory pattern
+1. Replace `"/src/"` / `"src/"` with your source directory pattern (both forms — see comment above)
 2. Ensure `jq` is installed (or adapt to your preferred JSON parser)
+3. This minimal version tracks "a test was touched" with one marker file for the whole project, so once unlocked it stays unlocked. The wizard's actual shipped `hooks/tdd-pretool-check.sh` (in this repo) is session-scoped instead (resets each Claude Code session) and avoids `jq` for session-ID parsing — a plain `jq`-based extraction silently disabled this exact gate once when `jq` was missing (#436 round 1). Copy that file directly for the production-hardened version instead of hand-typing this one.
 
 **Make it executable:**
 ```bash
@@ -2248,7 +2273,7 @@ Create `.claude/skills/sdlc/SKILL.md`:
 ````markdown
 ---
 name: sdlc
-description: Full SDLC workflow for implementing features, fixing bugs, refactoring code, and creating new functionality. Use this skill when implementing, fixing, refactoring, adding features, or building new code.
+description: Full SDLC workflow for implementing features, fixing bugs, refactoring code, testing, releasing, publishing, and deploying. Use this skill when implementing, fixing, refactoring, testing, adding features, building new code, or releasing/publishing/deploying.
 argument-hint: [task description]
 ---
 # SDLC Skill - Full Development Workflow
@@ -2354,13 +2379,15 @@ Before presenting approach, STATE your confidence:
 
 | Level | Meaning | Action | Effort |
 |-------|---------|--------|--------|
-| HIGH (90%+) | Know exactly what to do | Present approach, proceed after approval | `max` (default) |
-| MEDIUM (60-89%) | Solid approach, some uncertainty | Present approach, highlight uncertainties | `max` (default) |
-| LOW (<60%) | Not sure | ASK USER before proceeding | **Run `/effort max` now** — don't wait |
-| FAILED 2x | Something's wrong | STOP. ASK USER immediately | **Run `/effort max` now** — you're burning cycles at lower effort |
-| CONFUSED | Can't diagnose why something is failing | STOP. Describe what you tried, ask for help | **Run `/effort max` now** — stop spinning |
+| HIGH (90%+) | Know exactly what to do | Present approach, proceed after approval | Model default |
+| MEDIUM (60-89%) | Solid approach, some uncertainty | Present approach, highlight uncertainties | Model default |
+| LOW (<60%) | Not sure | ASK USER before proceeding | **Escalate effort now** — don't wait |
+| FAILED 2x | Something's wrong | STOP. ASK USER immediately | **Escalate effort now** — you're burning cycles at lower effort |
+| CONFUSED | Can't diagnose why something is failing | STOP. Describe what you tried, ask for help | **Escalate effort now** — stop spinning |
 
-**Dynamic bumping is NOT optional.** "Consider max effort" is the same as "ignore this" in practice. If your confidence drops or tests fail twice, bump effort BEFORE the next attempt — spinning at low effort is an SDLC failure mode.
+"Model default" and "escalate" are model-aware, not a blanket `max` — see "Recommended Effort Level" above for the per-model table (Sonnet 5: `high`→`xhigh`; Opus 4.8: `xhigh`; Opus 4.6: `max`; Fable: `high`).
+
+**Dynamic bumping is NOT optional.** "Consider higher effort" is the same as "ignore this" in practice. If your confidence drops or tests fail twice, bump effort BEFORE the next attempt — spinning at low effort is an SDLC failure mode.
 
 ## Self-Review Loop (CRITICAL)
 
@@ -2474,7 +2501,9 @@ When the reviewer finds issues, respond per-finding instead of silently fixing e
 
 ### Convergence
 
-Max 3 recheck rounds (4 total including initial review). If still NOT CERTIFIED after round 4, escalate to the user with a summary of open findings. Don't spin indefinitely.
+3 recheck rounds (4 total including initial review) is the default budget for a typical change. If still NOT CERTIFIED after round 4, escalate to the user with a summary of open findings rather than spinning indefinitely.
+
+**Exception — known-large migrations:** the round cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop. Judge convergence by the *trend* in finding quality, not the round number: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 7 rounds, each finding something real; round 5 found a live `SessionStart` hook actively contradicting the new policy, more consequential than anything rounds 1-3 found. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
 
 ```
 Self-review passes → handoff.json (round 1, PENDING_REVIEW)
@@ -3041,7 +3070,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.83.0 -->
+<!-- SDLC Wizard Version: 1.84.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
@@ -3703,7 +3732,7 @@ These signals are community-observed behavior on paid plans (Max/Team) — not i
 | Signal | What It Means | SDLC Action |
 |--------|---------------|-------------|
 | **Subagent-heavy** | Each subagent runs its own context. The advisor is a separate server-side consultation (full transcript forwarded, different token profile). Explore agents, full Agent delegates, and workflow agents each spawn separate contexts. | Expected in Setup A (Fable advisor fires per-decision). If unexpectedly high: use `subagent_type: "Explore"` for search (lighter), reserve full agents for implementation. |
-| **>150K context** | Sessions staying large between compactions. | **Context-window dependent.** On 1M (Setup A): >150K is expected at 30% compact threshold — the real question is whether the task needed 1M headroom. On 200K (Setup B/C): lower `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` toward 75%. `/compact` between planning and implementation. |
+| **>150K context** | Sessions staying large between compactions. | **Context-window dependent.** Setup A (Sonnet 5, native 1M): recommended `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` fires at ~725K — >150K is expected and fine, the real question is whether the task needed that much headroom. Setup B (Opus 4.6, 200K unless you opt into `opus[1m]`): if you opted into `opus[1m]`, pair it with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`; on plain 200K, the default ~95% trigger is fine. `/compact` between planning and implementation regardless of lane. |
 | **8+ hour sessions** | Long-running sessions accumulate stale context. | `/clear` between unrelated tasks. Split multi-feature work into separate sessions. After committing a PR, start fresh. Background `/loop` sessions count toward this — audit which are still needed. |
 
 ### Reduce Consumption
@@ -4526,6 +4555,26 @@ Claude Code is actively improving. When they add built-in features:
 | Built-in task tracking | TodoWrite reminders |
 
 Use the best tool for the job. If Claude Code builds it better, use theirs.
+
+---
+
+## Cowork Support
+
+**Claude Cowork** is a separate product from Claude Code — a desktop application for knowledge workers, not developers. It shares Claude Code's plugin format, so this wizard ships a Cowork-native subset: [`cowork/`](cowork/README.md).
+
+**What it provides:** 2 portable skills (`/sdlc-wizard-cowork:sdlc`, `/sdlc-wizard-cowork:feedback`) plus 3 **prompt-based hooks** — the Cowork equivalents of this wizard's bash hooks, since Cowork sessions have no shell access:
+
+| Cowork Hook | Claude Code Equivalent | Event |
+|-------------|------------------------|-------|
+| TDD check | `tdd-pretool-check.sh` | `PreToolUse` (Write/Edit/MultiEdit) |
+| SDLC baseline | `sdlc-prompt-check.sh` | `UserPromptSubmit` |
+| Completion check | *(new — no CC equivalent)* | `Stop` |
+
+**What's NOT ported and why** (CLI-specific, filesystem-dependent, or event-unavailable in Cowork): `instructions-loaded-check.sh`, `model-effort-check.sh`, `precompact-seam-check.sh`, the Setup/Update skills, cross-model review via `codex exec` (use ChatGPT/Codex web manually instead), and the CI shepherd (`gh pr`, `git push` — these happen outside a Cowork session).
+
+**Install:** as a plugin in Claude Desktop or claude.ai settings, pointing at `https://github.com/BaseInfinity/claude-sdlc-wizard/tree/main/cowork`. See [`cowork/README.md`](cowork/README.md) for full details, or `claude --plugin-dir ./cowork` for local testing.
+
+**Drift prevention:** the skills in `cowork/skills/` are copies of the canonical `skills/` — `tests/test-cowork-drift.sh` fails CI if they diverge, forcing this package to stay in sync whenever the canonical skills update.
 
 ---
 

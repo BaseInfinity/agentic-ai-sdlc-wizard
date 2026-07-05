@@ -961,6 +961,71 @@ test_sdlc_skill_recommended_model_mentions_sonnet_5() {
 test_sdlc_skill_recommended_model_is_model_aware
 test_sdlc_skill_recommended_model_mentions_sonnet_5
 
+# This repo's own dogfooded SDLC.md has the identical table/callout pattern
+# as skills/sdlc/SKILL.md had — same blanket-max bug, same stale opus-4-6
+# recommendation. It also already has a "Lessons Learned" entry (added
+# 2026-07-04) explaining why blanket max is wrong, which the table
+# contradicted until fixed. Found while shipping #436/#437, 2026-07-05.
+test_sdlc_config_recommended_effort_is_model_aware() {
+    local CONFIG="$REPO_ROOT/SDLC.md"
+    if [ ! -f "$CONFIG" ]; then fail "SDLC.md not found"; return; fi
+    if grep -qE 'CLAUDE_CODE_EFFORT_LEVEL.?=.?max.? in (settings )?env block' "$CONFIG"; then
+        fail "SDLC.md must not blanket-recommend persisting max via env var (contradicts its own Lessons Learned entry)"
+    else
+        pass "SDLC.md does not blanket-recommend persisting max via env var"
+    fi
+}
+
+test_sdlc_config_recommended_model_mentions_sonnet_5() {
+    local CONFIG="$REPO_ROOT/SDLC.md"
+    if [ ! -f "$CONFIG" ]; then fail "SDLC.md not found"; return; fi
+    if grep -qE 'Sonnet 5|claude-sonnet-5' "$CONFIG"; then
+        pass "SDLC.md Recommended Model row mentions Sonnet 5"
+    else
+        fail "SDLC.md must mention Sonnet 5 in its Recommended Model row"
+    fi
+}
+
+test_sdlc_config_recommended_effort_is_model_aware
+test_sdlc_config_recommended_model_mentions_sonnet_5
+
+# Cowork plugin (cowork/) shipped in PR #410 (ROADMAP #424) with working
+# skills + prompt-based hooks and its own README, but was never
+# cross-referenced from the main wizard doc — invisible to anyone who
+# only reads CLAUDE_CODE_SDLC_WIZARD.md. Found 2026-07-05.
+test_wizard_doc_has_cowork_section() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    if grep -qiE '^#+ .*Cowork' "$DOC"; then
+        pass "CLAUDE_CODE_SDLC_WIZARD.md has a Cowork section"
+    else
+        fail "CLAUDE_CODE_SDLC_WIZARD.md must have a Cowork section cross-referencing cowork/README.md"
+    fi
+}
+
+test_wizard_doc_has_cowork_section
+
+# Autocompact Tuning table previously blanket-recommended 30% for "any 1M
+# model" — this was Opus-specific (opus[1m] needed an opt-in pin for
+# extended context). Sonnet 5 always runs 1M natively with its own
+# proactive-compaction default (~967K, per code.claude.com/docs/en/
+# model-config#sonnet-5-context-window) — the 30% figure was never
+# re-derived for it and doesn't apply. Verified via live research
+# 2026-07-05, not carried over from the Opus-era table unexamined.
+test_wizard_doc_autocompact_mentions_sonnet_5() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    local section
+    section=$(awk '/^### Autocompact Tuning/{f=1} f && /^###[^#]/ && !/^### Autocompact Tuning/{f=0} f' "$DOC")
+    if echo "$section" | grep -qE 'Sonnet 5'; then
+        pass "Autocompact Tuning section addresses Sonnet 5 specifically"
+    else
+        fail "Autocompact Tuning section must address Sonnet 5's native 1M/967K default, not just Opus-era guidance"
+    fi
+}
+
+test_wizard_doc_autocompact_mentions_sonnet_5
+
 # ────────────────────────────────────────────
 # Summary
 # ────────────────────────────────────────────

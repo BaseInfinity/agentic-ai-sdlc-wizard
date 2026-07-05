@@ -1,10 +1,10 @@
-// Roadmap #233: repo complexity heuristic for mixed-mode tier selection.
+// Roadmap #233: repo complexity heuristic for setup-lane suggestion.
 //
 // Output: { tier: 'simple' | 'complex', score: <number>, signals: [...] }
-//   - 'simple' → setup wizard suggests mixed-mode (Sonnet 4.6 coder + Opus 4.6 max reviewer)
-//   - 'complex' → setup wizard suggests full flagship (Opus 4.6 max everywhere)
-// Cross-model review (Codex / external) always stays at the flagship tier
-// regardless of coder selection — see CLAUDE_CODE_SDLC_WIZARD.md.
+//   - 'simple' → setup wizard suggests Setup A (Sonnet 5 + Fable) or no pin
+//   - 'complex' → setup wizard suggests Setup B (Opus 4.6 Stability) or escalating to Opus 4.8
+// Cross-model review (Codex xhigh) always runs regardless of driver
+// selection — see CLAUDE_CODE_SDLC_WIZARD.md.
 //
 // Classification (matches CLAUDE_CODE_SDLC_WIZARD.md → "Mixed-Mode Tier"):
 //   simple = LOC < 10K AND tests < 30 AND hooks < 5 AND workflows < 5 AND no stakes

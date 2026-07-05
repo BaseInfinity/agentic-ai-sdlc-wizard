@@ -268,6 +268,9 @@ jobs:
       - name: Run skill graduation tests
         run: ./tests/test-skill-graduations.sh
 
+      - name: Run wizard doc hook template drift tests (v1.84.0)
+        run: ./tests/test-wizard-doc-hook-templates.sh
+
   # Clean up old bot comments on PR push (keeps PRs tidy)
   # Also runs on workflow_dispatch (no-op) so branch protection doesn't block auto-merge.
   cleanup-old-comments:

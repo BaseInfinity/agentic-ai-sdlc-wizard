@@ -1,10 +1,10 @@
 #!/bin/bash
 # Test cli/lib/repo-complexity.js heuristic
-# Heuristic decides whether a repo is "simple" (good fit for mixed-mode:
-# Sonnet coder + Opus reviewer) or "complex" (full Opus tier recommended).
+# Heuristic decides whether a repo is "simple" (good fit for Setup A —
+# Sonnet 5 + Fable) or "complex" (Setup B — Opus 4.6 Stability — recommended).
 #
 # Roadmap #233: introduces repo_complexity signal so setup wizard can suggest
-# mixed-mode for trivial/CRUD repos and reserve flagship Opus 4.6 max for
+# Setup A for trivial/CRUD repos and reserve Setup B (Opus 4.6 Stability) for
 # fixture-deep, multi-workflow, secrets-touching repos.
 
 set -e

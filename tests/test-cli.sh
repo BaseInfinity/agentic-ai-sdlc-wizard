@@ -343,12 +343,13 @@ test_skill_frontmatter() {
     (cd "$d" && node "$CLI" init > /dev/null 2>&1)
     local ok=true
     grep -q "^name: sdlc$" "$d/.claude/skills/sdlc/SKILL.md" || ok=false
-    # v1.80.0: frontmatter effort is max (wizard's recommended default for 4.6 max flagship)
-    grep -qE "^effort: max$" "$d/.claude/skills/sdlc/SKILL.md" || ok=false
+    # v1.84.0: effort is model-aware (see AI_SETUP_LANES.md), so frontmatter
+    # deliberately omits a blanket effort field
+    grep -qE "^effort:" "$d/.claude/skills/sdlc/SKILL.md" && ok=false
     if [ "$ok" = true ]; then
-        pass "Template skills have correct frontmatter (name + effort: max)"
+        pass "Template skills have correct frontmatter (name, no blanket effort field)"
     else
-        fail "Skills should have name: sdlc and effort: max in frontmatter"
+        fail "Skills should have name: sdlc and no blanket effort: field in frontmatter"
     fi
     rm -rf "$d"
 }
