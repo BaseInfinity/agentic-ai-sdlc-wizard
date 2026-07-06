@@ -2453,7 +2453,7 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 
    > **Always launch codex via `run_in_background: true` on the Bash tool.** The Bash tool clamps `timeout` to 600000 ms (10 min) regardless of the value passed, and force-kills the foreground process at that wall. Multi-artifact bundle reviews (release reviews per the checklist below, multi-finding rechecks, etc.) routinely run 6–30 minutes — they need background mode to complete. The wrapper `scripts/codex-review.sh` already has a 30-min stall watchdog (`STALL_SECONDS=1800`) as the real timeout control. A foreground call killed mid-review plus the Stop-hook re-invocation loop can burn 60+ minutes of session compute on what should be a single 7-minute run (issue #364, 2026-05-27 incident). The general rule: **any long-running wrapper invoked through the CC Bash tool — codex, slow builds, long test suites — should use `run_in_background: true` unconditionally and let the wrapper's own stall watchdog be the timeout authority.**
 
-3. If CERTIFIED → proceed to CI. If NOT CERTIFIED → go to Round 2.
+3. If CERTIFIED → **write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json` before proceeding to CI.** `hooks/codex-gate-check.sh` compares this SHA to current HEAD at commit time and treats a mismatch (or a missing field) as a stale certification (ROADMAP #437) — a CERTIFIED status string alone doesn't prove the certification still covers what's about to be committed. If NOT CERTIFIED → go to Round 2.
 
 ### Round 2+: Dialogue Loop
 
@@ -2497,7 +2497,7 @@ When the reviewer finds issues, respond per-finding instead of silently fixing e
      < /dev/null
    ```
 
-4. If CERTIFIED → done. If NOT CERTIFIED (rejected disputes or failed fixes) → fix rejected items and repeat.
+4. If CERTIFIED → **write/update `"commit_sha"` in `handoff.json` to current HEAD** (same reason as Round 1 step 3 — the gate hook checks it). If NOT CERTIFIED (rejected disputes or failed fixes) → fix rejected items and repeat.
 
 ### Convergence
 
@@ -2512,7 +2512,7 @@ Self-review passes → handoff.json (round 1, PENDING_REVIEW)
                             |
                    Reviewer: FULL REVIEW (structured findings)
                             |
-                   CERTIFIED? → YES → CI feedback loop
+                   CERTIFIED? → YES → write commit_sha → CI feedback loop
                             |
                             NO (findings with IDs + certify conditions)
                             |
@@ -2523,7 +2523,7 @@ Self-review passes → handoff.json (round 1, PENDING_REVIEW)
                             |
                    Reviewer: TARGETED RECHECK (previous findings only)
                             |
-                   All resolved? → YES → CERTIFIED
+                   All resolved? → YES → CERTIFIED (write commit_sha)
                             |
                             NO → fix rejected items, repeat
                             (max 3 rechecks, then escalate to user)
@@ -3075,7 +3075,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.85.0 -->
+<!-- SDLC Wizard Version: 1.86.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
@@ -3909,7 +3909,7 @@ codex exec \
 
 > **Always launch via `run_in_background: true` on the Bash tool.** Same reason as the parallel callout in the Cross-Model Review Loop section above — Bash tool clamps `timeout` to 600000 ms (10 min) regardless of the value passed and force-kills foreground at the wall. Multi-artifact bundle reviews need background mode to complete. See issue #364 (2026-05-27 incident: 70 min session compute on a 7-min review).
 
-4. If CERTIFIED → done. If NOT CERTIFIED → enter the dialogue loop.
+4. If CERTIFIED → **write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) blocks a commit if this is missing or doesn't match current HEAD, so a bare `CERTIFIED` status isn't enough. Then done. If NOT CERTIFIED → enter the dialogue loop.
 
 **The Dialogue Loop (Round 2+):**
 
@@ -3979,7 +3979,7 @@ Claude writes code → self-review passes → handoff.json (round 1)
     |                              Reviewer: FULL REVIEW
     |                              (structured findings with IDs)
     |                                          |
-    |                              CERTIFIED? -+→ YES → Done
+    |                              CERTIFIED? -+→ YES → write commit_sha → Done
     |                                          |
     |                                          +→ NO (findings)
     |                                          |
@@ -3989,11 +3989,13 @@ Claude writes code → self-review passes → handoff.json (round 1)
     |                              Reviewer: TARGETED RECHECK
     |                              (previous findings only, no new P1/P2)
     |                                          |
-    |                              All resolved? → YES → CERTIFIED
+    |                              All resolved? → YES → CERTIFIED (write commit_sha)
     |                                          |
     └────────── Fix rejected items ←───────────┘
                     (max 3 rechecks, then escalate to user)
 ```
+
+**Every CERTIFIED path above writes `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) treats a missing or mismatched SHA as a stale certification, so a bare `CERTIFIED` status string is never enough on its own.
 
 **Key flags:**
 - `-c 'model_reasoning_effort="xhigh"'` — Maximum reasoning depth. This is where you get the most value. Testing showed `xhigh` caught 3 findings that `high` missed on the same content.

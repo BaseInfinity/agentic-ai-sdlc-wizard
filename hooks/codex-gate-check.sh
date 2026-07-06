@@ -52,7 +52,26 @@ STATUS=$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$REVIEW_FILE" \
     | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//; s/"$//')
 
 case "$STATUS" in
-    CERTIFIED|REVIEWED) exit 0 ;;
+    CERTIFIED|REVIEWED)
+        # #437: a CERTIFIED/REVIEWED status string alone doesn't mean the
+        # certification is still current — commits made after it was issued
+        # would otherwise sail through on the same stale status forever.
+        # commit_sha records HEAD at cert time; a mismatch (or a missing
+        # field, e.g. an old-format handoff.json predating this fix) means
+        # new commits landed since certification, so treat it as stale. This
+        # allows exactly one commit after certification (HEAD still equals
+        # the recorded SHA at that commit's PreToolUse check) and blocks the
+        # next one until re-cert. No legacy-compat fallback for missing SHA.
+        COMMIT_SHA=$(grep -o '"commit_sha"[[:space:]]*:[[:space:]]*"[^"]*"' "$REVIEW_FILE" \
+            | head -1 \
+            | sed 's/.*"commit_sha"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null) || CURRENT_HEAD=""
+        if [ -z "$COMMIT_SHA" ] || [ "$COMMIT_SHA" != "$CURRENT_HEAD" ]; then
+            echo "CROSS-MODEL REVIEW REQUIRED: .reviews/handoff.json certification is stale (commit_sha does not match current HEAD — new commits landed since certification). Re-run Codex cross-model review. Set CODEX_GATE_SKIP=1 to bypass with justification." >&2
+            exit 2
+        fi
+        exit 0
+        ;;
     *)
         echo "CROSS-MODEL REVIEW REQUIRED: .reviews/handoff.json status is '$STATUS' (need REVIEWED or CERTIFIED). Run Codex cross-model review before committing. Set CODEX_GATE_SKIP=1 to bypass with justification." >&2
         exit 2

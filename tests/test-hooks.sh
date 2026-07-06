@@ -3745,34 +3745,85 @@ test_codex_gate_blocks_commit_without_review() {
 }
 
 test_codex_gate_allows_commit_with_certified_review() {
-    local tmpdir
+    local tmpdir head_sha
     tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
+    head_sha=$(cd "$tmpdir" && git rev-parse HEAD)
     mkdir -p "$tmpdir/.reviews"
-    printf '{"status":"CERTIFIED","score":9}' > "$tmpdir/.reviews/handoff.json"
+    printf '{"status":"CERTIFIED","score":9,"commit_sha":"%s"}' "$head_sha" > "$tmpdir/.reviews/handoff.json"
     local out exit_code
     out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
     exit_code=$?
     rm -rf "$tmpdir"
     if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
-        pass "codex gate allows (exit 0) commit with CERTIFIED review"
+        pass "codex gate allows (exit 0) commit with CERTIFIED review matching current HEAD"
     else
-        fail "codex gate should exit 0 silent with CERTIFIED review, got exit=$exit_code out: $out"
+        fail "codex gate should exit 0 silent with CERTIFIED review matching HEAD, got exit=$exit_code out: $out"
     fi
 }
 
 test_codex_gate_allows_commit_with_reviewed_status() {
-    local tmpdir
+    local tmpdir head_sha
     tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
+    head_sha=$(cd "$tmpdir" && git rev-parse HEAD)
     mkdir -p "$tmpdir/.reviews"
-    printf '{"status":"REVIEWED"}' > "$tmpdir/.reviews/handoff.json"
+    printf '{"status":"REVIEWED","commit_sha":"%s"}' "$head_sha" > "$tmpdir/.reviews/handoff.json"
     local out exit_code
     out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
     exit_code=$?
     rm -rf "$tmpdir"
     if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
-        pass "codex gate allows (exit 0) commit with REVIEWED status"
+        pass "codex gate allows (exit 0) commit with REVIEWED status matching current HEAD"
     else
-        fail "codex gate should exit 0 silent with REVIEWED review, got exit=$exit_code out: $out"
+        fail "codex gate should exit 0 silent with REVIEWED review matching HEAD, got exit=$exit_code out: $out"
+    fi
+}
+
+# ROADMAP #437: a CERTIFIED/REVIEWED handoff.json has no freshness check — any
+# number of new commits can land after certification and still sail through
+# the gate on the same stale status string. Proven live in the v1.84.0
+# release: 2 real post-certification commits both passed the gate on a
+# round-11 CERTIFIED handoff that never got re-issued. Fix: certification
+# records commit_sha (HEAD at cert time); the gate compares it to current
+# HEAD and treats a mismatch as stale. This allows exactly one commit after
+# certification (HEAD still equals the recorded SHA at that commit's
+# PreToolUse check) and blocks the next one until re-cert.
+test_codex_gate_blocks_stale_certification_after_new_commit() {
+    local tmpdir cert_sha
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
+    cert_sha=$(cd "$tmpdir" && git rev-parse HEAD)
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"CERTIFIED","commit_sha":"%s"}' "$cert_sha" > "$tmpdir/.reviews/handoff.json"
+    # A commit lands after certification (simulates the real v1.84.0 incident:
+    # a post-certification CI-shepherd fix committed without re-review).
+    (cd "$tmpdir" && git commit -q --allow-empty -m "post-cert fix") > /dev/null 2>&1
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"another fix\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "stale"; then
+        pass "codex gate BLOCKS (exit 2) a stale certification after a new commit landed"
+    else
+        fail "codex gate should exit 2 + mention staleness once HEAD has moved past the certified commit_sha, got exit=$exit_code out: $out"
+    fi
+}
+
+# Missing commit_sha (an old-format handoff.json from before this fix) is
+# treated as stale, not silently allowed — no legacy-compat fallback.
+test_codex_gate_blocks_missing_commit_sha_as_stale() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"CERTIFIED"}' > "$tmpdir/.reviews/handoff.json"
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "stale"; then
+        pass "codex gate BLOCKS (exit 2) an old-format handoff.json with no commit_sha"
+    else
+        fail "codex gate should exit 2 + mention staleness when commit_sha is missing, got exit=$exit_code out: $out"
     fi
 }
 
@@ -3864,6 +3915,8 @@ test_codex_gate_blocks_on_invalid_status
 test_codex_gate_skip_override
 test_codex_gate_blocks_commit_with_quote_before_git_commit
 test_codex_gate_silent_when_only_description_mentions_commit
+test_codex_gate_blocks_stale_certification_after_new_commit
+test_codex_gate_blocks_missing_commit_sha_as_stale
 
 # ---- codex-review-stop-check.sh tests ----
 # Fable self-enforcement audit finding: a full SDLC workflow can complete —

@@ -1455,8 +1455,14 @@ echo ""
 echo "--- #32 N-Reviewer CI Pipeline ---"
 
 # Test: Wizard has multi-reviewer guidance
+# -E (extended regex) is required for the bare `?` in `multi.?review` to act
+# as a quantifier — in basic regex (grep's default) an unescaped `?` matches
+# a LITERAL question mark, so this always fell through to the other
+# alternatives. Previously masked by an incidental "parallel ... reviewer"
+# phrase collision elsewhere in the file (unrelated content, not real
+# multi-reviewer guidance) — exposed once that unrelated text was trimmed.
 test_wizard_multi_reviewer() {
-    if grep -qi 'multi.?review\|N.?review\|parallel.*review\|multiple.*review' "$WIZARD"; then
+    if grep -qiE 'multi.?review|N.?review|parallel.*review|multiple.*review' "$WIZARD"; then
         pass "Wizard has multi-reviewer guidance"
     else
         fail "Wizard missing multi-reviewer CI guidance"
@@ -1465,7 +1471,7 @@ test_wizard_multi_reviewer() {
 
 # Test: SDLC skill has multi-reviewer section
 test_skill_multi_reviewer() {
-    if grep -qi 'multi.?review\|N.?review\|parallel.*review\|multiple.*review' "$SKILL"; then
+    if grep -qiE 'multi.?review|N.?review|parallel.*review|multiple.*review' "$SKILL"; then
         pass "SDLC skill has multi-reviewer guidance"
     else
         fail "SDLC skill missing multi-reviewer guidance"
@@ -1474,7 +1480,7 @@ test_skill_multi_reviewer() {
 
 # Test: Multi-reviewer guidance mentions per-reviewer response
 test_multi_reviewer_response_pattern() {
-    if grep -qi 'per.?review\|each.*review\|respond.*each\|address.*each' "$SKILL"; then
+    if grep -qiE 'per.?review|each.*review|respond.*each|address.*each' "$SKILL"; then
         pass "Multi-reviewer guidance has per-reviewer response pattern"
     else
         fail "Multi-reviewer should describe responding to each reviewer independently"
