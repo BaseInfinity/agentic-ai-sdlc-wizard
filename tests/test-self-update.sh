@@ -1930,7 +1930,11 @@ test_cc_version_shows_update() {
     printf '#!/bin/bash\nif [ "$1" = "view" ] && echo "$@" | grep -q "claude-code"; then echo "2.1.90"; elif [ "$1" = "view" ]; then echo "1.23.0"; fi\n' > "$tmpdir/bin/npm"
     chmod +x "$tmpdir/bin/claude" "$tmpdir/bin/npm"
     local output
-    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" "$INSTRUCTIONS_HOOK" 2>/dev/null)
+    # #236(b): isolate the cache dir — without this, a fresh real
+    # ~/.cache/sdlc-wizard/latest-cc-version from actual hook usage on this
+    # machine short-circuits the npm stub and this test sees the real cached
+    # version instead of "2.1.90".
+    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$INSTRUCTIONS_HOOK" 2>/dev/null)
     rm -rf "$tmpdir"
     if echo "$output" | grep -q "Claude Code update" && echo "$output" | grep -q "2.1.81" && echo "$output" | grep -q "2.1.90"; then
         pass "Shows CC update notification with version numbers"
@@ -1950,7 +1954,8 @@ test_cc_version_no_notification_when_current() {
     printf '#!/bin/bash\nif [ "$1" = "view" ] && echo "$@" | grep -q "claude-code"; then echo "2.1.90"; elif [ "$1" = "view" ]; then echo "1.23.0"; fi\n' > "$tmpdir/bin/npm"
     chmod +x "$tmpdir/bin/claude" "$tmpdir/bin/npm"
     local output
-    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" "$INSTRUCTIONS_HOOK" 2>/dev/null)
+    # #236(b): isolate the cache dir, same reason as the test above.
+    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$INSTRUCTIONS_HOOK" 2>/dev/null)
     rm -rf "$tmpdir"
     if echo "$output" | grep -q "Claude Code update"; then
         fail "Should NOT show CC update notification when versions match, got: $output"

@@ -34,7 +34,7 @@ Prompt hooks work by injecting instructions into Claude's context at the right m
 |-----------------|----------------|
 | `instructions-loaded-check.sh` | `InstructionsLoaded` event not available in Cowork plugin hooks |
 | `model-effort-check.sh` | Effort levels are CC-specific; Cowork doesn't expose model config |
-| `precompact-seam-check.sh` | Depends on `.reviews/handoff.json` on disk; Cowork may not have filesystem |
+| `precompact-seam-check.sh` | Depends on `.git/` on disk (rebase/merge/cherry-pick state); Cowork may not have filesystem |
 
 ### What's NOT Included (and Why)
 

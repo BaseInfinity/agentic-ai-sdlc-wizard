@@ -56,13 +56,10 @@ test_has_contents_write_permission() {
     fi
 }
 
-test_uses_checkout_v5() {
-    if grep -q 'actions/checkout@v5' "$WORKFLOW"; then
-        pass "release.yml uses actions/checkout@v5"
-    else
-        fail "release.yml does not use actions/checkout@v5"
-    fi
-}
+# #236(c): the plain "uses actions/checkout@v5" check that used to live here
+# duplicated test-node24-compliance.sh's repo-wide action-version checks
+# (which action versions everywhere, not what release.yml specifically does)
+# — removed; that file is the one home for action-version checks.
 
 test_uses_setup_node_with_registry() {
     if grep -q 'actions/setup-node@v5' "$WORKFLOW" && grep -q 'registry-url' "$WORKFLOW"; then
@@ -214,7 +211,6 @@ test_workflow_exists
 test_yaml_valid
 test_trigger_on_tag_push
 test_has_contents_write_permission
-test_uses_checkout_v5
 test_uses_setup_node_with_registry
 test_uses_gh_release_create
 test_uses_trusted_publishing_not_token

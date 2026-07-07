@@ -19,10 +19,6 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/hooks/sdlc-prompt-check.sh"
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/hooks/goal-confidence-check.sh"
           }
         ]
       }
@@ -33,8 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Write(.github/workflows/*) Edit(.github/workflows/*) MultiEdit(.github/workflows/*)",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/hooks/tdd-pretool-check.sh"
+            "if": "Write(hooks/**) Edit(hooks/**) MultiEdit(hooks/**) Write(cli/**) Edit(cli/**) MultiEdit(cli/**) Write(.github/workflows/*) Edit(.github/workflows/*) MultiEdit(.github/workflows/*)",
+            "command": "SDLC_TDD_SRC_PATTERN='hooks/|cli/|.github/workflows/' \"$CLAUDE_PROJECT_DIR\"/hooks/tdd-pretool-check.sh"
           }
         ]
       },

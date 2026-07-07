@@ -55,7 +55,22 @@ fi
 # slash BEFORE "src", so a cwd-relative file_path like "src/app.js" (no
 # leading slash) never matched and the whole gate silently no-op'd. Second
 # clause catches the relative form.
-if [[ "$FILE_PATH" == *"/src/"* || "$FILE_PATH" == "src/"* ]]; then
+# #236(b): SDLC_TDD_SRC_PATTERN overrides the gated path(s) via env var (set
+# it in the hook's "command" string in .claude/settings.json) instead of
+# editing this shared/distributed script — a "|"-separated list of
+# substrings, e.g. "hooks/|cli/". Falls back to the generic /src/ pattern
+# when unset, so every other install is unaffected.
+SRC_MATCH=0
+if [ -n "${SDLC_TDD_SRC_PATTERN:-}" ]; then
+  IFS='|' read -ra _tdd_patterns <<< "$SDLC_TDD_SRC_PATTERN"
+  for _p in "${_tdd_patterns[@]}"; do
+    [[ "$FILE_PATH" == *"$_p"* ]] && SRC_MATCH=1 && break
+  done
+else
+  [[ "$FILE_PATH" == *"/src/"* || "$FILE_PATH" == "src/"* ]] && SRC_MATCH=1
+fi
+
+if [ "$SRC_MATCH" -eq 1 ]; then
   # #436 gate: block implementation-first edits when no test file has been
   # touched yet this session. Degrades to allow without session_id.
   if [ -n "$SESSION_ID" ]; then

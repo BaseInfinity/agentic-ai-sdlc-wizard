@@ -337,41 +337,11 @@ if [ ! -f "$STATS_LIB" ]; then
 else
     source "$STATS_LIB"
 
-    # Test 14: Pipeline detects REGRESSION when custom feature removal hurts scores
-    test_compare_ci_detects_regression() {
-        local result
-        result=$(compare_ci "8 8 8 8 8" "4 4 4 4 4")
-        if [ "$result" = "REGRESSION" ]; then
-            pass "compare_ci detects REGRESSION (8→4 = removing custom feature hurts)"
-        else
-            fail "compare_ci should return REGRESSION for 8→4, got: $result"
-        fi
-    }
-    test_compare_ci_detects_regression
-
-    # Test 15: Pipeline returns STABLE on noise (overlapping CIs)
-    test_compare_ci_stable_on_noise() {
-        local result
-        result=$(compare_ci "7.0 7.2 6.8 7.1 6.9" "7.1 6.9 7.0 7.2 6.8")
-        if [ "$result" = "STABLE" ]; then
-            pass "compare_ci returns STABLE on overlapping scores (noise)"
-        else
-            fail "compare_ci should return STABLE for overlapping scores, got: $result"
-        fi
-    }
-    test_compare_ci_stable_on_noise
-
-    # Test 16: Pipeline detects IMPROVED when native is better
-    test_compare_ci_detects_improved() {
-        local result
-        result=$(compare_ci "4 4 4 4 4" "8 8 8 8 8")
-        if [ "$result" = "IMPROVED" ]; then
-            pass "compare_ci detects IMPROVED (4→8 = native feature is better)"
-        else
-            fail "compare_ci should return IMPROVED for 4→8, got: $result"
-        fi
-    }
-    test_compare_ci_detects_improved
+    # #236(c): the REGRESSION/STABLE/IMPROVED classification tests that used
+    # to live here duplicated test-stats.sh's unit coverage of the same
+    # compare_ci behavior classes exactly — removed. Kept: the 2-point-gap
+    # sensitivity test below, the only prove-it-specific semantic (that a
+    # real signal separates cleanly from noise), not covered elsewhere.
 
     # Test 17: Pipeline distinguishes 2-point mean shift (not STABLE)
     test_compare_ci_sensitivity() {

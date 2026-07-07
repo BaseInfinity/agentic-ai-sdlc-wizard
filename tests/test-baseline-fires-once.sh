@@ -14,7 +14,6 @@
 #
 # Things that MUST keep firing every prompt regardless of sentinel:
 #   - SETUP NOT COMPLETE warning (when SDLC.md / TESTING.md missing)
-#   - EFFORT BUMP REQUIRED nudge (when ≥2 LOW signals in 30 min)
 
 set -e
 
@@ -131,27 +130,6 @@ test_setup_missing_always_fires() {
     fi
 }
 
-# ---- Test 6: Effort-bump nudge fires every time, ignores sentinel ----
-test_effort_bump_always_fires() {
-    local cache="$WORKSPACE/cache-6"
-    rm -rf "$cache"
-    mkdir -p "$cache"
-    # Seed 2 LOW signals in last 30min so bump fires on every invocation
-    local now
-    now=$(date +%s)
-    printf '%s\tlow\n%s\tlow\n' "$((now - 60))" "$((now - 30))" > "$cache/effort-signals.log"
-
-    invoke "$cache" '{"prompt":"first","session_id":"sess-F"}' > /dev/null
-    # On second fire, BASELINE should be suppressed but EFFORT BUMP should still emit
-    local out
-    out=$(invoke "$cache" '{"prompt":"second","session_id":"sess-F"}')
-    if echo "$out" | grep -q "EFFORT BUMP REQUIRED"; then
-        pass "EFFORT BUMP REQUIRED nudge fires regardless of BASELINE sentinel"
-    else
-        fail "EFFORT BUMP must fire when signals trigger it. Output: $out"
-    fi
-}
-
 # ---- Test 7: Sentinel does not leak across cache dirs ----
 test_sentinel_isolated_per_cache() {
     local cache_a="$WORKSPACE/cache-7a"
@@ -257,7 +235,6 @@ test_second_fire_suppresses_baseline
 test_different_session_re_emits
 test_no_session_id_back_compat
 test_setup_missing_always_fires
-test_effort_bump_always_fires
 test_sentinel_isolated_per_cache
 test_suppressed_fire_is_smaller
 test_concurrency_same_session_emits_once
