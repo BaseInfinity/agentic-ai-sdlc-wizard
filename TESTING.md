@@ -53,8 +53,7 @@ This is a **meta-project** - it's a wizard that sets up other projects. Traditio
 | `tests/test-node24-compliance.sh` | Node 24 compliance | No deprecated node20 actions, correct versions, no node-version: 20 |
 | `tests/test-effectiveness-scoreboard.sh` | Effectiveness scoreboard | Seed data quality, DDE calculation, escape rate, analytics output |
 | `tests/test-firmware-fixture.sh` | Firmware fixture | Domain indicators, Python overlay, test infra, multi-device, no-web negative test |
-| `tests/test-degradation-detection.sh` | Degradation detection | Score persistence, fork guard, wizard hardening, anti-laziness mechanisms |
-| `tests/test-doc-consistency.sh` | Doc consistency | Workflow/file/skill/scenario counts match filesystem, no stale hardcoded counts |
+| `tests/test-doc-consistency.sh` | Doc consistency | Workflow/file/skill/scenario counts match filesystem, no stale hardcoded counts; wizard-doc effort-section hardening (adaptive thinking, Pro/Max scope, anti-laziness mechanisms) |
 
 **How to run:**
 ```bash

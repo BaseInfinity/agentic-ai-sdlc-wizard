@@ -325,13 +325,12 @@ test_hook_content() {
     (cd "$d" && node "$CLI" init > /dev/null 2>&1)
     local ok=true
     grep -q "SDLC BASELINE" "$d/.claude/hooks/sdlc-prompt-check.sh" || ok=false
+    grep -q "setup-wizard" "$d/.claude/hooks/sdlc-prompt-check.sh" || ok=false
     grep -q "TDD CHECK" "$d/.claude/hooks/tdd-pretool-check.sh" || ok=false
-    grep -q "SDLC wizard files" "$d/.claude/hooks/instructions-loaded-check.sh" || ok=false
-    grep -q "setup-wizard" "$d/.claude/hooks/instructions-loaded-check.sh" || ok=false
     if [ "$ok" = true ]; then
         pass "Template hooks contain expected content"
     else
-        fail "Template hooks should contain SDLC BASELINE, TDD CHECK, SDLC wizard files, setup-wizard"
+        fail "Template hooks should contain SDLC BASELINE + setup-wizard (sdlc-prompt-check.sh), TDD CHECK (tdd-pretool-check.sh)"
     fi
     rm -rf "$d"
 }

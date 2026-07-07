@@ -32,7 +32,6 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-node24-compliance.sh && \
    ./tests/test-effectiveness-scoreboard.sh && \
    ./tests/test-firmware-fixture.sh && \
-   ./tests/test-degradation-detection.sh && \
    ./tests/test-doc-consistency.sh && \
    ./tests/test-usage-diagnostics.sh && \
    ./tests/test-model-config-batch.sh && \
@@ -203,7 +202,6 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 ./tests/test-cli.sh
 ./tests/test-setup-path.sh
 ./tests/test-docs-usability.sh
-./tests/test-degradation-detection.sh
 ./tests/test-local-shepherd.sh
 ./tests/test-cowork-drift.sh
 ./tests/test-skill-graduations.sh

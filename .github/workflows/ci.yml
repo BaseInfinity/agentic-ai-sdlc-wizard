@@ -193,9 +193,6 @@ jobs:
       - name: Run firmware fixture tests
         run: ./tests/test-firmware-fixture.sh
 
-      - name: Run degradation detection tests
-        run: ./tests/test-degradation-detection.sh
-
       - name: Run doc consistency tests
         run: ./tests/test-doc-consistency.sh
 

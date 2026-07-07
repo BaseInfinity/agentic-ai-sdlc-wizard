@@ -320,8 +320,24 @@ test_add_json_score
 test_per_criterion_check
 test_per_criterion_drift
 test_per_criterion_stable
+# #236(c): relocated from the dissolved tests/test-degradation-detection.sh —
+# complements test_add_json_score (accept path) with the reject path: JSON
+# missing .score must be rejected, confirming CI's jq output (.score, not
+# .total/.value) matches cusum's expected input contract.
+test_cusum_score_field_required() {
+    local bad_json='{"total": 8, "timestamp": "2026-01-01"}'
+    local output exit_code=0
+    output=$("$CUSUM_SCRIPT" --add-json "$bad_json" 2>&1) || exit_code=$?
+    if [ "$exit_code" -ne 0 ] && echo "$output" | grep -qi "score"; then
+        pass "--add-json rejects JSON without .score field (validates CI schema contract)"
+    else
+        fail "--add-json should reject JSON without .score field (exit=$exit_code)"
+    fi
+}
+
 test_jsonl_total_cusum
 test_mixed_format
+test_cusum_score_field_required
 cleanup
 
 echo ""

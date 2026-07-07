@@ -54,16 +54,11 @@ else
   fail "advisor fallback missing Fable subagent instruction"
 fi
 
-echo ""
-echo "--- Budget Check ---"
-
-# Test 6: SKILL.md stays under 20K chars
-chars=$(wc -c < "$SKILL")
-if [ "$chars" -le 20000 ]; then
-  pass "SKILL.md is under 20K chars ($chars)"
-else
-  fail "SKILL.md exceeds 20K chars ($chars)"
-fi
+# #236(c): SKILL.md's 20K-char budget was tested identically here, in
+# test-usage-diagnostics.sh, AND in test-audit-session-load.sh (which covers
+# ALL 4 wizard skills via the real audit tool's 5000-token TRIM threshold,
+# not just this one file) — kept the strongest (audit-session-load), removed
+# the other two duplicates.
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

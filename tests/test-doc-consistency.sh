@@ -369,32 +369,11 @@ test_sdlc_skill_recommends_opus_or_opusplan() {
     fi
 }
 
-# Template settings.json must NOT pin model (issue #198 — opt-in via setup skill)
-test_cli_template_has_no_default_model_pin() {
-    local TPL="$REPO_ROOT/cli/templates/settings.json"
-    if [ ! -f "$TPL" ]; then fail "cli/templates/settings.json not found"; return; fi
-    local has_model
-    has_model=$(jq 'has("model")' "$TPL" 2>/dev/null)
-    if [ "$has_model" = "false" ]; then
-        pass "cli/templates/settings.json has no default model pin (issue #198 — opt-in)"
-    else
-        fail "cli/templates/settings.json must not pin a default model (disables auto-mode)"
-    fi
-}
-
-# Template must NOT ship a default autocompact value either — paired with the
-# model pin since 30% is 1M-tuned. Users opt into both together in Step 9.5.
-test_cli_template_has_no_default_autocompact() {
-    local TPL="$REPO_ROOT/cli/templates/settings.json"
-    if [ ! -f "$TPL" ]; then fail "cli/templates/settings.json not found"; return; fi
-    local has_env
-    has_env=$(jq 'has("env")' "$TPL" 2>/dev/null)
-    if [ "$has_env" = "false" ]; then
-        pass "cli/templates/settings.json has no default env (paired opt-in with model pin)"
-    else
-        fail "cli/templates/settings.json must not ship a default env block (issue #198)"
-    fi
-}
+# #236(c): "no default model pin" / "no default env" for
+# cli/templates/settings.json were tested identically here and in
+# test-cli.sh (which pairs them with follow-on behavioral tests —
+# test_fresh_init_does_not_write_model, merge/--force preservation) — kept
+# test-cli.sh's, removed the duplicate here.
 
 # Setup skill Step 9.5 must reference an Opus model alias (either the
 # `opus[1m]` generic alias or an explicit `claude-opus-4-X[1m]` id) so users
@@ -618,8 +597,6 @@ test_wizard_doc_mcp_profile_isolation_for_concurrent_agents
 test_wizard_doc_notes_playwright_default_isolation_rejected
 test_wizard_doc_real_browser_trigger_examples
 test_sdlc_skill_recommends_opus_or_opusplan
-test_cli_template_has_no_default_model_pin
-test_cli_template_has_no_default_autocompact
 test_setup_skill_mentions_model_pin_in_optin_prompt
 test_repo_settings_dogfood_setup_a
 test_hooks_recommend_model
@@ -1066,6 +1043,173 @@ $offenders"
 }
 
 test_wizard_doc_certified_paths_all_mention_commit_sha
+
+# #236(c): relocated from the dissolved tests/test-degradation-detection.sh
+# (5 of that file's 14 tests, the only non-stub non-duplicate survivors —
+# doc-hardening checks belong here with the rest of the wizard-doc consistency
+# suite, not in a file named for CI score-persistence/degradation-detection).
+
+# Wizard doc effort section must explain WHY effort matters — not just how to
+# set it — by naming "adaptive thinking" as the degradation mechanism.
+test_wizard_doc_effort_section_cites_adaptive_thinking() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local effort_section
+    effort_section=$(sed -n '/## Recommended Effort Level/,/^## /p' "$DOC")
+    if echo "$effort_section" | grep -iq "adaptive thinking"; then
+        pass "wizard doc effort section references adaptive thinking as root cause"
+    else
+        fail "wizard doc effort section must reference 'adaptive thinking' as degradation root cause"
+    fi
+}
+
+# Must scope "medium is the default" to Pro/Max plans specifically (API/Team/
+# Enterprise default to high) rather than a blanket claim.
+test_wizard_doc_medium_default_scoped_to_pro_max() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local effort_section
+    effort_section=$(sed -n '/## Recommended Effort Level/,/^## /p' "$DOC")
+    if echo "$effort_section" | grep -iE "Pro.*Max|Max.*Pro|Pro/Max|Pro and Max"; then
+        if echo "$effort_section" | grep -iE "medium.*(default|defaults)" | grep -iqE "Pro|Max|plan"; then
+            pass "wizard doc medium-default claim scoped to Pro/Max plans"
+        elif ! echo "$effort_section" | grep -iqE "medium.*(default|defaults)"; then
+            pass "wizard doc medium-default scoped to Pro/Max plans (no blanket claim)"
+        else
+            fail "wizard doc has a medium-default claim not scoped to Pro/Max"
+        fi
+    else
+        fail "wizard doc effort section must reference Pro/Max plans for medium-default scope"
+    fi
+}
+
+test_wizard_doc_cites_live_effort_docs_url() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local effort_section
+    effort_section=$(sed -n '/## Recommended Effort Level/,/^## /p' "$DOC")
+    if echo "$effort_section" | grep -q "code.claude.com"; then
+        pass "wizard doc effort section cites code.claude.com docs"
+    else
+        fail "wizard doc effort section must cite code.claude.com docs (not memory files or vague references)"
+    fi
+}
+
+# CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING is a "nuclear option" — must be
+# documented as opt-in, never shipped as a default in the CLI template.
+test_wizard_doc_disable_adaptive_thinking_is_optin() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local SETTINGS="$REPO_ROOT/cli/templates/settings.json"
+    local effort_section
+    effort_section=$(sed -n '/## Recommended Effort Level/,/^## /p' "$DOC")
+    if echo "$effort_section" | grep -q "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING"; then
+        if jq -e '.env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING' "$SETTINGS" > /dev/null 2>&1; then
+            fail "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING should be opt-in, not in default settings.json"
+        else
+            pass "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING documented as opt-in (not in default template)"
+        fi
+    else
+        fail "wizard doc must document CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING env var"
+    fi
+}
+
+# Anti-laziness guidance must name at least 2 specific mechanisms, not a vague
+# "be thorough" — otherwise it reads as unenforceable advice.
+test_wizard_doc_anti_laziness_names_specific_mechanisms() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local wizard_content
+    wizard_content=$(cat "$DOC")
+    local mechanism_count=0
+    echo "$wizard_content" | grep -iq "adaptive thinking" && mechanism_count=$((mechanism_count + 1))
+    echo "$wizard_content" | grep -iq "effort.level\|effort:.*high\|effort.*level" && mechanism_count=$((mechanism_count + 1))
+    echo "$wizard_content" | grep -iq "thinking budget\|reasoning.*budget\|reasoning.*allocat" && mechanism_count=$((mechanism_count + 1))
+    echo "$wizard_content" | grep -iq "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING" && mechanism_count=$((mechanism_count + 1))
+    if [ "$mechanism_count" -ge 2 ]; then
+        pass "wizard doc anti-laziness guidance references $mechanism_count specific mechanisms"
+    else
+        fail "anti-laziness guidance must reference specific mechanisms (adaptive thinking, effort levels, etc.), found $mechanism_count"
+    fi
+}
+
+test_wizard_doc_effort_section_cites_adaptive_thinking
+test_wizard_doc_medium_default_scoped_to_pro_max
+test_wizard_doc_cites_live_effort_docs_url
+test_wizard_doc_disable_adaptive_thinking_is_optin
+test_wizard_doc_anti_laziness_names_specific_mechanisms
+
+# ────────────────────────────────────────────
+# ROADMAP archive split (#236(f), 2026-07-06)
+# ────────────────────────────────────────────
+
+# A row number must never appear in both the active table and the archive —
+# that would mean a row was copied instead of moved, or edited independently
+# in both places after the split.
+test_roadmap_no_duplicate_row_numbers_across_files() {
+    local ROADMAP="$REPO_ROOT/ROADMAP.md"
+    local ARCHIVE="$REPO_ROOT/ROADMAP_ARCHIVE.md"
+    if [ ! -f "$ROADMAP" ] || [ ! -f "$ARCHIVE" ]; then
+        fail "ROADMAP.md or ROADMAP_ARCHIVE.md not found"
+        return
+    fi
+    local active_nums archive_nums dupes
+    active_nums=$(grep -oE '^\| *[0-9]+ *\|' "$ROADMAP" | grep -oE '[0-9]+' | sort -un)
+    archive_nums=$(grep -oE '^\| *[0-9]+ *\|' "$ARCHIVE" | grep -oE '[0-9]+' | sort -un)
+    # NOTE: avoid `comm <(...) <(...)` here — BSD comm on macOS silently
+    # returns empty output when both inputs are process substitutions
+    # (verified: two real files behave correctly, two /dev/fd fifos don't).
+    # Concatenating two already-deduped lists and taking uniq -d is
+    # portable and gives the same "appears in both" answer.
+    dupes=$(printf '%s\n%s\n' "$active_nums" "$archive_nums" | sort -n | uniq -d)
+    if [ -z "$dupes" ]; then
+        pass "no row number appears in both ROADMAP.md and ROADMAP_ARCHIVE.md"
+    else
+        fail "row number(s) present in BOTH ROADMAP.md and ROADMAP_ARCHIVE.md (should be moved, not copied): $dupes"
+    fi
+}
+
+# Spot-check a sample of rows known to still be open as of the 2026-07-06
+# split — proves the split didn't silently archive an active item.
+test_roadmap_key_open_items_present() {
+    local ROADMAP="$REPO_ROOT/ROADMAP.md"
+    if [ ! -f "$ROADMAP" ]; then fail "ROADMAP.md not found"; return; fi
+    local missing=""
+    for n in 19 89 236 424 434 438; do
+        if ! grep -qE "^\| *$n *\|" "$ROADMAP"; then
+            missing="$missing $n"
+        fi
+    done
+    if [ -z "$missing" ]; then
+        pass "known-open ROADMAP rows (19/89/236/424/434/438) all present in ROADMAP.md"
+    else
+        fail "known-open ROADMAP row(s) missing from ROADMAP.md:$missing"
+    fi
+}
+
+# Spot-check a sample of rows known to be fully resolved as of the 2026-07-06
+# split — proves the split actually moved them out of the active table.
+test_roadmap_archive_has_key_archived_items() {
+    local ROADMAP="$REPO_ROOT/ROADMAP.md"
+    local ARCHIVE="$REPO_ROOT/ROADMAP_ARCHIVE.md"
+    if [ ! -f "$ROADMAP" ] || [ ! -f "$ARCHIVE" ]; then
+        fail "ROADMAP.md or ROADMAP_ARCHIVE.md not found"
+        return
+    fi
+    local bad=""
+    for n in 1 14 20 231; do
+        if ! grep -qE "^\| *$n *\|" "$ARCHIVE"; then
+            bad="$bad $n(missing-from-archive)"
+        fi
+        if grep -qE "^\| *$n *\|" "$ROADMAP"; then
+            bad="$bad $n(still-in-active-table)"
+        fi
+    done
+    if [ -z "$bad" ]; then
+        pass "known-resolved ROADMAP rows (1/14/20/231) all archived, none left in active table"
+    else
+        fail "archive split issue(s):$bad"
+    fi
+}
+
+test_roadmap_no_duplicate_row_numbers_across_files
+test_roadmap_key_open_items_present
+test_roadmap_archive_has_key_archived_items
 
 # ────────────────────────────────────────────
 # Summary

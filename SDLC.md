@@ -44,11 +44,13 @@ This repository uses the SDLC Wizard to enforce:
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
-| `sdlc-prompt-check.sh` | Every prompt | SDLC baseline reminder |
-| `tdd-pretool-check.sh` | Before Write/Edit | TDD reminder for workflows |
-| `instructions-loaded-check.sh` | Session start | Validates SDLC.md/TESTING.md exist, effort/model check |
+| `sdlc-prompt-check.sh` | Every prompt | SDLC baseline reminder, setup-wizard redirect when SDLC.md/TESTING.md missing |
+| `tdd-pretool-check.sh` | Before Write/Edit/MultiEdit | Blocks (exit 2) implementation writes to `src/**` unless a test file was touched earlier this session. This repo's own gate is scoped to `hooks/`, `cli/`, `.github/workflows/` via `SDLC_TDD_SRC_PATTERN` (no `src/` dir here) |
+| `codex-gate-check.sh` | Before `git commit` (Bash) | Blocks (exit 2) commits without a REVIEWED/CERTIFIED `.reviews/handoff.json`, or with a stale (`commit_sha` mismatch) certification |
+| `instructions-loaded-check.sh` | Session start | Wizard-version + CC-version staleness nudges, cross-model-review staleness check, autocompact compound-misconfig check, dual-channel-install check |
 | `model-effort-check.sh` | Session start | Nudges upgrade when effort/model is behind recommended |
-| `precompact-seam-check.sh` | Before manual `/compact` | Blocks compact mid-Codex-review or mid-rebase/merge/cherry-pick (requires CC v2.1.105+) |
+| `precompact-seam-check.sh` | Before manual `/compact` | Blocks compact mid-rebase/merge/cherry-pick (requires CC v2.1.105+) |
+| `codex-review-stop-check.sh` | Stop | Non-blocking warning when the session ends with uncommitted changes and no REVIEWED/CERTIFIED review artifact |
 | `token-spike-check.sh` | Session start | Warns when last session's token burn >2σ above rolling median (catches CC caching regressions; opt-in via `.metrics/`) |
 
 ## Skills Available
@@ -84,11 +86,13 @@ When Claude Code releases new features:
 ├── settings.json                  # Hook configuration
 ├── hooks/
 │   ├── _find-sdlc-root.sh        # Shared helper (sourced by other hooks, not a CC hook entrypoint)
-│   ├── sdlc-prompt-check.sh      # SDLC baseline
-│   ├── tdd-pretool-check.sh      # TDD reminder
-│   ├── instructions-loaded-check.sh  # Session start validation + effort/model
+│   ├── sdlc-prompt-check.sh      # SDLC baseline + setup-wizard redirect
+│   ├── tdd-pretool-check.sh      # TDD RED enforcement (blocks src/** writes)
+│   ├── codex-gate-check.sh       # Blocks git commit without cross-model review
+│   ├── instructions-loaded-check.sh  # Session start: version/staleness/misconfig nudges
 │   ├── model-effort-check.sh     # SessionStart upgrade nudge
-│   ├── precompact-seam-check.sh  # PreCompact seam gate (CC v2.1.105+)
+│   ├── precompact-seam-check.sh  # PreCompact git-op gate (CC v2.1.105+)
+│   ├── codex-review-stop-check.sh # Stop: warns on uncommitted + unreviewed work
 │   └── token-spike-check.sh      # SessionStart token-burn anomaly detector (#220)
 └── skills/
     ├── sdlc/SKILL.md             # SDLC workflow

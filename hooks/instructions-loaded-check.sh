@@ -12,29 +12,17 @@ source "$HOOK_DIR/_find-sdlc-root.sh"
 dedupe_plugin_or_project "${BASH_SOURCE[0]}" || exit 0
 
 # CWD walk-up finds nearest SDLC project (#173: silent exit for non-SDLC dirs)
+# #236(b): the missing-SDLC.md/TESTING.md warning that used to live here was
+# removed — sdlc-prompt-check.sh already fires the same "SETUP NOT COMPLETE"
+# warning, louder and on every prompt (this hook only fires at session
+# start/resume), making this copy pure duplicate context.
 if find_sdlc_root; then
     PROJECT_DIR="$SDLC_ROOT"
 elif find_partial_sdlc_root; then
-    # Partial setup — one file exists but not both. Warn about missing files
     PROJECT_DIR="$SDLC_ROOT"
 else
     # Not an SDLC project at all — exit silently
     exit 0
-fi
-
-MISSING=""
-
-if [ ! -f "$PROJECT_DIR/SDLC.md" ]; then
-    MISSING="${MISSING:+${MISSING}, }SDLC.md"
-fi
-
-if [ ! -f "$PROJECT_DIR/TESTING.md" ]; then
-    MISSING="${MISSING:+${MISSING}, }TESTING.md"
-fi
-
-if [ -n "$MISSING" ]; then
-    echo "WARNING: Missing SDLC wizard files: ${MISSING}"
-    echo "Invoke Skill tool, skill=\"setup-wizard\" to generate them."
 fi
 
 # Version update check (non-blocking, best-effort).
@@ -258,11 +246,43 @@ fi
 # Claude Code version check (non-blocking, best-effort)
 # Gate on CLAUDE_PROJECT_DIR — only Claude Code sets this. Without it, we're
 # running under Codex/OpenCode where a CC update nudge is misleading (#375).
+# #236(b): was an uncached npm network call on every session start with a
+# bare `!=` comparison (fires in either direction, including when local is
+# actually AHEAD of the cached/published "latest") — the exact bug class
+# already fixed above for the wizard's own version check (#254 Bug 2). Now
+# reuses the same 24h cache + semver_lt direction check.
 if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && command -v claude > /dev/null 2>&1 && command -v npm > /dev/null 2>&1; then
     CC_LOCAL=$(claude --version 2>/dev/null | grep -o '[0-9][0-9.]*' | head -1) || true
-    if [ -n "$CC_LOCAL" ]; then
-        CC_LATEST=$(npm view @anthropic-ai/claude-code version 2>/dev/null) || true
-        if [ -n "$CC_LATEST" ] && [ "$CC_LATEST" != "$CC_LOCAL" ]; then
+    if [ -n "$CC_LOCAL" ] && [[ "$CC_LOCAL" =~ $SEMVER_RE ]]; then
+        CC_CACHE_DIR="${SDLC_WIZARD_CACHE_DIR:-$HOME/.cache/sdlc-wizard}"
+        CC_CACHE_FILE="$CC_CACHE_DIR/latest-cc-version"
+        CC_LATEST=""
+
+        if [ -f "$CC_CACHE_FILE" ]; then
+            if stat -f %m "$CC_CACHE_FILE" > /dev/null 2>&1; then
+                CC_CACHE_MTIME=$(stat -f %m "$CC_CACHE_FILE")
+            else
+                CC_CACHE_MTIME=$(stat -c %Y "$CC_CACHE_FILE" 2>/dev/null || echo 0)
+            fi
+            CC_CACHE_AGE=$(( $(date +%s) - CC_CACHE_MTIME ))
+            if [ "$CC_CACHE_AGE" -lt 86400 ]; then
+                CC_CACHE_CONTENT=$(cat "$CC_CACHE_FILE" 2>/dev/null) || CC_CACHE_CONTENT=""
+                if [[ "$CC_CACHE_CONTENT" =~ $SEMVER_RE ]] && ! semver_lt "$CC_CACHE_CONTENT" "$CC_LOCAL"; then
+                    CC_LATEST="$CC_CACHE_CONTENT"
+                fi
+            fi
+        fi
+
+        if [ -z "$CC_LATEST" ]; then
+            CC_NPM_RESULT=$(npm view @anthropic-ai/claude-code version 2>/dev/null) || true
+            if [[ "$CC_NPM_RESULT" =~ $SEMVER_RE ]]; then
+                CC_LATEST="$CC_NPM_RESULT"
+                mkdir -p "$CC_CACHE_DIR" 2>/dev/null || true
+                printf '%s' "$CC_LATEST" > "$CC_CACHE_FILE" 2>/dev/null || true
+            fi
+        fi
+
+        if [ -n "$CC_LATEST" ] && semver_lt "$CC_LOCAL" "$CC_LATEST"; then
             echo "Claude Code update available: ${CC_LOCAL} → ${CC_LATEST} (run: npm install -g @anthropic-ai/claude-code)"
         fi
     fi
