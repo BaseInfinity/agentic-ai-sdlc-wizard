@@ -25,7 +25,6 @@ const FILES = [
   { src: 'hooks/instructions-loaded-check.sh', dest: '.claude/hooks/instructions-loaded-check.sh', executable: true, base: REPO_ROOT },
   { src: 'hooks/model-effort-check.sh', dest: '.claude/hooks/model-effort-check.sh', executable: true, base: REPO_ROOT },
   { src: 'hooks/precompact-seam-check.sh', dest: '.claude/hooks/precompact-seam-check.sh', executable: true, base: REPO_ROOT },
-  { src: 'hooks/goal-confidence-check.sh', dest: '.claude/hooks/goal-confidence-check.sh', executable: true, base: REPO_ROOT },
   { src: 'hooks/codex-gate-check.sh', dest: '.claude/hooks/codex-gate-check.sh', executable: true, base: REPO_ROOT },
   { src: 'hooks/token-spike-check.sh', dest: '.claude/hooks/token-spike-check.sh', executable: true, base: REPO_ROOT },
   { src: 'hooks/codex-review-stop-check.sh', dest: '.claude/hooks/codex-review-stop-check.sh', executable: true, base: REPO_ROOT },

@@ -299,16 +299,10 @@ test_pattern_web_default
 echo ""
 echo "--- Fixture Validation ---"
 
-# Test 21: firmware-embedded fixture has Makefile with flash target
-test_fixture_firmware_makefile() {
-    local makefile="$FIXTURES/firmware-embedded/Makefile"
-    if [ -f "$makefile" ] && grep -q "flash" "$makefile"; then
-        pass "firmware-embedded fixture has Makefile with flash target"
-    else
-        fail "firmware-embedded fixture missing Makefile with flash target"
-    fi
-}
-test_fixture_firmware_makefile
+# #236(c): the firmware-embedded Makefile/flash check that used to live here
+# duplicated test-firmware-fixture.sh's identical check on the same file —
+# removed; that file covers the same fixture with 12 deeper checks. The
+# data-science/cli-tool fixture checks below have no such sibling, so stay.
 
 # Test 22: data-science fixture has requirements.txt with pandas
 test_fixture_datascience_requirements() {

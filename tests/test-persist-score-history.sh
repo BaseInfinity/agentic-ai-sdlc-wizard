@@ -192,11 +192,23 @@ HOOK
     rm -rf "$root"
 }
 
+# #236(c): relocated from the dissolved tests/test-degradation-detection.sh —
+# the [skip ci] marker lives in this shared script, so its test belongs here
+# with the rest of persist-score-history.sh's regression suite.
+test_skip_ci_marker_in_persist_script() {
+    if grep -q "\[skip ci\]" "$PERSIST"; then
+        pass "persist script commit message contains [skip ci]"
+    else
+        fail "scripts/persist-score-history.sh missing [skip ci] marker in commit message"
+    fi
+}
+
 echo "=== Persist Score History Tests ==="
 test_persist_succeeds_on_clean_push
 test_persist_recovers_from_nonfastforward
 test_persist_no_op_when_nothing_to_append
 test_persist_exits_once_on_hook_rejected_push
+test_skip_ci_marker_in_persist_script
 
 echo ""
 echo "=== Results ==="

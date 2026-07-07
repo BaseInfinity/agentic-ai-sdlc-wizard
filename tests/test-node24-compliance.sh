@@ -193,14 +193,9 @@ test_upload_artifact_v6_present() {
     fi
 }
 
-# Test 12: release.yml uses gh release create (not third-party action)
-test_release_uses_gh_cli() {
-    if grep -q 'gh release create' "$WORKFLOW_DIR/release.yml"; then
-        pass "release.yml uses gh release create"
-    else
-        fail "release.yml does not use gh release create"
-    fi
-}
+# #236(c): "release.yml uses gh release create" duplicated
+# test-release-workflow.sh's identical check — removed; that file owns
+# "what release.yml does," this file owns repo-wide action versions.
 
 # Test 13: ci.yml uses gh api graphql for comment hiding (not third-party action)
 test_ci_uses_graphql_for_comments() {
@@ -226,7 +221,6 @@ test_no_node_version_20
 test_checkout_v5_present
 test_setup_node_v5_present
 test_upload_artifact_v6_present
-test_release_uses_gh_cli
 test_ci_uses_graphql_for_comments
 
 # --- Results ---

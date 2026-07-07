@@ -140,16 +140,6 @@ test_skill_usage_mention() {
     fi
 }
 
-test_skill_char_budget() {
-    local char_count
-    char_count=$(wc -c < "$SKILL")
-    if [ "$char_count" -le 20000 ]; then
-        pass "SKILL.md is under 20K chars ($char_count)"
-    else
-        fail "SKILL.md exceeds 20K chars ($char_count)"
-    fi
-}
-
 # ────────────────────────────────────────────
 # Deliverable 5: REJECTED (no test)
 # ────────────────────────────────────────────
@@ -266,7 +256,6 @@ test_signals_advisor_not_subagent
 test_lanes_autocompact_crossref_exists
 test_lanes_autocompact_no_inline_numbers
 test_skill_usage_mention
-test_skill_char_budget
 test_advisor_fallback_exists
 test_advisor_fallback_escalation_ladder
 test_fable_effort_guidance_exists

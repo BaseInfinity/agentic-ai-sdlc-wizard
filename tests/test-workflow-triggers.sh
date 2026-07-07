@@ -337,30 +337,15 @@ test_ci_workflow_dispatch() {
     fi
 }
 
-# Test 34: ci.yml max-turns is >= 35 for all simulations
-test_ci_max_turns_sufficient() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
-
-    if [ ! -f "$WORKFLOW" ]; then
-        fail "CI workflow file not found (needed for max-turns test)"
-        return
-    fi
-
-    # Extract all --max-turns values and check they're all >= 35
-    ALL_SUFFICIENT=true
-    while IFS= read -r line; do
-        TURNS=$(echo "$line" | grep -oE '[0-9]+')
-        if [ "$TURNS" -lt 35 ]; then
-            fail "ci.yml has --max-turns $TURNS (need >= 35 to avoid error_max_turns flakiness)"
-            ALL_SUFFICIENT=false
-            break
-        fi
-    done < <(grep -- "--max-turns" "$WORKFLOW")
-
-    if [ "$ALL_SUFFICIENT" = true ]; then
-        pass "ci.yml max-turns is >= 35 for all simulations"
-    fi
-}
+# #236(c): this function used to be defined here AND redefined later (as an
+# n/a stub, ci.yml e2e jobs removed per #212) with a separate call each —
+# bash function redefinition meant BOTH ran per test-suite invocation, each
+# incrementing the pass count. Worse: this original version was vacuous —
+# ci.yml has zero `--max-turns` occurrences post-#212, so the while-read loop
+# over `grep -- "--max-turns"` never executes, ALL_SUFFICIENT stays true by
+# its unconditional initial value, and it always silently passes regardless
+# of what ci.yml actually contains. Removed; the accurate stub + its single
+# call survive below (search test_ci_max_turns_sufficient).
 
 # Run all tests
 test_weekly_update_dispatch
@@ -387,7 +372,6 @@ test_pr_review_synchronize_condition
 test_ci_allowed_tools_no_plan_mode
 test_ci_allowed_tools_task_tracking
 test_ci_workflow_dispatch
-test_ci_max_turns_sufficient
 
 # ============================================
 # CI Cosmetic Step Resilience Tests
@@ -917,28 +901,6 @@ test_ci_workspace_git_init() { pass "test_ci_workspace_git_init n/a per #212 Opt
 # Test 75: DELETED — ci.yml no longer has max-turns (e2e jobs removed per #212).
 # Shepherd max-turns validated in test-local-shepherd.sh.
 test_ci_max_turns_sufficient() { pass "ci-max-turns test n/a per #212 Option 1 (ci.yml e2e jobs removed; shepherd enforces max-turns=55)"; }
-_unused_test_ci_max_turns_sufficient() {
-    WORKFLOW="$REPO_ROOT/.github/workflows/ci.yml"
-
-    if [ ! -f "$WORKFLOW" ]; then
-        fail "CI workflow file not found"
-        return
-    fi
-
-    # Hard scenarios (refactor) need more than 45 turns.
-    # error_max_turns causes action failure even with is_error: false.
-    MAX_TURNS=$(grep 'max-turns' "$WORKFLOW" | head -1 | sed 's/.*max-turns //' | sed 's/[^0-9].*//')
-    if [ -z "$MAX_TURNS" ]; then
-        fail "Could not find max-turns in ci.yml"
-        return
-    fi
-
-    if [ "$MAX_TURNS" -ge 50 ]; then
-        pass "ci.yml max-turns ($MAX_TURNS) is sufficient for hard scenarios"
-    else
-        fail "ci.yml max-turns ($MAX_TURNS) is too low for hard scenarios (need >= 50)"
-    fi
-}
 
 # Test 76: DELETED — ci.yml no longer has Tier 1 regression compare step per
 # ROADMAP #212 Option 1. Regression detection is now advisory via shepherd.
@@ -2083,15 +2045,18 @@ test_readme_setup_mentions_roadmap() {
     fi
 }
 
-# Test 160: ROADMAP.md has setup-path E2E item
+# Test 160: ROADMAP.md (or its archive) has setup-path E2E item
 test_roadmap_has_setup_path_e2e() {
     local ROADMAP="$REPO_ROOT/ROADMAP.md"
+    local ARCHIVE="$REPO_ROOT/ROADMAP_ARCHIVE.md"
     if [ ! -f "$ROADMAP" ]; then fail "ROADMAP.md not found"; return; fi
 
-    if grep -qi 'setup.path.*e2e\|setup.*e2e.*proof' "$ROADMAP"; then
-        pass "ROADMAP.md has setup-path E2E item"
+    # #236(f): fully-resolved rows moved to ROADMAP_ARCHIVE.md 2026-07-06 —
+    # this item (#20) is DONE and archived, so check both files.
+    if grep -qi 'setup.path.*e2e\|setup.*e2e.*proof' "$ROADMAP" "$ARCHIVE" 2>/dev/null; then
+        pass "ROADMAP.md (or archive) has setup-path E2E item"
     else
-        fail "ROADMAP.md missing setup-path E2E item"
+        fail "ROADMAP.md and ROADMAP_ARCHIVE.md both missing setup-path E2E item"
     fi
 }
 

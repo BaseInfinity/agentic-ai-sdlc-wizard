@@ -148,8 +148,6 @@ PROTOCOL is universal across domains; only `review_instructions` and `verificati
 
 **Convergence:** 2 rounds sweet spot, 3 max, escalate after — except large migrations: judge by finding trend, not count.
 
-**Enforcement:** `hooks/goal-confidence-check.sh` warns when `/goal` skips the 95%-confidence or DLC-binding gates (#360).
-
 **Multi-reviewer:** respond to each independently. **Non-code domains:** add `"audience"`/`"stakes"` keys.
 
 ### Release Review Focus

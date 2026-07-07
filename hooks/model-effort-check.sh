@@ -59,10 +59,17 @@ if [ "$effort" = "max" ] && [ "$settings_max" -eq 0 ]; then
     exit 0
 fi
 
+# #236(b): unset (no env var, no settings entry) is CC's own current default —
+# not a problem state on its own (e.g. a deliberate Fable-session config).
+# Only warn on an EXPLICITLY set low-effort value or the settings-only-max
+# quirk below (CC silently ignores settings.json's "max" — genuinely
+# non-obvious, worth keeping).
+if [ -z "$effort" ]; then
+    exit 0
+fi
+
 if [ "$settings_max" -eq 1 ] && [ -z "${CLAUDE_CODE_EFFORT_LEVEL:-}" ]; then
     effort_display="max (settings-only — CC ignores this)"
-elif [ -z "$effort" ]; then
-    effort_display="unset"
 else
     effort_display="$effort"
 fi

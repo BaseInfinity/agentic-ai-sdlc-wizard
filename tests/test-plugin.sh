@@ -273,11 +273,11 @@ test_plugin_skills_exist() {
 test_plugin_hook_scripts_exist() {
     local ok=true
     local missing=""
-    for script in sdlc-prompt-check.sh tdd-pretool-check.sh instructions-loaded-check.sh model-effort-check.sh precompact-seam-check.sh goal-confidence-check.sh codex-gate-check.sh token-spike-check.sh codex-review-stop-check.sh; do
+    for script in sdlc-prompt-check.sh tdd-pretool-check.sh instructions-loaded-check.sh model-effort-check.sh precompact-seam-check.sh codex-gate-check.sh token-spike-check.sh codex-review-stop-check.sh; do
         [ -f "$REPO_ROOT/hooks/$script" ] || { ok=false; missing="$missing $script"; }
     done
     if [ "$ok" = true ]; then
-        pass "All 9 hook scripts exist at hooks/"
+        pass "All 8 hook scripts exist at hooks/"
     else
         fail "hooks/ missing scripts:$missing"
     fi
@@ -286,11 +286,11 @@ test_plugin_hook_scripts_exist() {
 test_plugin_hook_scripts_executable() {
     local ok=true
     local missing=""
-    for script in sdlc-prompt-check.sh tdd-pretool-check.sh instructions-loaded-check.sh model-effort-check.sh precompact-seam-check.sh goal-confidence-check.sh codex-gate-check.sh token-spike-check.sh codex-review-stop-check.sh; do
+    for script in sdlc-prompt-check.sh tdd-pretool-check.sh instructions-loaded-check.sh model-effort-check.sh precompact-seam-check.sh codex-gate-check.sh token-spike-check.sh codex-review-stop-check.sh; do
         [ -x "$REPO_ROOT/hooks/$script" ] || { ok=false; missing="$missing $script"; }
     done
     if [ "$ok" = true ]; then
-        pass "All 9 hook scripts are executable"
+        pass "All 8 hook scripts are executable"
     else
         fail "hooks/ non-executable:$missing"
     fi

@@ -106,28 +106,6 @@ test_sdlc_hook_size() {
 # hook's output (unintentional echo loop, bloated nudge copy, duplicate
 # warnings) must trip these tests rather than ship to consumers.
 
-# sdlc-prompt-check worst-case: bump block + baseline. Separate from
-# test_sdlc_hook_size (which asserts the no-bump baseline) so we know
-# the baseline is lean AND the worst-case is bounded.
-test_sdlc_hook_size_with_bump_firing() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.33.0 -->' > "$tmpdir/SDLC.md"
-    echo 'x' > "$tmpdir/TESTING.md"
-    mkdir -p "$tmpdir/cache"
-    local now
-    now=$(date +%s)
-    printf '%s\tlow\n%s\tfailed\n' "$((now - 60))" "$((now - 30))" > "$tmpdir/cache/effort-signals.log"
-    local size
-    size=$(echo '{"prompt":"continue"}' | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/sdlc-prompt-check.sh") | wc -c | tr -d ' ')
-    rm -rf "$tmpdir"
-    if [ "$size" -lt 1300 ]; then
-        pass "sdlc-prompt-check worst-case (bump+baseline) is bounded (${size} chars < 1300)"
-    else
-        fail "sdlc-prompt-check worst-case exceeded cap (${size} chars ≥ 1300) — regression in bump copy or baseline"
-    fi
-}
-
 test_tdd_pretool_size_cap() {
     local size
     size=$(echo '{"tool_input":{"file_path":"/src/foo.ts"}}' | "$HOOKS_DIR/tdd-pretool-check.sh" 2>/dev/null | wc -c | tr -d ' ')
@@ -243,56 +221,8 @@ test_precompact_silent_without_handoff_or_git_op() {
     fi
 }
 
-test_precompact_silent_when_handoff_certified() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "CERTIFIED", "round": 2}
-JSON
-    CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>/dev/null
-    local rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 0 ]; then
-        pass "precompact hook silent when handoff status is CERTIFIED"
-    else
-        fail "precompact hook blocked on CERTIFIED handoff (rc=$rc)"
-    fi
-}
 
-test_precompact_blocks_on_pending_review() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_REVIEW", "round": 1}
-JSON
-    local stderr_out rc=0
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "HOLD" && echo "$stderr_out" | grep -q "PENDING_REVIEW"; then
-        pass "precompact hook blocks (rc=2) with HOLD + PENDING_REVIEW on pending review"
-    else
-        fail "precompact should block on PENDING_REVIEW (rc=$rc, stderr='$stderr_out')"
-    fi
-}
 
-test_precompact_blocks_on_pending_recheck() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_RECHECK", "round": 2}
-JSON
-    local stderr_out rc=0
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_RECHECK"; then
-        pass "precompact hook blocks (rc=2) with PENDING_RECHECK on pending recheck"
-    else
-        fail "precompact should block on PENDING_RECHECK (rc=$rc)"
-    fi
-}
 
 test_precompact_blocks_on_git_rebase_in_progress() {
     # .git/rebase-merge/ — interactive rebase / rebase with merge strategy
@@ -399,17 +329,14 @@ test_precompact_blocks_on_rebase_head_with_rebase_merge_dir() {
 }
 
 test_precompact_size_cap() {
-    # Worst case: all 4 blockers fire simultaneously (PENDING_RECHECK + rebase + merge + cherry-pick).
-    # Should still emit a token-efficient HOLD message.
+    # Worst case: all 3 git-op blockers fire simultaneously (rebase + merge +
+    # cherry-pick). Should still emit a token-efficient HOLD message.
     local tmpdir
     tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews" "$tmpdir/.git/rebase-merge"
+    mkdir -p "$tmpdir/.git/rebase-merge"
     echo "dummy" > "$tmpdir/.git/rebase-merge/head-name"
     echo "abc" > "$tmpdir/.git/MERGE_HEAD"
     echo "def" > "$tmpdir/.git/CHERRY_PICK_HEAD"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_RECHECK", "round": 3}
-JSON
     local size stderr_out rc=0
     stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
     size=$(printf '%s' "$stderr_out" | wc -c | tr -d ' ')
@@ -418,769 +345,6 @@ JSON
         pass "precompact hook stacked worst-case is bounded (${size} chars < 1000, rc=2)"
     else
         fail "precompact hook stacked worst-case exceeded cap or wrong rc (${size} chars, rc=$rc)"
-    fi
-}
-
-# ---- Self-healing (ROADMAP #209) ----
-# If handoff.json is PENDING_* but its PR has already merged, the artifact
-# is stale from a prior review the user forgot to close out. Block every
-# future /compact over a stale artifact is a worse UX than the bug we're
-# preventing (mid-cycle compact), so the hook self-heals by querying
-# `gh pr view <pr_number> --json state`. MERGED → treat as implicit
-# CERTIFIED (unblock). Open/missing pr_number/gh unavailable → existing
-# block behavior (safe fallback).
-
-_precompact_mock_gh() {
-    # Writes a mock `gh` to $1/gh that emits the given state for "pr view"
-    # calls. Any other subcommand exits 1. Second arg = state string.
-    local bindir="$1" state="$2"
-    mkdir -p "$bindir"
-    cat > "$bindir/gh" <<EOF
-#!/bin/bash
-if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
-    printf '%s\n' "$state"
-    exit 0
-fi
-exit 1
-EOF
-    chmod +x "$bindir/gh"
-}
-
-test_precompact_self_heals_on_merged_pr() {
-    # PENDING_RECHECK + pr_number set + gh says MERGED → implicit CERTIFIED → exit 0.
-    # Also asserts ZERO stderr on unblock — self-heal must be silent, not a nag.
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_RECHECK", "round": 2, "pr_number": 205}
-JSON
-    _precompact_mock_gh "$tmpdir/mockbin" "MERGED"
-    local rc=0 stderr_out
-    stderr_out=$(PATH="$tmpdir/mockbin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 0 ] && [ -z "$stderr_out" ]; then
-        pass "precompact self-heals silently on merged PR (rc=0, stderr empty)"
-    else
-        fail "precompact should unblock silently when PR is merged (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-test_precompact_blocks_when_gh_missing() {
-    # PENDING + pr_number + `gh` not on PATH → command -v gh fails → fallback to block.
-    # Distinct code path from gh-errors (which hits command -v success + gh exit !=0).
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews" "$tmpdir/minbin"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_REVIEW", "round": 1, "pr_number": 205}
-JSON
-    # Symlink only the bare utilities the hook needs — no gh.
-    for bin in grep sed head cat stat; do
-        if [ -x "/usr/bin/$bin" ]; then
-            ln -sf "/usr/bin/$bin" "$tmpdir/minbin/$bin"
-        elif [ -x "/bin/$bin" ]; then
-            ln -sf "/bin/$bin" "$tmpdir/minbin/$bin"
-        fi
-    done
-    local rc=0 stderr_out
-    # Isolated PATH with zero gh — forces command -v gh to fail.
-    stderr_out=$(PATH="$tmpdir/minbin" CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_REVIEW"; then
-        pass "precompact falls back to block when gh missing from PATH (rc=2)"
-    else
-        fail "precompact should block when gh is unavailable (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-test_precompact_still_blocks_on_open_pr() {
-    # PENDING + pr_number + gh says OPEN → still block (review genuinely in flight).
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_REVIEW", "round": 1, "pr_number": 999}
-JSON
-    _precompact_mock_gh "$tmpdir/mockbin" "OPEN"
-    local rc=0 stderr_out
-    stderr_out=$(PATH="$tmpdir/mockbin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_REVIEW"; then
-        pass "precompact still blocks when PR is OPEN (rc=2)"
-    else
-        fail "precompact should block on open PR (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-test_precompact_blocks_when_no_pr_number() {
-    # PENDING + no pr_number field → cannot self-heal → block (existing behavior).
-    # Covers the backward-compat path where users haven't adopted the new schema.
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_RECHECK", "round": 2}
-JSON
-    # Mock gh returns MERGED — but hook shouldn't even call it without pr_number.
-    _precompact_mock_gh "$tmpdir/mockbin" "MERGED"
-    local rc=0 stderr_out
-    stderr_out=$(PATH="$tmpdir/mockbin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_RECHECK"; then
-        pass "precompact blocks when pr_number is absent (no self-heal opt-in)"
-    else
-        fail "precompact should block without pr_number (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-test_precompact_blocks_when_gh_errors() {
-    # PENDING + pr_number + gh exits non-zero (offline, not authed, rate-limited).
-    # Functionally equivalent to "gh binary missing" — both resolve to fallback.
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews" "$tmpdir/mockbin"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_REVIEW", "round": 1, "pr_number": 205}
-JSON
-    # Mock gh that always fails (simulates offline, auth failure, etc.)
-    cat > "$tmpdir/mockbin/gh" <<'EOF'
-#!/bin/bash
-echo "error: could not reach GitHub" >&2
-exit 1
-EOF
-    chmod +x "$tmpdir/mockbin/gh"
-    local rc=0 stderr_out
-    stderr_out=$(PATH="$tmpdir/mockbin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_REVIEW"; then
-        pass "precompact falls back to block when gh errors (rc=2)"
-    else
-        fail "precompact should block on gh failure (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# ---- Stale-handoff auto-expire (ROADMAP #229) ----
-# The self-heal in #209 only works when handoff.json has a pr_number field.
-# Reviews written before #209 (or ad-hoc reviews not tied to a PR) lack that
-# field — their PENDING_* status blocks every future /compact forever until
-# someone manually flips it. Discovered live-fire 2026-04-23 when the hook
-# blocked a session-end compact because the precompact-seam-001 review
-# (which SHIPPED the hook itself) had no pr_number.
-#
-# Fix: if PENDING_* AND no pr_number AND mtime older than SDLC_HANDOFF_STALE_DAYS
-# (default 14), treat as implicit CERTIFIED and emit a one-line WARN (not HOLD).
-# Threshold is env-overridable for test determinism and power-user tuning.
-
-test_precompact_unblocks_stale_pending_without_pr_number() {
-    # PENDING_RECHECK + no pr_number + mtime 4 months old → unblock with WARN.
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_RECHECK", "round": 2}
-JSON
-    # Age the file: POSIX touch -t YYYYMMDDhhmm, 2026-01-01 ~ 4 months before test date.
-    touch -t 202601010000 "$tmpdir/.reviews/handoff.json"
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 0 ] && echo "$stderr_out" | grep -qi "stale"; then
-        pass "precompact unblocks (rc=0) stale PENDING handoff without pr_number, emits WARN"
-    else
-        fail "precompact should unblock stale PENDING without pr_number (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-test_precompact_still_blocks_fresh_pending_without_pr_number() {
-    # Regression guard: fresh (just-created) PENDING + no pr_number → BLOCK.
-    # We do NOT want stale-expire to short-circuit genuine in-flight reviews.
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_REVIEW", "round": 1}
-JSON
-    # File mtime is "now" (just created) → age 0 days, far below 14-day threshold.
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_REVIEW"; then
-        pass "precompact still blocks fresh PENDING without pr_number (no premature expire)"
-    else
-        fail "precompact should block fresh PENDING (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-test_precompact_stale_with_pr_number_prefers_self_heal() {
-    # Stale mtime but pr_number present → hook prefers the #209 self-heal path
-    # (query gh for PR state), not the stale-expire branch. If PR is OPEN, still
-    # block — the review is live, age is irrelevant. Proves the two paths don't
-    # fight: pr_number takes priority over mtime.
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_REVIEW", "round": 1, "pr_number": 999}
-JSON
-    touch -t 202601010000 "$tmpdir/.reviews/handoff.json"
-    _precompact_mock_gh "$tmpdir/mockbin" "OPEN"
-    local rc=0 stderr_out
-    stderr_out=$(PATH="$tmpdir/mockbin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_REVIEW" && ! echo "$stderr_out" | grep -qi "stale"; then
-        pass "precompact with pr_number uses self-heal path (blocks on OPEN PR, ignores mtime)"
-    else
-        fail "precompact should prefer pr_number self-heal over stale-expire (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-test_precompact_stale_threshold_invalid_falls_back() {
-    # SDLC_HANDOFF_STALE_DAYS="foo" (typo/invalid) must NOT leak bash
-    # arithmetic error to stderr. Hook silently falls back to default 14 and
-    # behaves as if no override was set. Caught by Codex P2 review of PR #227.
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_REVIEW", "round": 1}
-JSON
-    # Fresh file + invalid env var + default-14-threshold → still blocks cleanly.
-    local rc=0 stderr_out
-    stderr_out=$(SDLC_HANDOFF_STALE_DAYS=foo CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_REVIEW" && ! echo "$stderr_out" | grep -qi "integer expression"; then
-        pass "precompact silently ignores invalid SDLC_HANDOFF_STALE_DAYS (no shell error leaked)"
-    else
-        fail "precompact should tolerate bad env var without shell noise (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-test_handoff_template_documents_pr_number() {
-    # ROADMAP #209 closure: the precompact hook self-heals on PENDING_* handoffs
-    # by querying `gh pr view <pr_number> --json state` — but consumers can only
-    # opt in if the field is DOCUMENTED in EVERY handoff schema (consumers read
-    # whichever example they hit first). Without docs, the self-heal path is
-    # dead code.
-    #
-    # Codex round-1 caught a false-green: the old test required ANY occurrence
-    # of `pr_number` per file, so removing it from one of the wizard's two
-    # schemas left the other intact and passed. Round-2 fix below uses the
-    # `"status": "PENDING_REVIEW"` marker to count handoff schema instances
-    # per file and asserts pr_number occurrence count >= handoff count.
-    # Mutation: deleting pr_number from ANY schema instance drops the count
-    # below handoff count and flips the test to FAIL.
-    local skill="$SCRIPT_DIR/../skills/sdlc/SKILL.md"
-    local wizard="$SCRIPT_DIR/../CLAUDE_CODE_SDLC_WIZARD.md"
-    local missing=""
-
-    # Coverage check: every handoff schema must include pr_number.
-    # PENDING_REVIEW uniquely marks handoff JSON (response.json uses PENDING_RECHECK).
-    # NOTE: `grep -c` exits 1 when count is 0; `|| true` discards the failing
-    # exit status without appending extra text (using `|| echo 0` here would
-    # double-print "0\n0" and break integer comparison under set -e).
-    local skill_handoffs skill_pr
-    skill_handoffs=$(grep -c '"status": "PENDING_REVIEW"' "$skill" 2>/dev/null || true)
-    skill_pr=$(grep -c '"pr_number":' "$skill" 2>/dev/null || true)
-    [ "${skill_pr:-0}" -lt "${skill_handoffs:-0}" ] && missing="${missing}skill-coverage(${skill_pr:-0}/${skill_handoffs:-0}) "
-
-    local wizard_handoffs wizard_pr
-    wizard_handoffs=$(grep -c '"status": "PENDING_REVIEW"' "$wizard" 2>/dev/null || true)
-    wizard_pr=$(grep -c '"pr_number":' "$wizard" 2>/dev/null || true)
-    [ "${wizard_pr:-0}" -lt "${wizard_handoffs:-0}" ] && missing="${missing}wizard-coverage(${wizard_pr:-0}/${wizard_handoffs:-0}) "
-
-    # Context check: at least one occurrence per file must sit within 8 lines
-    # of self-heal context so consumers learn WHY they'd set it.
-    if grep -q '"pr_number":' "$skill" && ! grep -B8 -A8 '"pr_number":' "$skill" | grep -qiE 'self.heal|PreCompact|#209|merged.*PR|precompact'; then
-        missing="${missing}skill-context "
-    fi
-    if grep -q '"pr_number":' "$wizard" && ! grep -B8 -A8 '"pr_number":' "$wizard" | grep -qiE 'self.heal|PreCompact|#209|merged.*PR|precompact'; then
-        missing="${missing}wizard-context "
-    fi
-
-    if [ -z "$missing" ]; then
-        pass "handoff template documents pr_number in every schema with self-heal context (#209 opt-in)"
-    else
-        fail "handoff template missing pr_number opt-in docs: $missing"
-    fi
-}
-
-test_precompact_stale_threshold_override() {
-    # SDLC_HANDOFF_STALE_DAYS=0 → every PENDING without pr_number is "stale".
-    # Covers the env-override code path and lets power users tune their own
-    # threshold without editing the hook.
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_RECHECK", "round": 2}
-JSON
-    # File is fresh. With SDLC_HANDOFF_STALE_DAYS=0, even age=0 counts as stale.
-    local rc=0 stderr_out
-    stderr_out=$(SDLC_HANDOFF_STALE_DAYS=0 CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 0 ] && echo "$stderr_out" | grep -qi "stale"; then
-        pass "precompact respects SDLC_HANDOFF_STALE_DAYS override (0 = always stale)"
-    else
-        fail "precompact should honor stale-days override (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# ---- Path (c) — fixes_applied SHAs in HEAD ancestry self-heal (#257) ----
-# Solo-developer pattern: write fixes, commit, run targeted recheck via
-# `codex exec`, see CERTIFIED in latest-review.md, ship the feature.
-# Forgetting to update handoff.json status is realistic — the file is buried
-# and the visible signals (latest-review.md "CERTIFIED" + commits landed)
-# already tell the developer they're done. PreCompact should auto-CERTIFY
-# silently in this case rather than blocking forever on a stale handoff.
-
-# Helper: init a minimal repo at $1 with commits whose SHAs we can cite.
-# Echoes the short SHA of the last commit so tests can write it into
-# fixes_applied.
-_precompact_init_repo_with_commit() {
-    local dir="$1" msg="${2:-fix something}"
-    git -C "$dir" init -q 2>/dev/null
-    git -C "$dir" config user.email t@t.com
-    git -C "$dir" config user.name t
-    echo "content" > "$dir/file.txt"
-    git -C "$dir" add file.txt
-    git -C "$dir" commit -qm "$msg"
-    git -C "$dir" rev-parse --short=7 HEAD
-}
-
-# Auto-CERTIFY when all SHAs in fixes_applied are in HEAD ancestry AND
-# latest-review.md says CERTIFIED.
-test_precompact_self_heals_on_sha_ancestry_when_review_certified() {
-    local tmpdir sha
-    tmpdir=$(mktemp -d)
-    sha=$(_precompact_init_repo_with_commit "$tmpdir")
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/latest-review.md" <<'MD'
-score: 8/10. CERTIFIED.
-No findings.
-MD
-    cat > "$tmpdir/.reviews/handoff.json" <<JSON
-{
-  "status": "PENDING_RECHECK",
-  "round": 2,
-  "fixes_applied": [
-    "FIXED in commit ${sha} — added validation"
-  ]
-}
-JSON
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 0 ]; then
-        pass "#257: precompact self-heals on PENDING_RECHECK with SHAs in HEAD + CERTIFIED review (rc=0)"
-    else
-        fail "#257: should self-heal when SHAs in HEAD + review CERTIFIED (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# Negative: SHA NOT in HEAD ancestry → must still HOLD
-test_precompact_blocks_when_sha_not_in_head_ancestry() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    _precompact_init_repo_with_commit "$tmpdir" >/dev/null
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/latest-review.md" <<'MD'
-score: 8/10. CERTIFIED.
-MD
-    # Cite a SHA that doesn't exist in this repo
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{
-  "status": "PENDING_RECHECK",
-  "round": 2,
-  "fixes_applied": [
-    "FIXED in commit deadbeefcafe — phantom"
-  ]
-}
-JSON
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_RECHECK"; then
-        pass "#257: precompact blocks when fixes_applied SHA is NOT in HEAD ancestry (rc=2)"
-    else
-        fail "#257: should block on phantom SHA (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# Negative: SHA in HEAD ancestry BUT review NOT CERTIFIED → still HOLD
-test_precompact_blocks_when_sha_in_head_but_review_not_certified() {
-    local tmpdir sha
-    tmpdir=$(mktemp -d)
-    sha=$(_precompact_init_repo_with_commit "$tmpdir")
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/latest-review.md" <<'MD'
-score: 4/10. NOT CERTIFIED.
-ID 1: P1 missing validation.
-MD
-    cat > "$tmpdir/.reviews/handoff.json" <<JSON
-{
-  "status": "PENDING_RECHECK",
-  "round": 2,
-  "fixes_applied": [
-    "FIXED in commit ${sha} — partial fix"
-  ]
-}
-JSON
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_RECHECK"; then
-        pass "#257: precompact blocks when review.md says NOT CERTIFIED even with SHAs in HEAD (rc=2)"
-    else
-        fail "#257: should block on NOT CERTIFIED review (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# Negative: missing latest-review.md → still HOLD (path c needs both signals)
-test_precompact_blocks_when_review_md_missing() {
-    local tmpdir sha
-    tmpdir=$(mktemp -d)
-    sha=$(_precompact_init_repo_with_commit "$tmpdir")
-    mkdir -p "$tmpdir/.reviews"
-    # No latest-review.md
-    cat > "$tmpdir/.reviews/handoff.json" <<JSON
-{
-  "status": "PENDING_RECHECK",
-  "round": 2,
-  "fixes_applied": [
-    "FIXED in commit ${sha} — no review file"
-  ]
-}
-JSON
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ]; then
-        pass "#257: precompact blocks when latest-review.md is missing (path c needs both signals)"
-    else
-        fail "#257: should block when latest-review.md missing (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# All SHAs in HEAD: if fixes_applied has multiple SHAs, ALL must be in HEAD.
-# A single phantom SHA blocks the heal.
-test_precompact_blocks_when_any_sha_not_in_head() {
-    local tmpdir sha
-    tmpdir=$(mktemp -d)
-    sha=$(_precompact_init_repo_with_commit "$tmpdir")
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/latest-review.md" <<'MD'
-score: 8/10. CERTIFIED.
-MD
-    cat > "$tmpdir/.reviews/handoff.json" <<JSON
-{
-  "status": "PENDING_RECHECK",
-  "round": 2,
-  "fixes_applied": [
-    "FIXED in commit ${sha} — real",
-    "FIXED in commit deadbeefcafe — phantom"
-  ]
-}
-JSON
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ]; then
-        pass "#257: precompact blocks when ANY fixes_applied SHA is NOT in HEAD"
-    else
-        fail "#257: should block on partial SHA-ancestry coverage (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# Codex round 1 P1: awk's `/\]/` mid-string match terminated the
-# fixes_applied block early on entries like "[x] FIXED in <sha>", letting
-# later phantom SHAs leak past path (c) and false-heal. Bracket extraction
-# must track depth + string literals to terminate ONLY on the array's real
-# closing `]`.
-test_precompact_blocks_on_phantom_sha_after_markdown_checkbox_in_fixes_applied() {
-    local tmpdir sha
-    tmpdir=$(mktemp -d)
-    sha=$(_precompact_init_repo_with_commit "$tmpdir")
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/latest-review.md" <<'MD'
-score: 8/10. CERTIFIED.
-MD
-    # First entry uses `[x]` markdown checkbox — naive `/\]/` matching
-    # would terminate the array right after `[x]`, hiding the phantom
-    # SHA on the next line.
-    cat > "$tmpdir/.reviews/handoff.json" <<JSON
-{
-  "status": "PENDING_RECHECK",
-  "round": 2,
-  "fixes_applied": [
-    "[x] FIXED in commit ${sha} — real",
-    "[x] FIXED in commit deadbeefcafe — phantom"
-  ]
-}
-JSON
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ]; then
-        pass "#257 Codex#1: precompact blocks when phantom SHA hides behind '[x]' markdown checkbox in fixes_applied"
-    else
-        fail "#257 Codex#1: '[x]' markdown checkbox should not let phantom SHA past path (c) (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# Codex round 1 P2: UUID fragments matched the bare \b[0-9a-f]{7,40}\b
-# regex (e.g. UUID '123e4567-e89b-12d3-a456-426614174000' has '123e4567'
-# and '426614174000' as substrings). Validate each candidate via `git
-# rev-parse --verify` so UUID-style IDs in fixes_applied (mission UUIDs,
-# Linear ticket IDs, etc.) don't false-block a legitimate heal by failing
-# the ancestry check.
-test_precompact_self_heals_with_uuid_in_fixes_applied() {
-    local tmpdir sha
-    tmpdir=$(mktemp -d)
-    sha=$(_precompact_init_repo_with_commit "$tmpdir")
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/latest-review.md" <<'MD'
-score: 9/10. CERTIFIED.
-MD
-    # Real SHA + a UUID. UUID fragments would match the SHA regex but
-    # aren't valid git objects, so git rev-parse --verify drops them.
-    cat > "$tmpdir/.reviews/handoff.json" <<JSON
-{
-  "status": "PENDING_RECHECK",
-  "round": 2,
-  "fixes_applied": [
-    "FIXED ticket 123e4567-e89b-12d3-a456-426614174000 in commit ${sha}"
-  ]
-}
-JSON
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 0 ] && [ -z "$stderr_out" ]; then
-        pass "#257 Codex#2: precompact heals when fixes_applied contains UUIDs alongside real SHA (rc=0, silent)"
-    else
-        fail "#257 Codex#2: UUID fragments should not false-block path (c) heal (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# Path (b) takes precedence when no SHAs are in fixes_applied — i.e. don't
-# break the existing stale-handoff path when the new path can't apply.
-test_precompact_falls_through_to_stale_path_when_no_shas() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    _precompact_init_repo_with_commit "$tmpdir" >/dev/null
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{
-  "status": "PENDING_RECHECK",
-  "round": 2,
-  "fixes_applied": ["just text without any 7-hex SHA"]
-}
-JSON
-    # File is fresh, but with SDLC_HANDOFF_STALE_DAYS=0 the stale path heals
-    # this. If path (c) erroneously short-circuits when no SHAs are present,
-    # the stale-path warn won't fire.
-    local rc=0 stderr_out
-    stderr_out=$(SDLC_HANDOFF_STALE_DAYS=0 CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 0 ] && echo "$stderr_out" | grep -qi "stale"; then
-        pass "#257: precompact falls through to path (b) stale-warn when fixes_applied has no SHAs"
-    else
-        fail "#257: should fall through to stale path when no SHAs in fixes_applied (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
-# ---- Effort auto-bump signal detection (ROADMAP #195) ----
-# Hook scans UserPromptSubmit payload for LOW-confidence / FAILED-repeatedly /
-# CONFUSED phrases; logs a signal; when ≥2 recent signals accumulate in a
-# 30-minute window, emits a loud /effort xhigh nudge so Claude escalates
-# BEFORE burning more budget at 'high' effort (user feedback memory:
-# "Dynamic effort bump is mandatory").
-
-test_effort_bump_logs_signal_on_low_phrase() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.33.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    local payload='{"prompt":"I am stuck on this bug, tried twice and still failing"}'
-    echo "$payload" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/sdlc-prompt-check.sh" > /dev/null)
-    if [ -f "$tmpdir/cache/effort-signals.log" ] && [ -s "$tmpdir/cache/effort-signals.log" ]; then
-        pass "Low-confidence phrase in prompt logs a signal"
-    else
-        fail "Expected effort-signals.log entry after LOW/FAILED phrase"
-    fi
-    rm -rf "$tmpdir"
-}
-
-test_effort_bump_no_log_on_normal_prompt() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.33.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    local payload='{"prompt":"add a new route for the health endpoint"}'
-    echo "$payload" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/sdlc-prompt-check.sh" > /dev/null)
-    if [ -f "$tmpdir/cache/effort-signals.log" ] && [ -s "$tmpdir/cache/effort-signals.log" ]; then
-        fail "Neutral prompt should not log signal"
-    else
-        pass "Neutral prompt does not log a signal"
-    fi
-    rm -rf "$tmpdir"
-}
-
-test_effort_bump_nudge_fires_on_2_recent_signals() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.33.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    mkdir -p "$tmpdir/cache"
-    local now
-    now=$(date +%s)
-    printf '%s\tlow\n%s\tfailed\n' "$((now - 60))" "$((now - 30))" > "$tmpdir/cache/effort-signals.log"
-    local output
-    output=$(echo '{"prompt":"continue"}' | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/sdlc-prompt-check.sh"))
-    rm -rf "$tmpdir"
-    # Require BOTH a loud marker AND the actionable /effort command — either
-    # alone is a weaker nudge that the user can gloss over.
-    if echo "$output" | grep -qE 'EFFORT BUMP|ESCALATE EFFORT' && echo "$output" | grep -qE '/effort[[:space:]]+xhigh'; then
-        pass "Bump nudge fires (loud marker + /effort xhigh) when 2 recent signals are logged"
-    else
-        fail "Expected bump nudge with marker + /effort xhigh, got: $output"
-    fi
-}
-
-test_effort_bump_silent_on_1_signal() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.33.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    mkdir -p "$tmpdir/cache"
-    local now
-    now=$(date +%s)
-    printf '%s\tlow\n' "$((now - 60))" > "$tmpdir/cache/effort-signals.log"
-    local output
-    output=$(echo '{"prompt":"continue"}' | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/sdlc-prompt-check.sh"))
-    rm -rf "$tmpdir"
-    if echo "$output" | grep -qE '/effort[[:space:]]+xhigh|EFFORT BUMP'; then
-        fail "Bump nudge should not fire on a single signal"
-    else
-        pass "Single signal does not trigger bump nudge"
-    fi
-}
-
-# Codex round 1 (P1): bare "confused"/"tried twice"/"can't figure" substrings
-# fired on ambient/educational prompts like "How do I detect a CONFUSED state?"
-# Fix: patterns require first-person ownership. This test guards the regression.
-test_effort_bump_no_log_on_ambient_mention() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.33.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    # Codex round 1 & 2 findings: bare "confused" / "tried twice" / "low
-    # confidence" / "failed again" / "still failing" / "keeps failing" /
-    # "not sure why" all fired on educational prompts. Every generic phrase
-    # the reviewer flagged is tested here.
-    local ambient_prompts=(
-        '{"prompt":"How do I detect a CONFUSED state in a bash case statement?"}'
-        '{"prompt":"When would I use tried twice as a retry label?"}'
-        '{"prompt":"How should I name a low confidence badge in the UI?"}'
-        '{"prompt":"What does failed again mean in a retry log message?"}'
-        '{"prompt":"How do I detect still failing states in a test runner?"}'
-        '{"prompt":"What keeps failing mean for an idempotent job?"}'
-        '{"prompt":"not sure why the GPS chip needs a fallback — can you explain?"}'
-    )
-    local ok=true
-    local leak=""
-    local p
-    for p in "${ambient_prompts[@]}"; do
-        rm -rf "$tmpdir/cache"
-        echo "$p" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/sdlc-prompt-check.sh" > /dev/null)
-        if [ -f "$tmpdir/cache/effort-signals.log" ] && [ -s "$tmpdir/cache/effort-signals.log" ]; then
-            ok=false
-            leak="$p"
-            break
-        fi
-    done
-    rm -rf "$tmpdir"
-    if [ "$ok" = true ]; then
-        pass "Ambient/educational mentions of all 7 generic trigger words do not log a signal"
-    else
-        fail "Ambient prompt logged a signal (regression): $leak"
-    fi
-}
-
-# Codex round 1 (P1): hook emitted 'No such file or directory' on stderr when
-# HOME was unset or cache path pointed at a regular file. Redirection failure
-# leaked past `|| true`. Fix wraps the whole write in a { ... } 2>/dev/null
-# group. Regression test asserts stderr is empty on HOME=''.
-test_effort_bump_silent_stderr_on_unwritable_cache() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.33.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    local stderr_file="$tmpdir/stderr"
-    local payload='{"prompt":"I am stuck on this"}'
-    # HOME unset → default cache dir becomes /.cache/sdlc-wizard (unwritable)
-    echo "$payload" | (cd "$tmpdir" && unset HOME; unset SDLC_WIZARD_CACHE_DIR; CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/sdlc-prompt-check.sh" >/dev/null 2>"$stderr_file")
-    local stderr_size
-    stderr_size=$(wc -c < "$stderr_file" | tr -d ' ')
-    rm -rf "$tmpdir"
-    if [ "${stderr_size:-0}" -eq 0 ]; then
-        pass "Hook stderr is empty when cache path is unwritable"
-    else
-        fail "Hook leaked to stderr on unwritable cache (${stderr_size} bytes): $(cat "$stderr_file" 2>/dev/null)"
-    fi
-}
-
-# Codex round 1 (P2): log grew unbounded. Fix prunes entries >1h old on write.
-# Seed with many stale entries; invoke the hook once with a fresh signal;
-# assert the resulting file has far fewer lines than what was seeded.
-test_effort_bump_prunes_stale_log_entries() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.33.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    mkdir -p "$tmpdir/cache"
-    # Seed 100 stale entries (each > 1 hour old)
-    local base
-    base=$(( $(date +%s) - 7200 ))
-    local i=0
-    while [ $i -lt 100 ]; do
-        printf '%s\tlow\n' "$((base + i))" >> "$tmpdir/cache/effort-signals.log"
-        i=$((i + 1))
-    done
-    local before
-    before=$(wc -l < "$tmpdir/cache/effort-signals.log" | tr -d ' ')
-    # Trigger a fresh write (adds 1 line, prunes stale)
-    local payload='{"prompt":"I am stuck on this"}'
-    echo "$payload" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/sdlc-prompt-check.sh" > /dev/null)
-    local after
-    after=$(wc -l < "$tmpdir/cache/effort-signals.log" | tr -d ' ')
-    rm -rf "$tmpdir"
-    # Expect: stale entries dropped, fresh signal appended → final count ≤ 5
-    if [ "${before:-0}" -eq 100 ] && [ "${after:-0}" -le 5 ]; then
-        pass "Stale log entries (>1h old) are pruned on write (100 → ${after})"
-    else
-        fail "Log was not pruned (before=${before}, after=${after})"
-    fi
-}
-
-test_effort_bump_old_signals_ignored() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.33.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    mkdir -p "$tmpdir/cache"
-    local now
-    now=$(date +%s)
-    # Both signals >30 min old — must be ignored
-    printf '%s\tlow\n%s\tfailed\n' "$((now - 3700))" "$((now - 2400))" > "$tmpdir/cache/effort-signals.log"
-    local output
-    output=$(echo '{"prompt":"continue"}' | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/sdlc-prompt-check.sh"))
-    rm -rf "$tmpdir"
-    if echo "$output" | grep -qE '/effort[[:space:]]+xhigh|EFFORT BUMP'; then
-        fail "Signals >30 min old should be ignored"
-    else
-        pass "Signals older than 30 min do not trigger bump nudge"
     fi
 }
 
@@ -1367,6 +531,39 @@ test_tdd_gate_blocks_relative_src_path() {
     fi
 }
 
+# #236(b) BUG 2 fix: SDLC_TDD_SRC_PATTERN lets a project (e.g. this meta-repo,
+# which has no src/ dir) override the gated path(s) via env var instead of
+# editing the shared/distributed script. Fable-reviewed design (advisor was
+# down): env var replaces the default /src/ pattern when set, so it doesn't
+# leak a meta-repo-specific path into the generic template other repos get.
+test_tdd_gate_respects_src_pattern_override() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"session_id":"sess-override-1","tool_input":{"file_path":"/project/hooks/foo.sh"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" SDLC_TDD_SRC_PATTERN='hooks/|cli/' "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "test"; then
+        pass "tdd gate BLOCKS (exit 2) a path matching SDLC_TDD_SRC_PATTERN override when no test touched yet"
+    else
+        fail "tdd gate should exit 2 for 'hooks/foo.sh' with SDLC_TDD_SRC_PATTERN='hooks/|cli/' set, got exit=$exit_code out: $out"
+    fi
+}
+
+test_tdd_gate_override_replaces_not_extends_default_pattern() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local input='{"session_id":"sess-override-2","tool_input":{"file_path":"/project/src/app.js"}}'
+    local out exit_code
+    out=$(echo "$input" | SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" SDLC_TDD_SRC_PATTERN='hooks/|cli/' "$HOOKS_DIR/tdd-pretool-check.sh" 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ]; then
+        pass "tdd gate override REPLACES the default /src/ pattern (src/ path unblocked when override doesn't mention it)"
+    else
+        fail "with SDLC_TDD_SRC_PATTERN set, a plain src/ path not covered by the override should not be gated, got exit=$exit_code out: $out"
+    fi
+}
+
 # ---- instructions-loaded-check.sh tests ----
 
 # Test 12: Script exists and is executable
@@ -1378,35 +575,6 @@ test_instructions_hook_exists() {
     fi
 }
 
-# Test 13: Warns when SDLC.md is missing
-test_instructions_hook_missing_sdlc() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    touch "$tmpdir/TESTING.md"
-    local output
-    output=$(cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
-    rm -rf "$tmpdir"
-    if echo "$output" | grep -qi "SDLC.md"; then
-        pass "instructions-loaded-check.sh warns when SDLC.md missing"
-    else
-        fail "Should warn about missing SDLC.md, got: $output"
-    fi
-}
-
-# Test 14: Warns when TESTING.md is missing
-test_instructions_hook_missing_testing() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    touch "$tmpdir/SDLC.md"
-    local output
-    output=$(cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
-    rm -rf "$tmpdir"
-    if echo "$output" | grep -qi "TESTING.md"; then
-        pass "instructions-loaded-check.sh warns when TESTING.md missing"
-    else
-        fail "Should warn about missing TESTING.md, got: $output"
-    fi
-}
 
 # Test 15: Silent when neither file exists (not an SDLC project, #173)
 test_instructions_hook_missing_both() {
@@ -1555,29 +723,6 @@ test_sdlc_update_frequency() {
         fail "SDLC.md says 'daily' but update workflow runs weekly"
     else
         pass "SDLC.md does not falsely claim daily update checks"
-    fi
-}
-
-# Test 25: instructions-loaded-check.sh mentions setup-wizard on partial setup
-test_instructions_hook_mentions_setup_wizard() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    # Partial setup: only TESTING.md exists — should warn about missing SDLC.md
-    # CWD must be below HOME for walk-up to check the project dir
-    mkdir -p "$tmpdir/project"
-    touch "$tmpdir/project/TESTING.md"
-    mkdir -p "$tmpdir/bin"
-    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/npm"
-    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/claude"
-    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/codex"
-    chmod +x "$tmpdir/bin/npm" "$tmpdir/bin/claude" "$tmpdir/bin/codex"
-    local output
-    output=$(cd "$tmpdir/project" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="" HOME="$tmpdir" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
-    rm -rf "$tmpdir"
-    if echo "$output" | grep -q "setup-wizard"; then
-        pass "instructions-loaded-check.sh mentions setup-wizard on partial setup"
-    else
-        fail "Should mention setup-wizard skill invocation, got: $output"
     fi
 }
 
@@ -1810,15 +955,11 @@ test_sdlc_hook_keywords
 test_sdlc_hook_auto_invoke
 test_sdlc_hook_phases
 test_sdlc_hook_size
-test_sdlc_hook_size_with_bump_firing
 test_tdd_pretool_size_cap
 test_model_effort_size_cap
 test_instructions_loaded_size_cap
 test_precompact_hook_exists
 test_precompact_silent_without_handoff_or_git_op
-test_precompact_silent_when_handoff_certified
-test_precompact_blocks_on_pending_review
-test_precompact_blocks_on_pending_recheck
 test_precompact_blocks_on_git_rebase_in_progress
 test_precompact_blocks_on_git_rebase_apply_in_progress
 test_precompact_blocks_on_git_merge_in_progress
@@ -1826,104 +967,15 @@ test_precompact_blocks_on_cherry_pick_in_progress
 test_precompact_silent_on_stale_rebase_head_alone
 test_precompact_blocks_on_rebase_head_with_rebase_merge_dir
 test_precompact_size_cap
-test_precompact_self_heals_on_merged_pr
-test_precompact_still_blocks_on_open_pr
-test_precompact_blocks_when_no_pr_number
-test_precompact_blocks_when_gh_errors
-test_precompact_blocks_when_gh_missing
-test_precompact_unblocks_stale_pending_without_pr_number
-test_precompact_still_blocks_fresh_pending_without_pr_number
-test_precompact_stale_with_pr_number_prefers_self_heal
-test_precompact_stale_threshold_invalid_falls_back
-test_precompact_stale_threshold_override
-test_precompact_self_heals_on_sha_ancestry_when_review_certified
-test_precompact_blocks_when_sha_not_in_head_ancestry
-test_precompact_blocks_when_sha_in_head_but_review_not_certified
-test_precompact_blocks_when_review_md_missing
-test_precompact_blocks_when_any_sha_not_in_head
-test_precompact_blocks_on_phantom_sha_after_markdown_checkbox_in_fixes_applied
-test_precompact_self_heals_with_uuid_in_fixes_applied
 
-# Codex round 2 P1: in_string toggle wasn't escape-aware, so \" inside a
-# JSON string flipped the flag prematurely. An entry containing `\"]`
-# before a later phantom SHA would exit the fixes_applied array early,
-# missing the phantom and false-healing.
-test_precompact_blocks_on_phantom_sha_after_escaped_quote_bracket() {
-    local tmpdir sha
-    tmpdir=$(mktemp -d)
-    sha=$(_precompact_init_repo_with_commit "$tmpdir")
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/latest-review.md" <<'MD'
-score: 8/10. CERTIFIED.
-MD
-    # Real SHA in an entry containing escaped-quote + bracket (`\"]`),
-    # then a phantom SHA on the next line. Pre-fix, the array extractor
-    # exited on the `]` after the (mistakenly closed) string and missed
-    # the phantom. Expected behavior: phantom SHA fails ancestry → block.
-    cat > "$tmpdir/.reviews/handoff.json" <<JSON
-{
-  "status": "PENDING_RECHECK",
-  "round": 2,
-  "fixes_applied": [
-    "FIXED in commit ${sha} — replaced \"foo\" with \"bar]\" in test",
-    "FIXED in commit deadbeefcafe — phantom"
-  ]
-}
-JSON
-    local rc=0 stderr_out
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ]; then
-        pass "#257 Codex#R2: precompact blocks when phantom SHA hides behind escaped-quote + ']' in fixes_applied"
-    else
-        fail "#257 Codex#R2: escaped-quote bracket should not let phantom SHA past path (c) (rc=$rc, stderr='$stderr_out')"
-    fi
-}
 
-test_precompact_blocks_on_phantom_sha_after_escaped_quote_bracket
-test_precompact_falls_through_to_stale_path_when_no_shas
 
-# ---- #240: dry-run env vars for safe smoke-testing ----
-# Consumer issue: smoke-testing hook behavior required cp'ing real
-# .reviews/handoff.json + .git/ aside, fabricating fake state, restoring —
-# error-prone (clobbered real handoff.json mid-test). New env vars
-# SDLC_DRY_RUN_HANDOFF_STATUS and SDLC_DRY_RUN_GIT_STATE simulate state
-# without touching the filesystem. Override real state when set.
+# ---- #240: dry-run env var for safe smoke-testing ----
+# Consumer issue: smoke-testing hook behavior required cp'ing real .git/
+# aside, fabricating fake state, restoring — error-prone. SDLC_DRY_RUN_GIT_STATE
+# simulates an in-flight git operation without touching the filesystem.
 
-test_precompact_dry_run_handoff_status_blocks_on_pending_recheck() {
-    local tmpdir rc=0 stderr_out
-    tmpdir=$(mktemp -d)
-    # Empty project — no .reviews/, no .git/. Pre-fix: hook exits 0 silent.
-    # With env var: hook should treat status as PENDING_RECHECK → block.
-    stderr_out=$(SDLC_DRY_RUN_HANDOFF_STATUS=PENDING_RECHECK \
-        CLAUDE_PROJECT_DIR="$tmpdir" \
-        "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 2 ] && echo "$stderr_out" | grep -q "PENDING_RECHECK"; then
-        pass "#240: SDLC_DRY_RUN_HANDOFF_STATUS=PENDING_RECHECK simulates block (rc=2)"
-    else
-        fail "#240: dry-run handoff status should simulate block (rc=$rc, stderr='$stderr_out')"
-    fi
-}
 
-test_precompact_dry_run_handoff_status_silent_on_certified() {
-    local tmpdir rc=0 stderr_out
-    tmpdir=$(mktemp -d)
-    # Real handoff says PENDING; dry-run override says CERTIFIED → silent
-    mkdir -p "$tmpdir/.reviews"
-    cat > "$tmpdir/.reviews/handoff.json" <<'JSON'
-{"status": "PENDING_REVIEW", "round": 1}
-JSON
-    stderr_out=$(SDLC_DRY_RUN_HANDOFF_STATUS=CERTIFIED \
-        CLAUDE_PROJECT_DIR="$tmpdir" \
-        "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 0 ] && [ -z "$stderr_out" ]; then
-        pass "#240: SDLC_DRY_RUN_HANDOFF_STATUS=CERTIFIED overrides real PENDING handoff (rc=0 silent)"
-    else
-        fail "#240: dry-run CERTIFIED should override real PENDING (rc=$rc, stderr='$stderr_out')"
-    fi
-}
 
 test_precompact_dry_run_git_state_rebase_blocks() {
     local tmpdir rc=0 stderr_out
@@ -1971,25 +1023,6 @@ test_precompact_dry_run_git_state_cherry_pick_blocks() {
 # Critical: dry-run must NOT mutate real state. Run a dry-run that would
 # trigger HOLD; then re-run without dry-run env vars and confirm real
 # state (no handoff, no git op) returns silent rc=0.
-test_precompact_dry_run_does_not_mutate_real_state() {
-    local tmpdir rc=0 stderr_out
-    tmpdir=$(mktemp -d)
-    # Run dry-run that would block. Suppress non-zero with || true so set -e
-    # doesn't terminate the test runner on the expected rc=2.
-    SDLC_DRY_RUN_HANDOFF_STATUS=PENDING_RECHECK \
-        CLAUDE_PROJECT_DIR="$tmpdir" \
-        "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null > /dev/null 2>&1 || true
-    # Now run without dry-run → real state is empty → silent
-    stderr_out=$(CLAUDE_PROJECT_DIR="$tmpdir" \
-        "$HOOKS_DIR/precompact-seam-check.sh" < /dev/null 2>&1 >/dev/null) || rc=$?
-    rm -rf "$tmpdir"
-    if [ "$rc" -eq 0 ] && [ -z "$stderr_out" ]; then
-        pass "#240: dry-run does not mutate real state (subsequent real run is silent)"
-    else
-        fail "#240: dry-run should not leave persistent state (rc=$rc, stderr='$stderr_out')"
-    fi
-}
-
 # Codex round 1 P1: invalid SDLC_DRY_RUN_GIT_STATE values (typos like
 # "bogus") used to skip the real .git/ check entirely — silently bypassing
 # the merge-in-progress safety. Now: unknown values fall through to real
@@ -2012,22 +1045,10 @@ test_precompact_dry_run_git_state_typo_falls_back_to_real_check() {
     fi
 }
 
-test_precompact_dry_run_handoff_status_blocks_on_pending_recheck
-test_precompact_dry_run_handoff_status_silent_on_certified
 test_precompact_dry_run_git_state_rebase_blocks
 test_precompact_dry_run_git_state_merge_blocks
 test_precompact_dry_run_git_state_cherry_pick_blocks
 test_precompact_dry_run_git_state_typo_falls_back_to_real_check
-test_precompact_dry_run_does_not_mutate_real_state
-test_handoff_template_documents_pr_number
-test_effort_bump_logs_signal_on_low_phrase
-test_effort_bump_no_log_on_normal_prompt
-test_effort_bump_nudge_fires_on_2_recent_signals
-test_effort_bump_silent_on_1_signal
-test_effort_bump_old_signals_ignored
-test_effort_bump_no_log_on_ambient_mention
-test_effort_bump_silent_stderr_on_unwritable_cache
-test_effort_bump_prunes_stale_log_entries
 test_tdd_hook_exists
 test_tdd_hook_src_warning
 test_tdd_hook_valid_json
@@ -2040,9 +1061,9 @@ test_tdd_gate_allows_test_file_writes_unconditionally
 test_tdd_gate_recognizes_test_patterns
 test_tdd_gate_no_block_without_session_id
 test_tdd_gate_blocks_relative_src_path
+test_tdd_gate_respects_src_pattern_override
+test_tdd_gate_override_replaces_not_extends_default_pattern
 test_instructions_hook_exists
-test_instructions_hook_missing_sdlc
-test_instructions_hook_missing_testing
 test_instructions_hook_missing_both
 test_instructions_hook_all_present
 test_instructions_hook_exit_code
@@ -2053,7 +1074,6 @@ test_sdlc_setup_date
 test_sdlc_completed_steps
 test_sdlc_hook_self_review_reference
 test_sdlc_update_frequency
-test_instructions_hook_mentions_setup_wizard
 test_sdlc_hook_setup_redirect_missing_sdlc
 test_sdlc_hook_setup_redirect_missing_testing
 test_sdlc_hook_normal_when_setup_complete
@@ -2379,6 +1399,56 @@ test_update_notification_silent_when_installed_newer_than_cache() {
     fi
 }
 
+# #236(b): the CC-version check used to be an uncached npm call on every
+# session start with bare `!=` (fires in either direction). Now mirrors the
+# wizard's own version-check cache + semver_lt direction pattern above.
+# Prove caching: seed a fresh, valid, NEWER-than-local cache entry and stub
+# npm to return a DIFFERENT version — if the hook actually calls npm instead
+# of using the cache, the output would show npm's version, not the cache's.
+test_cc_version_check_uses_fresh_cache_not_npm() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Wizard Version: 1.86.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    mkdir -p "$tmpdir/bin" "$tmpdir/cache"
+    printf '2.1.95' > "$tmpdir/cache/latest-cc-version"
+    printf '#!/bin/bash\necho "2.1.90 (Claude Code)"\n' > "$tmpdir/bin/claude"
+    printf '#!/bin/bash\nif echo "$@" | grep -q "claude-code"; then echo "2.1.99"; else echo "1.86.0"; fi\n' > "$tmpdir/bin/npm"
+    chmod +x "$tmpdir/bin/claude" "$tmpdir/bin/npm"
+    local output
+    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if echo "$output" | grep -q "2.1.95" && ! echo "$output" | grep -q "2.1.99"; then
+        pass "CC version check uses fresh cache (2.1.95), doesn't hit npm (would've shown 2.1.99)"
+    else
+        fail "expected cached '2.1.95' in output, not npm's '2.1.99' (proves cache miss), got: $output"
+    fi
+}
+
+# #236(b): direction fix — the old code used bare `!=`, which fires a
+# nonsensical reverse nudge ("update available: 2.1.90 -> 2.1.50") whenever
+# npm/cache returns anything OLDER than local (e.g. a transient bad response,
+# or a mirror lagging behind). No cache seeded — isolates the semver_lt
+# direction check itself, independent of caching behavior.
+test_cc_version_check_silent_when_npm_returns_older_version() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Wizard Version: 1.86.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    mkdir -p "$tmpdir/bin"
+    printf '#!/bin/bash\necho "2.1.90 (Claude Code)"\n' > "$tmpdir/bin/claude"
+    printf '#!/bin/bash\nif echo "$@" | grep -q "claude-code"; then echo "2.1.50"; else echo "1.86.0"; fi\n' > "$tmpdir/bin/npm"
+    chmod +x "$tmpdir/bin/claude" "$tmpdir/bin/npm"
+    local output
+    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if echo "$output" | grep -qi "claude code update"; then
+        fail "should stay silent when npm returns an older version (2.1.50) than local (2.1.90), got: $output"
+    else
+        pass "CC version check silent when npm returns an older version than local (semver_lt direction, not bare !=)"
+    fi
+}
+
 # Test (#239): when npm view fails AND cache is missing/stale, the hook should
 # surface the failure once (one-line warning) instead of silently serving
 # nothing. Currently the version-check block produces no output at all in
@@ -2419,6 +1489,8 @@ test_update_notification_rejects_malformed_cache_junk
 test_update_notification_rejects_malformed_cache_whitespace
 test_update_notification_rejects_non_numeric_minor
 test_update_notification_silent_when_installed_newer_than_cache
+test_cc_version_check_uses_fresh_cache_not_npm
+test_cc_version_check_silent_when_npm_returns_older_version
 test_update_notification_surfaces_npm_failure
 
 # #375: CC version check must NOT fire under non-Claude hosts (Codex, OpenCode).
@@ -2704,11 +1776,30 @@ test_model_effort_check_exists() {
     fi
 }
 
+# #236(b): unset (no env var, no settings.json entry anywhere) is CC's own
+# current default, not a problem state — the hook used to loud-warn on it
+# every single session start regardless. Only an EXPLICITLY set low-effort
+# value (or the settings-only-max quirk, tested separately) should warn now.
+test_model_effort_check_silent_on_unset() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if [ -z "$output" ]; then
+        pass "model-effort-check.sh silent on unset effort (no env var, no settings entry)"
+    else
+        fail "model-effort-check.sh should be silent on unset effort, got: $output"
+    fi
+}
+
 # Test: detects genuinely stale (below-floor) effort and outputs upgrade nudge
 # with model recommendation. The nudge must name the wizard's recommended
 # model alias so the command is copy-pasteable.
 # v1.84.0: `high` is now an acceptable floor (Sonnet 5's/Fable's tested
-# default) — only `medium`/`low`/unset should still warn.
+# default) — only an EXPLICITLY set `medium`/`low` should still warn (#236(b):
+# unset itself no longer warns, tested above).
 test_model_effort_check_stale_effort() {
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -2953,6 +2044,7 @@ test_instructions_loaded_no_duplicate_effort_nudge() {
 }
 
 test_model_effort_check_exists
+test_model_effort_check_silent_on_unset
 test_model_effort_check_stale_effort
 test_model_effort_check_high_silent
 test_model_effort_check_xhigh_silent
@@ -3628,98 +2720,6 @@ test_hook_emits_cc_nudge_when_pending
 test_hook_silent_when_no_pending_cc_updates
 test_hook_silent_without_weekly_update_workflow
 
-# ---- /goal confidence + DLC-binding gate (ROADMAP #360) ----
-# UserPromptSubmit hook fires on `/goal <condition>` invocations, reads
-# transcript_path, scans the LAST assistant text message for a HIGH-95%
-# confidence statement, and also checks the condition for DLC binding
-# (`/sdlc`, `/gdlc`, `/ldlc`, etc). PR #355 (v1.77.0) added the *guidance*
-# in skills/sdlc/SKILL.md but nothing enforces it at runtime — this hook
-# is the enforcement layer per #360. Non-blocking soft nudge pattern
-# (mirrors model-effort-check.sh).
-
-test_goal_confidence_check_fires_when_no_confidence() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.77.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    cat > "$tmpdir/transcript.jsonl" <<'JSONL'
-{"type":"user","message":{"role":"user","content":"hey"}}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Working on this now."}]}}
-JSONL
-    local payload='{"prompt":"/goal \"ship X, following /sdlc, stop after 10 turns\"","transcript_path":"'"$tmpdir/transcript.jsonl"'"}'
-    local output
-    output=$(printf '%s' "$payload" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
-    rm -rf "$tmpdir"
-    if echo "$output" | grep -qiE 'GATE|WARNING' && echo "$output" | grep -qi 'confidence'; then
-        pass "#360: /goal without prior HIGH 95% confidence triggers warning"
-    else
-        fail "#360: confidence-gate warning missing (got: $output)"
-    fi
-}
-
-test_goal_confidence_check_silent_when_confidence_present() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.77.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    cat > "$tmpdir/transcript.jsonl" <<'JSONL'
-{"type":"user","message":{"role":"user","content":"recon done?"}}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Confidence: HIGH (95%) — verified pattern matches existing reference."}]}}
-JSONL
-    local payload='{"prompt":"/goal \"ship X, following /sdlc, stop after 10 turns\"","transcript_path":"'"$tmpdir/transcript.jsonl"'"}'
-    local output
-    output=$(printf '%s' "$payload" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
-    rm -rf "$tmpdir"
-    if echo "$output" | grep -qiE 'GATE|WARNING'; then
-        fail "#360: should be silent when prior turn has HIGH 95% confidence (got: $output)"
-    else
-        pass "#360: silent when prior turn has HIGH 95% confidence statement"
-    fi
-}
-
-test_goal_confidence_check_dlc_binding_warning() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.77.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    cat > "$tmpdir/transcript.jsonl" <<'JSONL'
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Confidence: HIGH (95%)."}]}}
-JSONL
-    # Goal condition WITHOUT any DLC binding (/sdlc, /gdlc, /ldlc)
-    local payload='{"prompt":"/goal \"ship X, stop after 10 turns\"","transcript_path":"'"$tmpdir/transcript.jsonl"'"}'
-    local output
-    output=$(printf '%s' "$payload" | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
-    rm -rf "$tmpdir"
-    if echo "$output" | grep -qiE 'DLC.*binding|name.*DLC|/sdlc|/gdlc'; then
-        pass "#360: /goal without DLC binding triggers DLC-binding warning"
-    else
-        fail "#360: DLC-binding warning missing (got: $output)"
-    fi
-}
-
-test_goal_confidence_check_silent_on_status_and_clear() {
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.77.0 -->' > "$tmpdir/SDLC.md"
-    touch "$tmpdir/TESTING.md"
-    cat > "$tmpdir/transcript.jsonl" <<'JSONL'
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"some text"}]}}
-JSONL
-    local out1 out2
-    out1=$(printf '%s' '{"prompt":"/goal","transcript_path":"'"$tmpdir/transcript.jsonl"'"}' | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
-    out2=$(printf '%s' '{"prompt":"/goal clear","transcript_path":"'"$tmpdir/transcript.jsonl"'"}' | (cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/goal-confidence-check.sh"))
-    rm -rf "$tmpdir"
-    if [ -z "$out1" ] && [ -z "$out2" ]; then
-        pass "#360: silent on bare /goal (status) and /goal clear (reset)"
-    else
-        fail "#360: should be silent on status/clear (out1='$out1', out2='$out2')"
-    fi
-}
-
-test_goal_confidence_check_fires_when_no_confidence
-test_goal_confidence_check_silent_when_confidence_present
-test_goal_confidence_check_dlc_binding_warning
-test_goal_confidence_check_silent_on_status_and_clear
 
 # ---- codex-gate-check.sh tests ----
 echo ""
@@ -3870,6 +2870,55 @@ test_codex_gate_skip_override() {
     fi
 }
 
+# #236(b) minor finding: `set -e` + a `command` field the extraction regex
+# can't match (e.g. genuinely absent from tool_input, an old-format payload)
+# makes the grep exit 1, which under set -e kills the whole script with an
+# undefined exit 1 — neither the intentional "allow" (0) nor "deny" (2) path.
+# Must fail closed to a clean, deliberate exit 0 (this isn't a git-commit
+# command at all, same as any other non-commit Bash call), not crash.
+test_codex_gate_no_command_field_does_not_crash() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"foo":"bar"}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate exits cleanly (0) when tool_input has no command field, does not crash"
+    else
+        fail "codex gate should exit 0 silent on missing command field, got exit=$exit_code out: $out"
+    fi
+}
+
+# #236(b) minor finding: literal substring match on "git commit" misses git's
+# own global-flag forms — `git -C <dir> commit` and `git -c k=v commit` are
+# both real, valid git invocations that never contain the literal substring
+# "git commit", so they sailed through the gate unreviewed.
+test_codex_gate_blocks_commit_with_dash_C_global_flag() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git -C /tmp/repo commit -m \"fix\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate BLOCKS (exit 2) 'git -C <dir> commit' global-flag form"
+    else
+        fail "codex gate should exit 2 for 'git -C <dir> commit', got exit=$exit_code out: $out"
+    fi
+}
+
+test_codex_gate_blocks_commit_with_dash_c_config_flag() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git -c user.email=x@y.com commit -m \"fix\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate BLOCKS (exit 2) 'git -c k=v commit' global-flag form"
+    else
+        fail "codex gate should exit 2 for 'git -c k=v commit', got exit=$exit_code out: $out"
+    fi
+}
+
 # Codex review finding (hook-enforcement-436, round 1): a quote appearing
 # BEFORE "git commit" in the command (e.g. `cd "$dir" && git commit ...`)
 # breaks the grep/sed extraction — `[^"]*` stops at the first embedded quote
@@ -3907,14 +2956,36 @@ test_codex_gate_silent_when_only_description_mentions_commit() {
     fi
 }
 
+# Codex cross-model review finding (#236(b) round 1, 2026-07-06): a `-c`/`-C`
+# value containing a space inside quotes (a real, valid git invocation --
+# `git -c user.name="A B" commit`) breaks the `-c\s+\S+` alternative, since
+# `\S+` stops at the embedded space. The structural git/commit match then
+# fails entirely and the commit sails through unreviewed.
+test_codex_gate_blocks_commit_with_quoted_value_containing_space() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git -c user.name=\"A B\" commit -m \"fix\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "codex gate BLOCKS (exit 2) 'git -c k=\"v w\" commit' with a spaced quoted value"
+    else
+        fail "codex gate should exit 2 for a git commit with a quoted flag value containing a space, got exit=$exit_code out: $out"
+    fi
+}
+
 test_codex_gate_blocks_commit_without_review
 test_codex_gate_allows_commit_with_certified_review
 test_codex_gate_allows_commit_with_reviewed_status
 test_codex_gate_silent_on_non_commit_commands
 test_codex_gate_blocks_on_invalid_status
 test_codex_gate_skip_override
+test_codex_gate_no_command_field_does_not_crash
+test_codex_gate_blocks_commit_with_dash_C_global_flag
+test_codex_gate_blocks_commit_with_dash_c_config_flag
 test_codex_gate_blocks_commit_with_quote_before_git_commit
 test_codex_gate_silent_when_only_description_mentions_commit
+test_codex_gate_blocks_commit_with_quoted_value_containing_space
 test_codex_gate_blocks_stale_certification_after_new_commit
 test_codex_gate_blocks_missing_commit_sha_as_stale
 
@@ -4026,6 +3097,29 @@ test_stop_hook_ignores_reviews_dir_changes() {
     fi
 }
 
+test_stop_hook_delivers_via_stdout_json_not_stderr() {
+    # #236(b) BUG 1: on exit 0, stderr is never surfaced to the user or to
+    # Claude — only stdout JSON (hookSpecificOutput.additionalContext) is.
+    # The other tests here capture 2>&1 (combined), which is exactly how a
+    # stderr-only, exit-0 warning could look "delivered" while actually being
+    # silently discarded by the real Claude Code harness.
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && echo "x=1" > app.sh && git add . && git commit -q -m init) > /dev/null 2>&1
+    echo "x=2" >> "$tmpdir/app.sh"
+    local stdout_out stderr_out
+    stdout_out=$(printf '%s' '{"session_id":"s-delivery"}' | (cd "$tmpdir" && SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/codex-review-stop-check.sh") 2>"$tmpdir/stderr.out")
+    stderr_out=$(cat "$tmpdir/stderr.out")
+    rm -rf "$tmpdir"
+    if printf '%s' "$stdout_out" | grep -q '"hookEventName"[[:space:]]*:[[:space:]]*"Stop"' \
+        && printf '%s' "$stdout_out" | grep -qi '"additionalContext"' \
+        && [ -z "$stderr_out" ]; then
+        pass "stop hook delivers warning via stdout JSON (hookSpecificOutput.additionalContext), not stderr"
+    else
+        fail "stop hook must emit valid stdout JSON with hookEventName:Stop and leave stderr empty — stdout: '$stdout_out' stderr: '$stderr_out'"
+    fi
+}
+
 test_stop_hook_fires_once_per_session() {
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -4050,6 +3144,7 @@ test_stop_hook_silent_doc_only_changes
 test_stop_hook_warns_significant_uncommitted_no_review
 test_stop_hook_silent_with_certified_review
 test_stop_hook_ignores_reviews_dir_changes
+test_stop_hook_delivers_via_stdout_json_not_stderr
 test_stop_hook_fires_once_per_session
 
 echo ""

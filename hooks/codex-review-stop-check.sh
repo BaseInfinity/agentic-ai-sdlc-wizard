@@ -62,6 +62,11 @@ if [ -n "$SESSION_ID" ]; then
     fi
 fi
 
-echo "NOTE: uncommitted changes with no REVIEWED/CERTIFIED cross-model review artifact. If this work is heading to a commit, run Codex review before committing." >&2
+# #236(b): on exit 0, stderr is never surfaced (to the user or to Claude) —
+# only stdout JSON is. An earlier stderr+exit-0 version of this line was
+# silently discarded since the day this hook shipped (#436).
+cat << 'EOF'
+{"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": "NOTE: uncommitted changes with no REVIEWED/CERTIFIED cross-model review artifact. If this work is heading to a commit, run Codex review before committing."}}
+EOF
 
 exit 0

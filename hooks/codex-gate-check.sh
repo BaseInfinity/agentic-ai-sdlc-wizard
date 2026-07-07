@@ -32,13 +32,37 @@ TOOL_INPUT=$(cat)
 # still can't run past the field's true (unescaped) closing quote because
 # neither alternative in the group can match a bare `"`. Scoped to just
 # this field, so unrelated fields containing the phrase can't false-trigger.
+# #236(b): under `set -e`, a grep with no match exits 1 and kills the whole
+# script with an undefined exit code (a "command" field can be absent, e.g.
+# an old-format payload) — `|| true` makes "no match" a clean, deliberate
+# empty COMMAND_FIELD instead of a crash.
 COMMAND_FIELD=$(printf '%s' "$TOOL_INPUT" \
-    | grep -oE '"command"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"')
+    | grep -oE '"command"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' || true)
 
-case "$COMMAND_FIELD" in
-    *"git commit"*) ;;
-    *) exit 0 ;;
-esac
+# Codex cross-model review finding (#236(b) round 1, 2026-07-06): a `-c`/`-C`
+# value containing a space inside quotes is a real, valid git invocation
+# (e.g. `git -c user.name="A B" commit`) but broke the structural match below
+# — `\S+` stops at the embedded space, so the flag-value alternative never
+# matches and the whole "git ... commit" pattern silently fails, letting the
+# commit through unreviewed. Fix: strip COMMAND_FIELD down to just the raw
+# value content (COMMAND_VALUE, still JSON-escaped), then collapse every
+# quoted sub-span — both JSON-escaped `\"..\"` and plain `'..'` — to a single
+# placeholder token before the structural match runs, so a quoted value can
+# never look like more than one word to it.
+COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
+    | sed -E 's/^"command"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')
+MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
+    | sed -E -e 's/\\"[^\\]*\\"/Q/g' -e "s/'[^']*'/Q/g")
+
+# #236(b): literal substring "git commit" misses git's own global-flag forms
+# — `git -C <dir> commit` and `git -c k=v commit` are valid invocations that
+# never contain that exact two-word substring, and previously sailed through
+# unreviewed. Regex allows any number of -C/-c (with their required value),
+# --long-flag, or single-letter-flag tokens between "git" and "commit".
+if ! printf '%s' "$MASKED_COMMAND" \
+    | grep -qE '\bgit(\s+(-C\s+\S+|-c\s+\S+|--\S+|-[A-Za-z]))*\s+commit\b'; then
+    exit 0
+fi
 
 REVIEW_FILE=".reviews/handoff.json"
 
