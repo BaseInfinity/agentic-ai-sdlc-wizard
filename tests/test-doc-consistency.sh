@@ -1212,6 +1212,164 @@ test_roadmap_key_open_items_present
 test_roadmap_archive_has_key_archived_items
 
 # ────────────────────────────────────────────
+# ROADMAP #439: GPT-5.6 (Sol) supersedes GPT-5.5 as cross-model reviewer
+# Per-location checks, not whole-file counts (per #437's CHANGELOG lesson:
+# aggregate checks have slack that lets one unfixed line hide behind an
+# unrelated match elsewhere in the same file). Each line must both GAIN
+# "5.6" and LOSE "5.5" (and "5.4" on fallback-chain lines) — a half-applied
+# edit (mentions 5.6 nearby but leaves the old 5.5/5.4 name in place) fails.
+# ────────────────────────────────────────────
+
+# Checks one line of a file both contains a required substring and does NOT
+# contain any of the forbidden substrings. Echoes a descriptive failure (or
+# nothing on success) for the caller to collect via command substitution,
+# rather than calling fail() directly, so one test function can report every
+# stale line in one message. (bash 3.x on macOS has no namerefs.)
+_check_line_has_and_lacks() {
+    local file="$1" line_num="$2" must_have_csv="$3"
+    shift 3
+    local content
+    content="$(sed -n "${line_num}p" "$file")"
+    if [ -z "$content" ]; then
+        echo "${file}:${line_num}(line-missing)"
+        return
+    fi
+    local required
+    for required in ${must_have_csv//,/ }; do
+        if ! printf '%s' "$content" | grep -qi "$required"; then
+            echo "${file}:${line_num}(missing '$required')"
+            return
+        fi
+    done
+    for forbidden in "$@"; do
+        if printf '%s' "$content" | grep -qi "$forbidden"; then
+            echo "${file}:${line_num}(stale '$forbidden')"
+            return
+        fi
+    done
+}
+
+test_ai_setup_lanes_reviewer_is_gpt56() {
+    local F="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$F" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    local bad=""
+    # "5\.6" AND "Sol" (not just one or the other) so a Sol->Terra swap, or a
+    # future GPT-5.7 Sol rename, both fail.
+    for n in 13 16 28 41 43 119 164 168 206 207 210; do
+        bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
+    done
+    # L123 is the fallback-chain line: must name "5\.6" AND BOTH Sol (primary)
+    # and Terra (fallback target) so a Terra->Luna swap also fails.
+    bad="$bad$(_check_line_has_and_lacks "$F" 123 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    if [ -z "$bad" ]; then
+        pass "AI_SETUP_LANES.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
+    else
+        fail "AI_SETUP_LANES.md stale reviewer-model reference(s):$bad"
+    fi
+}
+
+test_readme_reviewer_is_gpt56() {
+    local F="$REPO_ROOT/README.md"
+    if [ ! -f "$F" ]; then fail "README.md not found"; return; fi
+    local bad=""
+    # L126 is the fallback-chain line: must name "5\.6" AND BOTH Sol and Terra.
+    bad="$bad$(_check_line_has_and_lacks "$F" 126 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    for n in 186 187 188; do
+        bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
+    done
+    if [ -z "$bad" ]; then
+        pass "README.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
+    else
+        fail "README.md stale reviewer-model reference(s):$bad"
+    fi
+}
+
+# L151 is a historical eval citation (Andon Labs Vending-Bench actually used
+# GPT-5.5 at the time) — must NOT be rewritten, or the citation becomes
+# factually wrong about what model that benchmark run used.
+test_readme_vending_bench_citation_untouched() {
+    local F="$REPO_ROOT/README.md"
+    if [ ! -f "$F" ]; then fail "README.md not found"; return; fi
+    if sed -n '151p' "$F" | grep -q "GPT-5\.5"; then
+        pass "README.md L151 vending-bench citation still names GPT-5.5 (historical, untouched)"
+    else
+        fail "README.md L151 vending-bench citation no longer names GPT-5.5 — historical citation was rewritten"
+    fi
+}
+
+test_wizard_doc_reviewer_is_gpt56() {
+    local F="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$F" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    local bad=""
+    bad="$bad$(_check_line_has_and_lacks "$F" 1090 "5\.6,Sol" "5\.5")"
+    bad="$bad$(_check_line_has_and_lacks "$F" 1113 "5\.6,Sol" "5\.5")"
+    # L3855 and L3860 are fallback-chain lines: must name "5\.6" AND BOTH Sol
+    # and Terra.
+    bad="$bad$(_check_line_has_and_lacks "$F" 3855 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    bad="$bad$(_check_line_has_and_lacks "$F" 3860 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    if [ -z "$bad" ]; then
+        pass "CLAUDE_CODE_SDLC_WIZARD.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
+    else
+        fail "CLAUDE_CODE_SDLC_WIZARD.md stale reviewer-model reference(s):$bad"
+    fi
+}
+
+# L113 is a historical audit citation (the E2E benchmark critique actually
+# ran on GPT-5.4 at the time) — must NOT be rewritten.
+test_wizard_doc_e2e_audit_citation_untouched() {
+    local F="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$F" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    if sed -n '113p' "$F" | grep -q "GPT-5\.4"; then
+        pass "CLAUDE_CODE_SDLC_WIZARD.md L113 E2E-audit citation still names GPT-5.4 (historical, untouched)"
+    else
+        fail "CLAUDE_CODE_SDLC_WIZARD.md L113 E2E-audit citation no longer names GPT-5.4 — historical citation was rewritten"
+    fi
+}
+
+# Both copies (canonical + cowork) must move together — this is the exact
+# doc-duplication-drift risk documented in project memory (v1.85.0: a
+# protocol documented twice, fixed in only one copy).
+test_skill_files_reviewer_is_gpt56() {
+    local bad=""
+    bad="$bad$(_check_line_has_and_lacks "$REPO_ROOT/skills/sdlc/SKILL.md" 140 "5\.6,sol" "5\.5")"
+    bad="$bad$(_check_line_has_and_lacks "$REPO_ROOT/cowork/skills/sdlc/SKILL.md" 140 "5\.6,sol" "5\.5")"
+    if [ -z "$bad" ]; then
+        pass "skills/sdlc/SKILL.md and cowork/skills/sdlc/SKILL.md both reference GPT-5.6 Sol reviewer"
+    else
+        fail "skill file(s) stale reviewer-model reference(s):$bad"
+    fi
+}
+
+test_agents_md_reviewer_is_gpt56() {
+    local bad=""
+    bad="$bad$(_check_line_has_and_lacks "$REPO_ROOT/AGENTS.md" 16 "5\.6,Sol" "5\.5")"
+    if [ -z "$bad" ]; then
+        pass "AGENTS.md: lane summary references GPT-5.6 Sol reviewer"
+    else
+        fail "AGENTS.md stale reviewer-model reference(s):$bad"
+    fi
+}
+
+test_claude_md_reviewer_is_gpt56() {
+    local bad=""
+    bad="$bad$(_check_line_has_and_lacks "$REPO_ROOT/CLAUDE.md" 75 "5\.6,Sol" "5\.5")"
+    if [ -z "$bad" ]; then
+        pass "CLAUDE.md: cross-model safety check references GPT-5.6 Sol reviewer"
+    else
+        fail "CLAUDE.md stale reviewer-model reference(s):$bad"
+    fi
+}
+
+test_ai_setup_lanes_reviewer_is_gpt56
+test_readme_reviewer_is_gpt56
+test_readme_vending_bench_citation_untouched
+test_wizard_doc_reviewer_is_gpt56
+test_wizard_doc_e2e_audit_citation_untouched
+test_skill_files_reviewer_is_gpt56
+test_agents_md_reviewer_is_gpt56
+test_claude_md_reviewer_is_gpt56
+
+# ────────────────────────────────────────────
 # Summary
 # ────────────────────────────────────────────
 
