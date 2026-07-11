@@ -257,7 +257,7 @@ Claude Code's **effort level** controls how much thinking the model does before 
 | Opus 4.8 (escalation only) | `xhigh` | `max` triggers excessive reasoning on 4.7/4.8 — documented 40-60x cache-token jump vs `high` (see "Opus 4.6 Stability" tier below) |
 | Fable 5 (advisor) | `high` (its own designed default) | Adaptive thinking always on; `xhigh`/`max` mainly move the thinking-token budget with small marginal gain for review work |
 | Opus 4.6 (Stability lane) | `max` | The one model where `max` doesn't overthink — no `xhigh` support at all (only low/medium/high/max) |
-| OpenAI/Codex (cross-model reviewer) | `xhigh` (their highest) | Always — lower reasoning misses subtle bugs the reviewer exists to catch |
+| OpenAI/Codex (cross-model reviewer) | `xhigh` default, escalate to `max`/Pro for unusually risky PRs | Lower reasoning misses subtle bugs the reviewer exists to catch; see `AI_SETUP_LANES.md`'s Final Review Policy for when to escalate |
 
 **Strict effort behavior (Opus 4.7+, carried forward in 4.8):**
 - **`xhigh` was introduced in 4.7** — sits between `high` and `max`, designed for coding and agentic work (30+ minute tasks with token budgets in the millions)
@@ -1087,7 +1087,7 @@ This is **Setup C (OpusPlan Hybrid/Saver)** in `AI_SETUP_LANES.md`. CC's native 
 |-------|--------------------|--------------------|----------------------|
 | Planner | Opus 4.8 `xhigh` (Plan Mode) | Sonnet 5 `high`→`xhigh` | Opus 4.6 `max` |
 | Driver | Sonnet 5 `high` (execute mode) | Sonnet 5 `high`→`xhigh` | Opus 4.6 `max` |
-| Reviewer | GPT-5.5 xhigh | GPT-5.5 xhigh | GPT-5.5 xhigh |
+| Reviewer | GPT-5.6 Sol xhigh | GPT-5.6 Sol xhigh | GPT-5.6 Sol xhigh |
 
 **How to opt in:**
 ```json
@@ -1110,7 +1110,7 @@ Set effort per-session with `/effort` (planner `xhigh`, driver `high`) rather th
 **Prove-It Gate (#233 acceptance criterion):** mixed-mode ships only if pair-tested on 3+ simple repos shows Sonnet-coder + Opus-reviewer produces ≥ same SDLC scores as full-Opus baseline. The first version of the heuristic ships v1.38.0; pair-test results land in CHANGELOG before recommending mixed-mode as the default for any tier.
 
 **Tradeoffs (be honest):**
-- The Sonnet driver will drop some fine-grained self-review moves compared to an Opus-coder run — it's fast, less deliberate. The Opus planner and GPT-5.5 reviewer catch them, but expect more "fix in round 2" cycles.
+- The Sonnet driver will drop some fine-grained self-review moves compared to an Opus-coder run — it's fast, less deliberate. The Opus planner and GPT-5.6 Sol reviewer catch them, but expect more "fix in round 2" cycles.
 - Mixed-mode disables auto-mode (same as any pinned model). The pin is per-session — to switch back, remove the `model` line.
 
 ### Latest tier — Opus 4.8 (escalation model, #395)
@@ -3852,12 +3852,12 @@ Use an independent AI model from a different company as a code reviewer. The aut
 
 **Why this works:** Two AI systems from different companies (e.g., Claude writes, GPT reviews) provide adversarial diversity. They have fundamentally different training, different failure modes, and different strengths. What one misses, the other catches.
 
-**Use the best model at the deepest reasoning.** This is your quality gate — don't economize on it. Always use the latest, most capable model available (**GPT-5.5 if you have access**, otherwise GPT-5.4) at maximum reasoning effort (`xhigh` — this is non-negotiable, lower settings miss subtle errors). Cheaper/faster models miss things. The whole point is catching what the authoring model couldn't.
+**Use the best model at the deepest reasoning.** This is your quality gate — don't economize on it. Always use the latest, most capable model available (**GPT-5.6 Sol if you have access**, otherwise Terra) at `xhigh` reasoning effort (non-negotiable — lower settings miss subtle errors; preserve this baseline rather than downgrading it on a model bump). Cheaper/faster models miss things. The whole point is catching what the authoring model couldn't. For unusually risky PRs, escalating to `max` or Pro mode is defensible — see `AI_SETUP_LANES.md`'s Final Review Policy — but `xhigh` is the default; no published data shows the higher tiers catching meaningfully more real bugs on ordinary PR review.
 
 **Prerequisites:**
 - Codex CLI installed: `npm i -g @openai/codex`
 - OpenAI API key configured: `export OPENAI_API_KEY=...`
-- Codex CLI picks up your OpenAI account's best available model automatically. If you have GPT-5.5 access, `codex exec` uses it; otherwise it falls back to GPT-5.4. No config change needed on your side.
+- Codex CLI picks up your OpenAI account's best available model automatically. If you have GPT-5.6 Sol access, `codex exec` uses it; otherwise it falls back to Terra. No config change needed on your side.
 - This is a local workflow tool — not required for CI/CD
 
 **The Protocol:**

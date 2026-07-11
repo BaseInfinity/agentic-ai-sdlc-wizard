@@ -72,7 +72,7 @@ Key concepts:
 - PRs require 1 approving review and passing CI (`validate`)
 - E2E signal is advisory-only now, via `tests/e2e/local-shepherd.sh` run locally on maintainer's Max subscription (ROADMAP #212 Option 1)
 - Admin enforcement is on — no bypassing, even for repo owners
-- **Fable is the primary reviewer/advisor** (via `advisor()` or Fable subagent fallback when advisor is down). Codex (GPT-5.5) xhigh is the **cross-model safety check** — default to running before committing and pushing. Skip only with logged justification (e.g., single-line typo fix). Incident 2026-06-09: 4 PRs shipped without cross-model check, all had issues
+- **Fable is the primary reviewer/advisor** (via `advisor()` or Fable subagent fallback when advisor is down). Codex (GPT-5.6 Sol) xhigh is the **cross-model safety check** — default to running before committing and pushing. Skip only with logged justification (e.g., single-line typo fix). Incident 2026-06-09: 4 PRs shipped without cross-model check, all had issues
 
 ## Special Notes
 
