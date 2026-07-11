@@ -123,7 +123,7 @@ export OPENAI_API_KEY=sk-...
 codex --version   # confirm ready
 ```
 
-That's it. Codex picks up your OpenAI account's best available model automatically — **if you have GPT-5.5, it uses GPT-5.5; otherwise GPT-5.4**. No model config needed.
+That's it. Codex picks up your OpenAI account's best available model automatically — **if you have GPT-5.6 Sol, it uses Sol; otherwise it falls back to Terra**. No model config needed.
 
 **How to use it:** after Claude's self-review passes, write a one-file mission brief and run:
 
@@ -175,7 +175,7 @@ Or pin in `.claude/settings.json`:
 { "model": "sonnet", "advisorModel": "fable", "effortLevel": "xhigh" }
 ```
 
-**Effort is model-aware, not blanket `max`.** Sonnet 5: `high` default, `/effort xhigh` for hard tasks. Opus 4.8: `xhigh` (its own `max` overthinks). Opus 4.6: `max` (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc or settings env var — persisting effort that way silently overrides a later `/effort` change after you switch models (see `SDLC.md`'s Lessons Learned for a real incident this caused). OpenAI/Codex reviewer: `xhigh` (its highest).
+**Effort is model-aware, not blanket `max`.** Sonnet 5: `high` default, `/effort xhigh` for hard tasks. Opus 4.8: `xhigh` (its own `max` overthinks). Opus 4.6: `max` (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc or settings env var — persisting effort that way silently overrides a later `/effort` change after you switch models (see `SDLC.md`'s Lessons Learned for a real incident this caused). OpenAI/Codex reviewer: `xhigh` default — escalate to `max`/Pro mode only for unusually risky PRs (see `AI_SETUP_LANES.md`'s Final Review Policy).
 
 ### Four Setup Lanes
 
@@ -183,9 +183,9 @@ The wizard defines four AI coding setups in [`AI_SETUP_LANES.md`](AI_SETUP_LANES
 
 | Lane | Advisor | Driver | Reviewer | Escalation |
 |------|---------|--------|----------|------------|
-| **A — Recommended** | Fable 5 (advisorModel) | Sonnet 5, `high`→`xhigh` | GPT-5.5 xhigh | Opus 4.8 xhigh or Fable review |
-| **B — Stability** | Fable 5 (advisorModel) | Opus 4.6 max | GPT-5.5 xhigh | None |
-| **C — Saver** | Fable 5 or Opus 4.8 (advisorModel) | Opus 4.8 plans, Sonnet 5 executes | GPT-5.5 xhigh | None |
+| **A — Recommended** | Fable 5 (advisorModel) | Sonnet 5, `high`→`xhigh` | GPT-5.6 Sol xhigh | Opus 4.8 xhigh or Fable review |
+| **B — Stability** | Fable 5 (advisorModel) | Opus 4.6 max | GPT-5.6 Sol xhigh | None |
+| **C — Saver** | Fable 5 or Opus 4.8 (advisorModel) | Opus 4.8 plans, Sonnet 5 executes | GPT-5.6 Sol xhigh | None |
 | **D — Lite** | None | Sonnet 5, `medium` | None | None |
 
 Setup D's whole point: **the discipline of knowing when NOT to use discipline.** When blast radius is low and you just need fast cheap hands, skip the SDLC overhead.
