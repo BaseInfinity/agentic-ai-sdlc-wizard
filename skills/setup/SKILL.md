@@ -245,7 +245,7 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 > How do you want to configure the model for this repo?
 >
 > - **[N] No pin (default):** Auto-mode. CC picks model per turn. Simplest, no advisor.
-> - **[s] Sonnet 5 + Fable** *(Setup A — recommended if you want a pin):* Pins `model: "sonnet"`, `advisorModel: "fable"`. Native 1M context, no `[1m]` suffix needed. Beats Opus 4.6 on every coding benchmark at ~5x less Max quota per turn. Effort: `high`, escalate to `xhigh` for hard tasks.
+> - **[s] Sonnet 5 + Fable** *(Setup A — recommended if you want a pin):* Pins `model: "sonnet"`, `advisorModel: "fable"`. Native 1M context, no `[1m]` suffix needed. Beats Opus 4.6 on every coding benchmark, generally lower Max quota. Effort: `medium`, escalate `high` → `xhigh` for hard tasks.
 > - **[o] OpusPlan Hybrid** *(Setup C — cost-conscious, still want Opus reasoning):* Pins `model: "opusplan"`. Opus 4.8 plans (Shift+Tab), Sonnet 5 executes. Max-bundled. No API credit drain (#390).
 > - **[b] Opus 4.6 Stability** *(Setup B — legacy flagship, proven consistency for high-stakes/complex repos):* Pins `model: "claude-opus-4-6"`. Opus 4.6 max everywhere. Max-bundled (auto-upgrades to 1M on Max plans).
 >
@@ -259,14 +259,14 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 {
   "model": "sonnet",
   "advisorModel": "fable",
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"
   }
 }
 ```
 
-Tell the user: "Sonnet 5 + Fable — the wizard's recommended pin (Setup A). Effort defaults to `high`, escalate via `/effort xhigh` for hard tasks. Requires CC v2.1.170+ — run `! claude update` if needed."
+Tell the user: "Sonnet 5 + Fable — the wizard's recommended pin (Setup A). Effort: `medium`, escalate `/effort high` → `xhigh` for hard tasks. Requires CC v2.1.170+ — run `! claude update` if needed."
 
 **If the user answers `o` (opusplan):** Edit `.claude/settings.json` and add:
 

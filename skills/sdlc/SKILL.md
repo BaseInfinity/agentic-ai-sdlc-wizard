@@ -119,7 +119,7 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 ## Recommended Model
 
-**Recommended: Sonnet 5 `high`→`xhigh`** — beats Opus 4.6, ~5x less quota. Escalate to **Opus 4.8 `xhigh`** when stuck. **Opus 4.6 `max`** valid for consistency. See `AI_SETUP_LANES.md`.
+**Recommended: Sonnet 5 `medium`→`high`→`xhigh`** — beats Opus 4.6 on benchmarks, generally lower quota (savings narrow at high/xhigh). Escalate to **Opus 4.8 `xhigh`** when stuck. **Opus 4.6 `max`** valid for consistency. See `AI_SETUP_LANES.md`.
 
 **Effort is model-aware, not blanket `max`** — `max` overthinks on Sonnet 5/Opus 4.8. Set via `/effort` per session, not a shell-rc env var (overrides post-switch — see SDLC.md). `/model` persists; picker `s` does not.
 
