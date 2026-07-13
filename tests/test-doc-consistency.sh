@@ -1255,12 +1255,13 @@ test_ai_setup_lanes_reviewer_is_gpt56() {
     local bad=""
     # "5\.6" AND "Sol" (not just one or the other) so a Sol->Terra swap, or a
     # future GPT-5.7 Sol rename, both fail.
-    for n in 13 16 28 41 43 119 164 168 206 207 210; do
+    # (Line numbers re-pinned +4 after the 2026-07-13 Setup A clarity insertion.)
+    for n in 13 16 32 45 47 123 168 172 210 211 214; do
         bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
     done
-    # L123 is the fallback-chain line: must name "5\.6" AND BOTH Sol (primary)
+    # L127 is the fallback-chain line: must name "5\.6" AND BOTH Sol (primary)
     # and Terra (fallback target) so a Terra->Luna swap also fails.
-    bad="$bad$(_check_line_has_and_lacks "$F" 123 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    bad="$bad$(_check_line_has_and_lacks "$F" 127 "5\.6,Sol,Terra" "5\.5" "5\.4")"
     if [ -z "$bad" ]; then
         pass "AI_SETUP_LANES.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
     else
@@ -1473,6 +1474,46 @@ test_no_unbacked_5x_quota_claim
 test_sonnet5_default_effort_is_medium
 test_no_unsupported_sonnet5_sweet_spot
 test_opus46_max_sweet_spot_guard
+
+# #440 follow-up (maintainer ask 2026-07-13): Setup A's two escalation axes and
+# the advisor-failure fallback kept getting re-confused ("sonnet 5 xhigh? or
+# high?" / "sometimes advisor fails then we need a sub agent remember").
+# Both README and AI_SETUP_LANES must state, explicitly:
+#   (a) model escalation SWAPS THE DRIVER (Opus 4.8 xhigh takes over) — it is
+#       not a higher rung on Sonnet's effort ladder;
+#   (b) when advisor() errors, the fallback is spawning a Fable subagent — the
+#       check is never skipped (same rule the /sdlc skill already carries).
+test_setup_a_escalation_and_advisor_fallback_explicit() {
+    local bad=""
+    grep -q 'takes over as driver' "$REPO_ROOT/AI_SETUP_LANES.md" \
+        || bad="$bad AI_SETUP_LANES.md:driver-swap"
+    grep -q 'spawn a Fable subagent' "$REPO_ROOT/AI_SETUP_LANES.md" \
+        || bad="$bad AI_SETUP_LANES.md:advisor-fallback"
+    grep -q 'takes over as driver' "$REPO_ROOT/README.md" \
+        || bad="$bad README.md:driver-swap"
+    grep -q 'spawn a Fable subagent' "$REPO_ROOT/README.md" \
+        || bad="$bad README.md:advisor-fallback"
+    # Negative half (Codex round-1 P1-3): positive assertions alone false-green
+    # while the advisor-outage procedure still offers a "no advisor" path. The
+    # outage section must route to the subagent fallback, never to skipping.
+    local outage
+    outage="$(sed -n '/^## When the Advisor Is Unavailable/,/^## [^W]/p' "$REPO_ROOT/AI_SETUP_LANES.md")"
+    if [ -z "$outage" ]; then
+        bad="$bad AI_SETUP_LANES.md:outage-section-missing"
+    else
+        printf '%s' "$outage" | grep -qiE 'no advisor|without the advisor' \
+            && bad="$bad AI_SETUP_LANES.md:outage-still-offers-skip-path"
+        printf '%s' "$outage" | grep -q 'Fable subagent' \
+            || bad="$bad AI_SETUP_LANES.md:outage-missing-subagent-fallback"
+    fi
+    if [ -z "$bad" ]; then
+        pass "Setup A: driver-swap escalation + advisor subagent fallback explicit in README and AI_SETUP_LANES"
+    else
+        fail "Setup A clarity missing:$bad"
+    fi
+}
+
+test_setup_a_escalation_and_advisor_fallback_explicit
 
 # ────────────────────────────────────────────
 # Summary
