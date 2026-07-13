@@ -142,7 +142,7 @@ codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access \
 
 The wizard ships a **default recommendation**, not a mandate. You can swap to any Claude model — newer, older, or sibling tier — at any time. `/model` per session, or pin in `.claude/settings.json`.
 
-**Default: Sonnet 5 at `high` effort, escalating to `xhigh`** (Setup A in `AI_SETUP_LANES.md`). Sonnet 5 (launched 2026-06-30) beats Opus 4.6 on every coding benchmark (SWE-bench Verified 85.2% vs 80.8%, Terminal-Bench 2.1 80.4% vs 65.4%) while using ~5x less Max quota per turn. Opus 4.6 remains available as **Setup B — Stability** for proven-consistency workflows; here's why it's no longer the default.
+**Default: Sonnet 5 at `medium` effort, escalating to `high`/`xhigh`** (Setup A in `AI_SETUP_LANES.md`). Sonnet 5 (launched 2026-06-30) beats Opus 4.6 on every coding benchmark (SWE-bench Verified 85.2% vs 80.8%, Terminal-Bench 2.1 80.4% vs 65.4%) while generally using less Max quota — savings vary by effort level and narrow at `high`/`xhigh` (newer tokenizer, more agentic turns per task). Opus 4.6 remains available as **Setup B — Stability** for proven-consistency workflows; here's why it's no longer the default.
 
 ### Why Opus 4.6 was the flagship, and why that changed
 
@@ -156,7 +156,7 @@ Two weeks of in-the-wild data after Opus 4.8's launch (2026-05-28) showed a clea
 - **[BSWEN effort decision guide](https://docs.bswen.com/blog/2026-04-19-claude-code-effort-level-decision-guide/)** — "Max on Opus causes overthinking on routine stuff. xHigh is the sweet spot for autonomous work"
 - **r/Claudeopus field reports** — one maintainer's literal A/B: "12 hours with 4.8 zero deliverables; plugged in 4.6, spec written + 133 tests green in one session." Top comment: "4.6 had the best overall balance at max"
 
-That research still stands — it's why **Opus 4.6 remains Setup B (Stability)** rather than being dropped entirely, and why the wizard escalates to Opus **4.8** (not a blanket "latest") only when Sonnet 5 gets stuck. But Sonnet 5's June 30 launch changed the calculus for the *default*: it beats Opus 4.6 on every benchmark above at a fraction of the quota cost, so it's no longer a tradeoff between "reliable but weaker" and "strong but overthinks" — Sonnet 5 doesn't have Opus 4.8's overthinking problem in the first place.
+That research still stands — it's why **Opus 4.6 remains Setup B (Stability)** rather than being dropped entirely, and why the wizard escalates to Opus **4.8** (not a blanket "latest") only when Sonnet 5 gets stuck. But Sonnet 5's June 30 launch changed the calculus for the *default*: it beats Opus 4.6 on every benchmark above at generally lower quota cost, so it's no longer a tradeoff between "reliable but weaker" and "strong but overthinks" — Sonnet 5 doesn't have Opus 4.8's overthinking problem in the first place.
 
 4.6 remains Anthropic-supported until **≥ Feb 5, 2027** per the [official deprecation page](https://platform.claude.com/docs/en/about-claude/model-deprecations), so Setup B stays a safe long-term choice if you've tuned a workflow to its behavior specifically.
 
@@ -172,10 +172,10 @@ That research still stands — it's why **Opus 4.6 remains Setup B (Stability)**
 Or pin in `.claude/settings.json`:
 
 ```json
-{ "model": "sonnet", "advisorModel": "fable", "effortLevel": "xhigh" }
+{ "model": "sonnet", "advisorModel": "fable", "effortLevel": "medium" }
 ```
 
-**Effort is model-aware, not blanket `max`.** Sonnet 5: `high` default, `/effort xhigh` for hard tasks. Opus 4.8: `xhigh` (its own `max` overthinks). Opus 4.6: `max` (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc or settings env var — persisting effort that way silently overrides a later `/effort` change after you switch models (see `SDLC.md`'s Lessons Learned for a real incident this caused). OpenAI/Codex reviewer: `xhigh` default — escalate to `max`/Pro mode only for unusually risky PRs (see `AI_SETUP_LANES.md`'s Final Review Policy).
+**Effort is model-aware, not blanket `max`.** Sonnet 5: `medium` default (CodeRabbit-tested), escalate `/effort high` → `xhigh` for hard tasks. Opus 4.8: `xhigh` (its own `max` overthinks). Opus 4.6: `max` (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc or settings env var — persisting effort that way silently overrides a later `/effort` change after you switch models (see `SDLC.md`'s Lessons Learned for a real incident this caused). OpenAI/Codex reviewer: `xhigh` default — escalate to `max`/Pro mode only for unusually risky PRs (see `AI_SETUP_LANES.md`'s Final Review Policy).
 
 ### Four Setup Lanes
 
@@ -183,7 +183,7 @@ The wizard defines four AI coding setups in [`AI_SETUP_LANES.md`](AI_SETUP_LANES
 
 | Lane | Advisor | Driver | Reviewer | Escalation |
 |------|---------|--------|----------|------------|
-| **A — Recommended** | Fable 5 (advisorModel) | Sonnet 5, `high`→`xhigh` | GPT-5.6 Sol xhigh | Opus 4.8 xhigh or Fable review |
+| **A — Recommended** | Fable 5 (advisorModel) | Sonnet 5, `medium`→`high`→`xhigh` | GPT-5.6 Sol xhigh | Opus 4.8 xhigh or Fable review |
 | **B — Stability** | Fable 5 (advisorModel) | Opus 4.6 max | GPT-5.6 Sol xhigh | None |
 | **C — Saver** | Fable 5 or Opus 4.8 (advisorModel) | Opus 4.8 plans, Sonnet 5 executes | GPT-5.6 Sol xhigh | None |
 | **D — Lite** | None | Sonnet 5, `medium` | None | None |

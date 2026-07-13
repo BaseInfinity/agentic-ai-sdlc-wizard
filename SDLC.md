@@ -14,10 +14,10 @@
 | Last Updated | 2026-07-04 |
 | Claude Code Minimum | v2.1.154+ (required for `opus[1m]` alias resolution); v2.1.105+ for `PreCompact` hook |
 | Claude Code Recommended | v2.1.195+ — comma-separated hook matcher fix (v2.1.191), hyphenated matcher exact-match fix (v2.1.195), `sandbox.credentials` setting (v2.1.187), `autoMode.classifyAllShell` setting (v2.1.193) |
-| Recommended Model | Sonnet 5 (default) — beats Opus 4.6 on benchmarks at ~5x less quota. Escalate to Opus 4.8 `xhigh` when stuck. Opus 4.6 `max` remains valid for proven consistency. See `AI_SETUP_LANES.md`. |
-| Recommended Effort | Model-aware — Sonnet 5: `high` default, `xhigh` for hard tasks. Opus 4.8/Fable: `xhigh`/`high`. Opus 4.6: `max` only (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc env var. |
+| Recommended Model | Sonnet 5 (default) — beats Opus 4.6 on benchmarks at generally lower quota (savings vary by effort; narrows at `high`/`xhigh`). Escalate to Opus 4.8 `xhigh` when stuck. Opus 4.6 `max` remains valid for proven consistency. See `AI_SETUP_LANES.md`. |
+| Recommended Effort | Model-aware — Sonnet 5: `medium` default (CodeRabbit-tested), escalate `high` → `xhigh` for hard tasks. Opus 4.8/Fable: `xhigh`/`high`. Opus 4.6: `max` only (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc env var. |
 
-> **Effort warning:** below your model's floor (`high`/`xhigh`/`max` — see table above) = degraded reasoning, shallow TDD, weak self-review. Persisting effort via a shell-rc env var (`CLAUDE_CODE_EFFORT_LEVEL=max`) is an anti-pattern — see the Model Configuration entry under Lessons Learned below.
+> **Effort warning:** below your model's floor (`medium`/`high`/`xhigh`/`max` per model — see table above) = degraded reasoning, shallow TDD, weak self-review. Persisting effort via a shell-rc env var (`CLAUDE_CODE_EFFORT_LEVEL=max`) is an anti-pattern — see the Model Configuration entry under Lessons Learned below.
 
 See `CLAUDE_CODE_SDLC_WIZARD.md` → "1M vs 200K Context Window" for the rationale and pricing notes.
 

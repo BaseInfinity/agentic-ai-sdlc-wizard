@@ -253,7 +253,7 @@ Claude Code's **effort level** controls how much thinking the model does before 
 
 | Model | Recommended Effort | Why |
 |-------|--------------------|-----|
-| Sonnet 5 (recommended default) | `high`, escalate to `xhigh` for hard tasks | `xhigh` as a blanket default doubles cost for marginal gains per CodeRabbit testing; `high` is the tested sweet spot |
+| Sonnet 5 (recommended default) | `medium`, escalate to `high`/`xhigh` for hard tasks | CodeRabbit testing: `medium` captures most of the upside at the lowest cost; blanket `xhigh`/`max` defaults add cost for marginal gains |
 | Opus 4.8 (escalation only) | `xhigh` | `max` triggers excessive reasoning on 4.7/4.8 — documented 40-60x cache-token jump vs `high` (see "Opus 4.6 Stability" tier below) |
 | Fable 5 (advisor) | `high` (its own designed default) | Adaptive thinking always on; `xhigh`/`max` mainly move the thinking-token budget with small marginal gain for review work |
 | Opus 4.6 (Stability lane) | `max` | The one model where `max` doesn't overthink — no `xhigh` support at all (only low/medium/high/max) |
@@ -1085,8 +1085,8 @@ This is **Setup C (OpusPlan Hybrid/Saver)** in `AI_SETUP_LANES.md`. CC's native 
 
 | Layer | Setup C (OpusPlan) | Setup A (default) | Setup B (Stability) |
 |-------|--------------------|--------------------|----------------------|
-| Planner | Opus 4.8 `xhigh` (Plan Mode) | Sonnet 5 `high`→`xhigh` | Opus 4.6 `max` |
-| Driver | Sonnet 5 `high` (execute mode) | Sonnet 5 `high`→`xhigh` | Opus 4.6 `max` |
+| Planner | Opus 4.8 `xhigh` (Plan Mode) | Sonnet 5 `medium`→`high`→`xhigh` | Opus 4.6 `max` |
+| Driver | Sonnet 5 `medium` (execute mode) | Sonnet 5 `medium`→`high`→`xhigh` | Opus 4.6 `max` |
 | Reviewer | GPT-5.6 Sol xhigh | GPT-5.6 Sol xhigh | GPT-5.6 Sol xhigh |
 
 **How to opt in:**
@@ -2385,7 +2385,7 @@ Before presenting approach, STATE your confidence:
 | FAILED 2x | Something's wrong | STOP. ASK USER immediately | **Escalate effort now** — you're burning cycles at lower effort |
 | CONFUSED | Can't diagnose why something is failing | STOP. Describe what you tried, ask for help | **Escalate effort now** — stop spinning |
 
-"Model default" and "escalate" are model-aware, not a blanket `max` — see "Recommended Effort Level" above for the per-model table (Sonnet 5: `high`→`xhigh`; Opus 4.8: `xhigh`; Opus 4.6: `max`; Fable: `high`).
+"Model default" and "escalate" are model-aware, not a blanket `max` — see "Recommended Effort Level" above for the per-model table (Sonnet 5: `medium`→`high`→`xhigh`; Opus 4.8: `xhigh`; Opus 4.6: `max`; Fable: `high`).
 
 **Dynamic bumping is NOT optional.** "Consider higher effort" is the same as "ignore this" in practice. If your confidence drops or tests fail twice, bump effort BEFORE the next attempt — spinning at low effort is an SDLC failure mode.
 
