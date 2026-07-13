@@ -341,7 +341,7 @@ CC 2.1.117 expanded the `cleanupPeriodDays` setting to also cover `~/.claude/tas
 ---
 name: sdlc
 description: Full SDLC workflow for implementing features, fixing bugs, refactoring code
-argument-hint: [task description]
+argument-hint: "[task description]"
 ---
 
 ## Task
@@ -2274,7 +2274,7 @@ Create `.claude/skills/sdlc/SKILL.md`:
 ---
 name: sdlc
 description: Full SDLC workflow for implementing features, fixing bugs, refactoring code, testing, releasing, publishing, and deploying. Use this skill when implementing, fixing, refactoring, testing, adding features, building new code, or releasing/publishing/deploying.
-argument-hint: [task description]
+argument-hint: "[task description]"
 ---
 # SDLC Skill - Full Development Workflow
 
