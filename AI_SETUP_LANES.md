@@ -9,13 +9,13 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 | Role | Model | Effort |
 |------|-------|--------|
 | **Advisor** | Fable 5 (via `advisorModel: "fable"`) | `high` (server-side) |
-| **Driver** | Sonnet 5 (`claude-sonnet-5`) | `high` default, `/effort xhigh` for hard tasks |
+| **Driver** | Sonnet 5 (`claude-sonnet-5`) | `medium` default, escalate `high` → `xhigh` for hard tasks |
 | **Reviewer** | Codex (GPT-5.6 Sol) xhigh | — |
 | **Escalation** | Opus 4.8 xhigh or Fable 5 review | When stuck or high-stakes |
 
-The new standard. Sonnet 5 beats Opus 4.6 on every coding benchmark (SWE-bench Verified 85.2% vs 80.8%, Terminal-Bench 80.4% vs 65.4%) while using ~5x less Max quota per turn. Fable 5 advises at key decision points via native `advisorModel` (v2.1.170+). GPT-5.6 Sol xhigh reviews cross-family. Escalate to Opus 4.8 xhigh for the hardest debugging or architecture decisions — don't run Opus as the daily driver (burns Max limits 2-3x faster).
+The new standard. Sonnet 5 beats Opus 4.6 on every coding benchmark (SWE-bench Verified 85.2% vs 80.8%, Terminal-Bench 80.4% vs 65.4%) and generally uses less Max quota — but the savings are not a fixed ratio: Sonnet 5's newer tokenizer produces ~30% more tokens for the same text than Opus 4.6's (per Anthropic's pricing docs), and community cost reports suggest the advantage narrows at `high`/`xhigh`. No controlled Sonnet-5-vs-Opus-4.6 quota measurement exists — check your own burn with `/usage`. Fable 5 advises at key decision points via native `advisorModel` (v2.1.170+). GPT-5.6 Sol xhigh reviews cross-family. Escalate to Opus 4.8 xhigh for the hardest debugging or architecture decisions — don't run Opus as the daily driver.
 
-**Effort escalation ladder:** Start at `high` (Sonnet 5's default and sweet spot). Raise to `xhigh` when doing hard debugging, multi-file migrations, or long agent runs. `max` is rarely worth it — doubles cost for marginal gains per CodeRabbit testing.
+**Effort escalation ladder:** Start at `medium` — CodeRabbit's testing found it captures most of Sonnet 5's upside at the lowest cost. Raise to `high` when medium struggles, `xhigh` for hard debugging, multi-file migrations, or long agent runs. `max` is rarely worth it — doubles cost for marginal gains per the same CodeRabbit testing.
 
 **Requires:** Claude Code v2.1.197+ (Sonnet 5 alias resolution), Fable 5 access for advisor.
 
@@ -37,7 +37,7 @@ The consistency-first lane. Opus 4.6 is the only model where `max` effort works 
 |------|-------|--------|
 | **Planner** | Opus 4.8 (via Plan Mode — Shift+Tab) | `xhigh` |
 | **Advisor** | Fable 5 or Opus 4.8 (via `advisorModel`) | — |
-| **Driver** | Sonnet 5 (auto execute mode) | `high` |
+| **Driver** | Sonnet 5 (auto execute mode) | `medium`, escalate `high` for hard runs |
 | **Reviewer** | Codex (GPT-5.6 Sol) xhigh | — |
 
 Cost-efficient hybrid using CC's native `opusplan` alias. Opus 4.8 reasons during Plan Mode, Sonnet 5 executes. Max-bundled — no API credit drain. Pin `model: "opusplan"` + `advisorModel: "fable"` in project settings. Sonnet 5 now uses 1M context natively (no `[1m]` suffix needed). GPT-5.6 Sol xhigh is the cross-model reviewer.
@@ -56,7 +56,7 @@ The "just do the thing" lane. No TDD enforcement, no cross-model review, no plan
 
 ## When to Use Setup A
 
-The default choice for most SDLC work — full discipline (TDD, cross-model review) at a fraction of Setup B's quota cost:
+The default choice for most SDLC work — full discipline (TDD, cross-model review) at generally lower quota cost than Setup B (see Credit-Spend Warning below):
 
 - Feature implementation and routine development
 - Documentation and examples
@@ -157,9 +157,9 @@ Whichever path you use, the cross-model PR review gate still applies.
 
 ## Credit-Spend Warning
 
-**Setup B (Opus 4.6 max as both planner and driver) burns the 5-hour cap faster than Setup A** — Opus 4.6 max driving implementation is the expensive path; Sonnet 5 uses roughly 5x less quota per turn for comparable benchmark results. If you're hitting the cap mid-session on Setup B:
+**Setup B (Opus 4.6 max as both planner and driver) burns the 5-hour cap faster than Setup A** — Opus 4.6 max driving implementation is the expensive path; Sonnet 5 at `medium`/`high` generally uses less quota for comparable benchmark results (the advantage narrows at `xhigh` — more turns per task plus tokenizer overhead). If you're hitting the cap mid-session on Setup B:
 
-- Drop to Setup A (Sonnet 5) for the remainder of the day — same discipline, far less quota burn
+- Drop to Setup A (Sonnet 5) for the remainder of the day — same discipline, typically lower quota burn (widest advantage at `medium`)
 - Or drop to Setup D for grunt work that doesn't need deep reasoning
 - Or use Sonnet directly for the final mechanical edits, then run the GPT-5.6 Sol reviewer over the whole diff at the end
 
@@ -203,7 +203,7 @@ Credit allocations: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. **No rollover.*
 
 ### What this means for the lanes
 
-- **Setup A — Sonnet 5 + Fable advisor:** Sonnet 5's native 1M context — interactive session, Max-bundled, no `[1m]` suffix needed. Fable 5 advisor via `advisorModel: "fable"` — also Max-bundled. GPT-5.6 Sol xhigh reviewer on ChatGPT subscription. Roughly 5x less Max quota consumed per turn than Setup B.
+- **Setup A — Sonnet 5 + Fable advisor:** Sonnet 5's native 1M context — interactive session, Max-bundled, no `[1m]` suffix needed. Fable 5 advisor via `advisorModel: "fable"` — also Max-bundled. GPT-5.6 Sol xhigh reviewer on ChatGPT subscription. Generally lower Max quota consumption than Setup B at the `medium` default (savings shrink at higher effort).
 - **Setup B — Opus 4.6 Stability:** Opus 4.6 max driver on Max, 1M context included at standard rates (see above). Fable 5 advisor, Max-bundled. GPT-5.6 Sol xhigh reviewer, separate.
 - **Setup C — OpusPlan Hybrid:** **fully Max-bundled.** `opusplan` uses Opus (plan mode) + Sonnet (execute mode), both at their native context windows — no credit drain.
   - **⚠️ Avoid `sonnet[1m]` as a manual pin outside Setup A/C:** if your provider or gateway doesn't resolve Sonnet 5 to its native 1M automatically, forcing a `[1m]`-suffixed pin on an older Sonnet can draw from your usage credits pool ($3/$15 per Mtok) instead of your Max subscription. The `/model` picker shows this explicitly — watch for "Draws from usage credits."

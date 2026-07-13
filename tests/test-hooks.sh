@@ -120,16 +120,23 @@ test_model_effort_size_cap() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
-    # "medium" (below the high/xhigh/max floor) so the hook actually emits a
-    # warning to size-cap — "high" is silent as of v1.84.0.
-    echo '{"effortLevel":"medium"}' > "$tmpdir/.claude/settings.json"
-    local size
-    size=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null | wc -c | tr -d ' ')
+    # #440: probe BOTH warning paths — "low" (below the medium floor) and
+    # settings-only "max" (the LONGEST variant: effort_display carries the
+    # "(settings-only — CC ignores this)" suffix). "medium" is now silent and
+    # would make this test vacuous (Codex round-1 catch: it passed on 0 bytes
+    # while the real warning was 556 bytes).
+    local size max_size=0
+    for probe in low max; do
+        echo "{\"effortLevel\":\"$probe\"}" > "$tmpdir/.claude/settings.json"
+        size=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null | wc -c | tr -d ' ')
+        [ "$size" -eq 0 ] && { rm -rf "$tmpdir"; fail "model-effort-check emitted nothing for '$probe' — cap probe is vacuous"; return; }
+        [ "$size" -gt "$max_size" ] && max_size=$size
+    done
     rm -rf "$tmpdir"
-    if [ "$size" -lt 500 ]; then
-        pass "model-effort-check output is bounded (${size} chars < 500)"
+    if [ "$max_size" -lt 500 ]; then
+        pass "model-effort-check output is bounded (worst case ${max_size} chars < 500 across low + settings-only max)"
     else
-        fail "model-effort-check output exceeded cap (${size} chars ≥ 500)"
+        fail "model-effort-check output exceeded cap (${max_size} chars ≥ 500)"
     fi
 }
 
@@ -1797,10 +1804,11 @@ test_model_effort_check_silent_on_unset() {
 # Test: detects genuinely stale (below-floor) effort and outputs upgrade nudge
 # with model recommendation. The nudge must name the wizard's recommended
 # model alias so the command is copy-pasteable.
-# v1.84.0: `high` is now an acceptable floor (Sonnet 5's/Fable's tested
-# default) — only an EXPLICITLY set `medium`/`low` should still warn (#236(b):
-# unset itself no longer warns, tested above).
-test_model_effort_check_stale_effort() {
+# #440: `medium` is Sonnet 5's documented default (CodeRabbit-tested) — the
+# hook must not nag users for following the wizard's own recommendation.
+# Only an EXPLICITLY set `low` should still warn (#236(b): unset itself no
+# longer warns, tested above).
+test_model_effort_check_medium_silent() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude"
@@ -1808,12 +1816,27 @@ test_model_effort_check_stale_effort() {
     local output
     output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
+    if [ -z "$output" ]; then
+        pass "#440: model-effort-check.sh is silent on medium (Sonnet 5 documented default)"
+    else
+        fail "#440: medium should be silent (wizard's own recommended default), got: $output"
+    fi
+}
+
+test_model_effort_check_stale_effort() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    echo '{"effortLevel":"low"}' > "$tmpdir/.claude/settings.json"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
     if echo "$output" | grep -q '/effort' \
         && echo "$output" | grep -q 'WARNING' \
         && echo "$output" | grep -qF 'opusplan'; then
-        pass "model-effort-check.sh warns on effort=medium (below the high/xhigh/max floor)"
+        pass "model-effort-check.sh warns on effort=low (below the medium floor)"
     else
-        fail "model-effort-check.sh should warn on effort=medium, got: $output"
+        fail "model-effort-check.sh should warn on effort=low, got: $output"
     fi
 }
 
@@ -1866,7 +1889,7 @@ test_model_effort_check_xhigh_env_var_silent() {
 }
 
 # RECOMMENDED_MODELS must include Sonnet 5 — it's now the recommended default
-# driver (beats Opus 4.6 on every coding benchmark, ~5x lighter Max quota).
+# driver (beats Opus 4.6 on every coding benchmark at generally lower quota).
 test_model_effort_check_recommends_sonnet_5() {
     if grep -qi 'sonnet' "$HOOKS_DIR/model-effort-check.sh"; then
         pass "#434: model-effort-check.sh recommends Sonnet 5 (new default driver)"
@@ -1911,13 +1934,13 @@ test_settings_has_session_start_hook() {
 }
 
 # Test: nested CWD uses CLAUDE_PROJECT_DIR for settings (Codex P0 fix)
-# Uses "medium" (below the high/xhigh/max floor) so the hook still warns —
-# "high" is now silent (v1.84.0), which would defeat this test's purpose.
+# Uses "low" (below the medium floor) so the hook still warns — "medium" is
+# now silent (#440), which would defeat this test's purpose.
 test_model_effort_check_nested_cwd() {
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p "$tmpdir/.claude" "$tmpdir/src/deep"
-    echo '{"effortLevel":"medium"}' > "$tmpdir/.claude/settings.json"
+    echo '{"effortLevel":"low"}' > "$tmpdir/.claude/settings.json"
     local output
     output=$(cd "$tmpdir/src/deep" && echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="/nonexistent" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
@@ -1989,12 +2012,13 @@ test_model_effort_check_below_xhigh_loud_warning() {
     local tmpdir
     tmpdir=$(mktemp -d)
     local fails=0
-    for bad_effort in medium low; do
+    # #440: medium is now silent (Sonnet 5's documented default) — only low warns
+    for bad_effort in low; do
         mkdir -p "$tmpdir/.claude"
         echo "{\"effortLevel\":\"$bad_effort\"}" > "$tmpdir/.claude/settings.json"
         local output
         output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
-        # Must contain: WARNING marker, SDLC mention, explicit /effort xhigh recommendation
+        # Must contain: WARNING marker, SDLC mention, explicit /effort recommendation
         if ! echo "$output" | grep -q 'WARNING'; then
             fails=$((fails+1))
             echo "  [$bad_effort] missing WARNING marker: $output" >&2
@@ -2003,17 +2027,17 @@ test_model_effort_check_below_xhigh_loud_warning() {
             fails=$((fails+1))
             echo "  [$bad_effort] missing SDLC mention: $output" >&2
         fi
-        if ! echo "$output" | grep -q '/effort xhigh'; then
+        if ! echo "$output" | grep -q '/effort'; then
             fails=$((fails+1))
-            echo "  [$bad_effort] missing '/effort xhigh' recommendation: $output" >&2
+            echo "  [$bad_effort] missing '/effort' recommendation: $output" >&2
         fi
         rm -rf "$tmpdir/.claude"
     done
     rm -rf "$tmpdir"
     if [ "$fails" -eq 0 ]; then
-        pass "model-effort-check.sh produces LOUD WARNING + SDLC + /effort xhigh for medium/low"
+        pass "model-effort-check.sh produces LOUD WARNING + SDLC + /effort recommendation for low"
     else
-        fail "model-effort-check.sh LOUD warning has $fails missing markers across medium/low"
+        fail "model-effort-check.sh LOUD warning has $fails missing markers for low"
     fi
 }
 
@@ -2045,6 +2069,7 @@ test_instructions_loaded_no_duplicate_effort_nudge() {
 
 test_model_effort_check_exists
 test_model_effort_check_silent_on_unset
+test_model_effort_check_medium_silent
 test_model_effort_check_stale_effort
 test_model_effort_check_high_silent
 test_model_effort_check_xhigh_silent

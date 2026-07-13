@@ -1370,6 +1370,111 @@ test_agents_md_reviewer_is_gpt56
 test_claude_md_reviewer_is_gpt56
 
 # ────────────────────────────────────────────
+# ROADMAP #440: unbacked "~5x less quota" claim removed; Sonnet 5 default
+# effort is medium (CodeRabbit-tested), not the unsupported "high sweet spot"
+# ────────────────────────────────────────────
+
+# The "~5x less Max quota" figure was traced to commit ab6fc9c with zero
+# supporting measurement (no source in the commit, CHANGELOG, ROADMAP, or
+# review artifacts). It must not appear anywhere in live guidance — repo-wide
+# sweep (Fable round-1 root-cause: a fixed file list misses stragglers), with
+# variant phrasings ("5x less/lighter/fewer/lower") all caught.
+# ROADMAP*.md/CHANGELOG.md/.reviews/ are historical record, intentionally
+# excluded.
+test_no_unbacked_5x_quota_claim() {
+    # Codex round-1 catch: the claim also survives as rewordings — "fraction
+    # of the quota cost", "far less quota" — not just the literal "5x". Ban
+    # the whole unqualified-multiplier class.
+    local hits
+    hits=$(grep -rliE "5x (less|lighter|fewer|lower)|fraction of (Setup B's |the )?quota|far less quota" \
+        "$REPO_ROOT" \
+        --include="*.md" \
+        --exclude="ROADMAP.md" --exclude="ROADMAP_ARCHIVE.md" \
+        --exclude="CHANGELOG.md" \
+        --exclude-dir=".reviews" --exclude-dir="node_modules" \
+        --exclude-dir=".git" 2>/dev/null || true)
+    if [ -z "$hits" ]; then
+        pass "#440: no live-guidance file carries an unqualified quota-multiplier claim (repo-wide)"
+    else
+        fail "#440: unqualified quota-multiplier claim still present in: $(echo "$hits" | tr '\n' ' ')"
+    fi
+}
+
+# Sonnet 5's documented default effort is medium — per CodeRabbit's testing
+# (the same source already cited for the max-doubles-cost claim), confirmed
+# independently by Fable + Codex xhigh 2026-07-12. Each live-guidance file
+# must state the medium default in its own idiom.
+test_sonnet5_default_effort_is_medium() {
+    local bad=""
+    grep -q 'medium` default' "$REPO_ROOT/AI_SETUP_LANES.md" \
+        || bad="$bad AI_SETUP_LANES.md(driver-row)"
+    grep -q 'Start at `medium`' "$REPO_ROOT/AI_SETUP_LANES.md" \
+        || bad="$bad AI_SETUP_LANES.md(ladder)"
+    grep -q 'Sonnet 5 at `medium` effort' "$REPO_ROOT/README.md" \
+        || bad="$bad README.md(default-line)"
+    grep -q 'Sonnet 5: `medium` default' "$REPO_ROOT/README.md" \
+        || bad="$bad README.md(effort-line)"
+    grep -q 'Sonnet 5: `medium` default' "$REPO_ROOT/SDLC.md" \
+        || bad="$bad SDLC.md"
+    grep -q 'Sonnet 5 `medium`' "$REPO_ROOT/skills/sdlc/SKILL.md" \
+        || bad="$bad skills/sdlc/SKILL.md"
+    grep -q 'Sonnet 5 `medium`' "$REPO_ROOT/cowork/skills/sdlc/SKILL.md" \
+        || bad="$bad cowork/skills/sdlc/SKILL.md"
+    grep -q 'Effort: `medium`' "$REPO_ROOT/skills/setup/SKILL.md" \
+        || bad="$bad skills/setup/SKILL.md"
+    grep -q 'Sonnet 5 (recommended default) | `medium`' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" \
+        || bad="$bad CLAUDE_CODE_SDLC_WIZARD.md(effort-table)"
+    # Codex round-1 catch: presence-of-medium alone false-greens while a
+    # contradictory high-default ladder survives elsewhere in the same repo
+    # (README.md's lane table said "Sonnet 5, `high`→`xhigh`"). Repo-wide
+    # absence check for the stale ladder shape.
+    local stale
+    stale=$(grep -rlE 'Sonnet 5,? .?high.?→' "$REPO_ROOT" \
+        --include="*.md" \
+        --exclude="ROADMAP.md" --exclude="ROADMAP_ARCHIVE.md" \
+        --exclude="CHANGELOG.md" \
+        --exclude-dir=".reviews" --exclude-dir="node_modules" \
+        --exclude-dir=".git" 2>/dev/null || true)
+    [ -n "$stale" ] && bad="$bad stale-high-ladder-in:$(echo "$stale" | tr '\n' ',')"
+    if [ -z "$bad" ]; then
+        pass "#440: Sonnet 5 default effort is medium in all live-guidance files (no stale high-ladder anywhere)"
+    else
+        fail "#440: Sonnet 5 medium default missing in:$bad"
+    fi
+}
+
+# The "high is Sonnet 5's sweet spot" framing had no measurement behind it —
+# CodeRabbit (the cited source) actually recommends medium. The two stale
+# phrasings must be gone.
+test_no_unsupported_sonnet5_sweet_spot() {
+    local bad=""
+    grep -q 'default and sweet spot' "$REPO_ROOT/AI_SETUP_LANES.md" \
+        && bad="$bad AI_SETUP_LANES.md"
+    grep -q 'is the tested sweet spot' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" \
+        && bad="$bad CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ -z "$bad" ]; then
+        pass "#440: unsupported 'high sweet spot' framing removed"
+    else
+        fail "#440: unsupported 'high sweet spot' framing still present in:$bad"
+    fi
+}
+
+# Guard: Opus 4.6's max-is-the-sweet-spot claim is a DIFFERENT, community-
+# supported claim and must survive the #440 cleanup untouched.
+test_opus46_max_sweet_spot_guard() {
+    if grep -q '4\.6 is the only Opus where `max`' "$REPO_ROOT/AI_SETUP_LANES.md"; then
+        pass "#440 guard: Opus 4.6 max sweet-spot claim survives (separate, supported claim)"
+    else
+        fail "#440 guard: Opus 4.6 max sweet-spot claim was collaterally removed from AI_SETUP_LANES.md"
+    fi
+}
+
+test_no_unbacked_5x_quota_claim
+test_sonnet5_default_effort_is_medium
+test_no_unsupported_sonnet5_sweet_spot
+test_opus46_max_sweet_spot_guard
+
+# ────────────────────────────────────────────
 # Summary
 # ────────────────────────────────────────────
 
