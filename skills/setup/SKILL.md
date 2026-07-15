@@ -1,7 +1,7 @@
 ---
 name: setup-wizard
 description: Setup wizard — scans codebase, builds confidence per data point, only asks what it can't figure out, generates SDLC files. Use for first-time setup or re-running setup.
-argument-hint: [optional: regenerate | verify-only]
+argument-hint: "[optional: regenerate | verify-only]"
 effort: high
 ---
 # Setup Wizard - Confidence-Driven Project Configuration

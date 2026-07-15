@@ -1,7 +1,7 @@
 ---
 name: update-wizard
 description: Smart update for SDLC wizard — shows changelog, compares files, lets you selectively adopt changes while preserving customizations.
-argument-hint: [optional: check-only | force-all]
+argument-hint: "[optional: check-only | force-all]"
 effort: high
 ---
 # Update Wizard - Smart SDLC Update
