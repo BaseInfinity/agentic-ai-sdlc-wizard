@@ -1,5 +1,5 @@
 ---
-name: setup-wizard
+name: claude-setup-wizard
 description: Setup wizard — scans codebase, builds confidence per data point, only asks what it can't figure out, generates SDLC files. Use for first-time setup or re-running setup.
 argument-hint: "[optional: regenerate | verify-only]"
 effort: high
@@ -126,7 +126,7 @@ Reference: See "Step 8" in `CLAUDE_CODE_SDLC_WIZARD.md` for the full template.
 >
 > Pick A, B, or C: `[A/B/C]`
 
-Default if no response: **A** (dual-maintain). Document the user's choice as a one-line comment in their project's `SDLC.md` (e.g. `<!-- AGENTS.md interop: dual-maintain (per ROADMAP #205 phase a) -->`). v1.42.0 does NOT teach `/update-wizard` to parse this metadata key — that's phase (d) work. The comment is for the user's own reference and for whatever future `/update-wizard` version adds AGENTS-aware behavior.
+Default if no response: **A** (dual-maintain). Document the user's choice as a one-line comment in their project's `SDLC.md` (e.g. `<!-- AGENTS.md interop: dual-maintain (per ROADMAP #205 phase a) -->`). v1.42.0 does NOT teach `/claude-update-wizard` to parse this metadata key — that's phase (d) work. The comment is for reference and future `/claude-update-wizard` AGENTS-aware behavior.
 
 **If NO `AGENTS.md` exists**: skip this step silently. Phase (b) of #205 (offer to ALSO generate AGENTS.md alongside CLAUDE.md) is deferred — not in v1.42.0 scope.
 
@@ -299,7 +299,7 @@ Tell the user: "Opus 4.6 max everywhere with Fable advisor — legacy flagship (
 
 Mention the escape hatch in all four cases:
 - To opt out later: remove the `model` line (and optionally the `env`/`effortLevel` keys) from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".
-- To switch tiers later: edit `.claude/settings.json` and replace the `model` value, or re-run `/setup-wizard` Step 9.5.
+- To switch tiers later: edit `.claude/settings.json` and replace the `model` value, or re-run `/claude-setup-wizard` Step 9.5.
 - For CI pipelines with short tasks (Setup B only), consider `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=60` — compact early to stay fast.
 
 This is project-scoped and shared with the team via git.

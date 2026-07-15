@@ -241,7 +241,7 @@ When Anthropic provides official plugins or tools that handle something:
 | **Claude Code v2.1.69+** | Required for InstructionsLoaded hook, skill directory variable, and Tasks system |
 | **Git repository** | Files should be committed for team sharing |
 
-**Blank repos (no CLAUDE.md, no code):** The wizard works on empty repos. Run `npx -y agentic-sdlc-wizard@latest init` — it installs hooks, skills, and the wizard doc. (The `@latest` pin guards against stale npx caches per #358.) On first session, the hooks detect missing SDLC files and redirect to `/setup-wizard`, which generates CLAUDE.md, SDLC.md, TESTING.md, and ARCHITECTURE.md interactively. You do NOT need to run Claude's built-in `/init` first — the setup wizard handles everything.
+**Blank repos (no CLAUDE.md, no code):** The wizard works on empty repos. Run `npx -y agentic-sdlc-wizard@latest init` — it installs hooks, skills, and the wizard doc. (The `@latest` pin guards against stale npx caches per #358.) On first session, the hooks detect missing SDLC files and redirect to `/claude-setup-wizard`, which generates CLAUDE.md, SDLC.md, TESTING.md, and ARCHITECTURE.md interactively. You do NOT need to run Claude's built-in `/init` first — the setup wizard handles everything.
 
 ---
 
@@ -369,7 +369,7 @@ Claude Code now has built-in auto-memory that persists context across sessions. 
 
 **Wizard behavior** (v1.42.0, phase a only):
 
-- **Setup skill detects existing AGENTS.md** during Step 1 auto-scan. If found, Step 4.5 surfaces a 3-way decision: dual-maintain (default, recommended), merge (manual in phase a), or skip. The user's choice is recorded as a one-line comment in their project's `SDLC.md` for their own reference. **`/update-wizard` does NOT parse this comment** — that wiring is phase (d) work, not v1.42.0 scope.
+- **Setup skill detects existing AGENTS.md** during Step 1 auto-scan. If found, Step 4.5 surfaces a 3-way decision: dual-maintain (default, recommended), merge (manual in phase a), or skip. The user's choice is recorded as a one-line comment in their project's `SDLC.md` for their own reference. **`/claude-update-wizard` does NOT parse this comment** — that wiring is phase (d) work, not v1.42.0 scope.
 - **No automatic merge / symlink yet** — phase (a) is detection + decision surfacing only. Option B in the prompt is "record your intent, do the copy by hand"; the wizard does not perform any merge in this phase.
 
 **Deferred phases** (not in v1.42.0 scope):
@@ -536,7 +536,7 @@ CC 2.1.118 introduced `type: "mcp_tool"` for hooks — a hook can now directly i
 
 **Per-hook decision** (each row applies at least one criterion explicitly):
 
-- **`sdlc-prompt-check.sh`** (UserPromptSubmit, ~137 lines) — emits the SDLC BASELINE text on every prompt (fires-once-per-session sentinel), plus a setup-wizard redirect when SDLC.md/TESTING.md are missing. Decision: **Stay bash.** Portability criterion: same script ships to Codex sibling unchanged. Local-state criterion: sentinel cache is local-only. **#236(b) 2026-07-06:** the ROADMAP #195 effort-bump signal log described here previously was removed — never fired in ~2 months of live use.
+- **`sdlc-prompt-check.sh`** (UserPromptSubmit, ~137 lines) — emits the SDLC BASELINE text on every prompt (fires-once-per-session sentinel), plus a claude-setup-wizard redirect when SDLC.md/TESTING.md are missing. Decision: **Stay bash.** Portability criterion: same script ships to Codex sibling unchanged. Local-state criterion: sentinel cache is local-only. **#236(b) 2026-07-06:** the ROADMAP #195 effort-bump signal log described here previously was removed — never fired in ~2 months of live use.
 - **`instructions-loaded-check.sh`** (~291 lines) — InstructionsLoaded event; wizard-version + CC-version staleness nudges (both npm-cached daily), cross-model-review staleness check, autocompact compound-misconfig check, dual-channel-install check. Decision: **Stay bash.** Portability criterion: Codex sibling has its own equivalent of session-start validation; bash port is direct. Local-state criterion: cache files are local. **#236(b) 2026-07-06:** the SDLC.md/TESTING.md missing-file warning previously described here was removed (redundant with `sdlc-prompt-check.sh`'s louder version).
 - **`tdd-pretool-check.sh`** (~129 lines) — PreToolUse on Write/Edit/MultiEdit; emits a TDD reminder, and (since #436) **blocks** with `exit 2` when a `src/**` write (or `SDLC_TDD_SRC_PATTERN`-overridden path, added #236(b) for this repo's own `src/`-less dogfooding) happens before any test file was touched this session (an edit-ordering proxy for TDD RED, session-scoped via a cache-dir sentinel). Decision: **Stay bash.** Fail-closed gating criterion applies now that this hook blocks: bash `exit 2` fails closed by definition, whereas an `mcp_tool` hook's block decision is lost if the MCP server errors — wrong default for a gate. Portability criterion: still trivially portable.
 - **`model-effort-check.sh`** (~87 lines) — SessionStart event; reads `CLAUDE_CODE_EFFORT_LEVEL` env var (falling back to `effortLevel` in the settings cascade), emits nothing when effort is `high`/`xhigh`/`max`/unset, otherwise a loud warning. Decision: **Stay bash.** Portability criterion: env-var read maps 1:1 to any agent runtime. Local-state criterion: not applicable, hook is stateless. **#236(b) 2026-07-06:** unset used to loud-warn too (CC's own default state) — now silent; only an explicit low-effort value or the settings-only-`max` quirk warns.
@@ -2503,7 +2503,7 @@ When the reviewer finds issues, respond per-finding instead of silently fixing e
 
 3 recheck rounds (4 total including initial review) is the default budget for a typical change. If still NOT CERTIFIED after round 4, escalate to the user with a summary of open findings rather than spinning indefinitely.
 
-**Exception — known-large migrations:** the round cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop. Judge convergence by the *trend* in finding quality, not the round number: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
+**Exception — known-large migrations:** the round cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop. Judge convergence by the *trend* in finding quality, not the round number: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
 
 **CERTIFIED is not the finish line.** A CERTIFIED verdict and a green CI run are different verification layers that catch different bug classes — a CERTIFIED review does not substitute for actually pushing and watching CI. Confirmed on the same v1.84.0 release: after round-11 CERTIFIED and a full local test sweep, real CI still caught 3 more genuine bugs the review never touched — a content regression in an unrelated section silently dropped by an earlier edit (caught by a pre-existing local test that simply hadn't been re-run since), an environment-specific CLI output-format change invisible to any local run against an older tool version, and a new test file committed without the executable bit (passes every local `bash tests/foo.sh` invocation, only fails when CI runs it as `./tests/foo.sh`). Budget for at least one more fix-push-recheck cycle after CERTIFIED, and don't treat CERTIFIED as license to skip reading the actual CI logs — see the CI Feedback Loop section below.
 
@@ -4105,10 +4105,10 @@ If Claude repeatedly struggles in a codebase area:
 
 ### How to Update
 
-Use the `/update-wizard` skill for a guided, selective update experience:
-> `/update-wizard` — full guided update (shows changelog, per-file diff, selective adoption)
-> `/update-wizard check-only` — just show what changed, don't apply anything
-> `/update-wizard force-all` — apply all updates without per-file approval
+Use the `/claude-update-wizard` skill for a guided, selective update experience:
+> `/claude-update-wizard` — full guided update (shows changelog, per-file diff, selective adoption)
+> `/claude-update-wizard check-only` — just show what changed, don't apply anything
+> `/claude-update-wizard force-all` — apply all updates without per-file approval
 
 Or ask Claude directly:
 > "Check for SDLC wizard updates"
@@ -4133,7 +4133,7 @@ Claude fetches from these URLs (via WebFetch):
 ```
 If no version comment exists, treat as `0.0.0`.
 
-**Step 2: Fetch CHANGELOG first** from the CHANGELOG URL above. Parse all entries between user's installed version and the latest version. Show the user what changed. If versions match, run the global plugin-registration cleanup (see the `/update-wizard` skill's Step 7.7 — `~/.claude/settings.json` hygiene is independent of file versions and must run even when up-to-date), then say "You're up to date!" and stop.
+**Step 2: Fetch CHANGELOG first** from the CHANGELOG URL above. Parse all entries between user's installed version and the latest version. Show the user what changed. If versions match, run the global plugin-registration cleanup (see the `/claude-update-wizard` skill's Step 7.7 — `~/.claude/settings.json` hygiene is independent of file versions and must run even when up-to-date), then say "You're up to date!" and stop.
 
 **Step 3: Fetch full wizard and compare.** For each wizard step, check if the user already has it:
 
@@ -4226,7 +4226,7 @@ Every wizard step has a unique ID for tracking:
 | `question-git-workflow` | Git workflow preference | 1.2.0 |
 | `step-update-notify` | Optional: CI update notification | 1.13.0 |
 | `step-cross-model-review` | Cross-model review (REQUIRED for high-stakes) | 1.16.0 |
-| `step-update-wizard` | /update-wizard smart update skill | 1.18.0 |
+| `step-update-wizard` | /claude-update-wizard smart update skill | 1.18.0 |
 
 When checking for updates, Claude compares user's completed steps against this registry.
 

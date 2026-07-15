@@ -325,12 +325,12 @@ test_hook_content() {
     (cd "$d" && node "$CLI" init > /dev/null 2>&1)
     local ok=true
     grep -q "SDLC BASELINE" "$d/.claude/hooks/sdlc-prompt-check.sh" || ok=false
-    grep -q "setup-wizard" "$d/.claude/hooks/sdlc-prompt-check.sh" || ok=false
+    grep -q "claude-setup-wizard" "$d/.claude/hooks/sdlc-prompt-check.sh" || ok=false
     grep -q "TDD CHECK" "$d/.claude/hooks/tdd-pretool-check.sh" || ok=false
     if [ "$ok" = true ]; then
         pass "Template hooks contain expected content"
     else
-        fail "Template hooks should contain SDLC BASELINE + setup-wizard (sdlc-prompt-check.sh), TDD CHECK (tdd-pretool-check.sh)"
+        fail "Template hooks should contain SDLC BASELINE + claude-setup-wizard (sdlc-prompt-check.sh), TDD CHECK (tdd-pretool-check.sh)"
     fi
     rm -rf "$d"
 }
@@ -695,18 +695,18 @@ test_check_drift_gitignore() {
     rm -rf "$d"
 }
 
-# Test 23: Template setup-wizard skill has correct frontmatter
+# Test 23: Template claude-setup-wizard skill has correct frontmatter
 test_setup_wizard_frontmatter() {
     local d
     d=$(make_temp)
     (cd "$d" && node "$CLI" init > /dev/null 2>&1)
     local ok=true
-    grep -q "^name: setup-wizard$" "$d/.claude/skills/setup/SKILL.md" || ok=false
+    grep -q "^name: claude-setup-wizard$" "$d/.claude/skills/setup/SKILL.md" || ok=false
     grep -q "^effort: high$" "$d/.claude/skills/setup/SKILL.md" || ok=false
     if [ "$ok" = true ]; then
-        pass "Template setup-wizard skill has correct frontmatter (name + effort)"
+        pass "Template claude-setup-wizard skill has correct frontmatter (name + effort)"
     else
-        fail "setup-wizard skill should have name: setup-wizard and effort: high in frontmatter"
+        fail "claude-setup-wizard skill should have name: claude-setup-wizard and effort: high in frontmatter"
     fi
     rm -rf "$d"
 }

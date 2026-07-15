@@ -45,7 +45,7 @@ const WIZARD_HOOK_MARKERS = FILES
 const GITIGNORE_ENTRIES = ['.claude/plans/', '.claude/settings.local.json'];
 
 // Paths where the Claude plugin form of this wizard installs.
-// If present, running `npx init` creates duplicate /update-wizard (#181).
+// If present, running `npx init` creates duplicate /claude-update-wizard (#181).
 const PLUGIN_INSTALL_PATHS = [
   '.claude/plugins-local/sdlc-wizard-wrap',
   '.claude/plugins/cache/sdlc-wizard-local',
@@ -369,7 +369,7 @@ function init(targetDir, { force = false, dryRun = false, preserveCustomized = f
     if (pluginPaths.length > 0) {
       console.error(`\n${YELLOW}Claude plugin install detected:${RESET}`);
       for (const p of pluginPaths) console.error(`  ${p}`);
-      console.error('\nInstalling via npm on top of the plugin creates duplicate /update-wizard commands.');
+      console.error('\nInstalling via npm on top of the plugin creates duplicate /claude-update-wizard commands.');
       console.error('Pick one channel:');
       console.error(`  - Keep plugin:   exit and use ${CYAN}/plugin update sdlc-wizard${RESET}`);
       console.error(`  - Switch to CLI: remove plugin dir above, then rerun ${CYAN}init${RESET}`);
