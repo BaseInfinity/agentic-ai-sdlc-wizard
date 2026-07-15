@@ -75,7 +75,7 @@ Reach for Setup B when the change can damage a consumer repo, has high blast rad
 
 - Architecture or methodology changes
 - Tagged release prep
-- Installer behavior (`cli/`, `init`, `setup-wizard`)
+- Installer behavior (`cli/`, `init`, `claude-setup-wizard`)
 - Destructive file operations
 - Package publishing
 - Generated repo modifications (template changes)
