@@ -1,7 +1,7 @@
 #!/bin/bash
-# Quality test: /update-wizard must detect stale local CLI before in-session file updates.
+# Quality test: /claude-update-wizard must detect stale local CLI before in-session file updates.
 #
-# ROADMAP #232: previously /update-wizard fetched the latest wizard files from GitHub raw
+# ROADMAP #232: previously /claude-update-wizard fetched the latest wizard files from GitHub raw
 # and patched in-session, but the user's local npx-cached CLI (the thing that runs `check`,
 # `init`, etc.) could remain on an old version forever. Symptom: user sees "you're up to
 # date" on wizard files, but their `npx agentic-sdlc-wizard ...` is still 1.30.0 missing

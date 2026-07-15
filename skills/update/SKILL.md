@@ -1,5 +1,5 @@
 ---
-name: update-wizard
+name: claude-update-wizard
 description: Smart update for SDLC wizard — shows changelog, compares files, lets you selectively adopt changes while preserving customizations.
 argument-hint: "[optional: check-only | force-all]"
 effort: high
@@ -28,11 +28,11 @@ Read `SDLC.md` and extract from the metadata comment:
 <!-- SDLC Wizard Version: X.X.X -->
 <!-- Completed Steps: ... -->
 ```
-No version comment → treat as `0.0.0` (suggest `/setup-wizard` instead).
+No version comment → treat as `0.0.0` (suggest `/claude-setup-wizard` instead).
 
 ### Step 1.5: Check CLI Version (ROADMAP #232)
 
-The wizard files in the user's project are one half of the install. The other half is the **npm CLI** (`agentic-sdlc-wizard`) — the binary powering `npx agentic-sdlc-wizard init`/`check`/`complexity`. If the user ran `init` months ago, their npx cache (or global install) can be stuck on an old version even after `/update-wizard` patches the project files in-session. This step closes that gap.
+The wizard files in the user's project are one half of the install. The other half is the **npm CLI** (`agentic-sdlc-wizard`) — the binary powering `npx agentic-sdlc-wizard init`/`check`/`complexity`. If `init` ran months ago, npx cache (or global install) can be stuck on an old version even after `/claude-update-wizard` patches project files in-session. This step closes that gap.
 
 **Detection — try both paths:**
 
@@ -57,7 +57,7 @@ Cache the result (also used in Step 3).
 
 **Upgrade options when behind:**
 
-> Your `agentic-sdlc-wizard` CLI is at **{installed}**, npm has **{latest}**. The in-session `/update-wizard` will refresh project files via Step 6, but your `npx` cache will keep the old CLI on disk for `npx agentic-sdlc-wizard check`/`init`/`complexity`.
+> Your `agentic-sdlc-wizard` CLI is at **{installed}**, npm has **{latest}**. Step 6 refreshes project files, but `npx` cache keeps the old CLI on disk for `npx agentic-sdlc-wizard check`/`init`/`complexity`.
 >
 > **A. Refresh just the CLI cache (recommended).** No project changes; Step 6 handles the rest with diffs:
 > ```bash
@@ -73,7 +73,7 @@ Cache the result (also used in Step 3).
 >
 > Pick A, B, or C: `[A/B/C]` (default A)
 
-If A: prompt the user to run the one-liner, then re-invoke `/update-wizard`. If B: same with the warning. If C: log the choice and continue.
+If A: prompt the user to run the one-liner, then re-invoke `/claude-update-wizard`. If B: same with the warning. If C: log the choice and continue.
 
 **`check-only` precedence:** if the user passed `check-only`, Step 1.5 runs in report-only mode — print the gap if found, but do NOT prompt and do NOT run `init --force`. The check-only contract is "tell me what's drifted, don't change anything," and that supersedes the CLI bump path. **Graceful fallback** when CLI undetectable: skip the bump prompt, surface the unknown-state in the report, continue to Step 2.
 
@@ -267,6 +267,6 @@ All updated files should show MATCH. User-skipped files still show CUSTOMIZED �
 1. **NEVER modify CLAUDE.md.** Fully custom to user's project. Wizard never touches it.
 2. **NEVER auto-apply without showing what will change first** (unless `force-all`).
 3. **Offline fallback:** WebFetch fails → tell user "Cannot reach GitHub. Run `npx agentic-sdlc-wizard init --force` to update from your locally installed CLI."
-4. **First-time users:** SDLC.md missing or no version metadata → suggest `/setup-wizard`.
+4. **First-time users:** SDLC.md missing or no version metadata → suggest `/claude-setup-wizard`.
 5. **Respect customizations.** CUSTOMIZED files are intentional — show what's different, let them decide. Don't pressure.
 6. **Reference the wizard doc** for full protocol details (step registry, URLs, version tracking) rather than hardcoding.

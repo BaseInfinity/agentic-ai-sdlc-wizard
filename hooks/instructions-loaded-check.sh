@@ -124,10 +124,10 @@ if [ -f "$SDLC_MD" ]; then
                 echo "   Installed: ${INSTALLED_VERSION}"
                 echo "   Latest:    ${LATEST_VERSION}"
                 echo "   You're missing bug fixes and features shipped across ${MINOR_DELTA} releases."
-                echo "   Strongly recommend running /update-wizard before starting new work."
+                echo "   Strongly recommend running /claude-update-wizard before starting new work."
                 echo ""
             else
-                echo "SDLC Wizard update available: ${INSTALLED_VERSION} → ${LATEST_VERSION} (run /update-wizard)"
+                echo "SDLC Wizard update available: ${INSTALLED_VERSION} → ${LATEST_VERSION} (run /claude-update-wizard)"
             fi
         fi
     fi
@@ -191,7 +191,7 @@ if [ -d "$PROJECT_DIR/.claude/skills/update" ] && [ ! -f "$DUAL_ACK_FILE" ]; the
         if [ -d "$plugin_path" ]; then
             echo "WARNING: dual-install detected — CLI skills in .claude/skills/ AND Claude plugin at:"
             echo "  $plugin_path"
-            echo "  Duplicate /update-wizard commands come from running both channels. Pick one:"
+            echo "  Duplicate /claude-update-wizard commands come from running both channels. Pick one:"
             echo "    - Keep plugin: remove .claude/skills/ from this project"
             echo "    - Keep CLI:    /plugin uninstall sdlc-wizard (or remove plugin dir)"
             echo "    - Keep both:   mkdir -p \"$DUAL_CACHE_DIR\" && touch \"$DUAL_ACK_FILE\"  (silences this nudge)"

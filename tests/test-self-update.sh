@@ -297,7 +297,7 @@ test_wizard_skill_cross_model_review_instructions() {
     fi
 }
 
-# --- /update-wizard Skill Tests (#33) ---
+# --- /claude-update-wizard Skill Tests (#33) ---
 
 # Test 22: Update skill file exists in local skills directory
 test_update_skill_exists() {
@@ -334,7 +334,7 @@ test_update_skill_parity() {
 test_update_skill_content() {
     local skill_file="$SCRIPT_DIR/../.claude/skills/update/SKILL.md"
     local ok=true
-    grep -q "name: update-wizard" "$skill_file" || ok=false
+    grep -q "name: claude-update-wizard" "$skill_file" || ok=false
     grep -q "WebFetch" "$skill_file" || ok=false
     grep -q "CHANGELOG" "$skill_file" || ok=false
     grep -qi "selective\|per-file\|selectively" "$skill_file" || ok=false

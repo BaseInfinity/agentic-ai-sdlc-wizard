@@ -1561,6 +1561,39 @@ PYEOF
     fi
 }
 
+# #374: setup/update skill names collided with opencode-sdlc-wizard's own
+# identically-named skills under OpenCode (which reads multiple skill trees
+# by `name:`, not by directory) — causing non-deterministic wrong-wizard
+# resolution. Fix: namespace the frontmatter name + live dispatch string.
+# ROADMAP*.md/CHANGELOG.md/.reviews/ are historical record, intentionally
+# excluded.
+test_no_bare_setup_update_wizard_collision() {
+    local bad=""
+    grep -q "^name: claude-setup-wizard$" "$REPO_ROOT/skills/setup/SKILL.md" \
+        || bad="$bad skills/setup/SKILL.md:name-not-namespaced"
+    grep -q "^name: claude-update-wizard$" "$REPO_ROOT/skills/update/SKILL.md" \
+        || bad="$bad skills/update/SKILL.md:name-not-namespaced"
+    grep -q 'skill="claude-setup-wizard"' "$REPO_ROOT/hooks/sdlc-prompt-check.sh" \
+        || bad="$bad hooks/sdlc-prompt-check.sh:dispatch-not-namespaced"
+
+    local hits
+    hits=$(grep -rlE '/(setup|update)-wizard\b' "$REPO_ROOT" \
+        --include="*.md" --include="*.sh" --include="*.js" \
+        --exclude="ROADMAP.md" --exclude="ROADMAP_ARCHIVE.md" \
+        --exclude="CHANGELOG.md" \
+        --exclude-dir=".reviews" --exclude-dir="node_modules" \
+        --exclude-dir=".git" 2>/dev/null || true)
+    [ -n "$hits" ] && bad="$bad bare-invocation-still-present-in:$(echo "$hits" | tr '\n' ',')"
+
+    if [ -z "$bad" ]; then
+        pass "#374: setup/update skill names namespaced (claude-setup-wizard / claude-update-wizard), no bare-name collision with opencode-sdlc-wizard remains"
+    else
+        fail "#374 regression:$bad"
+    fi
+}
+
+test_no_bare_setup_update_wizard_collision
+
 test_argument_hint_frontmatter_is_string
 
 # ────────────────────────────────────────────

@@ -733,7 +733,7 @@ test_sdlc_update_frequency() {
     fi
 }
 
-# Test 26: sdlc-prompt-check outputs setup-wizard directive when SDLC.md missing
+# Test 26: sdlc-prompt-check outputs claude-setup-wizard directive when SDLC.md missing
 test_sdlc_hook_setup_redirect_missing_sdlc() {
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -741,14 +741,14 @@ test_sdlc_hook_setup_redirect_missing_sdlc() {
     local output
     output=$(cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/sdlc-prompt-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q "setup-wizard" && ! echo "$output" | grep -q "SDLC BASELINE"; then
-        pass "sdlc-prompt-check.sh redirects to setup-wizard when SDLC.md missing"
+    if echo "$output" | grep -q "claude-setup-wizard" && ! echo "$output" | grep -q "SDLC BASELINE"; then
+        pass "sdlc-prompt-check.sh redirects to claude-setup-wizard when SDLC.md missing"
     else
-        fail "Should output setup-wizard directive (not SDLC BASELINE) when SDLC.md missing"
+        fail "Should output claude-setup-wizard directive (not SDLC BASELINE) when SDLC.md missing"
     fi
 }
 
-# Test 27: sdlc-prompt-check outputs setup-wizard directive when TESTING.md missing
+# Test 27: sdlc-prompt-check outputs claude-setup-wizard directive when TESTING.md missing
 test_sdlc_hook_setup_redirect_missing_testing() {
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -756,10 +756,10 @@ test_sdlc_hook_setup_redirect_missing_testing() {
     local output
     output=$(cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/sdlc-prompt-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q "setup-wizard" && ! echo "$output" | grep -q "SDLC BASELINE"; then
-        pass "sdlc-prompt-check.sh redirects to setup-wizard when TESTING.md missing"
+    if echo "$output" | grep -q "claude-setup-wizard" && ! echo "$output" | grep -q "SDLC BASELINE"; then
+        pass "sdlc-prompt-check.sh redirects to claude-setup-wizard when TESTING.md missing"
     else
-        fail "Should output setup-wizard directive (not SDLC BASELINE) when TESTING.md missing"
+        fail "Should output claude-setup-wizard directive (not SDLC BASELINE) when TESTING.md missing"
     fi
 }
 
@@ -788,14 +788,14 @@ test_sdlc_hook_setup_redirect_empty_stubs() {
     local output
     output=$(cd "$tmpdir" && CLAUDE_PROJECT_DIR="$tmpdir" "$HOOKS_DIR/sdlc-prompt-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q "setup-wizard" && ! echo "$output" | grep -q "SDLC BASELINE"; then
-        pass "sdlc-prompt-check.sh redirects to setup-wizard for empty stub files"
+    if echo "$output" | grep -q "claude-setup-wizard" && ! echo "$output" | grep -q "SDLC BASELINE"; then
+        pass "sdlc-prompt-check.sh redirects to claude-setup-wizard for empty stub files"
     else
-        fail "Empty stub files should trigger setup-wizard redirect, not baseline"
+        fail "Empty stub files should trigger claude-setup-wizard redirect, not baseline"
     fi
 }
 
-# Test 30: Template hook redirects to setup-wizard on partial setup (one file present)
+# Test 30: Template hook redirects to claude-setup-wizard on partial setup (one file present)
 test_template_hook_setup_redirect() {
     local TEMPLATE_HOOK="$SCRIPT_DIR/../hooks/sdlc-prompt-check.sh"
     if [ ! -f "$TEMPLATE_HOOK" ]; then fail "Template hook not found"; return; fi
@@ -807,10 +807,10 @@ test_template_hook_setup_redirect() {
     local output
     output=$(cd "$tmpdir/project" && CLAUDE_PROJECT_DIR="" HOME="$tmpdir" bash "$TEMPLATE_HOOK" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q "setup-wizard"; then
-        pass "Template hook redirects to setup-wizard on partial setup"
+    if echo "$output" | grep -q "claude-setup-wizard"; then
+        pass "Template hook redirects to claude-setup-wizard on partial setup"
     else
-        fail "Template hook should redirect to setup-wizard, got: $output"
+        fail "Template hook should redirect to claude-setup-wizard, got: $output"
     fi
 }
 
@@ -1193,7 +1193,7 @@ test_update_notification_no_version_metadata() {
     fi
 }
 
-# Test 40: Update notification mentions /update-wizard
+# Test 40: Update notification mentions /claude-update-wizard
 test_update_notification_mentions_update_wizard() {
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -1205,10 +1205,10 @@ test_update_notification_mentions_update_wizard() {
     local output
     output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q "/update-wizard"; then
-        pass "Update notification mentions /update-wizard"
+    if echo "$output" | grep -q "/claude-update-wizard"; then
+        pass "Update notification mentions /claude-update-wizard"
     else
-        fail "Update notification should mention /update-wizard, got: $output"
+        fail "Update notification should mention /claude-update-wizard, got: $output"
     fi
 }
 
@@ -1233,7 +1233,7 @@ test_update_notification_loud_when_3_minor_behind() {
     # count and a WARNING/!! marker so the nudge stands out.
     echo "$output" | grep -qE '(9.*minor.*behind|behind.*9.*minor|9[[:space:]]*versions.*behind)' || ok=false
     echo "$output" | grep -qE 'WARNING|!!|⚠|strongly recommend' || ok=false
-    echo "$output" | grep -q '/update-wizard' || ok=false
+    echo "$output" | grep -q '/claude-update-wizard' || ok=false
     if [ "$ok" = true ]; then
         pass "Loud nudge fires when ≥3 minor versions behind (1.25.0 → 1.34.0)"
     else
@@ -1721,10 +1721,10 @@ test_sdlc_hook_cwd_walkup_empty_stubs() {
     local output
     output=$(cd "$tmpdir/project/src" && CLAUDE_PROJECT_DIR="" "$HOOKS_DIR/sdlc-prompt-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -q "setup-wizard"; then
+    if echo "$output" | grep -q "claude-setup-wizard"; then
         pass "CWD walk-up still triggers setup for empty stub files"
     else
-        fail "Empty stubs found by CWD walk should still trigger setup-wizard"
+        fail "Empty stubs found by CWD walk should still trigger claude-setup-wizard"
     fi
 }
 

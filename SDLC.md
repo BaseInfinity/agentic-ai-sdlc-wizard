@@ -1,7 +1,7 @@
 <!-- SDLC Wizard Version: 1.87.0 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
-<!-- Claude Code Baseline: v2.1.195 -->
+<!-- Claude Code Baseline: v2.1.210 -->
 <!-- ROADMAP #350: this single-line anchor is the source of truth for cc-version-drift.yml. -->
 <!-- Update both this comment AND the "Claude Code Recommended" row when bumping CC support. -->
 # SDLC Configuration
@@ -13,7 +13,7 @@
 | Wizard Version | 1.87.0 |
 | Last Updated | 2026-07-04 |
 | Claude Code Minimum | v2.1.154+ (required for `opus[1m]` alias resolution); v2.1.105+ for `PreCompact` hook |
-| Claude Code Recommended | v2.1.195+ — comma-separated hook matcher fix (v2.1.191), hyphenated matcher exact-match fix (v2.1.195), `sandbox.credentials` setting (v2.1.187), `autoMode.classifyAllShell` setting (v2.1.193) |
+| Claude Code Recommended | v2.1.210+ — `SessionStart`/`Setup`/`SubagentStart` hooks no longer hide stderr on exit 2 (v2.1.199, relevant to #436's exit-code semantics), hook events no longer silently dropped during `SessionStart` in headless sessions (v2.1.204, relevant to our hooks running under `claude -p`/CI), duplicate skill-instruction context bloat on re-invocation fixed (v2.1.202), hook-callback timeouts no longer misreported as user rejection in unattended sessions (v2.1.210), `$1`/`$2` positional placeholders in skills preserved verbatim (v2.1.210, wizard skills use `$ARGUMENTS` — unaffected) |
 | Recommended Model | Sonnet 5 (default) — beats Opus 4.6 on benchmarks at generally lower quota (savings vary by effort; narrows at `high`/`xhigh`). Escalate to Opus 4.8 `xhigh` when stuck. Opus 4.6 `max` remains valid for proven consistency. See `AI_SETUP_LANES.md`. |
 | Recommended Effort | Model-aware — Sonnet 5: `medium` default (CodeRabbit-tested), escalate `high` → `xhigh` for hard tasks. Opus 4.8/Fable: `xhigh`/`high`. Opus 4.6: `max` only (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc env var. |
 
@@ -44,7 +44,7 @@ This repository uses the SDLC Wizard to enforce:
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
-| `sdlc-prompt-check.sh` | Every prompt | SDLC baseline reminder, setup-wizard redirect when SDLC.md/TESTING.md missing |
+| `sdlc-prompt-check.sh` | Every prompt | SDLC baseline reminder, claude-setup-wizard redirect when SDLC.md/TESTING.md missing |
 | `tdd-pretool-check.sh` | Before Write/Edit/MultiEdit | Blocks (exit 2) implementation writes to `src/**` unless a test file was touched earlier this session. This repo's own gate is scoped to `hooks/`, `cli/`, `.github/workflows/` via `SDLC_TDD_SRC_PATTERN` (no `src/` dir here) |
 | `codex-gate-check.sh` | Before `git commit` (Bash) | Blocks (exit 2) commits without a REVIEWED/CERTIFIED `.reviews/handoff.json`, or with a stale (`commit_sha` mismatch) certification |
 | `instructions-loaded-check.sh` | Session start | Wizard-version + CC-version staleness nudges, cross-model-review staleness check, autocompact compound-misconfig check, dual-channel-install check |
@@ -86,7 +86,7 @@ When Claude Code releases new features:
 ├── settings.json                  # Hook configuration
 ├── hooks/
 │   ├── _find-sdlc-root.sh        # Shared helper (sourced by other hooks, not a CC hook entrypoint)
-│   ├── sdlc-prompt-check.sh      # SDLC baseline + setup-wizard redirect
+│   ├── sdlc-prompt-check.sh      # SDLC baseline + claude-setup-wizard redirect
 │   ├── tdd-pretool-check.sh      # TDD RED enforcement (blocks src/** writes)
 │   ├── codex-gate-check.sh       # Blocks git commit without cross-model review
 │   ├── instructions-loaded-check.sh  # Session start: version/staleness/misconfig nudges
@@ -130,7 +130,7 @@ Portable technical gotchas promoted from private memory via the Memory Audit Pro
 
 ### Cross-Model Review
 
-- **A repo-wide policy migration hides in more places than the docs you set out to fix — check hooks, skill menus/logic, tutorial/template code blocks, and user-facing guidance snippets too, not just prose sections.** The v1.84.0 "Opus-4.6-flagship → Sonnet-5-model-aware" migration was scoped as "3 doc sections," but a double-digit-round Codex review kept finding it elsewhere: round 2 found it in `skills/sdlc/SKILL.md`'s own frontmatter; round 4 found the actual live `/setup-wizard` and `/update` skill menus/logic had never been touched at all (a new user would never be offered the new default); round 5 found a live `SessionStart` hook (`model-effort-check.sh`) actively contradicting the new policy; round 6 found a "copy this into your CLAUDE.md" guidance snippet still asserting the old policy; round 8 found the wizard doc's "Step 5: Create the TDD Hook" — a literal, mandatory-reading template `/setup-wizard` copies verbatim — still showed the pre-#436 advisory-only (non-blocking) hook, meaning a manual setup would have shipped a broken TDD gate. Rule: when migrating a blanket recommendation, explicitly check all of: prose docs, skill frontmatter, skill body logic/menus, hooks, tutorial/template code blocks that get copied verbatim, tests (which can bake in the old policy as an assertion and mask a regression), and any user-facing copy-paste snippets — before the first review round, not discovered one category per round. (Source: v1.84.0 release review, 2026-07-04)
+- **A repo-wide policy migration hides in more places than the docs you set out to fix — check hooks, skill menus/logic, tutorial/template code blocks, and user-facing guidance snippets too, not just prose sections.** The v1.84.0 "Opus-4.6-flagship → Sonnet-5-model-aware" migration was scoped as "3 doc sections," but a double-digit-round Codex review kept finding it elsewhere: round 2 found it in `skills/sdlc/SKILL.md`'s own frontmatter; round 4 found the actual live `/claude-setup-wizard` and `/update` skill menus/logic had never been touched at all (a new user would never be offered the new default); round 5 found a live `SessionStart` hook (`model-effort-check.sh`) actively contradicting the new policy; round 6 found a "copy this into your CLAUDE.md" guidance snippet still asserting the old policy; round 8 found the wizard doc's "Step 5: Create the TDD Hook" — a literal, mandatory-reading template `/claude-setup-wizard` copies verbatim — still showed the pre-#436 advisory-only (non-blocking) hook, meaning a manual setup would have shipped a broken TDD gate. Rule: when migrating a blanket recommendation, explicitly check all of: prose docs, skill frontmatter, skill body logic/menus, hooks, tutorial/template code blocks that get copied verbatim, tests (which can bake in the old policy as an assertion and mask a regression), and any user-facing copy-paste snippets — before the first review round, not discovered one category per round. (Source: v1.84.0 release review, 2026-07-04)
 - **Cross-model review convergence should be judged by finding-quality-per-token, not a fixed round cap or wall-clock time.** The default "2 rounds sweet spot, 3 max, escalate after" guidance (see "Cross-Model Review" above) assumes findings taper off quickly. For a genuinely large-scope migration, that assumption can be wrong for many rounds in a row — round 8 above was more consequential than rounds 1-3 combined, and time spent was never the constraint. Maintainer's own framing: "i dont care how long it takes if its efficient and effective its not about time, its about quality and tokens." Keep iterating as long as each round's finding is independently verified as real and worth fixing; stop on CERTIFIED, when consecutive rounds return nothing but nitpicks, or explicitly flag (don't silently fix) anything genuinely out of scope so tokens aren't spent chasing it. (Source: same session, 2026-07-04)
 - **When a review finds a live-behavior bug (not just stale prose), turn it into a test, not just a CHANGELOG entry.** Round 8's tutorial-template-vs-real-hook drift is exactly the class of bug this repo's own Post-Mortem discipline (`Incident → Root Cause → New Rule → Test That Proves the Rule → Ship`) exists for — a human/reviewer had to read prose to catch it, when a mechanical check could: for every "Create `.claude/hooks/X.sh`" tutorial code block in `CLAUDE_CODE_SDLC_WIZARD.md`, if the real `hooks/X.sh` contains `exit 2` (blocks), the tutorial block must too. See `tests/test-wizard-doc-hook-templates.sh` (added same session) for the shipped version of this check. (Source: same session, 2026-07-04)
 
