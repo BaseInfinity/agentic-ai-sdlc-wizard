@@ -1515,6 +1515,54 @@ test_setup_a_escalation_and_advisor_fallback_explicit() {
 
 test_setup_a_escalation_and_advisor_fallback_explicit
 
+# #444 regression (repo's first external contribution — thanks @thejesh23):
+# argument-hint in SKILL.md frontmatter must parse as a YAML STRING. Bare
+# brackets parse as a flow sequence (the feedback skill's hint even parsed as
+# an array wrapping a MAPPING, because of the inner colon), which Copilot CLI
+# >=1.0.65 rejects — the skill silently vanishes from the command menu.
+# Claude Code renders the accident by concatenation, so only a type check
+# catches it. Two halves:
+#   (a) parse every SKILL.md frontmatter (live skills + cowork copies) with
+#       real YAML and assert the type;
+#   (b) the wizard doc's example blocks and frontmatter table are copy-source
+#       templates consumers inherit — every argument-hint example must show
+#       the quoted form, or generated repos re-inherit the bug.
+test_argument_hint_frontmatter_is_string() {
+    local bad
+    bad="$(python3 - "$REPO_ROOT" << 'PYEOF'
+import glob, os, re, sys, yaml
+root = sys.argv[1]
+bad = []
+files = sorted(glob.glob(os.path.join(root, 'skills', '*', 'SKILL.md')) +
+               glob.glob(os.path.join(root, 'cowork', 'skills', '*', 'SKILL.md')))
+for f in files:
+    text = open(f).read()
+    m = re.match(r'^---\n(.*?)\n---', text, re.S)
+    if not m:
+        bad.append(os.path.relpath(f, root) + '(no-frontmatter)')
+        continue
+    fm = yaml.safe_load(m.group(1))
+    if 'argument-hint' in fm and not isinstance(fm['argument-hint'], str):
+        bad.append(os.path.relpath(f, root) + '(argument-hint-not-string)')
+if not files:
+    bad.append('no-SKILL.md-files-found')
+print(' '.join(bad))
+PYEOF
+)"
+    # [[:space:]]* not a literal single space — Codex round-1 P1: 'argument-hint:['
+    # and 'argument-hint:  [' carry the same flow-sequence bug and must not evade.
+    local unquoted
+    unquoted="$(grep -nE 'argument-hint:[[:space:]]*\[' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" | cut -d: -f1 | tr '\n' ',')"
+    [ -n "$unquoted" ] && bad="$bad CLAUDE_CODE_SDLC_WIZARD.md:${unquoted%,}(unquoted-example)"
+    if [ -z "${bad// /}" ]; then
+        pass "#444: argument-hint parses as a string in every SKILL.md; all wizard-doc examples quoted"
+    else
+        fail "#444 regression:$bad"
+    fi
+}
+
+test_argument_hint_frontmatter_is_string
+
 # ────────────────────────────────────────────
 # Summary
 # ────────────────────────────────────────────
