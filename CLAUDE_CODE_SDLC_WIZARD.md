@@ -433,7 +433,7 @@ Skills support these frontmatter fields:
 | `effort` | Set reasoning effort level | `effort: high` |
 | `paths` | Restrict skill to specific file patterns | `paths: ["src/**/*.ts", "tests/**"]` |
 | `context` | Context mode (`fork` = isolated subagent) | `context: fork` |
-| `argument-hint` | Hint for `$ARGUMENTS` placeholder | `argument-hint: [task description]` |
+| `argument-hint` | Hint for `$ARGUMENTS` placeholder (quote it — bare brackets parse as a YAML array and break strict loaders like Copilot CLI, #444) | `argument-hint: "[task description]"` |
 | `disable-model-invocation` | Prevent skill from being auto-invoked by model | `disable-model-invocation: true` |
 
 **Key fields explained:**
