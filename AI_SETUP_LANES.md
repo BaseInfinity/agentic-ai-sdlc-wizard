@@ -11,11 +11,15 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 | **Advisor** | Fable 5 (via `advisorModel: "fable"`) | `high` (server-side) |
 | **Driver** | Sonnet 5 (`claude-sonnet-5`) | `medium` default, escalate `high` → `xhigh` for hard tasks |
 | **Reviewer** | Codex (GPT-5.6 Sol) xhigh | — |
-| **Escalation** | Opus 4.8 xhigh or Fable 5 review | When stuck or high-stakes |
+| **Escalation** | Opus 4.8 xhigh takes over as driver (or run a Fable 5 review pass) | When stuck (2 failed attempts / LOW confidence) or high-stakes |
 
 The new standard. Sonnet 5 beats Opus 4.6 on every coding benchmark (SWE-bench Verified 85.2% vs 80.8%, Terminal-Bench 80.4% vs 65.4%) and generally uses less Max quota — but the savings are not a fixed ratio: Sonnet 5's newer tokenizer produces ~30% more tokens for the same text than Opus 4.6's (per Anthropic's pricing docs), and community cost reports suggest the advantage narrows at `high`/`xhigh`. No controlled Sonnet-5-vs-Opus-4.6 quota measurement exists — check your own burn with `/usage`. Fable 5 advises at key decision points via native `advisorModel` (v2.1.170+). GPT-5.6 Sol xhigh reviews cross-family. Escalate to Opus 4.8 xhigh for the hardest debugging or architecture decisions — don't run Opus as the daily driver.
 
 **Effort escalation ladder:** Start at `medium` — CodeRabbit's testing found it captures most of Sonnet 5's upside at the lowest cost. Raise to `high` when medium struggles, `xhigh` for hard debugging, multi-file migrations, or long agent runs. `max` is rarely worth it — doubles cost for marginal gains per the same CodeRabbit testing.
+
+**Two escalation axes — don't conflate them.** The effort ladder above raises reasoning *within* the Sonnet 5 driver. Model escalation is a different move: it *swaps the driver* — after 2 failed attempts, LOW confidence, or on a high-stakes change, Opus 4.8 xhigh takes over as driver (or run a Fable 5 review pass on the diff). Cranking Sonnet's effort past `xhigh` is not the escalation path.
+
+**Advisor failure has a fallback, not a shrug.** `advisor()` is a server-side tool and does fail during API incidents. When it errors, spawn a Fable subagent as the fallback reviewer — the same rule the `/sdlc` skill carries ("if down, spawn Fable subagent"). The advisor check is never skipped; only its transport changes.
 
 **Requires:** Claude Code v2.1.197+ (Sonnet 5 alias resolution), Fable 5 access for advisor.
 
@@ -142,10 +146,10 @@ If the advisor returns "Advisor unavailable," the server-side harness failed to 
 
 **Step 1 — restart the session.** Exit and run `claude` (not `--resume`). A fresh process re-initializes the server handshake. This resolves most advisor failures.
 
-**Step 2 — if the API incident persists:**
+**Step 2 — if the API incident persists, swap the transport, not the check:**
 
-- Continue with your driver model and no advisor — `/model sonnet` for Setup A, `/model claude-opus-4-6` for Setup B. Interactive — stays on your Max subscription.
-- Or proceed without the advisor and let the Codex xhigh PR gate catch issues.
+- Spawn a Fable subagent as the fallback reviewer — the `/sdlc` skill's standing rule ("if down, spawn Fable subagent"). Batch your plan or open questions into one subagent consult at each point where you'd have called `advisor()`. Runs interactively on your Max subscription like any other agent.
+- Keep driving with your lane's model (`/model sonnet` for Setup A, `/model claude-opus-4-6` for Setup B). The subagent replaces the advisor's transport; the Codex xhigh PR gate remains the separate final backstop, not a substitute for the advisor check.
 
 **Last resort (scripted/CI only):**
 

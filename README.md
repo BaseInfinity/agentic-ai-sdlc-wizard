@@ -190,6 +190,14 @@ The wizard defines four AI coding setups in [`AI_SETUP_LANES.md`](AI_SETUP_LANES
 
 Setup D's whole point: **the discipline of knowing when NOT to use discipline.** When blast radius is low and you just need fast cheap hands, skip the SDLC overhead.
 
+### Reading Setup A precisely
+
+Clarified 2026-07-13 after these exact points kept getting re-confused; each rule states its why:
+
+- **Effort escalation stays inside the driver.** Sonnet 5 starts at `medium`; `/effort high` when it struggles, `xhigh` for hard debugging or long agent runs. Why `medium` and not `high`: the old "start at `high`" guidance was removed in ROADMAP #440 — it had no measurement behind it, and CodeRabbit's testing (the source this repo already cites) found `medium` captures most of Sonnet 5's upside without paying for the top effort tiers, while community cost reports suggest the quota advantage erodes at `high`/`xhigh`.
+- **Model escalation swaps the driver.** After 2 failed attempts, LOW confidence, or on high-stakes changes, Opus 4.8 xhigh takes over as driver (or run a Fable 5 review pass on the diff). Why a swap and not more effort: the lane's policy treats repeated failure as a sign the *approach* needs different eyes, not deeper reasoning on the same track — so once the effort ladder is exhausted, the next rung is a different model, not a bigger bill.
+- **Advisor failure has a fallback, not a shrug.** Fable 5 advises via `advisorModel: "fable"`; when `advisor()` errors (it's a server-side tool — API incidents happen), spawn a Fable subagent as the fallback reviewer, exactly as the `/sdlc` skill prescribes. Why: the advisor's job is catching wrong approaches *before* they're built, so a transport failure changes how the advice is obtained — not whether the check happens.
+
 **A note on `[1m]` and billing.** Sonnet 5 always runs at its native 1M context — no `[1m]` suffix needed, no separate billing tier. For Opus, the `[1m]` suffix is the 1M-context alias; as of [March 2026](https://claude.com/blog/1m-context-ga), 1M context is GA at standard pricing — **no long-context surcharge, no premium tier, no API-only restriction.** Interactive Claude Code sessions on Max / Team / Enterprise plans include 1M context automatically. (Pro users need "Enable usage credits" turned on once.) The [June 15, 2026 billing split](https://codersera.com/blog/anthropic-june-2026-billing-change-claude-code/) moved *headless* surfaces — `claude -p`, Agent SDK, GitHub Actions, third-party apps — off the Max subscription onto a separate metered credit pool. Interactive Claude Code in your terminal stays on Max. Full details in [`AI_SETUP_LANES.md` § How Billing Works](AI_SETUP_LANES.md#how-billing-works--1m-context-max-plan-and-the-june-15-split).
 
 ## How It Works
