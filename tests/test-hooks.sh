@@ -1840,6 +1840,26 @@ test_model_effort_check_stale_effort() {
     fi
 }
 
+# #430 regression: RECOMMENDED_MODEL(S) once hardcoded a stray "[1m]" fragment
+# (a broken ANSI-bold escape missing its leading \e) that printed as literal
+# text in the SessionStart warning. Already dead by unrelated evolution
+# (#403's multi-model string, then #440's medium-floor rewrite) — this locks
+# it so nothing can reintroduce the artifact.
+test_model_effort_check_no_stray_ansi_artifact() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.claude"
+    echo '{"effortLevel":"low"}' > "$tmpdir/.claude/settings.json"
+    local output
+    output=$(echo '{}' | CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir" CLAUDE_CODE_EFFORT_LEVEL="" "$HOOKS_DIR/model-effort-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if ! printf '%s' "$output" | grep -qF '[1m]'; then
+        pass "#430: no stray [1m] ANSI-escape artifact in the model warning"
+    else
+        fail "#430: warning output contains a literal [1m] artifact: $output"
+    fi
+}
+
 # Test: high is silent — it's Sonnet 5's and Fable's tested default (v1.84.0)
 test_model_effort_check_high_silent() {
     local tmpdir
@@ -2071,6 +2091,7 @@ test_model_effort_check_exists
 test_model_effort_check_silent_on_unset
 test_model_effort_check_medium_silent
 test_model_effort_check_stale_effort
+test_model_effort_check_no_stray_ansi_artifact
 test_model_effort_check_high_silent
 test_model_effort_check_xhigh_silent
 test_model_effort_check_xhigh_env_var_silent
