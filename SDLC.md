@@ -1,7 +1,7 @@
 <!-- SDLC Wizard Version: 1.87.0 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
-<!-- Claude Code Baseline: v2.1.195 -->
+<!-- Claude Code Baseline: v2.1.210 -->
 <!-- ROADMAP #350: this single-line anchor is the source of truth for cc-version-drift.yml. -->
 <!-- Update both this comment AND the "Claude Code Recommended" row when bumping CC support. -->
 # SDLC Configuration
@@ -13,7 +13,7 @@
 | Wizard Version | 1.87.0 |
 | Last Updated | 2026-07-04 |
 | Claude Code Minimum | v2.1.154+ (required for `opus[1m]` alias resolution); v2.1.105+ for `PreCompact` hook |
-| Claude Code Recommended | v2.1.195+ — comma-separated hook matcher fix (v2.1.191), hyphenated matcher exact-match fix (v2.1.195), `sandbox.credentials` setting (v2.1.187), `autoMode.classifyAllShell` setting (v2.1.193) |
+| Claude Code Recommended | v2.1.210+ — `SessionStart`/`Setup`/`SubagentStart` hooks no longer hide stderr on exit 2 (v2.1.199, relevant to #436's exit-code semantics), hook events no longer silently dropped during `SessionStart` in headless sessions (v2.1.204, relevant to our hooks running under `claude -p`/CI), duplicate skill-instruction context bloat on re-invocation fixed (v2.1.202), hook-callback timeouts no longer misreported as user rejection in unattended sessions (v2.1.210), `$1`/`$2` positional placeholders in skills preserved verbatim (v2.1.210, wizard skills use `$ARGUMENTS` — unaffected) |
 | Recommended Model | Sonnet 5 (default) — beats Opus 4.6 on benchmarks at generally lower quota (savings vary by effort; narrows at `high`/`xhigh`). Escalate to Opus 4.8 `xhigh` when stuck. Opus 4.6 `max` remains valid for proven consistency. See `AI_SETUP_LANES.md`. |
 | Recommended Effort | Model-aware — Sonnet 5: `medium` default (CodeRabbit-tested), escalate `high` → `xhigh` for hard tasks. Opus 4.8/Fable: `xhigh`/`high`. Opus 4.6: `max` only (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc env var. |
 
