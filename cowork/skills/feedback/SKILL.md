@@ -1,7 +1,7 @@
 ---
 name: feedback
 description: Submit feedback, bug reports, feature requests, or share SDLC patterns you've discovered. Privacy-first — always asks before scanning.
-argument-hint: [optional: bug | feature | pattern | improvement]
+argument-hint: "[optional: bug | feature | pattern | improvement]"
 effort: medium
 ---
 # Feedback — Community Contribution Loop
