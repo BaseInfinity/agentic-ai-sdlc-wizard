@@ -52,11 +52,16 @@ The methodology (plan → TDD → self-review → confidence check) is universal
 
 ### From GitHub (recommended)
 
-Install as a plugin in Claude Desktop or claude.ai settings:
+The plugin lives in a subdirectory of the main wizard repo, so it's registered as a second entry (`sdlc-wizard-cowork`) in the repo's root marketplace via a `git-subdir` source — a GitHub web-UI URL like `.../tree/main/cowork` is **not** a supported marketplace source on its own (only `owner/repo` shorthand, full git URLs, local paths, or direct `marketplace.json` URLs are). Add the whole repo as a marketplace, then install the Cowork-specific plugin from it:
 
 ```
-Plugin URL: https://github.com/BaseInfinity/claude-sdlc-wizard/tree/main/cowork
+/plugin marketplace add BaseInfinity/claude-sdlc-wizard
+/plugin install sdlc-wizard-cowork@sdlc-wizard-marketplace
 ```
+
+In Claude Desktop's UI, this is Customize > Plugins > Add marketplace, entering `BaseInfinity/claude-sdlc-wizard`, then selecting `sdlc-wizard-cowork` from the marketplace's plugin list (not the top-level `sdlc-wizard` entry, which is the CLI-based full wizard).
+
+**Fallback (local ZIP upload):** if the marketplace/install flow isn't available in your Claude Desktop build, zip this `cowork/` directory (root must contain `.claude-plugin/`, `hooks/`, `skills/`, `README.md`) and use Customize > Plugins > Add plugin > Upload plugin instead.
 
 ### Local testing
 

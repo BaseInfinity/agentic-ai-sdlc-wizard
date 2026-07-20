@@ -19,6 +19,21 @@
       },
       "category": "productivity",
       "tags": ["sdlc", "tdd", "code-quality", "testing"]
+    },
+    {
+      "name": "sdlc-wizard-cowork",
+      "source": {
+        "source": "git-subdir",
+        "url": "BaseInfinity/claude-sdlc-wizard",
+        "path": "cowork"
+      },
+      "description": "SDLC enforcement for Claude Cowork — TDD, planning, self-review via prompt-based hooks and skills",
+      "version": "1.87.0",
+      "author": {
+        "name": "Stefan Ayala"
+      },
+      "category": "productivity",
+      "tags": ["sdlc", "tdd", "code-quality", "methodology", "cowork"]
     }
   ]
 }

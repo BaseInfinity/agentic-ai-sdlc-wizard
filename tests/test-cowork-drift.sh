@@ -50,6 +50,92 @@ else
   fail "cowork/README.md missing"
 fi
 
+# Test 4b (#455): cowork/.claude-plugin/marketplace.json exists and is valid JSON.
+# This is NOT the primary GitHub install path (that's the root marketplace.json's
+# git-subdir entry, tested below) — Anthropic's docs confirm a GitHub web-UI
+# `/tree/branch/subdir` URL was never a supported marketplace source at all (only
+# owner/repo shorthand, full git URLs, local paths, or direct marketplace.json URLs
+# are). This self-contained manifest supports the documented local-path fallback
+# (`/plugin marketplace add ./cowork` after cloning) so it still needs to exist.
+if [ -f "$PROJECT_ROOT/cowork/.claude-plugin/marketplace.json" ]; then
+  if python3 -c "import json; json.load(open('$PROJECT_ROOT/cowork/.claude-plugin/marketplace.json'))" 2>/dev/null; then
+    pass "cowork marketplace.json exists and is valid JSON"
+  else
+    fail "cowork marketplace.json is not valid JSON"
+  fi
+else
+  fail "cowork/.claude-plugin/marketplace.json missing (breaks local-path marketplace add)"
+fi
+
+# Test 4c (#455): marketplace.json's plugin entry sources itself ("." relative to
+# cowork/.claude-plugin/), not the repo root — this is a self-contained marketplace
+# scoped to the cowork subtree, distinct from the root marketplace.json.
+if [ -f "$PROJECT_ROOT/cowork/.claude-plugin/marketplace.json" ]; then
+  source_val=$(python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/cowork/.claude-plugin/marketplace.json'))
+plugins = d.get('plugins', [])
+print(plugins[0].get('source', '') if plugins else '')
+" 2>/dev/null)
+  if [ "$source_val" = "." ]; then
+    pass "cowork marketplace.json plugin entry sources itself (\".\")"
+  else
+    fail "cowork marketplace.json plugin entry source is '$source_val', expected '.'"
+  fi
+else
+  fail "marketplace.json missing (skipping source check)"
+fi
+
+# Test 4d (#455): marketplace.json's registered plugin name/version match plugin.json —
+# prevents the marketplace listing and the actual installable plugin from drifting apart.
+if [ -f "$PROJECT_ROOT/cowork/.claude-plugin/marketplace.json" ] && [ -f "$PROJECT_ROOT/cowork/.claude-plugin/plugin.json" ]; then
+  mp_name=$(python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/cowork/.claude-plugin/marketplace.json'))
+plugins = d.get('plugins', [])
+print(plugins[0].get('name', '') if plugins else '')
+" 2>/dev/null)
+  mp_ver=$(python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/cowork/.claude-plugin/marketplace.json'))
+plugins = d.get('plugins', [])
+print(plugins[0].get('version', '') if plugins else '')
+" 2>/dev/null)
+  plugin_name=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT/cowork/.claude-plugin/plugin.json')).get('name',''))" 2>/dev/null)
+  plugin_ver=$(python3 -c "import json; print(json.load(open('$PROJECT_ROOT/cowork/.claude-plugin/plugin.json')).get('version',''))" 2>/dev/null)
+  if [ "$mp_name" = "$plugin_name" ] && [ "$mp_ver" = "$plugin_ver" ]; then
+    pass "marketplace.json entry matches plugin.json (name=$mp_name, version=$mp_ver)"
+  else
+    fail "marketplace.json entry (name=$mp_name, version=$mp_ver) drifted from plugin.json (name=$plugin_name, version=$plugin_ver)"
+  fi
+else
+  fail "marketplace.json or plugin.json missing (skipping parity check)"
+fi
+
+# Test 4e (#455, corrected root cause): the ROOT marketplace.json must register
+# sdlc-wizard-cowork via a git-subdir source pointing at path "cowork" — this is
+# the actual documented GitHub install path per Anthropic's plugin-marketplaces
+# schema (git-subdir source type, used for a plugin nested in a subdirectory of a
+# repo). A GitHub web-UI subtree URL alone was never a valid marketplace source.
+if [ -f "$PROJECT_ROOT/.claude-plugin/marketplace.json" ]; then
+  cowork_entry=$(python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/.claude-plugin/marketplace.json'))
+for p in d.get('plugins', []):
+    if p.get('name') == 'sdlc-wizard-cowork':
+        src = p.get('source', {})
+        print(f\"{src.get('source','')}|{src.get('path','')}\")
+        break
+" 2>/dev/null)
+  if [ "$cowork_entry" = "git-subdir|cowork" ]; then
+    pass "root marketplace.json registers sdlc-wizard-cowork via git-subdir source, path=cowork"
+  else
+    fail "root marketplace.json's sdlc-wizard-cowork entry is missing or misconfigured (got: '$cowork_entry', expected 'git-subdir|cowork')"
+  fi
+else
+  fail "root .claude-plugin/marketplace.json missing (skipping git-subdir entry check)"
+fi
+
 echo ""
 echo "--- Skill Drift Tests ---"
 
@@ -87,6 +173,20 @@ if [ -f "$PROJECT_ROOT/cowork/README.md" ]; then
   fi
 else
   fail "README missing (skipping content check)"
+fi
+
+# Test 7b (#455): README must document the real install flow (marketplace add +
+# plugin install by name), not the broken bare subtree URL that caused #455 —
+# regression guard so the docs can't silently revert to the invalid format.
+if [ -f "$PROJECT_ROOT/cowork/README.md" ]; then
+  if grep -qF "/plugin marketplace add" "$PROJECT_ROOT/cowork/README.md" && \
+     grep -qF "sdlc-wizard-cowork@" "$PROJECT_ROOT/cowork/README.md"; then
+    pass "README documents the real marketplace-add + plugin-install flow"
+  else
+    fail "README doesn't document '/plugin marketplace add' + 'sdlc-wizard-cowork@<marketplace>' install commands"
+  fi
+else
+  fail "README missing (skipping install-flow check)"
 fi
 
 # Test 8: hooks/hooks.json exists and is valid JSON
