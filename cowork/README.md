@@ -10,9 +10,9 @@ SDLC enforcement for Claude Cowork sessions. Provides methodology guidance via s
 |-----------|-------------------|---------|
 | SDLC skill | `/sdlc-wizard-cowork:sdlc` | Full SDLC workflow: planning, TDD, self-review |
 | Feedback skill | `/sdlc-wizard-cowork:feedback` | Privacy-first community feedback and pattern sharing |
-| TDD hook | `PreToolUse` (Write/Edit) | Reminds you to write failing tests before implementation |
-| SDLC baseline hook | `UserPromptSubmit` | Injects the SDLC checklist at every prompt |
-| Completion hook | `Stop` | Checks confidence stated, self-review done, tests passing |
+| TDD hook | `PreToolUse` (Write/Edit) | Denies creating a new non-test file that doesn't look like a test (filename heuristic — see limits below) |
+| SDLC baseline hook | `UserPromptSubmit` | Denies prompts that explicitly ask to skip planning/testing/review |
+| Completion hook | `Stop` | Denies stopping if code changed but tests weren't shown passing, self-review is missing, or no confidence was stated |
 
 ## Hooks — Prompt-Based Enforcement
 
@@ -24,9 +24,11 @@ This plugin ships 3 **prompt-based hooks** (`"type": "prompt"`) that enforce SDL
 | SDLC baseline | `sdlc-prompt-check.sh` | `UserPromptSubmit` |
 | Completion check | _(new — no CC equivalent)_ | `Stop` |
 
-Prompt hooks work by injecting instructions into Claude's context at the right moment — no bash, no shell, no filesystem access needed.
+**Prompt hooks do not inject text into the main conversation.** Per Anthropic's documented `prompt` hook contract (`code.claude.com/docs/en/hooks`), each hook sends its `prompt` field to a separate, single-turn evaluator model (Haiku by default), with the hook's JSON input either substituted at `$ARGUMENTS` or auto-appended if `$ARGUMENTS` is omitted. The evaluator must respond `{"ok": true}` to allow, or `{"ok": false, "reason": "..."}` to deny — no shell, no filesystem access needed, but also no soft reminders: it's a real gate, not a nudge. Blocking semantics differ per event — `Stop`'s reason is fed back to Claude and the turn continues (it can actually fix things and retry); `UserPromptSubmit`'s block ends the turn outright with no retry, so it's scoped narrowly (see the hook's own prompt in `hooks/hooks.json`).
 
-> **Note:** These hooks use the same format as Claude Code plugin hooks and match the spec documented in Anthropic's `cowork-plugin-management` plugin. However, they have not yet been tested in a live Cowork session. If hooks don't fire after install, file a bug on the [wizard repo](https://github.com/BaseInfinity/claude-sdlc-wizard/issues).
+**Known limit:** the `PreToolUse` TDD check can only see the current file write, not prior turns or the filesystem — it's a best-effort filename heuristic (denies creating a new non-test file), not proof a failing test was actually run first. A `type: "agent"` hook (multi-turn, with Read/Grep/Glob access) would be the mechanically correct fix for real TDD-order verification; that's a larger, separate change, tracked as a follow-up rather than attempted here.
+
+> **Note:** Live-tested via Codex Desktop computer-use E2E runs (issue [#432](https://github.com/BaseInfinity/claude-sdlc-wizard/issues/432), 2026-07-19/20). An earlier version of these hooks was authored against an incorrect understanding of the mechanism (wrong response schema, checklist-style prompts with no explicit final decision request) — see [#456](https://github.com/BaseInfinity/claude-sdlc-wizard/issues/456) — and has since been rewritten to match Anthropic's documented examples. If hooks still misbehave after install, file a bug on the [wizard repo](https://github.com/BaseInfinity/claude-sdlc-wizard/issues).
 
 ### What's NOT Ported (and Why)
 
