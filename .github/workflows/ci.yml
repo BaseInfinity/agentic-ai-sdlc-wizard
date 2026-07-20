@@ -178,6 +178,9 @@ jobs:
       - name: Run cc-version-drift workflow tests (#350)
         run: ./tests/test-cc-version-drift.sh
 
+      - name: Run release-drift gate tests (#449)
+        run: ./tests/test-release-drift.sh
+
       - name: Run domain detection tests
         run: ./tests/test-domain-detection.sh
 

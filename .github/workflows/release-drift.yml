@@ -1,0 +1,278 @@
+name: Release Drift
+
+# ROADMAP #449: main must not silently outrun the published npm package.
+# Cheap GitHub-API-only detector — no LLM, no API spend. Mirrors
+# cc-version-drift.yml's pattern (#350), pointed inward at our own
+# package instead of outward at Claude Code's.
+#
+# Context: npm `latest` sat at v1.86.0 while main was 7
+# consumer-affecting commits ahead (2026-07-14 incident) — the #445
+# Copilot fix was merged, thanked, and closed while every npx install
+# kept shipping the bug it fixed, and nothing in the process would
+# ever have prompted a release. Root causes: (a) publish requires a
+# manual `git tag v* && git push origin v*` that nothing prompts for;
+# (b) "small commits stay local until a release" plus "docs don't feel
+# release-worthy" let guidance changes pile up with no release
+# decision ever made; (c) cc-version-drift.yml watches Claude Code's
+# npm drift but nothing watched OUR OWN package's drift vs main.
+#
+# Design constraints (each enforced by tests/test-release-drift.sh):
+#
+#   1. Standalone workflow — NOT extending weekly-update.yml, same
+#      rationale as cc-version-drift.yml (#350.1): that workflow's
+#      cron is commented out and its tests assert `issues: write` is
+#      absent (deliberate #212/#231 guardrails).
+#
+#   2. Cron staggered from neighboring workflows. weekly-update.yml:
+#      09:00 UTC Mon (disabled). weekly-api-update.yml: 10:00 UTC Mon.
+#      cc-version-drift.yml: 09:30 UTC Mon. We slot at 09:45 UTC Mon.
+#
+#   3. Idempotency via label `release-drift` + machine-readable marker
+#      in issue body — edit the existing open issue rather than
+#      comment-spam, same as cc-version-drift.yml.
+#
+#   4. Consumer-distributed paths: skills/, hooks/, cli/,
+#      CLAUDE_CODE_SDLC_WIZARD.md, cowork/ — the same set #449's own
+#      scope names. A commit touching only tests/, .github/, or
+#      internal docs (ROADMAP.md, this file) doesn't strand a real fix
+#      behind an unpublished release.
+#
+#   5. No `|| true` / `|| echo` failure-suppression — the whole point
+#      is "don't let drift detection silently fail."
+#
+#   6. NOT auto-publish-on-merge. This workflow only opens/refreshes a
+#      tracking issue — the human release gate and Release Review
+#      Focus checklist (SDLC.md) stay. The fix targets the forgetting,
+#      not the gate.
+#
+#   7. Verifies npm's ACTUAL published version against the last git
+#      tag, independent of the commit-count/age check (Codex round-1
+#      catch, this PR): counting commits since the last tag only
+#      proves main outran the TAG, not npm — a tag pushed but whose
+#      `release.yml` publish step then failed silently would report
+#      "no drift" right after a broken release without this check.
+
+on:
+  schedule:
+    - cron: '45 9 * * 1'  # Mon 09:45 UTC, staggered from weekly/weekly-api/cc-drift
+  workflow_dispatch:
+    inputs:
+      count_threshold:
+        description: 'Override commit-count threshold. Default 5.'
+        required: false
+        default: '5'
+      age_threshold_days:
+        description: 'Override age threshold (days). Default 7.'
+        required: false
+        default: '7'
+
+permissions:
+  contents: read  # package.json + git log + scripts/release-drift-check.sh — read-only
+  issues: write   # open / update the tracking issue (the only side effect)
+
+env:
+  RELEASE_DRIFT_LABEL: 'release-drift'
+  COUNT_THRESHOLD: '5'
+  AGE_THRESHOLD_DAYS: '7'
+  # Consumer-distributed paths per #449's own scope — anything a
+  # `npx agentic-sdlc-wizard init/check` actually installs.
+  CONSUMER_PATHS: 'skills/ hooks/ cli/ CLAUDE_CODE_SDLC_WIZARD.md cowork/'
+
+jobs:
+  detect-drift:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # need full history for `git describe` + `git log <tag>..HEAD`
+
+      - name: Find last published tag and count consumer-path commits since
+        id: gitdata
+        run: |
+          set -euo pipefail
+          if ! LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null); then
+            echo "::error::No v* tag found — cannot compute release drift"
+            exit 1
+          fi
+          echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
+
+          # shellcheck disable=SC2086 -- CONSUMER_PATHS is an intentional word-split list
+          COMMIT_COUNT=$(git log "${LAST_TAG}..HEAD" --oneline -- $CONSUMER_PATHS | wc -l | tr -d ' ')
+          echo "commit_count=${COMMIT_COUNT}" >> "$GITHUB_OUTPUT"
+
+          if [ "$COMMIT_COUNT" -gt 0 ]; then
+            # shellcheck disable=SC2086
+            OLDEST_EPOCH=$(git log "${LAST_TAG}..HEAD" --format='%at' -- $CONSUMER_PATHS | tail -1)
+          else
+            OLDEST_EPOCH=0
+          fi
+          echo "oldest_commit_epoch=${OLDEST_EPOCH}" >> "$GITHUB_OUTPUT"
+          echo "now_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+          echo "last tag: ${LAST_TAG}, consumer-path commits since: ${COMMIT_COUNT}"
+
+      - name: Verify npm actually published the last tag
+        id: npmcheck
+        run: |
+          set -euo pipefail
+          # Codex round-1 catch: counting commits since the last git
+          # tag only proves main outran the last TAG — if release.yml's
+          # publish step failed silently after the tag was pushed, npm
+          # could be stale relative to the tag itself, and this
+          # workflow would wrongly report "no drift" right after a
+          # broken release. Compare npm's actual published version
+          # against the tag directly, independent of the commit-count
+          # check below.
+          NPM_VERSION=$(npm view agentic-sdlc-wizard version)
+          if [ -z "${NPM_VERSION:-}" ]; then
+            echo "::error::npm view returned empty version for agentic-sdlc-wizard — registry issue?"
+            exit 1
+          fi
+          TAG_VERSION="${LAST_TAG#v}"
+          echo "npm_version=${NPM_VERSION}" >> "$GITHUB_OUTPUT"
+          if [ "$NPM_VERSION" != "$TAG_VERSION" ]; then
+            echo "mismatch=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::npm published version (${NPM_VERSION}) does not match last tag (${TAG_VERSION}) — possible failed publish"
+          else
+            echo "mismatch=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          LAST_TAG: ${{ steps.gitdata.outputs.last_tag }}
+
+      - name: Compute drift
+        id: drift
+        env:
+          COMMIT_COUNT: ${{ steps.gitdata.outputs.commit_count }}
+          OLDEST_EPOCH: ${{ steps.gitdata.outputs.oldest_commit_epoch }}
+          NOW_EPOCH: ${{ steps.gitdata.outputs.now_epoch }}
+          COUNT_THRESHOLD_IN: ${{ inputs.count_threshold || env.COUNT_THRESHOLD }}
+          AGE_THRESHOLD_IN: ${{ inputs.age_threshold_days || env.AGE_THRESHOLD_DAYS }}
+        run: |
+          set -euo pipefail
+          ./scripts/release-drift-check.sh \
+            --commit-count "$COMMIT_COUNT" \
+            --oldest-commit-epoch "$OLDEST_EPOCH" \
+            --now-epoch "$NOW_EPOCH" \
+            --count-threshold "$COUNT_THRESHOLD_IN" \
+            --age-threshold-days "$AGE_THRESHOLD_IN" \
+            > /tmp/drift.json
+          cat /tmp/drift.json
+          {
+            echo "alert=$(jq -r '.alert' /tmp/drift.json)"
+            echo "commit_count=$(jq -r '.commit_count' /tmp/drift.json)"
+            echo "oldest_age_days=$(jq -r '.oldest_age_days' /tmp/drift.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update tracking issue
+        if: steps.drift.outputs.alert == 'true' || steps.npmcheck.outputs.mismatch == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          LAST_TAG: ${{ steps.gitdata.outputs.last_tag }}
+          COMMIT_COUNT: ${{ steps.drift.outputs.commit_count }}
+          OLDEST_AGE_DAYS: ${{ steps.drift.outputs.oldest_age_days }}
+          PUBLISH_MISMATCH: ${{ steps.npmcheck.outputs.mismatch }}
+          NPM_VERSION: ${{ steps.npmcheck.outputs.npm_version }}
+        run: |
+          set -euo pipefail
+
+          # Ensure the label exists (idempotent). `gh api` writes JSON
+          # error bodies to STDOUT on non-2xx — capture both streams.
+          label_out=$(mktemp)
+          if ! gh api "repos/${REPO}/labels" --method POST \
+               -f name="${RELEASE_DRIFT_LABEL}" \
+               -f color='D93F0B' \
+               -f description='main has consumer-affecting commits unpublished to npm (ROADMAP #449)' \
+               >"$label_out" 2>&1; then
+            if grep -q 'already_exists' "$label_out"; then
+              echo "label ${RELEASE_DRIFT_LABEL} already exists — continuing"
+            else
+              cat "$label_out" >&2
+              rm -f "$label_out"
+              exit 1
+            fi
+          fi
+          rm -f "$label_out"
+
+          if [ "$PUBLISH_MISMATCH" = "true" ]; then
+            TITLE="Release due: npm publish MISMATCH — tag ${LAST_TAG} but npm shows v${NPM_VERSION}"
+          else
+            TITLE="Release due: ${COMMIT_COUNT} consumer-affecting commit(s) unpublished since ${LAST_TAG} (oldest ${OLDEST_AGE_DAYS}d)"
+          fi
+
+          {
+            echo "<!-- release-drift last_tag=${LAST_TAG} commit_count=${COMMIT_COUNT} oldest_age_days=${OLDEST_AGE_DAYS} publish_mismatch=${PUBLISH_MISMATCH} -->"
+            echo ""
+            if [ "$PUBLISH_MISMATCH" = "true" ]; then
+              echo "**⚠️ PUBLISH FAILURE SUSPECTED: the last tag doesn't match what npm actually published.**"
+              echo ""
+              echo "- Last git tag: \`${LAST_TAG}\`"
+              echo "- npm \`latest\`: \`v${NPM_VERSION}\`"
+              echo "- These should match. A tag was pushed but \`release.yml\`'s publish step may have failed silently — check its run history."
+              echo ""
+            fi
+            echo "**\`main\` has consumer-affecting commits that npm hasn't published.**"
+            echo ""
+            echo "- Last published tag: \`${LAST_TAG}\`"
+            echo "- Consumer-path commits since (skills/, hooks/, cli/, CLAUDE_CODE_SDLC_WIZARD.md, cowork/): **${COMMIT_COUNT}**"
+            echo "- Oldest of those commits: **${OLDEST_AGE_DAYS} days old**"
+            echo ""
+            echo "## Stranded commits"
+            echo ""
+            echo '```'
+            # shellcheck disable=SC2086
+            git log "${LAST_TAG}..HEAD" --oneline -- $CONSUMER_PATHS
+            echo '```'
+            echo ""
+            echo "## What to do"
+            echo ""
+            echo "1. Review the stranded commits above — do they warrant a release now, or can they wait for more to batch?"
+            echo "2. If releasing: bump \`package.json\` version, add a \`CHANGELOG.md\` entry, then:"
+            echo "   \`\`\`bash"
+            echo "   git tag v<version> && git push origin v<version>"
+            echo "   \`\`\`"
+            echo "   Merging to main does NOT publish — only the tag push triggers \`release.yml\`."
+            echo "3. Verify: \`npm view agentic-sdlc-wizard version\`."
+            echo "4. Close this issue. If drift recurs, the next Monday cron will open a fresh one."
+            echo ""
+            echo "## Sources"
+            echo ""
+            echo "- ROADMAP #449 — this workflow's own scope and the 2026-07-14 incident that motivated it"
+            echo "- \`SDLC.md\` → Lessons Learned → \"Merging to main does NOT trigger npm publish\""
+          } > /tmp/issue_body.md
+
+          EXISTING=$(gh issue list \
+            --repo "${REPO}" \
+            --state open \
+            --label "${RELEASE_DRIFT_LABEL}" \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Updating existing issue #${EXISTING} (no new issue, no comment spam)"
+            gh issue edit "$EXISTING" \
+              --repo "${REPO}" \
+              --title "$TITLE" \
+              --body-file /tmp/issue_body.md
+            exit 0
+          fi
+
+          echo "Creating new tracking issue"
+          gh issue create \
+            --repo "${REPO}" \
+            --title "$TITLE" \
+            --body-file /tmp/issue_body.md \
+            --label "${RELEASE_DRIFT_LABEL}" \
+            --label "auto-generated"
+
+      - name: No drift
+        if: steps.drift.outputs.alert != 'true' && steps.npmcheck.outputs.mismatch != 'true'
+        run: |
+          echo "No drift: commit_count=${COMMIT_COUNT} oldest_age_days=${OLDEST_AGE_DAYS} npm_version=${NPM_VERSION}"
+        env:
+          COMMIT_COUNT: ${{ steps.drift.outputs.commit_count }}
+          OLDEST_AGE_DAYS: ${{ steps.drift.outputs.oldest_age_days }}
+          NPM_VERSION: ${{ steps.npmcheck.outputs.npm_version }}
