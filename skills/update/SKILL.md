@@ -194,7 +194,7 @@ If user's `.claude/settings.json` has top-level `allowedTools`, offer migrate:
    > - **Later** — don't touch now
    > `[m/k/l]`
 
-2. **Both `allowedTools` AND `permissions.allow` present** — flag: lists may have diverged. Show both arrays. On migrate, append every entry from `allowedTools` to the end of `permissions.allow` (preserve order), then drop `allowedTools`. **Do NOT dedup** — duplicates are a no-op for CC but removing them could silently drop user intent. Explicit dedup request only, as a separate edit.
+2. **Both `allowedTools` AND `permissions.allow` present** — flag: lists may have diverged. Show both arrays. On migrate, append every entry from `allowedTools` to the end of `permissions.allow` (preserve order), then drop `allowedTools`. **Do NOT dedup.** Duplicates are a no-op for CC, but removing them could silently lose user intent — explicit dedup request only, as a separate edit.
 
 3. **Only `permissions.allow`** — already on new shape.
 4. **Neither** — no action.
