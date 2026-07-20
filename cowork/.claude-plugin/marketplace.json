@@ -1,0 +1,24 @@
+{
+  "name": "sdlc-wizard-cowork-marketplace",
+  "owner": {
+    "name": "Stefan Ayala",
+    "email": "stefan@baseinfinity.dev"
+  },
+  "metadata": {
+    "description": "SDLC enforcement for Claude Cowork sessions via prompt-based hooks and skills",
+    "version": "1.87.0"
+  },
+  "plugins": [
+    {
+      "name": "sdlc-wizard-cowork",
+      "source": ".",
+      "description": "SDLC enforcement for Claude Cowork — TDD, planning, self-review via prompt-based hooks and skills",
+      "version": "1.87.0",
+      "author": {
+        "name": "Stefan Ayala"
+      },
+      "category": "productivity",
+      "tags": ["sdlc", "tdd", "code-quality", "methodology", "cowork"]
+    }
+  ]
+}
