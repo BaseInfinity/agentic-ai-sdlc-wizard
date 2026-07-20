@@ -38,7 +38,7 @@ The wizard files in the user's project are one half of the install. The other ha
 
 1. **Global install** (rare): `npm ls -g agentic-sdlc-wizard --json --depth=0 2>/dev/null | jq -r '.dependencies["agentic-sdlc-wizard"].version // empty'`
 
-2. **npx cache** (common): find every `package.json` under `~/.npm/_npx` matching `*agentic-sdlc-wizard*`, extract `.version`, pick the largest **by semver** (do NOT use `sort -u | tail -1` — lexicographic treats `1.9.0 > 1.10.0`). Use a Node `cmp()` helper: split on `-` for prerelease tag, compare numeric `major.minor.patch`, then prerelease ordering (`1.40.0-beta.1 < 1.40.0`). Read each version on its own line via stdin, track max, print at close. Empty input → empty output.
+2. **npx cache** (common): find every `package.json` under `~/.npm/_npx` matching `*agentic-sdlc-wizard*`, extract `.version`, pick the largest **by semver** (do NOT use `sort -u | tail -1` — lexicographic treats `1.9.0 > 1.10.0`). Use a Node `cmp()` helper: split on `-` for prerelease tag, compare `major.minor.patch` numerically, then prerelease order. Track max across stdin lines; empty input → empty output.
 
 If both paths return empty, the user may be running from a custom install or never used `npx`. Treat as **undetectable** — note in the report but do not block. Skip the CLI bump prompt; continue to Step 2.
 
@@ -75,7 +75,7 @@ Cache the result (also used in Step 3).
 
 If A: prompt the user to run the one-liner, then re-invoke `/claude-update-wizard`. If B: same with the warning. If C: log the choice and continue.
 
-**`check-only` precedence:** if the user passed `check-only`, Step 1.5 runs in report-only mode — print the gap if found, but do NOT prompt and do NOT run `init --force`. The check-only contract is "tell me what's drifted, don't change anything," and that supersedes the CLI bump path. **Graceful fallback** when CLI undetectable: skip the bump prompt, surface the unknown-state in the report, continue to Step 2.
+**`check-only` precedence:** if passed, Step 1.5 runs report-only — print the gap if found, but do NOT prompt or run `init --force`. Fallback when CLI undetectable: skip the bump prompt, surface unknown-state in the report, continue to Step 2.
 
 **Why Step 1.5, not later:** subsequent steps shell out to `npx agentic-sdlc-wizard check` (Step 4). If the CLI is stale, Step 4 reports based on the OLD definition of managed files and may miss new templates entirely.
 
@@ -89,7 +89,7 @@ Extract latest version from the first `## [X.X.X]` line.
 
 ### Step 3: Compare Versions and Show What Changed
 
-**Resolve "latest installable" from npm registry (#405):** Compare the npm registry version (Step 1.5 cache) to the CHANGELOG heading version (Step 2). Use the **lower** of the two as "latest installable" — this prevents showing a version that isn't yet published to npm during the publish window. If CHANGELOG is ahead of npm, note: "v{changelog} is on GitHub but not yet published to npm; showing v{npm} as latest installable."
+**Resolve "latest installable" from npm registry (#405):** Compare the npm registry version (Step 1.5 cache) to the CHANGELOG heading version (Step 2). Use the **lower** of the two as "latest installable" — avoids showing a version not yet published to npm during the publish window. If CHANGELOG is ahead, note it's on GitHub but not yet published.
 
 Parse CHANGELOG entries between the user's installed version and the resolved latest installable. Present a clear summary:
 
@@ -194,7 +194,7 @@ If user's `.claude/settings.json` has top-level `allowedTools`, offer migrate:
    > - **Later** — don't touch now
    > `[m/k/l]`
 
-2. **Both `allowedTools` AND `permissions.allow` present** — flag: lists may have diverged. Show both arrays. On migrate, **append every entry from `allowedTools` to the end of `permissions.allow`** byte-for-byte (preserve order within each list), then drop `allowedTools`. **Do NOT dedup.** Same string in both lists stays in both — CC treats duplicates as no-op, but dedup would silently remove user data the user might have intended. If user explicitly asks to dedup, that's a separate follow-up edit.
+2. **Both `allowedTools` AND `permissions.allow` present** — flag: lists may have diverged. Show both arrays. On migrate, append every entry from `allowedTools` to the end of `permissions.allow` (preserve order), then drop `allowedTools`. **Do NOT dedup.** Duplicates are a no-op for CC, but removing them could silently lose user intent — explicit dedup request only, as a separate edit.
 
 3. **Only `permissions.allow`** — already on new shape.
 4. **Neither** — no action.
@@ -203,7 +203,7 @@ Preserve every entry byte-for-byte; only the container key changes. Do not reord
 
 ### Step 7.7: Dead Plugin Registration Cleanup (Global Settings)
 
-Wizard installs sometimes leave dead plugin registrations in **global** `~/.claude/settings.json` after the underlying plugin directory is renamed/disabled/removed. Symptom: every CC session emits `UserPromptSubmit hook error: Failed to run: Plugin directory does not exist: <path> ... run /plugin to reinstall`. Harmless but bleeds into every prompt across every project until cleaned up.
+Wizard installs sometimes leave dead plugin registrations in **global** `~/.claude/settings.json` after the plugin directory is renamed/disabled/removed. Symptom: every CC session emits a harmless `Plugin directory does not exist` hook error that bleeds into every prompt until cleaned up.
 
 This step is **global-settings-only** (`~/.claude/settings.json`, not project's). Update normally avoids global; this is the one exception, only when the marketplace name matches an exact wizard-owned identifier.
 
@@ -221,26 +221,33 @@ If `cli/init.js` later adds wizard marketplace names, append verbatim.
    - Verify `entry.source.source === "directory"` AND `typeof entry.source.path === "string"`. Either guard fails → skip (not the wizard's shape).
    - Resolve `source.path` (expand `~`). If the resolved path **does not exist**, mark **dead**.
 3. For every dead marketplace `<name>`, look for `enabledPlugins["sdlc-wizard@<name>"]` — also flag for removal.
-4. Repeat for **all** allowlist entries; collect the full set of dead pairs before prompting (multiple are common).
+4. Repeat for all allowlist entries; collect dead pairs before prompting.
 
 **Cleanup:** List all dead pairs, ask `[y/N]`. If yes: `cp ~/.claude/settings.json ~/.claude/settings.json.bak.$(date +%Y%m%dT%H%M%S)`, then single `jq` filter: `del(.enabledPlugins["sdlc-wizard@<name>"]) | del(.extraKnownMarketplaces["<name>"])` for each dead key. Write to temp, validate with `jq empty`, then `mv`. If no: skip.
 
 **Guards:** Idempotent (no-op after clean). Scope: only allowlist matches. Runs regardless of version match. `check-only`: detect only, no mutations.
 
-### Step 7.8: advisorModel Migration (v2.1.170+)
+### Step 7.8: advisorModel Migration + Model Setup Guidance (v2.1.170+, #452)
 
-If CC < v2.1.170: show "Run `! claude update` to upgrade" and skip. If `.claude/settings.json` already has `advisorModel` or no `model` pin: skip.
+If CC < v2.1.170: skip. Resolve the live driver from the `model` pin, or — unpinned — your self-reported model name (`/model` without saving persists nothing).
 
-If `model` pin exists but no `advisorModel`, suggest per driver: `sonnet`/`claude-opus-4-6`/`claude-opus-4-8` → `advisorModel: "fable"`, `opusplan` → `advisorModel: "claude-opus-4-8"`. Ask `[a/S]`, write only `advisorModel` if accepted.
+1. **Live driver is Fable** (pin `"fable"`/`"claude-fable-5"`, or unpinned + live identity Fable) — fires even with `advisorModel` already set (`/setup` 9.5 never offers Fable as driver, always a misconfig). Show:
+
+> **Model Setup** — Fable-as-driver isn't recommended; it can trigger safeguard auto-switches on medical/legal/bio content mid-session. **Setup A:** Sonnet 5 driver + Fable advisor (beats Opus 4.6, generally lower quota, narrows at high effort). **Setup B:** Opus 4.6 driver + Fable advisor (stability). `[a/S]`?
+
+`[a]` writes `model: "sonnet"`, `advisorModel: "fable"`, `effortLevel: "medium"` (replaces existing pin). `[S]` (default): no change.
+
+2. **Pin exists (non-Fable), no `advisorModel`:** suggest per driver (`sonnet`/`claude-opus-4-6`/`claude-opus-4-8` → `advisorModel: "fable"`, `opusplan` → `claude-opus-4-8`). `[a/S]`; `[a]` writes **only** `advisorModel`, driver untouched.
+3. **No pin, live driver not Fable, or `advisorModel` set:** skip.
 
 ### Step 7.9: Effort Configuration Check (#384)
 
 Runs regardless of version match (like Step 7.7). `check-only`: report only. Effort is model-aware (v1.84.0+, see `AI_SETUP_LANES.md`), not blanket `max` — this step detects the anti-pattern, doesn't push everyone toward `max`.
 
-1. Read `model` from the settings cascade to find the driver. No pin / `sonnet` / `opusplan` = Sonnet 5; `claude-opus-4-6` = Opus 4.6; `claude-opus-4-8` = Opus 4.8.
-2. **Opus 4.6 driver:** `CLAUDE_CODE_EFFORT_LEVEL=max` in the project's `env` block → pass (silent; `max` is 4.6's actual sweet spot, no `xhigh`). If only `effortLevel: "max"` is set in `settings.json` (not the env var) → warn: CC ignores session-only `max` in settings, only the env var actually persists it — suggest moving it into the `env` block instead. Unset entirely or below `max` → suggest `/effort max` + that env entry.
-3. **Sonnet 5 or Opus 4.8 driver:** `CLAUDE_CODE_EFFORT_LEVEL=max` set anywhere → warn. This is the exact incident that motivated this check: a stale `max` env var silently overrides `/effort xhigh` after switching off Opus 4.6. Recommend removing it and using `/effort` per-session instead. Unset → pass (silent).
-4. Never suggest a shell-rc (`.zshrc`/`.bashrc`) export — only the project's `env` block, and only for Opus 4.6.
+1. Read `model` from the settings cascade. No pin / `sonnet` / `opusplan` = Sonnet 5; `claude-opus-4-6` = Opus 4.6; `claude-opus-4-8` = Opus 4.8.
+2. **Opus 4.6 driver:** `CLAUDE_CODE_EFFORT_LEVEL=max` in `env` → pass (silent, 4.6's sweet spot). Only `effortLevel: "max"` in `settings.json` → warn: CC ignores session-only settings, only the env var persists — suggest moving it. Unset/below `max` → suggest `/effort max` + env entry.
+3. **Sonnet 5 or Opus 4.8 driver:** `CLAUDE_CODE_EFFORT_LEVEL=max` anywhere → warn (stale env var silently overrides `/effort xhigh` post-switch). Recommend removing, use `/effort` per-session. Unset → pass (silent).
+4. Never suggest a shell-rc export — only the project's `env` block, only for Opus 4.6.
 
 ### Step 8: Apply Selected Changes
 

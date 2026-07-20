@@ -271,6 +271,9 @@ jobs:
       - name: Run wizard doc hook template drift tests (v1.84.0)
         run: ./tests/test-wizard-doc-hook-templates.sh
 
+      - name: Run update-skill Step 7.8 Fable-driver-guidance tests (#452)
+        run: ./tests/test-update-skill-step-7-8.sh
+
   # Clean up old bot comments on PR push (keeps PRs tidy)
   # Also runs on workflow_dispatch (no-op) so branch protection doesn't block auto-merge.
   cleanup-old-comments:
