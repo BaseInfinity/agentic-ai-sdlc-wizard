@@ -301,6 +301,131 @@ else
   fail "hooks.json not found (skipping type check)"
 fi
 
+# Test 14b (#456): every prompt hook should explicitly reference $ARGUMENTS.
+# Per Anthropic's documented prompt-hook contract (code.claude.com/docs/en/hooks,
+# verified against the raw docs, not a summarized fetch — an earlier round of
+# this fix mis-cited this contract from a hallucinated WebFetch summary and was
+# corrected by Codex xhigh review), the hook input JSON is auto-appended to the
+# prompt even if $ARGUMENTS is omitted — so omitting it does NOT make the
+# evaluator blind. Referencing it explicitly is still best practice (it lets you
+# control where the context appears relative to your instructions, matching
+# Anthropic's own official examples), so this stays a requirement, just not for
+# the "otherwise blind" reason originally claimed here.
+if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
+  if python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
+missing = []
+for event, matchers in d.items():
+    for m in matchers:
+        for h in m.get('hooks', []):
+            if h.get('type') == 'prompt' and '\$ARGUMENTS' not in h.get('prompt', ''):
+                missing.append(event)
+assert not missing, f'missing \$ARGUMENTS in: {missing}'
+" 2>/dev/null; then
+    pass "every prompt hook explicitly references \$ARGUMENTS (best practice, though input JSON auto-appends if omitted)"
+  else
+    fail "at least one prompt hook doesn't explicitly reference \$ARGUMENTS (not blind — auto-appended — but still worse practice)"
+  fi
+else
+  fail "hooks.json not found (skipping \$ARGUMENTS check)"
+fi
+
+# Test 14c (#456, corrected — the original version of this test asserted
+# numbered checklists are always wrong, which Codex xhigh review disproved:
+# Anthropic's own official Stop-hook example at code.claude.com/docs/en/hooks
+# uses a numbered multi-condition list feeding one decision. The REAL defect
+# in the original hooks.json wasn't the numbered format — it was never telling
+# the evaluator the required response schema at all). Every prompt hook must
+# explicitly instruct the evaluator to respond with the real schema
+# ({"ok": true} / {"ok": false, "reason": ...}), matching Anthropic's own
+# examples — not the "yes"/"no" schema this fix originally (incorrectly)
+# assumed, which was itself corrected after Codex disputed it with a citation.
+if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
+  if python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
+missing = []
+for event, matchers in d.items():
+    for m in matchers:
+        for h in m.get('hooks', []):
+            if h.get('type') != 'prompt':
+                continue
+            prompt = h.get('prompt', '')
+            if '\"ok\": true' not in prompt or '\"ok\": false' not in prompt:
+                missing.append(event)
+assert not missing, f'missing explicit ok/false response schema in: {missing}'
+" 2>/dev/null; then
+    pass "every prompt hook explicitly instructs the real {ok: true/false} response schema"
+  else
+    fail "at least one prompt hook doesn't explicitly instruct the {\"ok\": true/false} response format"
+  fi
+else
+  fail "hooks.json not found (skipping response-schema check)"
+fi
+
+# Test 14d (#456 Codex round-1 finding 2): PreToolUse's test-file heuristic must
+# guard against the substring false-positive Codex demonstrated ("contest.py",
+# "specification_parser.ts" both contain "test"/"spec" as substrings but are NOT
+# test files) — checked by requiring the prompt spell out that guard explicitly.
+if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
+  if python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
+prompt = next((hk.get('prompt','') for m in d.get('PreToolUse',[]) for hk in m.get('hooks',[]) if hk.get('type')=='prompt'), '')
+assert 'contest.py' in prompt or 'substring' in prompt.lower(), 'no substring-false-positive guard found'
+" 2>/dev/null; then
+    pass "PreToolUse prompt guards against the substring false-positive (contest.py etc.)"
+  else
+    fail "PreToolUse prompt doesn't guard against 'test'/'spec' substring false positives"
+  fi
+else
+  fail "hooks.json not found (skipping substring-guard check)"
+fi
+
+# Test 14e (#456 Codex round-1 finding 3): UserPromptSubmit must NOT deny plain
+# code requests just for lacking a user-authored plan — a block on this event
+# ends the turn with no retry, so denying ordinary prompts (e.g. "write a
+# function to sort a list", the exact prompt from the #432 E2E test) would be
+# actively disruptive. It must instead only deny prompts that explicitly try to
+# bypass safeguards.
+if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
+  if python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
+prompt = next((hk.get('prompt','') for m in d.get('UserPromptSubmit',[]) for hk in m.get('hooks',[]) if hk.get('type')=='prompt'), '')
+assert 'skip' in prompt.lower() or 'bypass' in prompt.lower(), 'no explicit-bypass framing found'
+assert 'already state a plan' not in prompt.lower(), 'still requires the USER to pre-state a plan (denies ordinary requests)'
+" 2>/dev/null; then
+    pass "UserPromptSubmit denies only explicit bypass requests, not ordinary code prompts"
+  else
+    fail "UserPromptSubmit still denies ordinary code prompts for lacking a user-stated plan, or lost the bypass framing"
+  fi
+else
+  fail "hooks.json not found (skipping UserPromptSubmit scope check)"
+fi
+
+# Test 14f (#456 Codex round-1 finding 4): Stop must require tests to actually
+# PASS, not merely run — Codex demonstrated "HIGH confidence; pytest ran with 3
+# failures" satisfied the prior (broken) criteria. Must also restore the
+# self-review requirement the README promises but the prior rewrite dropped.
+if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
+  if python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
+prompt = next((hk.get('prompt','') for m in d.get('Stop',[]) for hk in m.get('hooks',[]) if hk.get('type')=='prompt'), '')
+p = prompt.lower()
+assert 'pass' in p, 'no requirement that tests PASS (not just run)'
+assert 'self-review' in p, 'self-review requirement missing (README promises it)'
+" 2>/dev/null; then
+    pass "Stop requires tests to pass (not just run) and restores the self-review check"
+  else
+    fail "Stop is missing the tests-must-pass requirement or the self-review check"
+  fi
+else
+  fail "hooks.json not found (skipping Stop pass/self-review check)"
+fi
+
 echo ""
 echo "--- ROADMAP Tracking Tests ---"
 
