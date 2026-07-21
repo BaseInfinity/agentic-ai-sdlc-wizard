@@ -11,7 +11,10 @@
   "plugins": [
     {
       "name": "sdlc-wizard",
-      "source": ".",
+      "source": {
+        "source": "github",
+        "repo": "BaseInfinity/claude-sdlc-wizard"
+      },
       "description": "SDLC enforcement for AI agents — TDD, planning, self-review, CI shepherd",
       "version": "1.87.0",
       "author": {
@@ -24,7 +27,7 @@
       "name": "sdlc-wizard-cowork",
       "source": {
         "source": "git-subdir",
-        "url": "BaseInfinity/claude-sdlc-wizard",
+        "url": "https://github.com/BaseInfinity/claude-sdlc-wizard.git",
         "path": "cowork"
       },
       "description": "SDLC enforcement for Claude Cowork — TDD, planning, self-review via prompt-based hooks and skills",

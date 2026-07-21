@@ -136,6 +136,61 @@ else
   fail "root .claude-plugin/marketplace.json missing (skipping git-subdir entry check)"
 fi
 
+# Test 4f (#455 live diagnostic, 2026-07-21): the root marketplace.json's
+# "sdlc-wizard" entry must NOT use a bare string source ("."). Live Cowork
+# server logs (claude.ai-web.log) returned, verbatim:
+#   "sdlc-wizard: External plugin sources must be objects with a 'source' field"
+# — Cowork's remote validator rejects bare-string sources outright for external
+# (non-local) marketplace resolution, even though "." validates fine for local/
+# CLI use. This is a real, server-confirmed defect, not an inferred one.
+if [ -f "$PROJECT_ROOT/.claude-plugin/marketplace.json" ]; then
+  sdlc_wizard_source_info=$(python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/.claude-plugin/marketplace.json'))
+for p in d.get('plugins', []):
+    if p.get('name') == 'sdlc-wizard':
+        src = p.get('source')
+        if isinstance(src, dict):
+            print(f\"{src.get('source','')}|{src.get('repo','')}\")
+        else:
+            print(f'notdict|{src}')
+        break
+" 2>/dev/null)
+  if [ "$sdlc_wizard_source_info" = "github|BaseInfinity/claude-sdlc-wizard" ]; then
+    pass "root marketplace.json's sdlc-wizard entry uses {source: github, repo: BaseInfinity/claude-sdlc-wizard}"
+  else
+    fail "root marketplace.json's sdlc-wizard entry is misconfigured (got: '$sdlc_wizard_source_info', expected 'github|BaseInfinity/claude-sdlc-wizard') — Cowork's remote validator rejects bare-string sources"
+  fi
+else
+  fail "root .claude-plugin/marketplace.json missing (skipping source-type check)"
+fi
+
+# Test 4g (#455 live diagnostic, 2026-07-21): the git-subdir entry's "url" field
+# must be a full https:// URL, not owner/repo shorthand. Live Cowork server logs
+# returned, verbatim:
+#   "sdlc-wizard-cowork: Git source URL must use https://, got: BaseInfinity/claude-sdlc-wizard"
+# Anthropic's general plugin-marketplaces docs show shorthand as valid for
+# git-subdir's url field, but Cowork's remote/account-scoped backend enforces a
+# stricter requirement than the documented baseline — confirmed via live error
+# text, not inferred from docs alone.
+if [ -f "$PROJECT_ROOT/.claude-plugin/marketplace.json" ]; then
+  cowork_url=$(python3 -c "
+import json
+d = json.load(open('$PROJECT_ROOT/.claude-plugin/marketplace.json'))
+for p in d.get('plugins', []):
+    if p.get('name') == 'sdlc-wizard-cowork':
+        print(p.get('source', {}).get('url', ''))
+        break
+" 2>/dev/null)
+  if [ "$cowork_url" = "https://github.com/BaseInfinity/claude-sdlc-wizard.git" ]; then
+    pass "sdlc-wizard-cowork's git-subdir url is the exact expected full https:// URL"
+  else
+    fail "sdlc-wizard-cowork's git-subdir url ('$cowork_url') doesn't match the expected 'https://github.com/BaseInfinity/claude-sdlc-wizard.git' — Cowork's remote validator rejects owner/repo shorthand"
+  fi
+else
+  fail "root .claude-plugin/marketplace.json missing (skipping url-format check)"
+fi
+
 echo ""
 echo "--- Skill Drift Tests ---"
 
