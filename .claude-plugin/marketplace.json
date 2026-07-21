@@ -10,17 +10,6 @@
   },
   "plugins": [
     {
-      "name": "sdlc-wizard",
-      "source": ".",
-      "description": "SDLC enforcement for AI agents — TDD, planning, self-review, CI shepherd",
-      "version": "1.87.0",
-      "author": {
-        "name": "Stefan Ayala"
-      },
-      "category": "productivity",
-      "tags": ["sdlc", "tdd", "code-quality", "testing"]
-    },
-    {
       "name": "sdlc-wizard-cowork",
       "source": {
         "source": "git-subdir",
