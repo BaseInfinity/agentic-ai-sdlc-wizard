@@ -10,8 +10,8 @@
 #   ./run-benchmark.sh --dry-run
 #
 # Prerequisites:
-#   - claude CLI (v2.1.85+)
-#   - ANTHROPIC_API_KEY set
+#   - claude CLI (v2.1.85+), authenticated (runs via `claude -p` on the CLI's
+#     own session — never touches ANTHROPIC_API_KEY or api.anthropic.com)
 #   - jq installed
 
 set -e
@@ -124,14 +124,6 @@ if $DRY_RUN; then
         CHECKS_PASSED=$((CHECKS_PASSED + 1))
     else
         echo "  [MISSING] claude CLI not found"
-    fi
-
-    CHECKS_TOTAL=$((CHECKS_TOTAL + 1))
-    if [ -n "$ANTHROPIC_API_KEY" ]; then
-        echo "  [OK] ANTHROPIC_API_KEY set"
-        CHECKS_PASSED=$((CHECKS_PASSED + 1))
-    else
-        echo "  [MISSING] ANTHROPIC_API_KEY not set"
     fi
 
     CHECKS_TOTAL=$((CHECKS_TOTAL + 1))

@@ -34,12 +34,6 @@ check_requirements() {
         return 1
     fi
 
-    if [ -z "$ANTHROPIC_API_KEY" ]; then
-        log_warn "ANTHROPIC_API_KEY not set - skipping live simulation"
-        log_info "Set ANTHROPIC_API_KEY to run full E2E tests"
-        return 1
-    fi
-
     return 0
 }
 
@@ -106,9 +100,23 @@ run_scenario() {
     # Store output for compliance checking
     OUTPUT_FILE="$test_dir/claude_output.txt"
 
-    # Run claude with task (this is where the actual simulation happens)
-    # Note: In CI, this would use claude-code-action instead
-    claude --print "$TASK" > "$OUTPUT_FILE" 2>&1 || true
+    # Run claude with task (this is where the actual simulation happens).
+    # `env -u ANTHROPIC_API_KEY` mirrors evaluate.sh — the CLI prefers an
+    # inherited key over the authenticated session in non-interactive
+    # --print mode, so a shell with the key exported would otherwise incur
+    # real API spend instead of using the Max subscription.
+    # Note: In CI, this would use claude-code-action instead.
+    #
+    # Codex round 1 P1 API-002: an unauthenticated `claude` CLI exits
+    # promptly with a nonzero status — don't swallow that with `|| true`
+    # and claim success. Propagate the failure so `set -e` (or the caller)
+    # can react instead of silently reporting a complete-but-empty run.
+    local claude_rc=0
+    env -u ANTHROPIC_API_KEY claude --print "$TASK" > "$OUTPUT_FILE" 2>&1 || claude_rc=$?
+    if [ "$claude_rc" -ne 0 ]; then
+        log_error "claude --print failed (exit $claude_rc) — is the CLI authenticated? See $OUTPUT_FILE"
+        return 1
+    fi
 
     log_info "Scenario execution complete"
     return 0
@@ -172,7 +180,7 @@ main() {
 
         echo ""
         log_info "Validation complete - all fixtures and scenarios are valid"
-        log_info "To run full E2E tests, set ANTHROPIC_API_KEY and install Claude CLI"
+        log_info "To run full E2E tests, install and authenticate the Claude Code CLI"
         exit 0
     fi
 

@@ -146,9 +146,11 @@ CI-level token tracking was removed in PR #33 — `claude-code-action@v1` does n
 2. Fetches latest Claude Code release from GitHub API
 3. Validates version format (security: prevents injection)
 4. Compares versions
-5. If different: analyzes release with Claude (still in CI — Claude-ranker)
-6. Creates auto-update PR with analysis and relevance level
-7. Closes stale auto-update PRs
+5. If different: creates an auto-update PR whose body instructs the
+   maintainer to run a manual `claude --print` release analysis locally on
+   Max (`analyze-release.md`) — no Claude analysis runs in CI; the
+   in-CI Claude-ranker step was deleted (Phase 3, see below)
+6. Closes stale auto-update PRs
 
 **Removed via ROADMAP #231 Phase 3a/3b/3c (2026-04-27 → 2026-04-29):**
 - `version-test` job (Phase 3a) — manual `npm i -g @anthropic-ai/claude-code@<v> && tests/e2e/local-shepherd.sh <PR> --compare-baseline` replaces it
@@ -179,7 +181,7 @@ The shepherd posts a check-run + PR comment with the score delta. Same Phase A/P
 - Manual trigger also available (workflow_dispatch)
 
 ### Required Secrets
-- `ANTHROPIC_API_KEY`: For Claude analysis
+- None — `GITHUB_TOKEN` only. This workflow only detects the new release (GitHub API) and opens a PR; the relevance analysis is a manual `claude --print` step the maintainer runs locally on Max afterward (see above), not a `claude-code-action` step in this workflow. No `ANTHROPIC_API_KEY` is needed here.
 
 ### Plugin Discovery (Roadmap Item 18)
 
@@ -305,13 +307,13 @@ Workflows require the GitHub Actions environment (secrets, runner context, `clau
 **What you can test locally:**
 - YAML syntax: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"`
 - Shell script logic: `./tests/test-workflow-triggers.sh`
-- E2E simulation (requires Claude Code CLI + API key): `ANTHROPIC_API_KEY=xxx ./tests/e2e/run-simulation.sh`
+- E2E simulation (full run requires an authenticated Claude Code CLI): `./tests/e2e/run-simulation.sh`
 
 ## Secrets Required
 
 | Secret | Used By | Purpose |
 |--------|---------|---------|
-| `ANTHROPIC_API_KEY` | weekly-update, ci, pr-review | Claude API access (monthly-research removed per #231 Phase 1) |
+| `ANTHROPIC_API_KEY` | pr-review only | `claude-code-action@v1` for PR review comments. Deliberately kept at a dead credit balance as an "API canary" — see below. `ci.yml` and `weekly-update.yml` don't reference it (E2E/eval moved to the local-Max shepherd, #212/#228) |
 | `GITHUB_TOKEN` | All workflows | Auto-provided by GitHub |
 
 **No `NPM_TOKEN` required** as of v1.75.0 — `release.yml` uses [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC via GitHub Actions `id-token: write`). The publisher is configured per-package on npm's side: npmjs.com → `agentic-sdlc-wizard` → Settings → Publishing access → GitHub Actions → repo `BaseInfinity/claude-sdlc-wizard`, workflow filename `release.yml`. Provenance attestations are auto-generated; no long-lived secret to rotate.
@@ -348,9 +350,9 @@ permissions:
 3. Check fixtures are valid JSON: `jq . tests/fixtures/releases/*.json`
 
 ### Weekly Update Not Running
-1. Verify `ANTHROPIC_API_KEY` secret is set
-2. Check workflow is enabled in repo settings
-3. Check schedule syntax (cron format)
+1. Check workflow is enabled in repo settings
+2. Check schedule syntax (cron format)
+3. Check `GH_TOKEN`/`GITHUB_TOKEN` has permission to open PRs — this workflow needs no `ANTHROPIC_API_KEY`
 
 ### PR Review Not Commenting
 1. Verify Claude Code action version
