@@ -105,7 +105,7 @@ State your confidence before presenting an approach:
 
 **Effort bumping is NOT optional.** Bump BEFORE the next attempt, not after a third failure.
 
-**Confidence ramp:** Opus researches → Fable batch review → 95% list → /goal TDD → Codex check.
+**Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex check.
 
 **Advisor:** `advisor()` before plans; if down, spawn Fable subagent.
 
@@ -137,7 +137,7 @@ The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confi
 
 ## Cross-Model Review (REQUIRED for High-Stakes)
 
-**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI + OpenAI API key. **Reviewer:** `gpt-5.6-sol` xhigh — adversarial diversity.
+**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI + OpenAI API key. **Reviewer:** `gpt-5.6-sol` xhigh — adversarial diversity. **Cadence:** Fable during design, Codex once before commit — don't stack both per task unless the decision itself needs two independent reviewers.
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
@@ -163,10 +163,9 @@ Before any release/publish, add to `verification_checklist`: **CHANGELOG consist
 Standard pattern: `*_DOCS.md` — living documents that grow with the feature (`AUTH_DOCS.md`, `PAYMENTS_DOCS.md`).
 
 1. Read feature docs for the area being changed during planning
-2. When a code change contradicts what the doc says → MUST update the feature doc
-3. When a code change extends behavior the doc describes → MUST update the feature doc (add new behavior)
-4. No `*_DOCS.md` exists and feature touches 3+ files → create one
-5. Project has `ROADMAP.md` → mark items done, add new items (ROADMAP feeds CHANGELOG)
+2. Code change contradicts or extends what the doc describes → MUST update the feature doc
+3. No `*_DOCS.md` exists and feature touches 3+ files → create one
+4. Project has `ROADMAP.md` → mark items done, add new items (ROADMAP feeds CHANGELOG)
 
 `/claude-md-improver` audits CLAUDE.md structure periodically. Does NOT cover feature docs.
 
@@ -177,14 +176,14 @@ Standard pattern: `*_DOCS.md` — living documents that grow with the feature (`
 Mandatory steps:
 1. Push to remote
 2. `gh pr checks --watch`
-3. **Read CI logs whether pass or fail** (`gh run view <RUN_ID> --log`, not just `--log-failed`). Passing CI hides warnings, skipped steps, degraded scores
-4. **Cross-model audit the CI logs** — same `codex exec` pattern (see Cross-Model Review §3). Prompt: *"Audit for silent failures, skipped tests, degraded metrics, warnings-that-should-be-errors."* Tier 1 + Tier 2 separately
-5. CI fails → diagnose, fix, push (max 2 attempts)
-6. CI passes → `gh api repos/OWNER/REPO/pulls/PR/comments` for review feedback
-7. Implement valid suggestions (bugs, perf, missing error handling, dedup, coverage). Skip opinions/style. Max 3 iterations
-8. Explicit `gh pr merge --squash`
+3. **Read CI logs even on pass** (`gh run view <RUN_ID> --log`) — green can hide warnings
+4. **Cross-model audit the CI logs** — same `codex exec` pattern (Cross-Model Review §3): audit for silent failures, skipped tests, degraded metrics
+5. CI fails → fix, push (max 2 attempts)
+6. CI passes → `gh api .../pulls/PR/comments` for review feedback
+7. Implement valid suggestions (bugs, perf, dedup). Skip opinions. Max 3 iterations
+8. Explicit `gh pr merge --squash` — needs confirmation. **Exception (2026-07-21):** skip only if ALL hold: CI `validate` green; Codex xhigh CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) found **zero unresolved findings** after **≥1 dialogue round**; PR touches none of: workflows, `hooks/`, `.claude/`, this file, CHANGELOG, `package.json` version (npm publish always needs confirmation). Enforced here via `scripts/merge-pr.sh` (repo-local). Tell the user afterward what merged and why — never silent.
 
-**Evidence:** PR #145 auto-merged before review was read; reviewer found a P1 dead-code bug that shipped. v1.24.0 only checked the green checkmark on round 2; passing CI hides degraded E2E scores and silent test exclusions. Use idle CI time (3-5 min) for `/compact` if context is long.
+**Evidence:** PR #145 auto-merged, shipped a P1 bug.
 
 ## Scope, DRY, Patterns, Legacy
 
