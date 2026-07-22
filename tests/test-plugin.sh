@@ -249,10 +249,20 @@ for entries in d.get('hooks', {}).values():
             scripts.add(cmd.rsplit('/', 1)[-1])
 print(' '.join(sorted(scripts)))
 " 2>/dev/null)
-    if [ "$hooks_scripts" = "$project_scripts" ] && [ "$project_scripts" = "$cli_scripts" ]; then
-        pass "hooks.json, .claude/settings.json, and CLI template register the same hook scripts"
+    # merge-gate-check.sh is a deliberate, documented exception: it lives at
+    # .claude/hooks/ (not hooks/) and is repo-local-only by design — this
+    # repo's own merge-safety mechanism, hardcoded to its Codex/Fable/
+    # .reviews/ contribution stack, intentionally not shipped to consumer
+    # repos (see ROADMAP.md #462, CLAUDE_CODE_SDLC_WIZARD.md's "Explicit
+    # Merge Confirmation" section). It's expected to appear ONLY in the
+    # project (this repo's own .claude/settings.json) channel, never in
+    # hooks.json or the CLI template.
+    local project_scripts_shippable
+    project_scripts_shippable=$(printf '%s\n' "$project_scripts" | tr ' ' '\n' | grep -v '^merge-gate-check\.sh$' | tr '\n' ' ' | sed 's/ $//')
+    if [ "$hooks_scripts" = "$project_scripts_shippable" ] && [ "$project_scripts_shippable" = "$cli_scripts" ]; then
+        pass "hooks.json, .claude/settings.json, and CLI template register the same shippable hook scripts (merge-gate-check.sh correctly excluded as repo-local-only)"
     else
-        fail "Script mismatch across distribution channels: hooks.json='$hooks_scripts' project='$project_scripts' cli='$cli_scripts'"
+        fail "Script mismatch across distribution channels: hooks.json='$hooks_scripts' project(shippable)='$project_scripts_shippable' cli='$cli_scripts'"
     fi
 }
 
@@ -443,16 +453,21 @@ test_no_stale_template_hooks() {
 test_dogfood_settings_uses_root_hooks() {
     local file="$REPO_ROOT/.claude/settings.json"
     [ -f "$file" ] || { fail ".claude/settings.json missing"; return; }
-    # Should reference hooks/ at repo root (not .claude/hooks/)
-    if grep -q 'CLAUDE_PROJECT_DIR.*/hooks/' "$file"; then
-        # Should NOT reference .claude/hooks/
-        if ! grep -q '\.claude/hooks/' "$file"; then
-            pass "Dogfood settings.json references hooks/ at repo root"
-        else
-            fail "Dogfood settings.json should reference hooks/ (not .claude/hooks/)"
-        fi
-    else
+    # Should reference hooks/ at repo root (not .claude/hooks/) for every
+    # SHIPPED hook. merge-gate-check.sh is the sole documented exception —
+    # a deliberately repo-local-only hook (see ROADMAP.md #462) that MUST
+    # live at .claude/hooks/ precisely because it must never ship. Any
+    # OTHER .claude/hooks/ reference is still a real dogfooding-drift bug.
+    if ! grep -q 'CLAUDE_PROJECT_DIR.*/hooks/' "$file"; then
         fail "Dogfood settings.json should reference hooks/ at repo root"
+        return
+    fi
+    local stray_claude_hooks
+    stray_claude_hooks=$(grep -o '\.claude/hooks/[A-Za-z0-9_-]*\.sh' "$file" | grep -v '^\.claude/hooks/merge-gate-check\.sh$' || true)
+    if [ -z "$stray_claude_hooks" ]; then
+        pass "Dogfood settings.json references hooks/ at repo root (merge-gate-check.sh is the sole documented .claude/hooks/ exception)"
+    else
+        fail "Dogfood settings.json references unexpected .claude/hooks/ script(s): $stray_claude_hooks (should reference hooks/ instead)"
     fi
 }
 
