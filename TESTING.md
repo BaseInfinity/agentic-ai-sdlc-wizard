@@ -93,12 +93,12 @@ This is a **meta-project** - it's a wizard that sets up other projects. Traditio
 
 **How to run:**
 ```bash
-# Validation only (no API key needed)
 ./tests/e2e/run-simulation.sh
-
-# Full simulation (requires Claude Code CLI + ANTHROPIC_API_KEY)
-ANTHROPIC_API_KEY=xxx ./tests/e2e/run-simulation.sh
 ```
+Falls back to validation-only mode (checks fixtures/scenarios, no live run) if
+the `claude` CLI isn't on PATH. Otherwise runs the full simulation via
+`claude --print` on your authenticated CLI session — no `ANTHROPIC_API_KEY`
+needed or read.
 
 ### Layer 4: SDP / Statistical Validation
 
@@ -212,8 +212,8 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 # All script-based tests (no API key needed)
 ./tests/test-version-logic.sh && ./tests/test-analysis-schema.sh
 
-# E2E simulation (requires Claude Code CLI + ANTHROPIC_API_KEY)
-ANTHROPIC_API_KEY=xxx ./tests/e2e/run-simulation.sh
+# E2E simulation (full run requires an authenticated Claude Code CLI)
+./tests/e2e/run-simulation.sh
 ```
 
 ## Playwright MCP vs Playwright Tests

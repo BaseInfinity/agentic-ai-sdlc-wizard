@@ -129,13 +129,19 @@ test_fixture_has_multiple_source_files() {
     fi
 }
 
-test_evaluate_uses_file_based_curl() {
-    # evaluate.sh must use curl -d @file (file-based) not inline -d '{...}'
-    # to avoid "Argument list too long" with large outputs (200KB+)
-    if grep -q '\-d @' "$EVALUATE_FILE"; then
-        pass "evaluate.sh uses file-based curl (-d @file)"
+test_evaluate_has_no_curl_transport() {
+    # The curl-based transport (and its -d @file argument-length mitigation)
+    # was deleted 2026-07-21 — evaluate.sh's only judge transport is now
+    # `claude --print`, which takes the prompt directly (not via curl at all).
+    #
+    # Codex round 1 P2 API-005: `^\s*curl` only matches curl as the line's
+    # first token, missing forms like `response=$(curl ...)`. Match `curl`
+    # as a word anywhere on a non-comment line instead (same pattern as
+    # tests/test-evaluate-cli-mode.sh's equivalent check).
+    if grep -E '\bcurl\b' "$EVALUATE_FILE" | grep -qvE '^\s*#'; then
+        fail "evaluate.sh has curl invocations — the curl transport should stay deleted"
     else
-        fail "evaluate.sh should use file-based curl (-d @file) to avoid argument length limits"
+        pass "evaluate.sh has no curl transport (claude --print only, #228)"
     fi
 }
 
@@ -151,7 +157,7 @@ test_all_structured_simulation_prompts_have_self_review
 test_output_limit_adequate
 test_fixture_app_size
 test_fixture_has_multiple_source_files
-test_evaluate_uses_file_based_curl
+test_evaluate_has_no_curl_transport
 
 echo ""
 echo "=========================================="
