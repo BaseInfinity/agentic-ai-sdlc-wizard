@@ -1812,6 +1812,142 @@ test_shepherd_requires_review_read() {
 test_never_auto_merge_gate
 test_shepherd_requires_review_read
 
+# Test: `gh pr merge --auto` (GitHub's own auto-merge-on-green feature) stays
+# permanently, unconditionally banned — this is the exact PR #145 incident
+# (auto-merge fired before any review was read). The new conditional-merge
+# exception (2026-07-21) applies only to the assistant's own explicit
+# `gh pr merge --squash` step, never to this GitHub-native mechanism.
+test_gh_pr_merge_auto_stays_unconditionally_banned() {
+    if grep -qF '`gh pr merge --auto`' "$SKILL"; then
+        pass "SKILL.md still explicitly names gh pr merge --auto as banned"
+    else
+        fail "SKILL.md should still explicitly name gh pr merge --auto as banned"
+    fi
+}
+
+# Shared check functions for CI Feedback Loop section content, reused below
+# against both the real SKILL.md (positive assertions) and synthetic
+# negative-control fixtures (so we prove these checks have real selectivity,
+# not just "some keyword is present anywhere" laxity — Codex's review of the
+# original versions of these tests demonstrated they'd pass on text saying
+# "release PRs qualify" or "do not tell the user", i.e. plausible-sounding
+# negations of the intended rule). Grep-based checks can't be made fully
+# adversarial-negation-proof (that would need real NLP), but they CAN be
+# made to reliably catch the realistic failure mode this repo has actually
+# hit before: a section silently truncated or drifted to omit a requirement.
+section_requires_both_reviewers() {
+    local text="$1"
+    echo "$text" | grep -qi "CERTIFIED" \
+        && echo "$text" | grep -qi "fresh Fable subagent" \
+        && echo "$text" | grep -qi "zero unresolved findings" \
+        && echo "$text" | grep -qi "dialogue round"
+}
+
+section_requires_ci_green_and_excludes_denylist() {
+    local text="$1"
+    echo "$text" | grep -qi "validate.*green\|validate.*check.*green" \
+        && echo "$text" | grep -qi "workflows" \
+        && echo "$text" | grep -qi "hooks" \
+        && echo "$text" | grep -qi "\.claude"
+}
+
+section_requires_post_hoc_transparency() {
+    local text="$1"
+    echo "$text" | grep -qiE "tell the user|inform the user|report.*(merged|what was merged)" \
+        && echo "$text" | grep -qi "never silent\|not.*silent.*merge"
+}
+
+# Test: the conditional exception requires Codex CERTIFIED (full dialogue, not
+# a round-1 rubber stamp) AND a FRESH Fable subagent given only the diff
+# reporting zero unresolved findings after a real dialogue round — not a
+# leading "are you 95% confident?" self-report (Fable's own review of this
+# policy flagged that framing as a weak, easily-hand-waved gate).
+test_conditional_merge_requires_both_reviewers() {
+    local shepherd_section
+    shepherd_section=$(awk '/## CI Feedback Loop/{f=1} /^## /{if(f && !/CI Feedback Loop/) exit} f' "$SKILL")
+    if section_requires_both_reviewers "$shepherd_section"; then
+        pass "conditional-merge exception requires Codex CERTIFIED + fresh-Fable zero-findings dialogue round"
+    else
+        fail "conditional-merge exception text is missing one of: CERTIFIED, fresh Fable subagent, zero unresolved findings, or dialogue round"
+    fi
+}
+
+# Test: negative control — prose that omits the reviewer requirements
+# entirely must NOT satisfy the check above (proves the check isn't
+# vacuously true regardless of content).
+test_conditional_merge_reviewer_check_rejects_missing_conditions() {
+    local fixture="## CI Feedback Loop
+An agent may merge without asking anyone, no review needed at all.
+## Next Section"
+    if section_requires_both_reviewers "$fixture"; then
+        fail "reviewer-requirement check should NOT be satisfied by prose lacking CERTIFIED/Fable/dialogue-round language"
+    else
+        pass "reviewer-requirement check correctly rejects prose missing all required conditions"
+    fi
+}
+
+# Test: the conditional exception also requires CI 'validate' green and
+# excludes a concrete denylist of policy/release-adjacent paths (workflows,
+# hooks, .claude/) — tightened from a loose "release\|tag-adjacent\|npm
+# publish" OR-of-generic-words (which Codex demonstrated would pass on text
+# saying "release PRs qualify," i.e. the inverted rule) to require the actual
+# denylist categories the mechanism enforces.
+test_conditional_merge_requires_ci_green_and_excludes_releases() {
+    local shepherd_section
+    shepherd_section=$(awk '/## CI Feedback Loop/{f=1} /^## /{if(f && !/CI Feedback Loop/) exit} f' "$SKILL")
+    if section_requires_ci_green_and_excludes_denylist "$shepherd_section"; then
+        pass "conditional-merge exception requires CI validate green and names the concrete policy/release-adjacent denylist"
+    else
+        fail "conditional-merge exception is missing a CI-green requirement or the concrete denylist categories"
+    fi
+}
+
+# Test: negative control for the denylist check.
+test_conditional_merge_denylist_check_rejects_vague_release_only() {
+    local fixture="## CI Feedback Loop
+CI validate is green. Release PRs qualify for this exception too.
+## Next Section"
+    if section_requires_ci_green_and_excludes_denylist "$fixture"; then
+        fail "denylist check should NOT be satisfied by a vague 'release PRs qualify' fixture lacking the concrete categories"
+    else
+        pass "denylist check correctly rejects vague release-only prose lacking workflows/hooks/.claude categories"
+    fi
+}
+
+# Test: even under the conditional exception, the assistant must tell the user
+# what was merged and why immediately afterward — no silent merges.
+test_conditional_merge_requires_post_hoc_transparency() {
+    local shepherd_section
+    shepherd_section=$(awk '/## CI Feedback Loop/{f=1} /^## /{if(f && !/CI Feedback Loop/) exit} f' "$SKILL")
+    if section_requires_post_hoc_transparency "$shepherd_section"; then
+        pass "conditional-merge exception requires telling the user afterward, not silent merging"
+    else
+        fail "conditional-merge exception should require informing the user after an unconfirmed merge"
+    fi
+}
+
+# Test: negative control — a fixture that only says "do not tell the user"
+# contains the substring "tell the user" but must still fail the check once
+# the "never silent" companion requirement is added.
+test_conditional_merge_transparency_check_rejects_negation() {
+    local fixture="## CI Feedback Loop
+The agent should not tell the user anything, merges can be silent.
+## Next Section"
+    if section_requires_post_hoc_transparency "$fixture"; then
+        fail "transparency check should NOT be satisfied by a fixture explicitly permitting silent merges"
+    else
+        pass "transparency check correctly rejects a fixture that permits silent merges"
+    fi
+}
+
+test_gh_pr_merge_auto_stays_unconditionally_banned
+test_conditional_merge_requires_both_reviewers
+test_conditional_merge_reviewer_check_rejects_missing_conditions
+test_conditional_merge_requires_ci_green_and_excludes_releases
+test_conditional_merge_denylist_check_rejects_vague_release_only
+test_conditional_merge_requires_post_hoc_transparency
+test_conditional_merge_transparency_check_rejects_negation
+
 # -------------------------------------------------------------------
 # Post-Mortem Pattern
 # -------------------------------------------------------------------
