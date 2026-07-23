@@ -29,6 +29,7 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-cc-drift-check.sh && ./tests/test-cc-version-drift.sh && \
    ./tests/test-release-drift.sh && \
    ./tests/test-update-skill-step-7-8.sh && \
+   ./tests/test-merge-gate.sh && \
    ./tests/test-domain-detection.sh && \
    ./tests/test-autocompact-methodology.sh && \
    ./tests/test-node24-compliance.sh && \

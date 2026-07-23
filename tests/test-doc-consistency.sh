@@ -1249,6 +1249,36 @@ _check_line_has_and_lacks() {
     done
 }
 
+# Content-anchored variant of _check_line_has_and_lacks: finds the target
+# line by a stable content pattern instead of a hardcoded line number, so it
+# doesn't go stale every time an earlier-in-file edit shifts line numbers
+# (this exact test drifted 3855->3863->3865->3867 across three separate
+# sessions in one day, 2026-07-21 — a hardcoded-line-number test is a
+# maintenance trap for any file that isn't append-only).
+_check_content_line_has_and_lacks() {
+    local file="$1" anchor_pattern="$2" must_have_csv="$3"
+    shift 3
+    local content
+    content="$(grep -i "$anchor_pattern" "$file" | head -1)"
+    if [ -z "$content" ]; then
+        echo "${file}:(anchor '$anchor_pattern' not found)"
+        return
+    fi
+    local required
+    for required in ${must_have_csv//,/ }; do
+        if ! printf '%s' "$content" | grep -qi "$required"; then
+            echo "${file}:(anchor '$anchor_pattern' missing '$required')"
+            return
+        fi
+    done
+    for forbidden in "$@"; do
+        if printf '%s' "$content" | grep -qi "$forbidden"; then
+            echo "${file}:(anchor '$anchor_pattern' stale '$forbidden')"
+            return
+        fi
+    done
+}
+
 test_ai_setup_lanes_reviewer_is_gpt56() {
     local F="$REPO_ROOT/AI_SETUP_LANES.md"
     if [ ! -f "$F" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
@@ -1304,10 +1334,13 @@ test_wizard_doc_reviewer_is_gpt56() {
     local bad=""
     bad="$bad$(_check_line_has_and_lacks "$F" 1090 "5\.6,Sol" "5\.5")"
     bad="$bad$(_check_line_has_and_lacks "$F" 1113 "5\.6,Sol" "5\.5")"
-    # L3855 and L3860 are fallback-chain lines: must name "5\.6" AND BOTH Sol
-    # and Terra.
-    bad="$bad$(_check_line_has_and_lacks "$F" 3855 "5\.6,Sol,Terra" "5\.5" "5\.4")"
-    bad="$bad$(_check_line_has_and_lacks "$F" 3860 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    # Fallback-chain lines: must name "5\.6" AND BOTH Sol and Terra.
+    # Content-anchored (not hardcoded line numbers) — this pair drifted
+    # 3855->3863->3865->3867 across three separate insertions in one day
+    # (2026-07-21) before being switched to anchors, since any earlier-in-
+    # file edit shifts hardcoded numbers for content further down.
+    bad="$bad$(_check_content_line_has_and_lacks "$F" "Use the best model at the deepest reasoning" "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    bad="$bad$(_check_content_line_has_and_lacks "$F" "Codex CLI picks up your OpenAI account" "5\.6,Sol,Terra" "5\.5" "5\.4")"
     if [ -z "$bad" ]; then
         pass "CLAUDE_CODE_SDLC_WIZARD.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
     else
@@ -1595,6 +1628,39 @@ test_no_bare_setup_update_wizard_collision() {
 test_no_bare_setup_update_wizard_collision
 
 test_argument_hint_frontmatter_is_string
+
+# Test: the wizard doc warns against the double-backgrounding bug (trailing
+# `&` inside a Bash-tool command combined with run_in_background: true) —
+# this bug recurred across multiple sessions before being documented here,
+# producing a false "review complete" notification for a still-running
+# codex process (see ROADMAP for the incident this codifies).
+test_wizard_doc_warns_double_backgrounding() {
+    local F="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$F" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    if grep -qi "double-backgrounds" "$F" && grep -qi "trailing \`&\`" "$F" && grep -qi "run_in_background" "$F"; then
+        pass "wizard doc warns against combining trailing & with run_in_background: true (double-backgrounding bug)"
+    else
+        fail "wizard doc should warn against the double-backgrounding bug (trailing & + run_in_background: true)"
+    fi
+}
+
+test_wizard_doc_warns_double_backgrounding
+
+# Test: the wizard doc requires running shellcheck before requesting
+# cross-model review — a real gap this repo hit directly 2026-07-21, when
+# Codex's own review caught bugs shellcheck would have flagged for free
+# (SC2181) that this repo's own mutation-verified test suite had missed.
+test_wizard_doc_requires_shellcheck_before_review() {
+    local F="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$F" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    if grep -qi "run \`shellcheck\`" "$F" && grep -qi "before requesting review" "$F"; then
+        pass "wizard doc requires running shellcheck before requesting cross-model review"
+    else
+        fail "wizard doc should require running shellcheck on new/modified .sh files before requesting review"
+    fi
+}
+
+test_wizard_doc_requires_shellcheck_before_review
 
 # ────────────────────────────────────────────
 # Summary

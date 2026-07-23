@@ -2420,6 +2420,8 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 
 **Prerequisites:** Codex CLI installed (`npm i -g @openai/codex`), OpenAI API key set.
 
+**Before requesting review, run `shellcheck` on any new or modified `.sh` file** (`shellcheck -s bash <files>`). This closes a real gap this repo hit directly (2026-07-21): a merge-safety-gate PR's own mutation-verified test suite passed cleanly, yet Codex's own review still caught bugs `shellcheck` would have flagged for free — including the classic `if [ $? -ne 0 ]` anti-pattern (SC2181), which is fragile against a line accidentally inserted between the command and the check. Mutation testing only proves your tests catch *deliberately broken variants you thought to try* — it can't catch a whole class of mechanical bugs a static analyzer finds instantly. Fix findings before submitting to Codex; don't spend a review round on what a free, instant, deterministic tool already tells you.
+
 ### Round 1: Initial Review
 
 1. After self-review passes, write `.reviews/handoff.json`:
@@ -2452,6 +2454,8 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
    > **Always append `< /dev/null`** to `codex exec` calls run from background, hooks, CI, or any non-interactive parent. Without it, codex blocks on stdin reads even when the prompt is given as an argument — the process sits at S/0% CPU indefinitely with a 0-byte `-o` output file (the file is only written on completion, so a hang gives zero visibility). Validated on codex-cli 0.130.0 / macOS 14, 2026-05-15. For live progress, use `scripts/codex-review-with-progress.sh` instead.
 
    > **Always launch codex via `run_in_background: true` on the Bash tool.** The Bash tool clamps `timeout` to 600000 ms (10 min) regardless of the value passed, and force-kills the foreground process at that wall. Multi-artifact bundle reviews (release reviews per the checklist below, multi-finding rechecks, etc.) routinely run 6–30 minutes — they need background mode to complete. The wrapper `scripts/codex-review.sh` already has a 30-min stall watchdog (`STALL_SECONDS=1800`) as the real timeout control. A foreground call killed mid-review plus the Stop-hook re-invocation loop can burn 60+ minutes of session compute on what should be a single 7-minute run (issue #364, 2026-05-27 incident). The general rule: **any long-running wrapper invoked through the CC Bash tool — codex, slow builds, long test suites — should use `run_in_background: true` unconditionally and let the wrapper's own stall watchdog be the timeout authority.**
+
+   > **Never also append a trailing `&` inside the command string when using `run_in_background: true`.** These are two different backgrounding mechanisms — the Bash tool's own `run_in_background` flag, and the shell's native job-control `&` — and combining them double-backgrounds the process: the "completed" notification fires for the outer wrapper shell exiting immediately, not for the actual `codex exec` process, which is still running detached and unmonitored. This produces a convincing but false "review complete" signal — the transcript looks done, but no verdict has actually been written yet. Confirm real completion independently (e.g. `ps aux | grep codex`) before trusting a background-task notification that arrived suspiciously fast for a multi-minute xhigh review. Use `run_in_background: true` alone; never both.
 
 3. If CERTIFIED → **write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json` before proceeding to CI.** `hooks/codex-gate-check.sh` compares this SHA to current HEAD at commit time and treats a mismatch (or a missing field) as a stale certification (ROADMAP #437) — a CERTIFIED status string alone doesn't prove the certification still covers what's about to be committed. If NOT CERTIFIED → go to Round 2.
 
@@ -2743,6 +2747,14 @@ CI passes -> Read review suggestions
 - **Auto-implement** (default): Implement valid suggestions autonomously, skip opinions
 - **Ask first**: Present suggestions to user, let them decide which to implement
 - **Skip review feedback**: Ignore CI review suggestions, only fix CI failures
+
+## Explicit Merge Confirmation — and a Narrow, Conditional Exception
+
+**The default: explicit `gh pr merge --squash` always needs the user's confirmation, every PR.** `gh pr merge --auto` (GitHub's own auto-merge-on-green feature) stays permanently, unconditionally banned regardless of anything below — it fires before review feedback can even be read (PR #145 incident: auto-merged unreviewed, shipped a P1 bug).
+
+**A narrow, conditional exception (2026-07-21)** lets an agent skip that one confirmation click — never the ban above — ONLY if ALL hold: CI's `validate` check is green (verified, not inferred); Codex xhigh reached CERTIFIED via a full adversarial dialogue (not a round-1 rubber stamp); a **fresh, diff-only reviewer subagent** (no prior session context) independently found **zero unresolved findings after at least one dialogue round**; and the PR touches none of a concrete denylist — CI/release workflows, hooks, agent-config directories, the SDLC policy document itself, CHANGELOG, or a package-version bump (any of which always needs confirmation, no exception). Even when it fires, the agent must tell the user immediately afterward what merged and why — this is "skip the click," never a silent merge.
+
+**Be honest with yourself about what's actually enforced.** Some of this repo's own conditions are mechanically verified by local tooling — but that tooling is intentionally repo-local and does **not** ship as part of the wizard install. If you want the same fail-closed guarantee rather than self-certified prose, build the equivalent for your own repo: a wrapper script that independently re-checks CI status against the PR's remote head SHA, scans the diff against your own denylist (including the wrapper and any gate hook themselves — a PR editing the merge policy must not be able to exempt itself from it), and binds the merge atomically to that SHA (e.g. `gh pr merge --match-head-commit <sha>`) to close the race between checking and merging. Absent that, treat every condition above as something your own agent must reason about and self-report against, not something guaranteed.
 
 ## DRY Principle
 
