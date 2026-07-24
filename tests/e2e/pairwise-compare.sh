@@ -6,7 +6,7 @@
 # with full swap (both orderings) to mitigate position bias.
 #
 # Usage:
-#   ./pairwise-compare.sh <output_a> <output_b> <scenario> <score_a> <score_b> [--no-api] [threshold]
+#   ./pairwise-compare.sh <output_a> <output_b> <scenario> <score_a> <score_b> [--use-api] [threshold]
 #
 # Arguments:
 #   output_a    Path to first output file
@@ -14,13 +14,15 @@
 #   scenario    Scenario description text (or path to scenario file)
 #   score_a     Pointwise score for output A
 #   score_b     Pointwise score for output B
-#   --no-api    Skip API calls (for testing — outputs deterministic result only)
+#   --use-api   Opt in to a live ANTHROPIC_API_KEY call for the actual LLM
+#               comparison. Without it (the default), a triggered comparison
+#               returns a deterministic TIE — no API spend unless asked for.
 #   threshold   Score difference threshold (default: 1.0)
 #
 # Output: JSON to stdout
 #
 # Requires:
-#   - ANTHROPIC_API_KEY (unless --no-api)
+#   - ANTHROPIC_API_KEY (only with --use-api)
 #   - jq
 
 set -e
@@ -34,21 +36,41 @@ SCENARIO="$3"
 SCORE_A="$4"
 SCORE_B="$5"
 
-# Parse optional flags
-NO_API=false
+# Parse optional flags. Default is no API spend — pass --use-api to opt in.
+#
+# Codex round 1 P1 API-001: the old `*) THRESHOLD="$1"` catch-all silently
+# absorbed any unrecognized flag (including the now-removed --no-api) as a
+# threshold value, producing plausible-but-wrong output instead of a loud
+# error. Explicitly reject --no-api and any other unknown --flag, and
+# validate THRESHOLD is actually numeric before accepting it.
+USE_API=false
 THRESHOLD="1.0"
 shift 5 || true
 while [ $# -gt 0 ]; do
     case "$1" in
-        --no-api) NO_API=true ;;
-        *) THRESHOLD="$1" ;;
+        --use-api) USE_API=true ;;
+        --no-api)
+            echo "Error: --no-api was removed — no-API-spend is now the default. Drop the flag (or pass --use-api to opt into a live call)." >&2
+            exit 1
+            ;;
+        --*)
+            echo "Error: unknown flag: $1" >&2
+            exit 1
+            ;;
+        *)
+            if ! echo "$1" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+                echo "Error: threshold must be numeric, got: $1" >&2
+                exit 1
+            fi
+            THRESHOLD="$1"
+            ;;
     esac
     shift
 done
 
 # Validate inputs
 if [ -z "$OUTPUT_FILE_A" ] || [ -z "$OUTPUT_FILE_B" ] || [ -z "$SCORE_A" ] || [ -z "$SCORE_B" ]; then
-    echo "Usage: $0 <output_a> <output_b> <scenario> <score_a> <score_b> [--no-api] [threshold]" >&2
+    echo "Usage: $0 <output_a> <output_b> <scenario> <score_a> <score_b> [--use-api] [threshold]" >&2
     exit 1
 fi
 
@@ -94,8 +116,9 @@ if [ -f "$SCENARIO" ]; then
     SCENARIO=$(cat "$SCENARIO")
 fi
 
-if [ "$NO_API" = "true" ]; then
-    # No-API mode: return triggered result with TIE verdict (can't compare without LLM)
+if [ "$USE_API" != "true" ]; then
+    # Default: no API spend. Return triggered result with TIE verdict (can't
+    # compare without an LLM) unless the caller explicitly opts in via --use-api.
     jq -n \
         --argjson score_a "$SCORE_A" \
         --argjson score_b "$SCORE_B" \
@@ -105,14 +128,14 @@ if [ "$NO_API" = "true" ]; then
             score_a: $score_a,
             score_b: $score_b,
             verdict: "TIE",
-            note: "no-api mode: skipped LLM comparison"
+            note: "no-api mode: skipped LLM comparison (pass --use-api to enable)"
         }'
     exit 0
 fi
 
 # Require API key for actual comparison
 if [ -z "$ANTHROPIC_API_KEY" ]; then
-    echo "Error: ANTHROPIC_API_KEY required for pairwise comparison" >&2
+    echo "Error: ANTHROPIC_API_KEY required for pairwise comparison (--use-api was passed)" >&2
     exit 1
 fi
 

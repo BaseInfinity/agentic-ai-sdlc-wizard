@@ -1,9 +1,10 @@
 #!/bin/bash
-# ROADMAP #228 — evaluate.sh CLI mode (Max-subsidized via `claude --print`).
+# ROADMAP #228 — evaluate.sh judge transport (Max-subsidized via `claude --print`).
 #
-# Validates the EVAL_USE_CLI=1 path that swaps the per-criterion Anthropic API
-# curl call for a `claude --print` invocation. CI keeps the curl path; local-
-# shepherd flips to CLI so #212's "honestly zero-API" claim holds.
+# Validates the unconditional `claude --print` judge call. This used to be an
+# opt-in EVAL_USE_CLI=1 mode alongside a curl+ANTHROPIC_API_KEY default; the
+# curl path turned out to be unreachable through any automated pipeline and
+# was deleted 2026-07-21 — `claude --print` is now the only transport.
 
 set -e
 
@@ -25,14 +26,18 @@ echo ""
 
 # ---- Static structure checks ----
 
-test_evaluate_has_use_cli_branch() {
-    if grep -qE 'EVAL_USE_CLI' "$EVALUATE"; then
-        pass "evaluate.sh references EVAL_USE_CLI env var"
+test_evaluate_has_no_eval_use_cli_toggle() {
+    # EVAL_USE_CLI was the opt-in flag when curl was the default transport.
+    # Deleted 2026-07-21 — `claude --print` is unconditional now, so the
+    # variable name should not appear as live code (comments referencing the
+    # historical name are fine and excluded by grep -v on the deletion note).
+    if grep -E 'EVAL_USE_CLI' "$EVALUATE" | grep -qvE '^\s*#'; then
+        fail "evaluate.sh still has live EVAL_USE_CLI logic — should be unconditional"
     else
-        fail "evaluate.sh missing EVAL_USE_CLI branch — ROADMAP #228 not wired"
+        pass "evaluate.sh has no live EVAL_USE_CLI toggle (transport is unconditional)"
     fi
 }
-test_evaluate_has_use_cli_branch
+test_evaluate_has_no_eval_use_cli_toggle
 
 test_evaluate_calls_claude_print_in_cli_mode() {
     if grep -qE 'claude[[:space:]]+--print' "$EVALUATE"; then
@@ -109,19 +114,45 @@ test_evaluate_pins_model_in_cli_mode() {
 }
 test_evaluate_pins_model_in_cli_mode
 
-test_evaluate_skips_api_key_check_in_cli_mode() {
-    # When EVAL_USE_CLI=1 the ANTHROPIC_API_KEY hard-fail must be conditional.
-    # Look for either: (a) the env var test wraps the API key check, or
-    # (b) the check sits below an early `[ ... = "1" ] && skip` guard.
-    if awk '/ANTHROPIC_API_KEY/ && /Error:/' "$EVALUATE" | grep -qE 'EVAL_USE_CLI|use_cli'; then
-        pass "evaluate.sh API-key check inline-references EVAL_USE_CLI"
-    elif grep -B2 -E 'ANTHROPIC_API_KEY' "$EVALUATE" | grep -qE 'EVAL_USE_CLI'; then
-        pass "evaluate.sh gates ANTHROPIC_API_KEY check on EVAL_USE_CLI"
+test_evaluate_has_no_api_key_check() {
+    # No transport left that reads/requires ANTHROPIC_API_KEY — the old
+    # hard-fail check should be gone entirely. The one allowed live
+    # reference is `env -u ANTHROPIC_API_KEY` immediately before `claude`,
+    # which actively CLEARS the var so an inherited key can't hijack the
+    # CLI's non-interactive auth away from the Max session (Codex round 1
+    # P1 API-003) — that's the opposite of a dependency on it.
+    local live_refs
+    live_refs=$(grep -E 'ANTHROPIC_API_KEY' "$EVALUATE" | grep -vE '^\s*#' | grep -vE 'env -u ANTHROPIC_API_KEY claude' || true)
+    if [ -n "$live_refs" ]; then
+        fail "evaluate.sh still has live ANTHROPIC_API_KEY logic — should be fully removed"
     else
-        fail "evaluate.sh must skip ANTHROPIC_API_KEY hard-fail when EVAL_USE_CLI=1"
+        pass "evaluate.sh has no live ANTHROPIC_API_KEY dependency (only the env -u clear before claude --print)"
     fi
 }
-test_evaluate_skips_api_key_check_in_cli_mode
+test_evaluate_has_no_api_key_check
+
+test_evaluate_clears_inherited_api_key() {
+    # Both claude --print invocations (initial + retry) must clear an
+    # inherited ANTHROPIC_API_KEY, or a shell with the key exported would
+    # silently defeat the zero-API-spend guarantee (Codex round 1 P1 API-003).
+    local count
+    count=$(grep -cE 'env -u ANTHROPIC_API_KEY claude --print' "$EVALUATE" || true)
+    if [ "$count" -ge 2 ]; then
+        pass "evaluate.sh clears inherited ANTHROPIC_API_KEY on both claude --print calls"
+    else
+        fail "evaluate.sh should clear ANTHROPIC_API_KEY via env -u on both calls (count=$count, need >=2)"
+    fi
+}
+test_evaluate_clears_inherited_api_key
+
+test_evaluate_requires_claude_cli() {
+    if grep -qE 'command -v claude' "$EVALUATE"; then
+        pass "evaluate.sh hard-fails if 'claude' CLI is missing"
+    else
+        fail "evaluate.sh must check for 'claude' CLI on PATH — it's the only transport now"
+    fi
+}
+test_evaluate_requires_claude_cli
 
 test_evaluate_extracts_result_field() {
     # claude --print --output-format json returns an array. The text response
@@ -159,27 +190,33 @@ test_evaluate_cli_retries_on_failure() {
 }
 test_evaluate_cli_retries_on_failure
 
-test_evaluate_api_mode_unchanged() {
-    # The default (curl) path must be intact. Look for the curl + api.anthropic
-    # pair to confirm we didn't accidentally remove it.
-    if grep -qE 'curl' "$EVALUATE" && grep -qE 'api\.anthropic\.com' "$EVALUATE"; then
-        pass "evaluate.sh API path (curl + api.anthropic.com) intact"
+test_evaluate_no_curl_transport() {
+    # The old curl+api.anthropic.com transport was deleted 2026-07-21 — it
+    # was unreachable through any automated pipeline. Confirm it stays gone
+    # as live code (comments noting the deletion are fine).
+    local live_curl live_api
+    live_curl=$(grep -E 'curl' "$EVALUATE" | grep -cvE '^\s*#' || true)
+    live_api=$(grep -E 'api\.anthropic\.com' "$EVALUATE" | grep -cvE '^\s*#' || true)
+    if [ "$live_curl" -gt 0 ] || [ "$live_api" -gt 0 ]; then
+        fail "evaluate.sh still has live curl/api.anthropic.com — dead transport should stay deleted"
     else
-        fail "evaluate.sh API path missing — CLI mode must be opt-in, not replacement"
+        pass "evaluate.sh has no curl/api.anthropic.com transport (deleted, claude --print only)"
     fi
 }
-test_evaluate_api_mode_unchanged
+test_evaluate_no_curl_transport
 
 # ---- Local-shepherd integration ----
 
-test_shepherd_exports_eval_use_cli() {
-    if grep -qE 'EVAL_USE_CLI=1|export EVAL_USE_CLI' "$SHEPHERD"; then
-        pass "local-shepherd.sh sets EVAL_USE_CLI=1 before invoking evaluator"
+test_shepherd_no_longer_exports_eval_use_cli() {
+    # evaluate.sh no longer reads this variable — exporting it would be a
+    # vestigial no-op. Confirm the dead export was cleaned up, not left behind.
+    if grep -qE 'export EVAL_USE_CLI' "$SHEPHERD"; then
+        fail "local-shepherd.sh still exports EVAL_USE_CLI — dead now that evaluate.sh ignores it"
     else
-        fail "local-shepherd.sh must export EVAL_USE_CLI=1 to use the Max-subsidized path"
+        pass "local-shepherd.sh doesn't export the now-dead EVAL_USE_CLI variable"
     fi
 }
-test_shepherd_exports_eval_use_cli
+test_shepherd_no_longer_exports_eval_use_cli
 
 test_shepherd_no_longer_requires_api_key() {
     # The hard-fail block on missing ANTHROPIC_API_KEY must be removed or
