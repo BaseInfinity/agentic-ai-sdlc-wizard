@@ -107,7 +107,7 @@ State your confidence before presenting an approach:
 
 **Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex check.
 
-**Advisor:** `advisor()` before plans; if down, spawn Fable subagent.
+**Advisor:** `advisor()` before plans; if down, spawn Fable subagent at `xhigh`.
 
 ## Plan Mode
 
