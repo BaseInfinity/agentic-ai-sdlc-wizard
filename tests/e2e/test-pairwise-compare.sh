@@ -343,7 +343,7 @@ test_not_triggered_output() {
 
     # Scores are far apart — should not trigger pairwise
     local result
-    result=$("$PAIRWISE_SCRIPT" "$tmp_a" "$tmp_b" "scenario text" 5.0 8.0 --no-api 2>/dev/null) || true
+    result=$("$PAIRWISE_SCRIPT" "$tmp_a" "$tmp_b" "scenario text" 5.0 8.0 2>/dev/null) || true
 
     rm -f "$tmp_a" "$tmp_b"
 
@@ -364,7 +364,7 @@ test_not_triggered_has_verdict() {
     echo "Output B" > "$tmp_b"
 
     local result
-    result=$("$PAIRWISE_SCRIPT" "$tmp_a" "$tmp_b" "scenario" 5.0 8.0 --no-api 2>/dev/null) || true
+    result=$("$PAIRWISE_SCRIPT" "$tmp_a" "$tmp_b" "scenario" 5.0 8.0 2>/dev/null) || true
 
     rm -f "$tmp_a" "$tmp_b"
 
@@ -374,6 +374,102 @@ test_not_triggered_has_verdict() {
         pass "Not-triggered result picks higher-scoring output as verdict"
     else
         fail "Expected verdict=B (higher score), got: $verdict"
+    fi
+}
+
+test_triggered_defaults_to_no_api_spend() {
+    # Close scores trigger the comparison, but without --use-api the script
+    # must never require ANTHROPIC_API_KEY or attempt a live call — it should
+    # return a deterministic TIE. This is the safe default (#delete-legacy-api
+    # cleanup); --no-api used to be required to get this behavior, --use-api
+    # is now required to get the live one.
+    local tmp_a tmp_b
+    tmp_a=$(mktemp)
+    tmp_b=$(mktemp)
+    echo "Output A" > "$tmp_a"
+    echo "Output B" > "$tmp_b"
+
+    local result
+    result=$(env -u ANTHROPIC_API_KEY "$PAIRWISE_SCRIPT" "$tmp_a" "$tmp_b" "scenario" 5.0 5.5 2>/dev/null) || true
+
+    rm -f "$tmp_a" "$tmp_b"
+
+    local triggered verdict
+    triggered=$(echo "$result" | jq -r '.triggered')
+    verdict=$(echo "$result" | jq -r '.verdict')
+    if [ "$triggered" = "true" ] && [ "$verdict" = "TIE" ]; then
+        pass "Triggered comparison defaults to no-API-spend TIE without --use-api"
+    else
+        fail "Expected triggered=true verdict=TIE by default (no ANTHROPIC_API_KEY, no --use-api), got triggered=$triggered verdict=$verdict"
+    fi
+}
+
+test_legacy_no_api_flag_rejected() {
+    # Codex round 1 P1 API-001: --no-api used to silently fall through to
+    # THRESHOLD="--no-api" and produce plausible-but-wrong output. It must
+    # now be rejected loudly instead.
+    local tmp_a tmp_b
+    tmp_a=$(mktemp)
+    tmp_b=$(mktemp)
+    echo "Output A" > "$tmp_a"
+    echo "Output B" > "$tmp_b"
+
+    local exit_code
+    set +e
+    "$PAIRWISE_SCRIPT" "$tmp_a" "$tmp_b" "scenario" 5.0 5.5 --no-api >/dev/null 2>/dev/null
+    exit_code=$?
+    set -e
+
+    rm -f "$tmp_a" "$tmp_b"
+
+    if [ "$exit_code" -ne 0 ]; then
+        pass "Legacy --no-api flag is rejected with a nonzero exit"
+    else
+        fail "Expected nonzero exit for legacy --no-api flag, got 0"
+    fi
+}
+
+test_unknown_flag_rejected() {
+    local tmp_a tmp_b
+    tmp_a=$(mktemp)
+    tmp_b=$(mktemp)
+    echo "Output A" > "$tmp_a"
+    echo "Output B" > "$tmp_b"
+
+    local exit_code
+    set +e
+    "$PAIRWISE_SCRIPT" "$tmp_a" "$tmp_b" "scenario" 5.0 5.5 --bogus-flag >/dev/null 2>/dev/null
+    exit_code=$?
+    set -e
+
+    rm -f "$tmp_a" "$tmp_b"
+
+    if [ "$exit_code" -ne 0 ]; then
+        pass "Unknown flag is rejected with a nonzero exit"
+    else
+        fail "Expected nonzero exit for unknown flag, got 0"
+    fi
+}
+
+test_non_numeric_threshold_rejected() {
+    local tmp_a tmp_b
+    tmp_a=$(mktemp)
+    tmp_b=$(mktemp)
+    echo "Output A" > "$tmp_a"
+    echo "Output B" > "$tmp_b"
+
+    local exit_code
+    set +e
+    "$PAIRWISE_SCRIPT" "$tmp_a" "$tmp_b" "scenario" 5.0 5.5 not-a-number >/dev/null 2>/dev/null
+    exit_code=$?
+    set -e
+
+    rm -f "$tmp_a" "$tmp_b"
+
+    if [ "$exit_code" -ne 0 ]; then
+        pass "Non-numeric threshold is rejected with a nonzero exit"
+    else
+        fail "Expected nonzero exit for non-numeric threshold, got 0"
     fi
 }
 
@@ -411,6 +507,10 @@ test_verdict_one_tie_one_winner
 test_script_exists
 test_not_triggered_output
 test_not_triggered_has_verdict
+test_triggered_defaults_to_no_api_spend
+test_legacy_no_api_flag_rejected
+test_unknown_flag_rejected
+test_non_numeric_threshold_rejected
 
 echo ""
 echo "=========================================="
