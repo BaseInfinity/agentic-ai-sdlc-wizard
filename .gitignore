@@ -10,7 +10,15 @@ tests/fixtures/community-scanner/
 
 # Claude Code local state
 .claude/plans/
-.claude/hooks/
+# .claude/hooks/* (not a directory-level ignore) so the exception below can
+# un-ignore one specific file — a directory-level ignore blocks git from
+# descending into it at all, which silently defeats file-level negation.
+.claude/hooks/*
+# Exception: merge-gate-check.sh is a repo-local, deliberately-tracked hook
+# (this repo's own merge-safety mechanism — see ROADMAP.md #462) — it must
+# ship with the repo's git history, unlike other .claude/hooks/ contents
+# (e.g. local personal tool integrations), which stay untracked.
+!.claude/hooks/merge-gate-check.sh
 
 # Review artifacts (local Codex/cross-model reviews)
 .reviews/

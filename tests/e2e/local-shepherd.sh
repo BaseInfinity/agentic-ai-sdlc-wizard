@@ -8,7 +8,7 @@
 # Scope (from ROADMAP #212 revised architecture):
 #   (a) trusted same-repo PRs only — fork PRs stay on CI-API path (trust boundary)
 #   (b) simulation leg on Max ($0 after cap)
-#   (c) evaluator on Max via `claude --print` (ROADMAP #228 closed; EVAL_USE_CLI=1)
+#   (c) evaluator on Max via `claude --print` (ROADMAP #228 closed, unconditional)
 #   (d) GitHub check-run emission so branch protection is satisfied
 #   (e) provenance fields on score-history so local/CI rows are distinguishable
 #
@@ -200,11 +200,9 @@ if [ "${SDLC_SHEPHERD_SKIP_SHA_CHECK:-0}" != "1" ] && [ "$PR_HEAD_SHA" != "$LOCA
     exit 1
 fi
 
-# Evaluator runs on Max via `claude --print` (ROADMAP #228 closed).
-# EVAL_USE_CLI=1 swaps evaluate.sh's per-criterion judge transport from
-# curl-to-API to `claude --print --output-format json`. No API key required.
-# The shepherd is now honestly zero-API for the maintainer's path.
-export EVAL_USE_CLI=1
+# Evaluator runs on Max via `claude --print` (ROADMAP #228 closed;
+# unconditional since 2026-07-21 — no API-key fallback exists in
+# evaluate.sh anymore, so there's nothing left to opt into here).
 
 # Pick scenario round-robin by PR number (same logic as CI).
 # shellcheck source=lib/scenario-selector.sh
