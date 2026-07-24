@@ -12,8 +12,10 @@
 # pass broken code. Phase 3 (this) measures the wizard's contribution
 # directly.
 #
-# Honestly zero-API: simulation on Max via `claude --print`, evaluator on
-# Max via `EVAL_USE_CLI=1` (#228).
+# Honestly zero-API: simulation and evaluator both run on Max via
+# `claude --print` (#228; evaluate.sh's API-key fallback was later deleted
+# entirely — 2026-07-21 — since it was unreachable through any automated
+# path here).
 #
 # Usage:
 #   ./tests/e2e/lift-proof.sh [--scenario <name>] [--output <file>]
@@ -50,8 +52,8 @@ Usage: $0 [--scenario <name>] [--output <file>] [--dry-run]
 
 Runs the same E2E benchmark scenario on a BARE fixture (no wizard) and on
 a WIZARD-installed fixture, then emits the score delta — the "wizard lift"
-proof. Both legs run on Max ('claude --print' + EVAL_USE_CLI=1), so this
-costs nothing on the API canary.
+proof. Both legs run on Max via 'claude --print', so this costs nothing
+on the API canary.
 
 Flags:
   --scenario NAME   scenario to run (default: add-feature)
@@ -162,9 +164,6 @@ PROMPT_FILE="$TMPRUN/parity-prompt.txt"
 } > "$PROMPT_FILE"
 PARITY_PROMPT=$(cat "$PROMPT_FILE")
 
-# Inherit #228's zero-API path: evaluator on Max via claude --print.
-export EVAL_USE_CLI=1
-
 run_one_leg() {
     local leg="$1"           # "bare" or "wizard"
     local run_dir="$2"
@@ -172,8 +171,8 @@ run_one_leg() {
 
     if [ "$DRY_RUN" -eq 1 ]; then
         # Codex round 1 P1: dry-run must NOT call any model — neither the
-        # simulation leg nor the evaluator (the evaluator under EVAL_USE_CLI=1
-        # would re-invoke `claude --print` per criterion, ~12 calls). Synthesize
+        # simulation leg nor the evaluator (the evaluator would re-invoke
+        # `claude --print` per criterion, ~12 calls). Synthesize
         # deterministic stub eval JSON and skip both calls entirely. Tests can
         # mock claude to fail-on-invocation and assert dry-run still succeeds.
         printf '{"type":"result","result":"DRY_RUN","total_cost_usd":0}\n' > "$output_file"
