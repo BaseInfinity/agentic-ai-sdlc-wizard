@@ -274,6 +274,9 @@ jobs:
       - name: Run update-skill Step 7.8 Fable-driver-guidance tests (#452)
         run: ./tests/test-update-skill-step-7-8.sh
 
+      - name: Run merge-safety gate tests (#462)
+        run: ./tests/test-merge-gate.sh
+
   # Clean up old bot comments on PR push (keeps PRs tidy)
   # Also runs on workflow_dispatch (no-op) so branch protection doesn't block auto-merge.
   cleanup-old-comments:
