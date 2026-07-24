@@ -231,16 +231,20 @@ test_lift_proof_emits_delta() {
 }
 test_lift_proof_emits_delta
 
-test_lift_proof_uses_eval_use_cli() {
-    # Inherit #228's zero-API path — lift-proof should set EVAL_USE_CLI=1
-    # so the evaluator stays on Max too.
+test_lift_proof_keeps_evaluator_on_max() {
+    # #228's zero-API path is unconditional in evaluate.sh since 2026-07-21 —
+    # there's no EVAL_USE_CLI toggle left to inherit. lift-proof.sh should not
+    # reintroduce one; it should just call evaluate.sh (which stays on Max by
+    # itself) and reference #228 in its provenance comments.
     if grep -qE 'EVAL_USE_CLI' "$LIFT_PROOF"; then
-        pass "lift-proof.sh inherits EVAL_USE_CLI=1 (#228; honestly zero-API)"
+        fail "lift-proof.sh references EVAL_USE_CLI — that toggle was deleted from evaluate.sh"
+    elif grep -qE '#228' "$LIFT_PROOF"; then
+        pass "lift-proof.sh keeps the evaluator on Max via evaluate.sh (unconditional, #228)"
     else
-        fail "lift-proof.sh should export EVAL_USE_CLI=1 to keep evaluator on Max"
+        fail "lift-proof.sh should document that its evaluator leg stays on Max (#228)"
     fi
 }
-test_lift_proof_uses_eval_use_cli
+test_lift_proof_keeps_evaluator_on_max
 
 test_lift_proof_help_flag() {
     local out

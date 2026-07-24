@@ -29,6 +29,7 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-cc-drift-check.sh && ./tests/test-cc-version-drift.sh && \
    ./tests/test-release-drift.sh && \
    ./tests/test-update-skill-step-7-8.sh && \
+   ./tests/test-merge-gate.sh && \
    ./tests/test-domain-detection.sh && \
    ./tests/test-autocompact-methodology.sh && \
    ./tests/test-node24-compliance.sh && \
@@ -218,8 +219,8 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 ./tests/e2e/test-multi-call-eval.sh
 ./tests/e2e/test-eval-prompt-regression.sh
 
-# Run full E2E (requires Claude Code CLI + ANTHROPIC_API_KEY)
-export ANTHROPIC_API_KEY=your-key
+# Run full E2E (requires an authenticated Claude Code CLI — runs via
+# `claude --print` on your own session, not ANTHROPIC_API_KEY)
 ./tests/e2e/run-simulation.sh
 ```
 
