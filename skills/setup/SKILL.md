@@ -224,7 +224,7 @@ Present suggestions and let the user confirm.
 
 ### Step 9.5: Context Window + Mixed-Mode Configuration (Opt-In)
 
-The CLI ships `cli/templates/settings.json` with **no** `model` or `env` pin by default. This preserves Claude Code's built-in model auto-selection. Power users can opt into a pin during setup — see `AI_SETUP_LANES.md` for the full lane comparison (Setup A: Opus 5 + Fable, recommended if pinning at all, trial as of 2026-07-24; Setup B: Sonnet 5 Simple/One-Off; Setup C: OpusPlan Hybrid).
+The CLI ships `cli/templates/settings.json` with **no** `model` or `env` pin, preserving Claude Code's model auto-selection. Users can opt into a pin during setup — see `AI_SETUP_LANES.md` (Setup A: Opus 5 + Fable, recommended if pinning; B: Sonnet 5 Simple/One-Off; C: OpusPlan Hybrid).
 
 **Why this is opt-in (issue #198):** A top-level `"model"` in `settings.json` disables auto-mode for the session. Pinning is only worth it when you want consistent model behavior rather than per-turn auto-selection.
 
@@ -259,14 +259,11 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 {
   "model": "opus",
   "advisorModel": "fable",
-  "effortLevel": "xhigh",
-  "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
-  }
+  "effortLevel": "xhigh"
 }
 ```
 
-Tell the user: "Opus 5 + Fable — the wizard's recommended pin (Setup A), trial as of 2026-07-24. Effort: `xhigh`, Anthropic's own recommendation for difficult/long-running work. Requires CC v2.1.219+ — run `! claude update` if needed. Also check your shell rc files for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` — it silently overrides this pin."
+Tell the user: "Opus 5 + Fable (Setup A, trial 2026-07-24). Effort `xhigh` — Anthropic's own pick for hard/long work. Needs CC v2.1.219+ (`! claude update`). Check shell rc for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` — it silently overrides this pin. No autocompact override: no Opus-5 proactive threshold is documented, so no percentage is supported (wizard doc → Autocompact Tuning)."
 
 **If the user answers `s` (Sonnet 5 + Fable):** Edit `.claude/settings.json` and add:
 
@@ -281,7 +278,7 @@ Tell the user: "Opus 5 + Fable — the wizard's recommended pin (Setup A), trial
 }
 ```
 
-Tell the user: "Sonnet 5 + Fable — Simple/One-Off lane (Setup B), for lower-stakes or lower-complexity work. Effort: `medium`, escalate `/effort high` → `xhigh` for hard tasks. Requires CC v2.1.170+ — run `! claude update` if needed."
+Tell the user: "Sonnet 5 + Fable (Setup B) — lower-stakes/simpler work. Effort `medium`, escalate `/effort high`→`xhigh`. Needs CC v2.1.170+. The `75` override is **global to this file** — it hits every conversation and subagent here and does NOT turn off if you later switch the driver to Opus; remove it by hand if you repin."
 
 **If the user answers `p` (opusplan):** Edit `.claude/settings.json` and add:
 
@@ -292,7 +289,7 @@ Tell the user: "Sonnet 5 + Fable — Simple/One-Off lane (Setup B), for lower-st
 }
 ```
 
-Tell the user: "Opus 5 plans (Shift+Tab), Sonnet 5 executes — both Max-bundled, no API credit drain (Setup C). Set effort per-session with `/effort` rather than a shell-rc env var. Pin `ANTHROPIC_DEFAULT_OPUS_MODEL: \"claude-opus-4-8\"` explicitly if you want Opus 4.8's field-proven planning behavior instead of Opus 5's. Requires CC v2.1.170+ — run `! claude update` if needed."
+Tell the user: "Opus 5 plans (Shift+Tab), Sonnet 5 executes — both Max-bundled, no API drain (Setup C). Set effort per-session via `/effort`, not a shell-rc env var. Pin `ANTHROPIC_DEFAULT_OPUS_MODEL: \"claude-opus-4-8\"` if you want 4.8's field-proven planning instead of Opus 5's. Needs CC v2.1.170+."
 
 Mention the escape hatch in all three cases:
 - To opt out later: remove the `model` line (and optionally the `env`/`effortLevel` keys) from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".
@@ -309,7 +306,7 @@ This is project-scoped and shared with the team via git.
 
 Default No. If yes, read `~/.claude/settings.json`, add/update only the `advisorModel` key (do NOT touch other keys), write back. This is the only global settings mutation in setup besides Step 7.7's dead plugin cleanup.
 
-**Note:** All three pin choices include an advisor model that auto-consults at key decision points — currently server-side disabled as of 2026-07-24 pending an Anthropic rollout (not a transient incident; restarting doesn't fix it). Fall back to a Fable subagent at `xhigh` in the meantime. Requires CC v2.1.170+ (v2.1.219+ for Opus 5) — run `! claude update` from inside a CC session if needed.
+**Note:** All pin choices include an advisor that auto-consults at decision points — server-side disabled as of 2026-07-24 pending an Anthropic rollout (not transient; restarting won't fix it). Fall back to a Fable subagent at `xhigh`. Needs CC v2.1.170+ (v2.1.219+ for Opus 5).
 
 ### Step 10: Customize Hooks
 
@@ -340,7 +337,7 @@ Tell the user:
 > - After a few sessions, run `/less-permission-prompts` — a native Claude Code skill
 >   that scans your transcripts for common read-only Bash/MCP calls and proposes a
 >   prioritized allowlist. Reduces permission friction without enabling auto mode.
-> - Run `/insights` (native CC, v2.1.101+) **monthly** to surface friction patterns from your session history — `underlying_goal`, `outcome`, `friction_counts`, `user_satisfaction_counts`. Output is **qualitative-only**; it does NOT replace token-spike detection (ROADMAP #220 / `hooks/token-spike-check.sh`) which needs raw session JSONL (`~/.claude/projects/<proj>/<session>.jsonl`, `usage.cache_read_input_tokens` per turn).
+> - Run `/insights` (native CC, v2.1.101+) **monthly** for friction patterns from session history. Output is **qualitative-only** — it does NOT replace token-spike detection (`hooks/token-spike-check.sh`, ROADMAP #220), which needs raw session JSONL.
 >
 > All three are complementary to the SDLC wizard — they add tooling and quality-of-life, not process enforcement.
 

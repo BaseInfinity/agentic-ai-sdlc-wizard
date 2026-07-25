@@ -104,18 +104,6 @@ What changed:
 - [1.84.0] Hook enforcement fix: cross-model review gate + TDD RED gate now actually block (#436); model-aware effort docs replace blanket max recommendation.
 - [1.83.0] Model config batch: multi-model hook recommendation (#403), global [1m] pin detection (#391), version race fix (#405), effort config check (#384).
 - [1.82.0] Usage diagnostics: fix /usage row, Reading Usage Signals guide, advisor fallback procedure, Fable effort guidance, autocompact cross-reference.
-- [1.75.1] release-workflow fix — Node 22 → 24 (ships npm 11.x), dropped flaky `npm install -g` self-upgrade (hit MODULE_NOT_FOUND on v1.75.0 publish). Explicit npm-version guard.
-- [1.75.0] npm Trusted Publishing — `release.yml` swapped from `NPM_TOKEN` to OIDC. No more token rotation. Requires one-time publisher config on the npm package page.
-- [1.74.0] v1.43 salvage: #338 precedence preamble; #235ab `/insights`; codex `< /dev/null` stdin-hang fix; test env-isolation.
-- [1.73.0] precompact stale REBASE_HEAD fix + 15 stale artifact deletes (-460 LOC).
-- [1.72.0] #323 closed — customization-aware `check` recommendation + new `--preserve-customized` flag. `init --force --preserve-customized` skips CUSTOMIZED files (action `PRESERVE`), still OVERWRITEs MATCH and CREATEs MISSING. Default `init --force` unchanged. 10 tests.
-- [1.71.0–1.69.0] token-bloat sweep #236 — BASELINE + TDD CHECK fire once per `session_id` (-12K, -0.5-1.5K); sdlc-skill Cross-Model Review trimmed.
-- [1.64.0] XDLC ecosystem cross-references — README, wizard doc, and ROADMAP now cross-reference all three sibling packages (`agentic-sdlc-wizard`, `codex-sdlc-wizard`, `claude-gdlc-wizard`). New "Ecosystem (Sibling Projects)" section in README. 3 new doc-consistency tests prevent drift.
-- [1.63.0] cache-cost observability closeout (#204 absorbed by #220) — token-spike test gains explicit cache-miss + negative-control coverage. "Cache-Cost Surprises" docs added (10-20× silent blowups from mid-session CLAUDE.md edits, idle pruning).
-- [1.62.0] roadmap hygiene + #211 backfill — closes paperwork-stale rows. Backfilled 5 corrupted `score-history.jsonl` rows from `max_score:10` → `:11` (UI scenarios). Codex strategic review confirmed scope.
-- [1.61.0] calibration scenarios for #96 Phase 3 PR 2 — `tests/e2e/scenarios/calibration-careful-read.md` (parsePrice with 5 edge-case formats) tests whether self-review catches missed requirements. Score delta between SDLC and naive agents on this scenario is a calibration signal for `lift-proof.sh`
-- [1.60.0] wizard-installation lift-proof harness (#96 Phase 3 PR 1) — `tests/e2e/lift-proof.sh` runs same scenario on bare vs wizard-installed fixture, emits score delta. Closes the "does the wizard work?" question. Honestly zero-API (sim + eval on Max)
-- [1.59.0] evaluator on Max via `claude --print` (#228) — `EVAL_USE_CLI=1` swaps `evaluate.sh`'s per-criterion judge transport from `curl` → API to `claude --print --output-format json`. local-shepherd.sh sets it by default, so the local path is honestly zero-API
 ... (older entries omitted — read the full CHANGELOG.md for anything pre-1.59.0)
 ```
 
@@ -171,7 +159,7 @@ Check user's `.claude/settings.json`:
 1. **`model: "opus[1m]"` AND `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "30"`** — likely the old wizard-installed pair, not an intentional choice. Ask:
    > Your `.claude/settings.json` pins `model: "opus[1m]"` with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. This pair was the wizard default in 1.31.0–1.33.x, but it disables Claude Code's auto-mode (issue #198).
    > - **Remove the pin** (recommended) — keeps auto-mode enabled
-   > - **Keep the pin** — guaranteed 1M on whichever Opus `opus[1m]` currently resolves to (now Opus 5, as of 2026-07-24 — swap to `claude-opus-4-6` or `claude-opus-4-8` if you want an earlier version specifically), OK with no auto-selection
+   > - **Keep the pin** — guaranteed 1M on whichever Opus `opus[1m]` currently resolves to (now Opus 5, as of 2026-07-24 — swap to `claude-opus-4-6` or `claude-opus-4-8` if you want an earlier version specifically), OK with no auto-selection. Note: the paired `30%` override is **not** documented to take effect on a current-Opus local session (no Opus-5 proactive threshold is published) — see the wizard doc's Autocompact Tuning → "Opus 5 specifics". If you also set `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, the override *does* apply and the two compound (#207).
    > Remove, keep, or decide later? `[r/k/l]`
 
 2. **Only one of the two fields matches** — treat as intentional customization. Do not prompt.

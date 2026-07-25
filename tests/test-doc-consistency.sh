@@ -989,19 +989,66 @@ test_wizard_doc_has_cowork_section
 # model-config#sonnet-5-context-window) — the 30% figure was never
 # re-derived for it and doesn't apply. Verified via live research
 # 2026-07-05, not carried over from the Opus-era table unexamined.
-test_wizard_doc_autocompact_mentions_sonnet_5() {
+#
+# 2026-07-24 REWRITE (PR #468 review): the previous assertion was
+# `grep -qE 'Sonnet 5'` — a substring check that passed as long as the
+# string appeared anywhere in the section. It green-lit the exact
+# regression it was written to prevent: the Opus 5 lane restructure
+# relabeled Setup A from Sonnet 5 to Opus 5 and carried the 30% figure
+# onto Opus 5 unexamined. Vacuous-test pattern (cf. #462's keyword-only
+# findings). Now asserts the semantic, and is mutation-tested.
+#
+# The contract, per raw env-vars.md (fetched via curl, not WebFetch —
+# ROADMAP #450): CLAUDE_AUTOCOMPACT_PCT_OVERRIDE only lowers the trigger
+# where compaction is PROACTIVE — when CLAUDE_CODE_AUTO_COMPACT_WINDOW is
+# set, in cloud sessions, on Sonnet 4.6/Opus 4.6 without extended context,
+# and on Sonnet 5 at its default threshold. A local Opus session is the
+# doc's own counter-example. So Sonnet 5's scoped 75% is legitimate; an
+# Opus-5-bound percentage is not. Deliberately worded as a documentation
+# gap, NOT a runtime claim — Codex xhigh put ~96% on the policy and only
+# ~65% on "a local Opus 5 override is inert", so the docs must not assert
+# the latter.
+test_wizard_doc_autocompact_sonnet5_scoped_not_opus5() {
     local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
     local section
     section=$(awk '/^### Autocompact Tuning/{f=1} f && /^###[^#]/ && !/^### Autocompact Tuning/{f=0} f' "$DOC")
-    if echo "$section" | grep -qE 'Sonnet 5'; then
-        pass "Autocompact Tuning section addresses Sonnet 5 specifically"
+    local ok=true
+
+    # (a) Sonnet 5's own scoped guidance must survive — it is correct.
+    #     Line-anchored to the paragraph itself, not a cross-reference.
+    echo "$section" | grep -qE '^\*\*Sonnet 5 specifics' || ok=false
+
+    # (b) Opus 5 must be addressed explicitly, not left to inherit
+    #     whatever the Opus-era rows said. MUST be line-anchored: the
+    #     section contains three `see "Opus 5 specifics" above` cross-refs,
+    #     so an unanchored grep still matched after the real paragraph was
+    #     deleted — caught by mutation 3 on 2026-07-24, and exactly the
+    #     vacuousness this rewrite exists to eliminate.
+    echo "$section" | grep -qE '^\*\*Opus 5 specifics' || ok=false
+
+    # (c) THE REGRESSION GUARD: no line may bind a percentage recommendation
+    #     to Opus 5. Catches "Opus 5 ... 30%", "**30%**" in an Opus 5 table
+    #     row, and "so the 30% override applies" — the three shapes the
+    #     restructure actually produced.
+    if echo "$section" | grep -nE 'Opus 5' | grep -qE '[0-9]+%'; then
+        ok=false
+    fi
+
+    # (d) The unsupported causal inference must be gone: a 1M upgrade
+    #     establishes capacity, not proactive mode.
+    if echo "$section" | grep -qiE 'auto-upgrade[sd]? to 1M context, so|so the `?[0-9]+%`? override applies'; then
+        ok=false
+    fi
+
+    if $ok; then
+        pass "Autocompact Tuning scopes 75% to Sonnet 5 and binds no percentage to Opus 5"
     else
-        fail "Autocompact Tuning section must address Sonnet 5's native 1M/967K default, not just Opus-era guidance"
+        fail "Autocompact Tuning must keep Sonnet 5's scoped guidance, address Opus 5 explicitly, and bind NO percentage (and no 1M-implies-30% inference) to Opus 5"
     fi
 }
 
-test_wizard_doc_autocompact_mentions_sonnet_5
+test_wizard_doc_autocompact_sonnet5_scoped_not_opus5
 
 # ROADMAP #437: the wizard doc has 2 separate copies of the cross-model
 # review protocol (a condensed summary section and a fuller tutorial
@@ -1332,8 +1379,13 @@ test_wizard_doc_reviewer_is_gpt56() {
     local F="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     if [ ! -f "$F" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
     local bad=""
-    bad="$bad$(_check_line_has_and_lacks "$F" 1091 "5\.6,Sol" "5\.5")"
-    bad="$bad$(_check_line_has_and_lacks "$F" 1111 "5\.6,Sol" "5\.5")"
+    # Content-anchored (2026-07-24): these two were hardcoded at 1091/1111
+    # and broke again when the Opus 5 autocompact fix inserted lines above
+    # them — the third such drift. Same failure mode already documented for
+    # the fallback-chain pair below; applying the same remedy rather than
+    # re-pinning numbers that will drift on the next insertion.
+    bad="$bad$(_check_content_line_has_and_lacks "$F" "| Reviewer |" "5\.6,Sol" "5\.5")"
+    bad="$bad$(_check_content_line_has_and_lacks "$F" "The Sonnet driver will drop some fine-grained self-review moves" "5\.6,Sol" "5\.5")"
     # Fallback-chain lines: must name "5\.6" AND BOTH Sol and Terra.
     # Content-anchored (not hardcoded line numbers) — this pair drifted
     # 3855->3863->3865->3867 across three separate insertions in one day
