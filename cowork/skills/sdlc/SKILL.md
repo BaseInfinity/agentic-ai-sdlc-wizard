@@ -105,7 +105,7 @@ State your confidence before presenting an approach:
 
 **Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex check.
 
-**Escalation ladder — human is the LAST rung.** 1) **Fable** (`advisor()` before plans; if down, Fable subagent at `xhigh`) → 2) **Codex `xhigh`** → 3) **the user**, only for priority/risk/scope/spend or irreversible calls. Never ask the user what a model can settle; offering options while holding a lean = skipped rung. *Information-limited* ("haven't looked") → go look. *Evidence-limited* ("looked; sources underdetermine") → escalate. **Act-don't-ask:** Fable ≥95% or Codex ≥95% (both for policy/release/consumer-adjacent) → proceed, report after. Fixed a finding but skipped the confirming round? Say so — an unconfirmed fix is not a certification. Full rationale: wizard doc → "Escalation Ladder".
+**Escalation ladder — human is the LAST rung.** 1) **Fable** (`advisor()` before plans; if down, subagent at `xhigh`) → 2) **Codex `xhigh`** → 3) **the user**, only for priority/risk/scope/spend or irreversible calls. Never ask the user what a model can settle. **Act-don't-ask:** Fable ≥95% or Codex ≥95% → proceed, report after — **only** for model-answerable, authorized, reversible decisions. **Confidence is not authorization**: never overrides approval, external-effect, production, release/merge, or policy gates; merge protections are non-overridable. Full ladder (evidence- vs information-limited, the skipped-rung tell, the unconfirmed-fix rule): wizard doc → "Escalation Ladder".
 
 ## Plan Mode
 
@@ -243,9 +243,9 @@ Per-user memory at `~/.claude/projects/<proj>/memory/` accumulates private learn
 
 **When to run:** end-of-release, after debugging-heavy sessions, or on explicit "audit my memory" request.
 
-**Rule-based denylist** (deterministic, no LLM): `user`/`reference` → keep private, never promote. `project`/`feedback` → manual review (mixed private state + portable rule).
+**Rule-based denylist** (deterministic, no LLM): `type: user` / `type: reference` → keep private, never promote. `type: project` / `type: feedback` → manual review (mixed private state + portable rule).
 
-**Destinations** (no new files): gotchas → `SDLC.md`. Testing → `TESTING.md`. Skill quirks → that `SKILL.md`. Process rules → `/sdlc`. **A process rule saved only to memory is a /sdlc gap — codify it so every consumer repo inherits it. Memory changes one agent in one checkout; docs change everyone.**
+**Destinations** (no new files): gotchas → `SDLC.md`. Testing → `TESTING.md`. Skill quirks → that `SKILL.md`. Process rules → `/sdlc` via `/feedback`. **A process rule saved only to memory is a /sdlc gap — codify it so every consumer inherits it. Memory changes one agent; docs change everyone.**
 
 **Tracking:** `promoted_to: <path>` in the memory frontmatter; later audits skip promoted entries.
 

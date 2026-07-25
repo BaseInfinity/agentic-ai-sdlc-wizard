@@ -1705,8 +1705,29 @@ test_escalation_ladder_order_and_threshold() {
         # the never-ask-what-a-model-can-settle rule must survive
         grep -qiE 'never ask the (user|human) what a model can settle|Ask a human only for what no model can settle' "$f" || ok=false
     done
-    # the old wrong ladder must NOT come back
+    # the old wrong ladder must NOT come back, in ANY shipped surface
     if grep -qE 'if still LOW, ASK USER' "$SKILL"; then ok=false; fi
+    # Codex round-1 on PR #470 defeated the previous version of this test:
+    # it proved a correct ladder existed SOMEWHERE, but not that the
+    # Confidence Check DECISION POINT routed to it. Restoring the old
+    # "ASK USER" action cells while leaving the new prose below passed
+    # 77/77. Now bind the actual action cells.
+    for f in "$SKILL" "$DOC"; do
+        # every LOW / FAILED 2x / CONFUSED row must route to the ladder
+        rows=$(grep -cE '^\|[^|]*(LOW \(<60%\)|FAILED 2x|CONFUSED)[^|]*\|.*([Ee]scalation [Ll]adder|ladder)' "$f")
+        [ "$rows" -ge 3 ] || ok=false
+        # ...and none of them may route to the old "ASK USER" wording
+        if grep -qE '^\|[^|]*(LOW \(<60%\)|FAILED 2x|CONFUSED)[^|]*\|[^|]*ASK USER' "$f"; then ok=false; fi
+    done
+    # the shipped RUNTIME hook must not contradict the docs (Codex P1 #2:
+    # hooks/sdlc-prompt-check.sh is distributed by cli/init.js and
+    # registered by cli/templates/settings.json, so its baseline text
+    # reaches every consumer session)
+    local HOOK="$REPO_ROOT/hooks/sdlc-prompt-check.sh"
+    if [ -f "$HOOK" ]; then
+        grep -qE 'LOW confidence\? ASK USER' "$HOOK" && ok=false
+        grep -qiE 'Fable -> Codex|Fable → Codex' "$HOOK" || ok=false
+    fi
     if $ok; then
         pass "Escalation ladder: Fable→Codex→human order, ≥95% act-don't-ask threshold, and never-ask-a-model-answerable rule present in both SKILL.md and wizard doc"
     else

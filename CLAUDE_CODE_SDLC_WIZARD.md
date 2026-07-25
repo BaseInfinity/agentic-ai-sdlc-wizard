@@ -2185,8 +2185,8 @@ cat << 'EOF'
 SDLC BASELINE:
 1. TodoWrite FIRST (plan tasks before coding)
 2. STATE CONFIDENCE: HIGH/MEDIUM/LOW
-3. LOW confidence? ASK USER before proceeding
-4. FAILED 2x? STOP and ASK USER
+3. LOW confidence or FAILED 2x? Ladder: Fable -> Codex xhigh -> human LAST
+4. Never ask what a model can settle; confidence is not authorization
 5. 🛑 ALL TESTS MUST PASS BEFORE COMMIT - NO EXCEPTIONS
 
 AUTO-INVOKE SKILL (Claude MUST do this FIRST):
@@ -2407,6 +2407,8 @@ Low confidence does **not** mean "ask the user." It means "escalate," and the us
 **The skipped-rung tell:** presenting the user with options while you already hold a lean means you skipped a rung. Act on the lean, or send it up to the next reviewer — don't outsource a model-answerable decision upward.
 
 **Act-don't-ask threshold.** When Fable ≥95% or Codex ≥95% (require **both** for policy-, release-, or consumer-adjacent changes, scaled to the change's complexity), proceed and report afterward instead of asking. Below that, or when the two reviewers disagree, keep escalating rather than defaulting to a question.
+
+> **Scope — confidence is not authorization.** This threshold applies **only** to decisions that are model-answerable, already authorized, and reversible. It **never** overrides an approval gate: human sign-off, anything with external effect (publishing, sending, posting), production deploys, deletions, new architectural patterns, releases, or policy changes. **Merge protections are non-overridable** — `gh pr merge --auto` stays banned unconditionally, and a merge gate demanding explicit confirmation is the human rung by design, not a low-confidence signal to be cleared by a high score. A model can be entirely confident about *how* to do something irreversible while having no idea whether it *should* — that judgement is the user's, and no confidence number substitutes for it.
 
 **Form your own view from both.** Two reviewers agreeing is not automatic truth — especially when they saw overlapping evidence. Where they diverge is the signal; check which side the primary sources actually support, and say so.
 
@@ -3493,8 +3495,8 @@ All checks passed! Setup complete.
 |-------|---------------|
 | HIGH (90%+) | Proceed after approval |
 | MEDIUM (60-89%) | Highlight uncertainties |
-| LOW (<60%) | **ASK USER first** |
-| FAILED 2x | **STOP and ASK** |
+| LOW (<60%) | **Escalation ladder** — Fable → Codex xhigh → human last |
+| FAILED 2x | **Escalation ladder** — human is the last rung, not the first |
 
 ### Hook Summary
 
