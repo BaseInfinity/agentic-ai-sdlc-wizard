@@ -999,6 +999,10 @@ Override the default auto-compact threshold with environment variables. Per offi
 
 **Sonnet 5 specifics:** Sonnet 5 always runs at 1M context (no 200K variant, no `[1m]` suffix needed) and proactively compacts at its own tuned default of **~967K tokens (96.7%)** — not the generic 1M ceiling. `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` on Sonnet 5 fires at ~75% *of that 967K*, i.e. ~725K tokens — earlier and safer than the native default, not later. **Do not carry over an `opus[1m]`-era `30%` setting to Sonnet 5** — that figure was derived for `opus[1m]`'s older extended-context opt-in, never re-derived for Sonnet 5's smarter native default, and is needlessly conservative here (verified 2026-07-05).
 
+**Opus 5 specifics (Setup A):** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` only causes *earlier* compaction where Claude Code compacts **proactively** — per [env-vars](https://code.claude.com/docs/en/env-vars): when `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is set, in cloud sessions, on Sonnet 4.6/Opus 4.6 without extended context, and on Sonnet 5 at its own default threshold. A local Opus session is the doc's own counter-example ("auto-compaction triggers when the conversation reaches the model's context limit"). **Claude Code documents no Opus-5-specific proactive threshold or percentage — so Setup A sets no `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` at all.** On Max, bare `opus` auto-upgrades to 1M ([model-config](https://code.claude.com/docs/en/model-config)); that establishes *capacity*, not proactive mode, and does not license a percentage. If you want a deliberately earlier boundary on 1M Opus, `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (e.g. `500000`) is the documented knob — but setting it *makes* compaction proactive, at which point a PCT override compounds with it (#207). Pick one, never both. `/compact` at a phase boundary works regardless of model.
+
+> **`env` is global, not per-model.** `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in `.claude/settings.json` applies to whichever model runs under that file — and, per the same doc row, "to both main conversations and subagents". Switching drivers does **not** switch its value: a file carrying Setup B's `75` keeps supplying `75` after you switch to Opus. No static `env` object can express "75 for Sonnet, none for Opus" — if you want per-model tuning, edit the key when you change persistent pins, or keep separate settings profiles.
+
 **Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model`, `advisorModel`, or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 offers four choices: no pin (default, auto-mode), Opus 5 + Fable advisor (recommended if pinning at all, Setup A, trial as of 2026-07-24), OpusPlan Hybrid with a Fable advisor (Setup C), and Sonnet 5 Simple/One-Off + Fable advisor (Setup B). Opus 4.8 itself is a pinned escalation model, not a persistent Step 9.5 pin — reach for it per-session via `/model claude-opus-4-8` when the driver gets stuck (see "Latest tier" below). Default is **No pin**. Pinning the model turns off per-turn auto-selection — a real tradeoff, so we ask.
 
 To opt in by hand, edit `.claude/settings.json` (Opus 5 example — the recommended default, trial as of 2026-07-24):
@@ -1007,14 +1011,13 @@ To opt in by hand, edit `.claude/settings.json` (Opus 5 example — the recommen
 {
   "model": "opus",
   "advisorModel": "fable",
-  "effortLevel": "xhigh",
-  "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
-  }
+  "effortLevel": "xhigh"
 }
 ```
 
-For `opus[1m]` instead (older pin, still valid for proven stability), pair with a lower override since it lacks Sonnet 5's smarter native default:
+No `env` block: Claude Code documents no Opus-5 proactive threshold, so there is no supported percentage to set (see "Opus 5 specifics" above).
+
+For the older `claude-opus-4-6` pin instead (still valid for proven stability), a lower override *is* supported — Opus 4.6 without extended context is one of the documented proactive-compaction cases:
 
 ```json
 {
@@ -1027,13 +1030,13 @@ For `opus[1m]` instead (older pin, still valid for proven stability), pair with 
 }
 ```
 
-On Max plans, bare `opus` (Setup A's actual pin — no `[1m]` suffix needed) auto-upgrades to 1M context, so the `30%` override applies there too. If you're on a plan without the auto-upgrade and stay on the 200K window, raise the override to `75` — otherwise 30% of 200K = 60K compacts too early.
+That block is the **legacy Opus 4.6 pin**, not Setup A. Setup A pins bare `opus` and sets no override — see "Opus 5 specifics" above for why a 1M window alone doesn't justify a percentage.
 
 **Recommended thresholds by use case:**
 
 | Use Case | AUTOCOMPACT % | Why |
 |----------|--------------|-----|
-| **Opus 5 (Setup A default driver, trial as of 2026-07-24)** | **30%** | Fires at ~300K on 1M (auto-upgraded on Max, or via the opt-in `opus[1m]` pin on other plans — see issue #198) — right balance for plan + TDD + review sessions |
+| **Setup A default driver (trial as of 2026-07-24)** | **none** | No proactive-compaction threshold is documented for it, so no percentage is supported — see "Opus 5 specifics". Use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` if you want an earlier boundary. |
 | Sonnet 5 (Simple/One-Off driver) | **75%** | Fires at ~75% of its native ~967K threshold (~725K tokens) — safe margin without being overly conservative. Verified against official docs 2026-07-05. |
 | General development (200K `opus`) | 75% | Leaves room for implementation after planning |
 | Complex refactors (200K `opus`) | 80% | Slightly more context before compaction |
@@ -1058,7 +1061,7 @@ Claude Code supports both 200K and 1M context windows. **This section is about O
 | **Typical usage** | 50-80K tokens per task | 50-80K typical, up to 200K+ for complex workflows |
 | **Cost** | Standard pricing | Anthropic currently lists the 1M window at standard pricing across the full context for supported Opus/Sonnet models — **verify current rates at [docs.anthropic.com/pricing](https://docs.anthropic.com/)** before assuming no premium |
 | **Auto-mode** | **Enabled** — Claude Code chooses model per turn | **Disabled** — top-level `model` tells CC you've chosen explicitly |
-| **Auto-compact** | Default ~95% works well | Fires at ~76K by default ([issue #34332](https://github.com/anthropics/claude-code/issues/34332)) — pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` |
+| **Auto-compact** | Default ~95% works well | For the legacy `opus[1m]` opt-in: fires at ~76K by default ([issue #34332](https://github.com/anthropics/claude-code/issues/34332)) — pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. **This row describes `opus[1m]`, not Setup A's bare `opus`** — see "Opus 5 specifics" above. |
 | **Suggested override (if you pin)** | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` **OR** `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000` (pick one) |
 
 > **⚠ Do NOT set both.** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` are alternatives, not complementary. Setting both compounds: `30% × 400000 = 120000` tokens, which is ~12% of a 1M window — autocompact fires almost immediately, destroying the headroom you opted in for. Pick one knob: either lower the trigger percentage (`PCT_OVERRIDE=30`) on the model's default 1M window, OR cap the working window (`AUTO_COMPACT_WINDOW=400000`) at the model's default 95% trigger. The `instructions-loaded-check.sh` `InstructionsLoaded` hook (fires on session start/resume) detects this misconfig and prints the effective trigger so you can debug from the warning alone (#207).
@@ -1078,7 +1081,7 @@ Claude Code supports both 200K and 1M context windows. **This section is about O
 
 **Cost awareness:** Larger windows let you consume more tokens in one session, and total cost always scales with tokens consumed regardless of tier. Use `/usage` to monitor (aliases: `/cost`, `/stats`) — a 900K-token session is meaningfully more expensive than an 80K one even at standard rates.
 
-**Autocompact pairing (important):** If you opt into `opus[1m]`, also set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — otherwise CC's default autocompact fires at ~76K and destroys the headroom you're paying for. Step 9.5 writes both together when you opt in.
+**Autocompact pairing (legacy `opus[1m]` only):** If you opt into the older `opus[1m]` pin, also set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — otherwise CC's default autocompact fires at ~76K and destroys the headroom you're paying for. **This does not apply to Setup A**, which pins bare `opus` and writes no override at all (Step 9.5 no longer pairs one) — see "Opus 5 specifics" above.
 
 ### OpusPlan Tier (Opus planner + Sonnet driver, #395) — Setup C
 
@@ -3747,7 +3750,7 @@ These signals are community-observed behavior on paid plans (Max/Team) — not i
 | Signal | What It Means | SDLC Action |
 |--------|---------------|-------------|
 | **Subagent-heavy** | Each subagent runs its own context. The advisor is a separate server-side consultation (full transcript forwarded, different token profile). Explore agents, full Agent delegates, and workflow agents each spawn separate contexts. | Expected in both A and B (Fable advisor/subagent-fallback fires per-decision). If unexpectedly high: use `subagent_type: "Explore"` for search (lighter), reserve full agents for implementation. |
-| **>150K context** | Sessions staying large between compactions. | **Context-window dependent.** Setup A (Opus 5, 1M via `opus[1m]` or auto-upgrade on Max): pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` if opted into 1M; on plain 200K, the default ~95% trigger is fine. Setup B (Sonnet 5, native 1M): recommended `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` fires at ~725K — >150K is expected and fine, the real question is whether the task needed that much headroom. `/compact` between planning and implementation regardless of lane. |
+| **>150K context** | Sessions staying large between compactions. | **Context-window dependent.** Setup A (Opus 5, 1M auto-upgraded on Max): no `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` — none is documented to apply; use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` if you want an earlier boundary (see Autocompact Tuning → "Opus 5 specifics"). Setup B (Sonnet 5, native 1M): recommended `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` fires at ~725K — >150K is expected and fine, the real question is whether the task needed that much headroom. `/compact` between planning and implementation regardless of lane. |
 | **8+ hour sessions** | Long-running sessions accumulate stale context. | `/clear` between unrelated tasks. Split multi-feature work into separate sessions. After committing a PR, start fresh. Background `/loop` sessions count toward this — audit which are still needed. |
 
 ### Reduce Consumption

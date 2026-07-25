@@ -614,12 +614,29 @@ test_wizard_autocompact_env_var() {
     fi
 }
 
-# Wizard has recommended thresholds per use case (75% for 200K, 30% for 1M)
+# Wizard has recommended thresholds, scoped to models that actually compact
+# proactively.
+#
+# 2026-07-24: this test used to require both "75%" and "30%" to appear
+# anywhere in the wizard, with the comment "(75% for 200K, 30% for 1M)".
+# That framing is wrong at the concept level, not merely stale: per raw
+# env-vars.md, the axis is NOT 200K-vs-1M, it is whether the model compacts
+# PROACTIVELY. CLAUDE_AUTOCOMPACT_PCT_OVERRIDE only lowers the trigger when
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW is set, in cloud sessions, on Sonnet
+# 4.6/Opus 4.6 without extended context, and on Sonnet 5. A local Opus
+# session is the doc's own counter-example, so a 1M window alone never
+# justified a percentage.
 test_wizard_autocompact_thresholds() {
-    if grep -q "75%" "$WIZARD" && grep -q "30%" "$WIZARD" && grep -qi "AUTOCOMPACT" "$WIZARD"; then
-        pass "Wizard has autocompact threshold recommendations"
+    if ! grep -qi "AUTOCOMPACT" "$WIZARD"; then
+        fail "Wizard should document autocompact tuning"
+        return
+    fi
+    # 75% must remain, explicitly scoped to Sonnet 5 (the documented
+    # proactive case) — not floating as a generic "200K" recommendation.
+    if grep -qE 'Sonnet 5.*75%|75%.*Sonnet 5' "$WIZARD"; then
+        pass "Wizard scopes the 75% threshold to Sonnet 5's proactive compaction"
     else
-        fail "Wizard should have threshold recommendations (75% for 200K, 30% for 1M)"
+        fail "Wizard must scope 75% to Sonnet 5 specifically (proactive-compaction case), not to a generic context size"
     fi
 }
 

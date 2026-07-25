@@ -175,7 +175,7 @@ That research still stands as the reason **Sonnet 5 (not Opus 4.6, not Opus 4.8)
 Or pin in `.claude/settings.json`:
 
 ```json
-{ "model": "opus", "advisorModel": "fable", "effortLevel": "high" }
+{ "model": "opus", "advisorModel": "fable", "effortLevel": "xhigh" }
 ```
 
 **Effort is model-aware, not blanket `max`.** Opus 5: `xhigh` default for Setup A (Anthropic's own recommendation for difficult/long-running work) — effort tiers are static per session, but Opus 5 has documented adaptive reasoning *within* a fixed tier. Sonnet 5: `medium` default (CodeRabbit-tested), escalate `/effort high` → `xhigh` for hard tasks. Opus 4.8: `xhigh` (its own `max` overthinks). Opus 4.6: `max` (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc or settings env var — persisting effort that way silently overrides a later `/effort` change after you switch models (see `SDLC.md`'s Lessons Learned for a real incident this caused). Also check for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` env var in your shell rc files — it silently overrides `/model opus` picker choices. OpenAI/Codex reviewer: `xhigh` default — escalate to `max`/Pro mode only for unusually risky PRs (see `AI_SETUP_LANES.md`'s Final Review Policy).
