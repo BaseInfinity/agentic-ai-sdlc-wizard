@@ -7,9 +7,7 @@ argument-hint: "[task description]"
 
 ## Skill source & precedence
 
-This skill is loaded from **`.claude/skills/sdlc/SKILL.md`** in the active repo (symlinked to `skills/sdlc/SKILL.md` in the wizard's source tree). Claude Code prefers repo-local skills over global (`~/.claude/skills/sdlc/SKILL.md`) when both exist with the same name — the repo-local copy is the project's authoritative workflow contract. Use global skills only for cross-repo personal tooling (e.g. `feedback`, `revise-claude-md`); use repo-local for implementation, tests, release, and verification in this repo.
-
-If unsure which copy is active, compare `head -5` of both — the repo-local copy wins. Don't mix guidance from both.
+Loaded from repo-local **`.claude/skills/sdlc/SKILL.md`**, which wins over global `~/.claude/skills/` — it's the project's authoritative contract. Use global only for cross-repo personal tooling. Unsure which is active? `head -5` both; don't mix.
 
 ## Task
 $ARGUMENTS
@@ -89,7 +87,7 @@ When tests fail:
 1. Identify which test(s) failed
 2. Diagnose WHY: your code broke it (regression — fix code), test is for deleted code (delete test), test has wrong assertions (fix test), "flaky" (investigate — race, shared state, env)
 3. Fix appropriately, run specific test individually first, then run ALL tests
-4. Still failing after 2 attempts? STOP and ASK USER
+4. Still failing after 2 attempts? Escalate (see Confidence Check) — not straight to the user
 
 ## Confidence Check (REQUIRED)
 
@@ -99,15 +97,15 @@ State your confidence before presenting an approach:
 |-------|---------|--------|--------|
 | HIGH (90%+) | Know exactly what to do | Present, proceed after approval | Model default |
 | MEDIUM (60-89%) | Solid approach, some uncertainty | Present, highlight uncertainties | Model default |
-| LOW (<60%) | Not sure | Research or try Codex; if still LOW, ASK USER | **escalate now** (per model, see above) |
-| FAILED 2x | Something's wrong | Codex for fresh perspective; if still stuck, STOP | **escalate now** |
-| CONFUSED | Can't diagnose | Codex; if still confused, STOP and describe | **escalate now** |
+| LOW (<60%) | Not sure | Escalate, don't ask ↓ | **escalate now** (per model, see above) |
+| FAILED 2x | Something's wrong | Escalate, don't ask ↓ | **escalate now** |
+| CONFUSED | Can't diagnose | Escalate, don't ask ↓ | **escalate now** |
 
 **Effort bumping is NOT optional.** Bump BEFORE the next attempt, not after a third failure.
 
 **Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex check.
 
-**Advisor:** `advisor()` before plans; if down, spawn Fable subagent at `xhigh`.
+**Uncertainty ≠ a human question.** Use judgement and the model/tool evidence available to you before interrupting a human — escalate to Fable (`advisor()`; if down, spawn a Fable subagent at `xhigh` — that's the current fallback), then Codex `xhigh`, and reserve the user for priority/risk/scope/spend or irreversible calls. **Confidence is not authorization**: a high score never grants permission — it never overrides approval, external-effect, production, release/merge, or policy gates, and merge protections are non-overridable. Escalation options and rationale: wizard doc → "Escalation Ladder".
 
 ## Plan Mode
 
@@ -115,7 +113,7 @@ Use plan mode for: multi-file changes, new features, LOW confidence, bugs needin
 
 ## Long-Running Goals (`/goal`)
 
-Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript per turn. **Confidence gate — NEVER invoke below HIGH 95%**; below that the evaluator rubber-stamps flailing as progress. **DLC binding — condition MUST name the DLC** (`/sdlc`, `/gdlc`, `/ldlc`, etc.) so the evaluator anchors on "doing it right." **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` both off. **Condition = contract:** end state + check + constraints + hard turn/time bound (no native cap); e.g. `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. **Anti-pattern:** evaluator can't call tools — transcript-only. `--resume` resets counters.
+Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript per turn. **NEVER invoke below HIGH 95%** — below that it rubber-stamps flailing as progress. **Condition MUST name the DLC** (`/sdlc`, `/gdlc`, etc.) so the evaluator anchors on "doing it right." **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` off. **Condition = contract:** end state + check + constraints + hard turn/time bound; e.g. `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. Evaluator can't call tools — transcript-only. `--resume` resets counters.
 
 ## Recommended Model
 
@@ -194,7 +192,7 @@ Mandatory steps:
 
 ## Debugging Workflow (Systematic)
 
-Reproduce → Isolate → Root Cause → Fix → Regression Test. Do not skip steps. `git bisect` for regressions. 2 failed attempts → STOP and ASK USER.
+Reproduce → Isolate → Root Cause → Fix → Regression Test. Do not skip steps. `git bisect` for regressions. 2 failed attempts → escalate (see Confidence Check), not straight to the user.
 
 ## Release Planning (Task Ships a Release)
 
@@ -245,15 +243,11 @@ Per-user memory at `~/.claude/projects/<proj>/memory/` accumulates private learn
 
 **When to run:** end-of-release, after debugging-heavy sessions, or on explicit "audit my memory" request.
 
-**Rule-based denylist** (deterministic, no LLM):
-- `type: user` → keep (user identity, preferences — never promote)
-- `type: reference` → keep (external pointers, private by default)
-- `type: project` → manual review (mixed state + portable lesson)
-- `type: feedback` → manual review (mixed personal preference + portable rule)
+**Rule-based denylist** (deterministic, no LLM): `type: user` / `type: reference` → keep private, never promote. `type: project` / `type: feedback` → manual review (mixed private state + portable rule).
 
-**Destinations** (no new files): gotchas → `SDLC.md`. Testing → `TESTING.md`. Skill quirks → that `SKILL.md`. Process rules → `/sdlc`. **Memory that's a process rule = /sdlc gap — use /feedback.**
+**Destinations** (no new files): gotchas → `SDLC.md`. Testing → `TESTING.md`. Skill quirks → that `SKILL.md`. Process rules → `/sdlc` via `/feedback`. **A process rule saved only to memory is a /sdlc gap — codify it so every consumer inherits it. Memory changes one agent; docs change everyone.**
 
-**Tracking:** `promoted_to: <path>` in the memory file's YAML frontmatter; later audits skip already-promoted entries.
+**Tracking:** `promoted_to: <path>` in the memory frontmatter; later audits skip promoted entries.
 
 **Human gate is MANDATORY.** Protocol produces diffs; user approves chunk-by-chunk. Never auto-apply. Prove-It: build a `/memory-audit` slash command only after running 4+ times manually. (Full protocol: wizard doc.)
 

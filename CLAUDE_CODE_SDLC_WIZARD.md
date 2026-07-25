@@ -143,7 +143,7 @@ These aren't preferences - they're **how AI agents stay on track**:
 |----------------|--------------------------|
 | **TDD Red-Green-Pass** | AI agents need concrete pass/fail feedback. Without failing tests first, Claude can't verify its work. This is the feedback loop that keeps implementation correct. |
 | **Testing Diamond** | Integration tests catch real bugs. Unit tests with mocks can "pass" while production fails. AI agents need tests that actually validate behavior. |
-| **Confidence Levels** | Prevents Claude from guessing when uncertain. LOW confidence = ASK USER. This stops runaway bad implementations. |
+| **Confidence Levels** | Prevents Claude from guessing when uncertain. LOW confidence = escalate (Fable, then Codex) before interrupting a human. This stops runaway bad implementations. |
 | **TodoWrite Visibility** | You need to see what Claude is doing. Without visibility, Claude can go off-track without you knowing. |
 | **Planning Before Coding** | Claude must understand before implementing. Skipping planning = wasted effort and wrong approaches. |
 
@@ -180,7 +180,7 @@ You CAN change these, but understand the trade-offs:
 | **Testing shape** | Diamond (integration-heavy) | Pyramid (unit-heavy) = mocks can hide real bugs, AI gets false confidence |
 | **TDD strictness** | Strict (test first always) | Flexible = AI may skip tests, no verification of correctness |
 | **Planning mode** | Required for implementation | Skipping = Claude codes without understanding, wasted effort |
-| **Confidence thresholds** | LOW < 60% = must ask | Higher threshold = Claude proceeds when unsure, mistakes |
+| **Confidence thresholds** | LOW < 60% = must escalate | Higher threshold = Claude proceeds when unsure, mistakes |
 
 **If you change these:** The wizard will warn you. You can override, but you're accepting the risk.
 
@@ -221,7 +221,7 @@ This frames the wizard as a partnership, not a constraint.
 1. Have a process that Claude follows consistently
 2. Make the process visible (TodoWrite, confidence levels)
 3. Enforce quality gates (tests pass, review before commit)
-4. Let Claude ask when uncertain
+4. Let Claude escalate when uncertain (models first, human last)
 5. **Customize what makes sense, keep what keeps AI on track**
 
 ### Leverage Official Tools (Don't Reinvent)
@@ -640,9 +640,9 @@ Claude MUST state confidence before implementing:
 |-------|---------|------------------|
 | **HIGH (90%+)** | "I know exactly what to do" | Proceeds after your approval |
 | **MEDIUM (60-89%)** | "Solid approach, some unknowns" | Highlights uncertainties |
-| **LOW (<60%)** | "I'm not sure" | **ASKS YOU before proceeding** |
-| **FAILED 2x** | "Something's wrong" | **STOPS and asks for help** |
-| **CONFUSED** | "I don't understand why this is failing" | **STOPS, describes what was tried** |
+| **LOW (<60%)** | "I'm not sure" | **Escalates before asking you** |
+| **FAILED 2x** | "Something's wrong" | **Escalates to Fable, then Codex** |
+| **CONFUSED** | "I don't understand why this is failing" | **Escalates, describing what was tried** |
 
 **Why this matters**: You have domain expertise. When Claude is uncertain, asking you takes 30 seconds. Guessing wrong takes 30 minutes to fix.
 
@@ -2186,8 +2186,8 @@ cat << 'EOF'
 SDLC BASELINE:
 1. TodoWrite FIRST (plan tasks before coding)
 2. STATE CONFIDENCE: HIGH/MEDIUM/LOW
-3. LOW confidence? ASK USER before proceeding
-4. FAILED 2x? STOP and ASK USER
+3. LOW confidence or FAILED 2x? Ladder: Fable -> Codex xhigh -> human LAST
+4. Never ask what a model can settle; confidence is not authorization
 5. 🛑 ALL TESTS MUST PASS BEFORE COMMIT - NO EXCEPTIONS
 
 AUTO-INVOKE SKILL (Claude MUST do this FIRST):
@@ -2382,13 +2382,38 @@ Before presenting approach, STATE your confidence:
 |-------|---------|--------|--------|
 | HIGH (90%+) | Know exactly what to do | Present approach, proceed after approval | Model default |
 | MEDIUM (60-89%) | Solid approach, some uncertainty | Present approach, highlight uncertainties | Model default |
-| LOW (<60%) | Not sure | ASK USER before proceeding | **Escalate effort now** — don't wait |
-| FAILED 2x | Something's wrong | STOP. ASK USER immediately | **Escalate effort now** — you're burning cycles at lower effort |
-| CONFUSED | Can't diagnose why something is failing | STOP. Describe what you tried, ask for help | **Escalate effort now** — stop spinning |
+| LOW (<60%) | Not sure | Run the **Escalation Ladder** below | **Escalate effort now** — don't wait |
+| FAILED 2x | Something's wrong | Run the **Escalation Ladder** below | **Escalate effort now** — you're burning cycles at lower effort |
+| CONFUSED | Can't diagnose why something is failing | Run the **Escalation Ladder** below | **Escalate effort now** — stop spinning |
 
 "Model default" and "escalate" are model-aware, not a blanket `max` — see "Recommended Effort Level" above for the per-model table (Opus 5: `xhigh`; Sonnet 5: `medium`→`high`→`xhigh`; Opus 4.8: `xhigh`; Opus 4.6: `max`; Fable: `high`).
 
 **Dynamic bumping is NOT optional.** "Consider higher effort" is the same as "ignore this" in practice. If your confidence drops or tests fail twice, bump effort BEFORE the next attempt — spinning at low effort is an SDLC failure mode.
+
+### Escalation Ladder — the human is the LAST rung
+
+Low confidence does **not** mean "ask the user." It means "escalate," and the user is the third rung, not the first. Ask a human only for what no model can settle.
+
+1. **Fable** — `advisor()` before plans; if the advisor is unavailable, spawn a Fable subagent at `xhigh`.
+2. **Codex `xhigh`** — when Fable can't close the gap, or when a second, adversarially-framed opinion is what's needed.
+3. **The human** — priority, risk appetite, scope, spend, or anything irreversible or outward-facing. A merge gate that demands explicit confirmation *is* this rung, invoked by design rather than by uncertainty.
+
+**Diagnose the gap before escalating — the two causes need opposite responses:**
+
+| Cause | Looks like | Do |
+|---|---|---|
+| **Information-limited** | "I haven't looked that up yet" | Go look. A review round is wasted on what a file read or a doc fetch settles. |
+| **Evidence-limited** | "I looked; the sources genuinely underdetermine this" | Escalate. More effort from the *same* model cannot move it. |
+
+**The skipped-rung tell:** presenting the user with options while you already hold a lean means you skipped a rung. Act on the lean, or send it up to the next reviewer — don't outsource a model-answerable decision upward.
+
+**Act-don't-ask threshold.** When Fable ≥95% or Codex ≥95% (require **both** for policy-, release-, or consumer-adjacent changes, scaled to the change's complexity), proceed and report afterward instead of asking. Below that, or when the two reviewers disagree, keep escalating rather than defaulting to a question.
+
+> **Scope — confidence is not authorization.** This threshold applies **only** to decisions that are model-answerable, already authorized, and reversible. It **never** overrides an approval gate: human sign-off, anything with external effect (publishing, sending, posting), production deploys, deletions, new architectural patterns, releases, or policy changes. **Merge protections are non-overridable** — `gh pr merge --auto` stays banned unconditionally, and a merge gate demanding explicit confirmation is the human rung by design, not a low-confidence signal to be cleared by a high score. A model can be entirely confident about *how* to do something irreversible while having no idea whether it *should* — that judgement is the user's, and no confidence number substitutes for it.
+
+**Form your own view from both.** Two reviewers agreeing is not automatic truth — especially when they saw overlapping evidence. Where they diverge is the signal; check which side the primary sources actually support, and say so.
+
+**Honesty rule.** If you fix a reviewer's finding and choose to skip the confirming round, state that plainly. An unconfirmed fix is not a certification, and reporting it as one is exactly the false-green this protocol exists to prevent. Skipping a round can be the right call — silently implying it happened is not.
 
 ## Self-Review Loop (CRITICAL)
 
@@ -2610,7 +2635,7 @@ If tests fail:
 3. Fix appropriately (fix code, fix test, or delete dead test)
 4. Run specific test individually first
 5. Then run ALL tests
-6. Still failing? ASK USER - don't spin your wheels
+6. Still failing? Escalate to Fable, then Codex `xhigh` — ask the user only if they still can't resolve it
 
 **Flaky tests are bugs, not mysteries:**
 - Sometimes the bug is in app code (race condition, timing issue)
@@ -2684,7 +2709,7 @@ Local tests pass -> Commit -> Push -> Watch CI
                                                            |
                                                    Still failing?
                                                            |
-                                                   STOP and ASK USER
+                                                   ESCALATE: Fable→Codex
 ```
 
 **How to watch CI:**
@@ -2704,7 +2729,7 @@ Local tests pass -> Commit -> Push -> Watch CI
    - Read failure logs: `gh run view <RUN_ID> --log-failed`
    - Diagnose root cause (same philosophy as local test failures)
    - Fix and push again
-4. Max 2 fix attempts - if still failing, ASK USER
+4. Max 2 fix attempts - if still failing, escalate (Fable → Codex `xhigh`) before asking the user
 5. **Read CI logs whether pass or fail — not just on failure.** A green checkmark hides warnings, skipped steps, and degraded scores (v1.24.0 shipped a degraded E2E score and a silently excluded test suite behind a passing check). Use `gh run view <RUN_ID> --log`, not just `--log-failed`.
 6. **Cross-model audit the CI logs** — same `codex exec` pattern as the Cross-Model Review Loop above. Prompt: *"Audit for silent failures, skipped tests, degraded metrics, warnings-that-should-be-errors."* Do this even when every check is green.
 7. Only after logs are read and audited — proceed to present final summary
@@ -2715,7 +2740,7 @@ Local tests pass -> Commit -> Push -> Watch CI
 - Your code broke it? Fix your code
 - CI config issue? Fix the config
 - Flaky? Investigate - flakiness is a bug
-- Stuck? ASK USER
+- Stuck? Escalate — Fable, then Codex `xhigh`; the user last
 
 ## CI Review Feedback Loop — Local Shepherd (After CI Passes)
 
@@ -3448,8 +3473,8 @@ All checks passed! Setup complete.
 7. Claude implements with TDD
 
 **When Claude should ask you:**
-- LOW confidence → Must ask before proceeding
-- FAILED 2x → Must stop and ask
+- LOW confidence → Must escalate (Fable → Codex) before interrupting a human
+- FAILED 2x → Must escalate (Fable → Codex) before interrupting a human
 - Multiple valid approaches → Should present options
 
 ---
@@ -3471,8 +3496,8 @@ All checks passed! Setup complete.
 |-------|---------------|
 | HIGH (90%+) | Proceed after approval |
 | MEDIUM (60-89%) | Highlight uncertainties |
-| LOW (<60%) | **ASK USER first** |
-| FAILED 2x | **STOP and ASK** |
+| LOW (<60%) | **Escalation ladder** — Fable → Codex xhigh → human last |
+| FAILED 2x | **Escalation ladder** — human is the last rung, not the first |
 
 ### Hook Summary
 
@@ -3521,7 +3546,7 @@ You've successfully set up the system when:
 - [ ] Claude auto-invokes sdlc skill for all tasks
 - [ ] Claude uses TodoWrite to track progress
 - [ ] Claude states confidence levels
-- [ ] Claude asks for clarification when LOW confidence
+- [ ] Claude escalates (Fable → Codex) when LOW confidence, before asking
 - [ ] TDD hook reminds about tests before editing source files
 - [ ] Claude requests /compact before implementation
 
@@ -4105,7 +4130,7 @@ Occasionally (not every task), Claude can ask:
 If Claude repeatedly struggles in a codebase area:
 - Low confidence is an indicator of a problem
 - Might be legacy code, bad docs, or just unfamiliar patterns
-- Claude should ask questions rather than guess wrong
+- Claude should escalate to a model, then ask, rather than guess wrong
 - Better to ask and be right than to assume and create rework
 
 **Don't be afraid to ask questions.** It prevents being wrong. This is a symbiotic relationship - the more interaction, the better both sides get.
@@ -4450,7 +4475,7 @@ When something doesn't work:
 
 1. **"Plan before coding"** not "use exactly this planning template"
 2. **"Test your work"** not "use Jest with this exact config"
-3. **"Ask when uncertain"** not "if confidence < 60% then ask"
+3. **"Escalate when uncertain"** not "if confidence < 60% then ask"
 
 **Claude adapts the principles to YOUR stack.** Give Claude the philosophy, it figures out your tech details - your commands, your patterns, your workflow.
 

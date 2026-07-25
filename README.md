@@ -1,6 +1,6 @@
 # Claude Code SDLC Wizard
 
-A **self-evolving Software Development Life Cycle (SDLC) enforcement system for AI coding agents**. Makes Claude plan before coding, test before shipping, and ask when uncertain. Measures itself getting better over time.
+A **self-evolving Software Development Life Cycle (SDLC) enforcement system for AI coding agents**. Makes Claude plan before coding, test before shipping, and escalate when uncertain. Measures itself getting better over time.
 
 **Built on 15+ years of software engineering and founding engineering experience** — battle-tested patterns from real production systems, baked into an AI agent that follows tried-and-true software quality practices so you don't have to enforce them manually.
 
@@ -69,7 +69,7 @@ Reports MATCH / CUSTOMIZED / MISSING / DRIFT for every installed file. Exits non
 You want Claude Code to follow engineering discipline automatically:
 - **Plan before coding** (not guess-and-check)
 - **Write tests first** (TDD enforced via hooks)
-- **State confidence** (LOW = ask user, don't guess)
+- **State confidence** (LOW = escalate to a model first, don't guess)
 - **Track work visibly** (TaskCreate)
 - **Self-review before presenting**
 - **Prove it's better** (use native features unless you prove custom wins)
