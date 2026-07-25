@@ -871,3 +871,49 @@ test_changelog_delisted
 test_ack_requires_user_confirmation
 test_ack_does_not_skip_other_checks
 test_hard_deny_rejects_ack
+
+# ─────────────────────────────────────────────────────────────────────
+# HARD-TIER APPROVAL PATH (#478 follow-up)
+#
+# Maintainer pain, 2026-07-25: the only way to express "yes, merge this"
+# for a hard-tier hit was MERGE_CLEARANCE_SKIP=1 — which disables CI
+# verification, test-deletion checks, AND clearance validation. Approval
+# and bypass were the same lever. In a repo whose product IS enforcement
+# code, nearly every PR touches hooks/ or .claude/, so that lever got
+# pulled constantly. --user-approved separates them.
+# ─────────────────────────────────────────────────────────────────────
+
+test_user_approved_flag_exists() {
+    if grep -q -- '--user-approved' "$WRAPPER"; then
+        pass "wrapper accepts --user-approved for hard-tier hits"
+    else
+        fail "hard tier needs an approval path that isn't a full bypass"
+    fi
+}
+
+test_user_approved_does_not_skip_checks() {
+    # The whole point: approving must NOT set BYPASSED or short-circuit the
+    # else-branch the way MERGE_CLEARANCE_SKIP does.
+    if grep -A 4 'USER_APPROVED) ' "$WRAPPER" | grep -q 'BYPASSED=1'; then
+        fail "--user-approved must not set BYPASSED — it approves, it doesn't skip"
+    elif grep -q 'HARD-TIER APPROVED BY USER' "$WRAPPER" && grep -q 'All other checks still running' "$WRAPPER"; then
+        pass "--user-approved approves the path but leaves all other checks running"
+    else
+        fail "--user-approved must log approval and continue into the remaining checks"
+    fi
+}
+
+test_blocked_message_teaches_approval_not_bypass() {
+    # The error a human sees must point at the safe lever first.
+    local msg
+    msg=$(grep -A 6 'BLOCKED (hard-tier)' "$WRAPPER")
+    if printf '%s' "$msg" | grep -q -- '--user-approved' && printf '%s' "$msg" | grep -q 'almost never want it'; then
+        pass "hard-tier block teaches --user-approved and warns off the full bypass"
+    else
+        fail "hard-tier block message must offer --user-approved before mentioning MERGE_CLEARANCE_SKIP"
+    fi
+}
+
+test_user_approved_flag_exists
+test_user_approved_does_not_skip_checks
+test_blocked_message_teaches_approval_not_bypass
