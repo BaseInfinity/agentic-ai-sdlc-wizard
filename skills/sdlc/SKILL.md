@@ -7,9 +7,7 @@ argument-hint: "[task description]"
 
 ## Skill source & precedence
 
-This skill is loaded from **`.claude/skills/sdlc/SKILL.md`** in the active repo (symlinked to `skills/sdlc/SKILL.md` in the wizard's source tree). Claude Code prefers repo-local skills over global (`~/.claude/skills/sdlc/SKILL.md`) when both exist with the same name — the repo-local copy is the project's authoritative workflow contract. Use global skills only for cross-repo personal tooling (e.g. `feedback`, `revise-claude-md`); use repo-local for implementation, tests, release, and verification in this repo.
-
-If unsure which copy is active, compare `head -5` of both — the repo-local copy wins. Don't mix guidance from both.
+Loaded from repo-local **`.claude/skills/sdlc/SKILL.md`**, which wins over global `~/.claude/skills/` — it's the project's authoritative contract. Use global only for cross-repo personal tooling. Unsure which is active? `head -5` both; don't mix.
 
 ## Task
 $ARGUMENTS
@@ -99,15 +97,15 @@ State your confidence before presenting an approach:
 |-------|---------|--------|--------|
 | HIGH (90%+) | Know exactly what to do | Present, proceed after approval | Model default |
 | MEDIUM (60-89%) | Solid approach, some uncertainty | Present, highlight uncertainties | Model default |
-| LOW (<60%) | Not sure | Research or try Codex; if still LOW, ASK USER | **escalate now** (per model, see above) |
-| FAILED 2x | Something's wrong | Codex for fresh perspective; if still stuck, STOP | **escalate now** |
-| CONFUSED | Can't diagnose | Codex; if still confused, STOP and describe | **escalate now** |
+| LOW (<60%) | Not sure | Escalation ladder ↓ | **escalate now** (per model, see above) |
+| FAILED 2x | Something's wrong | Escalation ladder ↓ | **escalate now** |
+| CONFUSED | Can't diagnose | Escalation ladder ↓ | **escalate now** |
 
 **Effort bumping is NOT optional.** Bump BEFORE the next attempt, not after a third failure.
 
 **Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex check.
 
-**Advisor:** `advisor()` before plans; if down, spawn Fable subagent at `xhigh`.
+**Escalation ladder — human is the LAST rung.** 1) **Fable** (`advisor()` before plans; if down, Fable subagent at `xhigh`) → 2) **Codex `xhigh`** → 3) **the user**, only for priority/risk/scope/spend or irreversible calls. Never ask the user what a model can settle; offering options while holding a lean = skipped rung. *Information-limited* ("haven't looked") → go look. *Evidence-limited* ("looked; sources underdetermine") → escalate. **Act-don't-ask:** Fable ≥95% or Codex ≥95% (both for policy/release/consumer-adjacent) → proceed, report after. Fixed a finding but skipped the confirming round? Say so — an unconfirmed fix is not a certification. Full rationale: wizard doc → "Escalation Ladder".
 
 ## Plan Mode
 
@@ -115,7 +113,7 @@ Use plan mode for: multi-file changes, new features, LOW confidence, bugs needin
 
 ## Long-Running Goals (`/goal`)
 
-Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript per turn. **Confidence gate — NEVER invoke below HIGH 95%**; below that the evaluator rubber-stamps flailing as progress. **DLC binding — condition MUST name the DLC** (`/sdlc`, `/gdlc`, `/ldlc`, etc.) so the evaluator anchors on "doing it right." **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` both off. **Condition = contract:** end state + check + constraints + hard turn/time bound (no native cap); e.g. `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. **Anti-pattern:** evaluator can't call tools — transcript-only. `--resume` resets counters.
+Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript per turn. **NEVER invoke below HIGH 95%** — below that it rubber-stamps flailing as progress. **Condition MUST name the DLC** (`/sdlc`, `/gdlc`, etc.) so the evaluator anchors on "doing it right." **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` off. **Condition = contract:** end state + check + constraints + hard turn/time bound; e.g. `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. Evaluator can't call tools — transcript-only. `--resume` resets counters.
 
 ## Recommended Model
 
@@ -245,15 +243,11 @@ Per-user memory at `~/.claude/projects/<proj>/memory/` accumulates private learn
 
 **When to run:** end-of-release, after debugging-heavy sessions, or on explicit "audit my memory" request.
 
-**Rule-based denylist** (deterministic, no LLM):
-- `type: user` → keep (user identity, preferences — never promote)
-- `type: reference` → keep (external pointers, private by default)
-- `type: project` → manual review (mixed state + portable lesson)
-- `type: feedback` → manual review (mixed personal preference + portable rule)
+**Rule-based denylist** (deterministic, no LLM): `user`/`reference` → keep private, never promote. `project`/`feedback` → manual review (mixed private state + portable rule).
 
-**Destinations** (no new files): gotchas → `SDLC.md`. Testing → `TESTING.md`. Skill quirks → that `SKILL.md`. Process rules → `/sdlc`. **Memory that's a process rule = /sdlc gap — use /feedback.**
+**Destinations** (no new files): gotchas → `SDLC.md`. Testing → `TESTING.md`. Skill quirks → that `SKILL.md`. Process rules → `/sdlc`. **A process rule saved only to memory is a /sdlc gap — codify it so every consumer repo inherits it. Memory changes one agent in one checkout; docs change everyone.**
 
-**Tracking:** `promoted_to: <path>` in the memory file's YAML frontmatter; later audits skip already-promoted entries.
+**Tracking:** `promoted_to: <path>` in the memory frontmatter; later audits skip promoted entries.
 
 **Human gate is MANDATORY.** Protocol produces diffs; user approves chunk-by-chunk. Never auto-apply. Prove-It: build a `/memory-audit` slash command only after running 4+ times manually. (Full protocol: wizard doc.)
 
