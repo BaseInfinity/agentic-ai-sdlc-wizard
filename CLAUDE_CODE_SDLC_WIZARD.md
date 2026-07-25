@@ -2381,13 +2381,36 @@ Before presenting approach, STATE your confidence:
 |-------|---------|--------|--------|
 | HIGH (90%+) | Know exactly what to do | Present approach, proceed after approval | Model default |
 | MEDIUM (60-89%) | Solid approach, some uncertainty | Present approach, highlight uncertainties | Model default |
-| LOW (<60%) | Not sure | ASK USER before proceeding | **Escalate effort now** — don't wait |
-| FAILED 2x | Something's wrong | STOP. ASK USER immediately | **Escalate effort now** — you're burning cycles at lower effort |
-| CONFUSED | Can't diagnose why something is failing | STOP. Describe what you tried, ask for help | **Escalate effort now** — stop spinning |
+| LOW (<60%) | Not sure | Run the **Escalation Ladder** below | **Escalate effort now** — don't wait |
+| FAILED 2x | Something's wrong | Run the **Escalation Ladder** below | **Escalate effort now** — you're burning cycles at lower effort |
+| CONFUSED | Can't diagnose why something is failing | Run the **Escalation Ladder** below | **Escalate effort now** — stop spinning |
 
 "Model default" and "escalate" are model-aware, not a blanket `max` — see "Recommended Effort Level" above for the per-model table (Sonnet 5: `medium`→`high`→`xhigh`; Opus 4.8: `xhigh`; Opus 4.6: `max`; Fable: `high`).
 
 **Dynamic bumping is NOT optional.** "Consider higher effort" is the same as "ignore this" in practice. If your confidence drops or tests fail twice, bump effort BEFORE the next attempt — spinning at low effort is an SDLC failure mode.
+
+### Escalation Ladder — the human is the LAST rung
+
+Low confidence does **not** mean "ask the user." It means "escalate," and the user is the third rung, not the first. Ask a human only for what no model can settle.
+
+1. **Fable** — `advisor()` before plans; if the advisor is unavailable, spawn a Fable subagent at `xhigh`.
+2. **Codex `xhigh`** — when Fable can't close the gap, or when a second, adversarially-framed opinion is what's needed.
+3. **The human** — priority, risk appetite, scope, spend, or anything irreversible or outward-facing. A merge gate that demands explicit confirmation *is* this rung, invoked by design rather than by uncertainty.
+
+**Diagnose the gap before escalating — the two causes need opposite responses:**
+
+| Cause | Looks like | Do |
+|---|---|---|
+| **Information-limited** | "I haven't looked that up yet" | Go look. A review round is wasted on what a file read or a doc fetch settles. |
+| **Evidence-limited** | "I looked; the sources genuinely underdetermine this" | Escalate. More effort from the *same* model cannot move it. |
+
+**The skipped-rung tell:** presenting the user with options while you already hold a lean means you skipped a rung. Act on the lean, or send it up to the next reviewer — don't outsource a model-answerable decision upward.
+
+**Act-don't-ask threshold.** When Fable ≥95% or Codex ≥95% (require **both** for policy-, release-, or consumer-adjacent changes, scaled to the change's complexity), proceed and report afterward instead of asking. Below that, or when the two reviewers disagree, keep escalating rather than defaulting to a question.
+
+**Form your own view from both.** Two reviewers agreeing is not automatic truth — especially when they saw overlapping evidence. Where they diverge is the signal; check which side the primary sources actually support, and say so.
+
+**Honesty rule.** If you fix a reviewer's finding and choose to skip the confirming round, state that plainly. An unconfirmed fix is not a certification, and reporting it as one is exactly the false-green this protocol exists to prevent. Skipping a round can be the right call — silently implying it happened is not.
 
 ## Self-Review Loop (CRITICAL)
 

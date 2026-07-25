@@ -1365,8 +1365,10 @@ test_wizard_doc_e2e_audit_citation_untouched() {
 # protocol documented twice, fixed in only one copy).
 test_skill_files_reviewer_is_gpt56() {
     local bad=""
-    bad="$bad$(_check_line_has_and_lacks "$REPO_ROOT/skills/sdlc/SKILL.md" 140 "5\.6,sol" "5\.5")"
-    bad="$bad$(_check_line_has_and_lacks "$REPO_ROOT/cowork/skills/sdlc/SKILL.md" 140 "5\.6,sol" "5\.5")"
+    # Content-anchored 2026-07-24 (FOURTH drift of a hardcoded line number
+    # in this file — the escalation-ladder codification shifted it again).
+    bad="$bad$(_check_content_line_has_and_lacks "$REPO_ROOT/skills/sdlc/SKILL.md" "adversarial diversity" "5\.6,sol" "5\.5")"
+    bad="$bad$(_check_content_line_has_and_lacks "$REPO_ROOT/cowork/skills/sdlc/SKILL.md" "adversarial diversity" "5\.6,sol" "5\.5")"
     if [ -z "$bad" ]; then
         pass "skills/sdlc/SKILL.md and cowork/skills/sdlc/SKILL.md both reference GPT-5.6 Sol reviewer"
     else
@@ -1667,6 +1669,54 @@ test_wizard_doc_requires_shellcheck_before_review
 # ────────────────────────────────────────────
 
 echo ""
+# The escalation ladder is a PROCESS CONTRACT that ships to every consumer
+# repo. It was codified 2026-07-24 after the maintainer observed that both
+# SKILL.md and the wizard doc encoded the WRONG ladder — the skill said
+# "Research or try Codex; if still LOW, ASK USER" (skipping Fable entirely)
+# and the wizard doc said plain "ASK USER" for LOW/FAILED/CONFUSED with no
+# model rung at all. Agents followed what was written, so the human got
+# asked things a model could settle.
+#
+# Guards ORDER (Fable before Codex before human), not mere presence — a
+# ladder listing the right three names in the wrong order is the same bug.
+test_escalation_ladder_order_and_threshold() {
+    local ok=true
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    for f in "$SKILL" "$DOC"; do
+        [ -f "$f" ] || { fail "missing $f"; return; }
+        # human must be named LAST
+        grep -qiE 'human is the LAST rung|human is the LAST' "$f" || ok=false
+        # order: Fable's position must precede Codex's, which precedes the user's
+        # BYTE offsets, not line numbers: SKILL.md puts all three rungs on a
+        # single line, so a line-number comparison sees them as equal and
+        # cannot verify order at all (caught while writing this test).
+        local lf lc lu
+        lf=$(grep -boEi '\*\*Fable\*\*' "$f" | head -1 | cut -d: -f1)
+        lc=$(grep -boEi '\*\*Codex `?xhigh' "$f" | head -1 | cut -d: -f1)
+        lu=$(grep -boEi '\*\*the user\*\*|\*\*The human\*\*' "$f" | head -1 | cut -d: -f1)
+        if [ -z "$lf" ] || [ -z "$lc" ] || [ -z "$lu" ]; then ok=false
+        elif [ "$lf" -ge "$lc" ] || [ "$lc" -ge "$lu" ]; then ok=false; fi
+        # the act-don't-ask threshold must survive
+        # NOTE: `(Fable|)` — an empty alternative — makes BSD grep error out
+        # with "empty (sub)expression" and return non-zero, which read as a
+        # content failure. Caught by debugging the assertion itself.
+        grep -qE '≥ *95%' "$f" || ok=false
+        # the never-ask-what-a-model-can-settle rule must survive
+        grep -qiE 'never ask the (user|human) what a model can settle|Ask a human only for what no model can settle' "$f" || ok=false
+    done
+    # the old wrong ladder must NOT come back
+    if grep -qE 'if still LOW, ASK USER' "$SKILL"; then ok=false; fi
+    if $ok; then
+        pass "Escalation ladder: Fable→Codex→human order, ≥95% act-don't-ask threshold, and never-ask-a-model-answerable rule present in both SKILL.md and wizard doc"
+    else
+        fail "Escalation ladder contract broken — must name Fable(1)→Codex(2)→human(3) IN ORDER, keep the ≥95% act-don't-ask threshold, keep the never-ask-what-a-model-can-settle rule, and must not restore 'if still LOW, ASK USER'"
+    fi
+}
+
+test_escalation_ladder_order_and_threshold
+
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then
