@@ -79,7 +79,7 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 
 | Project | Repo | Status |
 |---------|------|--------|
-| SDLC Wizard itself | BaseInfinity/claude-sdlc-wizard | Dogfooded, v1.87.0 |
+| SDLC Wizard itself | BaseInfinity/claude-sdlc-wizard | Dogfooded, v1.88.0 |
 | Codex SDLC Adapter | BaseInfinity/codex-sdlc-wizard | v0.7.x, shipped with SDLC workflow |
 | GDLC Wizard (games sibling) | BaseInfinity/claude-gdlc-wizard | v0.2.x, persona-driven playtest cycles |
 | _(add as projects are marked)_ | | |
