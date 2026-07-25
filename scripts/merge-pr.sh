@@ -53,6 +53,20 @@ HARD_DENY=(
     '^hooks/'
     '^\.claude/'
     '^scripts/merge-pr\.sh$'
+    # Codex PR#471 review: .claude/skills/sdlc is a TRACKED SYMLINK to
+    # ../../skills/sdlc, so editing this file changes the live loaded skill
+    # WITHOUT producing any .claude/ path in the diff. It also defines the
+    # merge-confirmation exception itself. Ackable would let an agent
+    # self-ack a change to the policy governing when self-acking is allowed.
+    '^skills/sdlc/SKILL\.md$'
+    '^cowork/skills/sdlc/SKILL\.md$'
+    # Restored after Codex disproved the delisting rationale: of 107 commits
+    # touching CHANGELOG.md on main, 27 never touched package.json (3 after
+    # package.json existed), and the release workflow only checks that a
+    # pushed tag matches the version already there — it does not enforce
+    # same-commit coupling. The "version check already covers it" claim was
+    # asserted, not verified.
+    '^CHANGELOG\.md$'
 )
 # ACKABLE tier — prose that STEERS behavior but does not mechanically
 # enforce it. Post-#462 the enforcement is this wrapper, not the prose, and
@@ -64,8 +78,6 @@ HARD_DENY=(
 # short-circuited everything.
 ACKABLE_DENY=(
     '^CLAUDE_CODE_SDLC_WIZARD\.md$'
-    '^skills/sdlc/SKILL\.md$'
-    '^cowork/skills/sdlc/SKILL\.md$'
 )
 # ^CHANGELOG\.md$ DELISTED (#478): pure dead weight. It appeared only on
 # release PRs that also bump package.json's version, which the separate
@@ -102,7 +114,14 @@ USER_APPROVED=""
 USER_APPROVED_REASON=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --user-approved) USER_APPROVED=1; USER_APPROVED_REASON="${2:-}"; shift 2 || shift ;;
+        --user-approved)
+            USER_APPROVED_REASON="${2:-}"
+            if [ -z "$USER_APPROVED_REASON" ]; then
+                echo "FAILED: --user-approved requires a non-empty reason: --user-approved \"<why>\"" >&2
+                exit 1
+            fi
+            USER_APPROVED=1; shift 2 ;;
+        --*) echo "FAILED: unknown option '$1'" >&2; exit 1 ;;
         *) shift ;;
     esac
 done
@@ -147,11 +166,27 @@ else
     # ACK_DENYLIST_ONLY: this acknowledgment scopes ONLY the denylist. Every
     # other check below still runs — unlike the retired MERGE_CLEARANCE_SKIP,
     # which short-circuited all of them for any hit.
-    ACK_PATHS=""
-    ACK_CONFIRMED=""
+    # Codex PR#471 review: the previous grep-based parser was FAIL-OPEN.
+    # "skills/sdlc/SKILL.md.backup" satisfied a check for
+    # "skills/sdlc/SKILL.md" by substring; wrong fields, unrelated nested
+    # objects, duplicate blocks cross-mixing a path from one with
+    # confirmation from another, and malformed JSON all passed. Parse it
+    # properly with node (already required by this repo) and fail closed.
+    ACK_OK=""
     if [ -f "$CLEARANCE_FILE" ]; then
-        ACK_PATHS=$(grep -o '"denylist_ack"[[:space:]]*:[[:space:]]*{[^}]*}' "$CLEARANCE_FILE" || true)
-        ACK_CONFIRMED=$(printf '%s' "$ACK_PATHS" | grep -o '"user_confirmed"[[:space:]]*:[[:space:]]*true' || true)
+        ACK_OK=$(node -e '
+          const fs=require("fs");
+          let d; try { d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); }
+          catch(e){ process.exit(0); }                       // malformed -> no ack
+          const a=d.denylist_ack;
+          if(!a||typeof a!=="object"||Array.isArray(a)) process.exit(0);
+          if(a.user_confirmed!==true) process.exit(0);        // strict true
+          if(!Array.isArray(a.paths)) process.exit(0);
+          if(typeof a.reason!=="string"||!a.reason.trim()) process.exit(0);
+          const paths=a.paths.filter(p=>typeof p==="string"&&p.trim());
+          if(!paths.length) process.exit(0);
+          process.stdout.write(paths.join("\n"));
+        ' "$CLEARANCE_FILE" 2>/dev/null || true)
     fi
 
     while IFS= read -r f; do
@@ -176,11 +211,11 @@ else
         # user-confirmed acknowledgment naming this exact path.
         for pattern in "${ACKABLE_DENY[@]}"; do
             if printf '%s' "$f" | grep -qE "$pattern"; then
-                if [ -z "$ACK_CONFIRMED" ]; then
+                if [ -z "$ACK_OK" ]; then
                     echo "BLOCKED (ackable-tier): PR #$PR_NUM touches '$f' ($pattern). Add a \"denylist_ack\" block to $CLEARANCE_FILE naming this path with a reason and \"user_confirmed\": true (written only AFTER an explicit in-chat yes), or get user confirmation to merge." >&2
                     exit 1
                 fi
-                if ! printf '%s' "$ACK_PATHS" | grep -qF "$f"; then
+                if ! printf '%s\n' "$ACK_OK" | grep -qxF "$f"; then
                     echo "BLOCKED (ackable-tier): PR #$PR_NUM touches '$f' but the denylist_ack does not name that exact path. Every matched path must be enumerated." >&2
                     exit 1
                 fi
