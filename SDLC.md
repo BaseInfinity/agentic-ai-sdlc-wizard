@@ -12,10 +12,10 @@
 |----------|-------|
 | Wizard Version | 1.87.0 |
 | Last Updated | 2026-07-04 |
-| Claude Code Minimum | v2.1.154+ (required for `opus[1m]` alias resolution); v2.1.105+ for `PreCompact` hook |
+| Claude Code Minimum | v2.1.219+ (required for `opus` alias to resolve to Opus 5, the current default); v2.1.154+ for the older `opus[1m]` alias resolution; v2.1.105+ for `PreCompact` hook |
 | Claude Code Recommended | v2.1.210+ — `SessionStart`/`Setup`/`SubagentStart` hooks no longer hide stderr on exit 2 (v2.1.199, relevant to #436's exit-code semantics), hook events no longer silently dropped during `SessionStart` in headless sessions (v2.1.204, relevant to our hooks running under `claude -p`/CI), duplicate skill-instruction context bloat on re-invocation fixed (v2.1.202), hook-callback timeouts no longer misreported as user rejection in unattended sessions (v2.1.210), `$1`/`$2` positional placeholders in skills preserved verbatim (v2.1.210, wizard skills use `$ARGUMENTS` — unaffected) |
-| Recommended Model | Sonnet 5 (default) — beats Opus 4.6 on benchmarks at generally lower quota (savings vary by effort; narrows at `high`/`xhigh`). Escalate to Opus 4.8 `xhigh` when stuck. Opus 4.6 `max` remains valid for proven consistency. See `AI_SETUP_LANES.md`. |
-| Recommended Effort | Model-aware — Sonnet 5: `medium` default (CodeRabbit-tested), escalate `high` → `xhigh` for hard tasks. Opus 4.8/Fable: `xhigh`/`high`. Opus 4.6: `max` only (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc env var. |
+| Recommended Model | Opus 5 (default, trial as of 2026-07-24) — Anthropic's newest flagship, unreplicated by field data yet (~70% confidence, accepted-risk adoption). Sonnet 5 remains the evidence-backed pick for simple/one-off work. Pin Opus 4.8 explicitly as an escalation/same-family-check escape. See `AI_SETUP_LANES.md`. |
+| Recommended Effort | Model-aware — Opus 5: `xhigh` (Anthropic's own recommendation for difficult/long-running work, effort tier is static per session; adaptive reasoning happens within the tier). Sonnet 5: `medium` default (CodeRabbit-tested), escalate `high` → `xhigh`. Fable: `high`. Opus 4.8: `xhigh`. Opus 4.6: `max` only (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc env var. |
 
 > **Effort warning:** below your model's floor (`medium`/`high`/`xhigh`/`max` per model — see table above) = degraded reasoning, shallow TDD, weak self-review. Persisting effort via a shell-rc env var (`CLAUDE_CODE_EFFORT_LEVEL=max`) is an anti-pattern — see the Model Configuration entry under Lessons Learned below.
 

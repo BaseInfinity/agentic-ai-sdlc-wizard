@@ -1,10 +1,11 @@
 #!/bin/bash
 # Test cli/lib/repo-complexity.js heuristic
-# Heuristic decides whether a repo is "simple" (good fit for Setup A —
-# Sonnet 5 + Fable) or "complex" (Setup B — Opus 4.6 Stability — recommended).
+# Heuristic decides whether a repo is "simple" (good fit for Setup B —
+# Sonnet 5, Simple/One-Off) or "complex" (Setup A — Opus 5, recommended
+# default as of 2026-07-24 — for genuine autonomous/agentic work).
 #
 # Roadmap #233: introduces repo_complexity signal so setup wizard can suggest
-# Setup A for trivial/CRUD repos and reserve Setup B (Opus 4.6 Stability) for
+# Setup B for trivial/CRUD repos and reserve Setup A (Opus 5) for
 # fixture-deep, multi-workflow, secrets-touching repos.
 
 set -e
