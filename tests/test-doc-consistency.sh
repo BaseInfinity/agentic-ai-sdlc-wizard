@@ -1682,44 +1682,59 @@ echo ""
 test_escalation_ladder_order_and_threshold() {
     local ok=true
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    local COWORK="$REPO_ROOT/cowork/skills/sdlc/SKILL.md"
     local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     local HOOK="$REPO_ROOT/hooks/sdlc-prompt-check.sh"
 
-    # Codex defeated two earlier versions of this test with decoys: a
-    # correct-looking ladder elsewhere in the file satisfied a global
-    # presence/order check while the operative policy stayed broken.
-    # So assert the INVARIANT, not a model sequence — per Anthropic's
-    # 2026-07-24 context-engineering guidance, the authorization rule is the
-    # "highly important area" that warrants an explicit constraint; the
-    # specific escalation order is a procedural preference that belongs in
-    # progressively-disclosed docs, not in the always-loaded skill.
-    for f in "$SKILL" "$DOC"; do
+    # This guard has been vacuous EIGHT times. Denylisting literal strings
+    # failed every time — Codex defeated the last version by writing
+    # "Ask the human immediately" instead of "ASK USER", semantically
+    # identical and invisible. So the row check is now an ALLOWLIST: the
+    # action cell must match a known-good escalation instruction, and
+    # anything else fails, including wording nobody has thought of yet.
+    local ROW_RE='^\|[^|]*(LOW \(<60%\)|FAILED 2x|CONFUSED)[^|]*\|'
+    for f in "$SKILL" "$COWORK"; do
         [ -f "$f" ] || { fail "missing $f"; return; }
-        # (1) model-answerable uncertainty is not automatically a human question
-        grep -qiE 'Uncertainty ≠ a human question|Never ask the (user|human) what a model can settle|Ask a human only for what no model can settle' "$f" || ok=false
-        # (2) confidence never authorizes — the non-negotiable clause
-        grep -qiE 'Confidence is not authorization' "$f" || ok=false
-        # (3) merge protections cannot be overridden by a confidence score
-        grep -qiE 'merge protections are non-overridable' "$f" || ok=false
-        # (4) no LOW/FAILED/CONFUSED row may route straight to the user
-        if grep -qE '^\|[^|]*(LOW \(<60%\)|FAILED 2x|CONFUSED)[^|]*\|[^|]*ASK USER' "$f"; then ok=false; fi
+        local n_rows
+        n_rows=$(grep -cE "$ROW_RE" "$f")
+        [ "$n_rows" -eq 3 ] || ok=false
+        # action cell (field 4) must be the permitted escalation instruction
+        local bad_action
+        bad_action=$(grep -E "$ROW_RE" "$f" | awk -F'|' '{print $4}' \
+            | grep -vcE 'Escalate, don.t ask' || true)
+        [ "$bad_action" = "0" ] || ok=false
+        # NOTE: no extra keyword denylist here — the allowlist above is
+        # strictly stronger. Any wording that isn't the permitted instruction
+        # fails, including "Ask the human immediately" (Codex's round-3
+        # bypass) and anything not yet imagined. A denylist here would also
+        # false-positive on the permitted string's own "don't ask".
     done
 
-    # (5) the shipped skill must not carry a second, contradicting
-    #     "after 2 attempts ask the user" imperative on another path
-    #     (Codex round-2 P1-2: this shipped via cli/init.js AND Cowork)
-    if grep -qiE 'after 2 attempts\? STOP and ASK USER' "$SKILL"; then ok=false; fi
+    # Global invariants, on every shipped surface
+    for f in "$SKILL" "$COWORK" "$DOC"; do
+        grep -qiE 'Uncertainty ≠ a human question|Never ask the (user|human) what a model can settle|Ask a human only for what no model can settle' "$f" || ok=false
+        grep -qiE 'Confidence is not authorization' "$f" || ok=false
+        grep -qiE 'merge protections are non-overridable' "$f" || ok=false
+    done
 
-    # (6) the shipped runtime hook must agree with the docs
+    # No generic uncertainty/failure trigger may route straight to a human in
+    # ANY shipped surface. Production deploys are deliberately exempt — that
+    # is an authorization-gated external action where a human IS the gate.
+    for f in "$SKILL" "$COWORK" "$DOC"; do
+        if grep -nE '(LOW|low confidence|FAILED|[Ss]till failing|2 failed|2 attempts)[^|]{0,60}(ASK USER|ask user|Must ask|STOP and ASK|asks for help|ASKS YOU)' "$f" \
+             | grep -viE 'deploy|production|prod\b' | grep -q .; then ok=false; fi
+    done
+
+    # The shipped runtime hook must agree
     if [ -f "$HOOK" ]; then
         grep -qE 'LOW confidence\? ASK USER' "$HOOK" && ok=false
         grep -qiE 'confidence is not authorization' "$HOOK" || ok=false
     fi
 
     if $ok; then
-        pass "Escalation invariant: uncertainty isn't auto-human, confidence never authorizes, merge non-overridable — consistent across skill, wizard doc, and runtime hook"
+        pass "Escalation invariant: LOW/FAILED/CONFUSED rows allowlisted to escalation in BOTH skill copies, no generic direct-to-human route on any shipped surface (deploy gate exempt), confidence-never-authorizes present"
     else
-        fail "Escalation invariant broken — every shipped surface must state that model-answerable uncertainty is not automatically a human question, that confidence is not authorization, and that merge protections are non-overridable; no LOW/FAILED/CONFUSED path may route straight to the user"
+        fail "Escalation invariant broken — each LOW/FAILED 2x/CONFUSED action cell in both skill copies must be the permitted escalation instruction and must not mention ask/human/user/stop; no shipped surface may route generic uncertainty or repeated failure straight to a human (production deploys exempt); confidence-is-not-authorization and merge-non-overridable must be present everywhere"
     fi
 }
 test_escalation_ladder_order_and_threshold

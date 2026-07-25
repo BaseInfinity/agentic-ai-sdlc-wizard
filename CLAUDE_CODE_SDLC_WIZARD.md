@@ -143,7 +143,7 @@ These aren't preferences - they're **how AI agents stay on track**:
 |----------------|--------------------------|
 | **TDD Red-Green-Pass** | AI agents need concrete pass/fail feedback. Without failing tests first, Claude can't verify its work. This is the feedback loop that keeps implementation correct. |
 | **Testing Diamond** | Integration tests catch real bugs. Unit tests with mocks can "pass" while production fails. AI agents need tests that actually validate behavior. |
-| **Confidence Levels** | Prevents Claude from guessing when uncertain. LOW confidence = ASK USER. This stops runaway bad implementations. |
+| **Confidence Levels** | Prevents Claude from guessing when uncertain. LOW confidence = escalate (Fable, then Codex) before interrupting a human. This stops runaway bad implementations. |
 | **TodoWrite Visibility** | You need to see what Claude is doing. Without visibility, Claude can go off-track without you knowing. |
 | **Planning Before Coding** | Claude must understand before implementing. Skipping planning = wasted effort and wrong approaches. |
 
@@ -639,9 +639,9 @@ Claude MUST state confidence before implementing:
 |-------|---------|------------------|
 | **HIGH (90%+)** | "I know exactly what to do" | Proceeds after your approval |
 | **MEDIUM (60-89%)** | "Solid approach, some unknowns" | Highlights uncertainties |
-| **LOW (<60%)** | "I'm not sure" | **ASKS YOU before proceeding** |
-| **FAILED 2x** | "Something's wrong" | **STOPS and asks for help** |
-| **CONFUSED** | "I don't understand why this is failing" | **STOPS, describes what was tried** |
+| **LOW (<60%)** | "I'm not sure" | **Escalates before asking you** |
+| **FAILED 2x** | "Something's wrong" | **Escalates to Fable, then Codex** |
+| **CONFUSED** | "I don't understand why this is failing" | **Escalates, describing what was tried** |
 
 **Why this matters**: You have domain expertise. When Claude is uncertain, asking you takes 30 seconds. Guessing wrong takes 30 minutes to fix.
 
@@ -2634,7 +2634,7 @@ If tests fail:
 3. Fix appropriately (fix code, fix test, or delete dead test)
 4. Run specific test individually first
 5. Then run ALL tests
-6. Still failing? ASK USER - don't spin your wheels
+6. Still failing? Escalate to Fable, then Codex `xhigh` — ask the user only if they still can't resolve it
 
 **Flaky tests are bugs, not mysteries:**
 - Sometimes the bug is in app code (race condition, timing issue)
@@ -2728,7 +2728,7 @@ Local tests pass -> Commit -> Push -> Watch CI
    - Read failure logs: `gh run view <RUN_ID> --log-failed`
    - Diagnose root cause (same philosophy as local test failures)
    - Fix and push again
-4. Max 2 fix attempts - if still failing, ASK USER
+4. Max 2 fix attempts - if still failing, escalate (Fable → Codex `xhigh`) before asking the user
 5. **Read CI logs whether pass or fail — not just on failure.** A green checkmark hides warnings, skipped steps, and degraded scores (v1.24.0 shipped a degraded E2E score and a silently excluded test suite behind a passing check). Use `gh run view <RUN_ID> --log`, not just `--log-failed`.
 6. **Cross-model audit the CI logs** — same `codex exec` pattern as the Cross-Model Review Loop above. Prompt: *"Audit for silent failures, skipped tests, degraded metrics, warnings-that-should-be-errors."* Do this even when every check is green.
 7. Only after logs are read and audited — proceed to present final summary
@@ -3472,8 +3472,8 @@ All checks passed! Setup complete.
 7. Claude implements with TDD
 
 **When Claude should ask you:**
-- LOW confidence → Must ask before proceeding
-- FAILED 2x → Must stop and ask
+- LOW confidence → Must escalate (Fable → Codex) before interrupting a human
+- FAILED 2x → Must escalate (Fable → Codex) before interrupting a human
 - Multiple valid approaches → Should present options
 
 ---
