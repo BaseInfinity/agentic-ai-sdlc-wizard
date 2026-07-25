@@ -753,17 +753,6 @@ test_wrapper_fail_fast_ordering
 test_wrapper_bypass_still_merges_and_logs
 
 echo ""
-echo "=== Results ==="
-echo "Passed: $PASSED"
-echo "Failed: $FAILED"
-
-if [ $FAILED -gt 0 ]; then
-    exit 1
-fi
-
-echo ""
-echo "All merge gate tests passed!"
-
 # ─────────────────────────────────────────────────────────────────────
 # ROADMAP #478 — TIERED DENYLIST
 #
@@ -798,14 +787,15 @@ test_hard_deny_covers_live_enforcement() {
 }
 
 test_ackable_deny_covers_prose_only() {
-    local missing=""
-    for p in 'CLAUDE_CODE_SDLC_WIZARD' 'skills/sdlc/SKILL' 'cowork/skills/sdlc/SKILL'; do
-        grep -A 8 'ACKABLE_DENY=(' "$WRAPPER" | grep -q "$p" || missing="$missing $p"
-    done
-    if [ -z "$missing" ]; then
-        pass "ACKABLE_DENY covers the steering-prose paths"
+    # Only the distributed wizard doc is ackable. skills/sdlc/SKILL.md moved
+    # to HARD after Codex found .claude/skills/sdlc is a TRACKED SYMLINK to
+    # it — editing it changes the live loaded skill with no .claude/ path in
+    # the diff, so ackable would let an agent self-ack a change to the policy
+    # governing when self-acking is allowed.
+    if sed -n '/^ACKABLE_DENY=(/,/^)/p' "$WRAPPER" | grep -q 'CLAUDE_CODE_SDLC_WIZARD'; then
+        pass "ACKABLE_DENY covers the distributed wizard doc"
     else
-        fail "ACKABLE_DENY missing:$missing"
+        fail "ACKABLE_DENY should contain the wizard doc"
     fi
 }
 
@@ -819,29 +809,28 @@ test_hooks_never_ackable() {
 }
 
 test_changelog_delisted() {
-    # M1: re-adding ^CHANGELOG\.md$ to either tier must fail. It was pure
-    # dead weight — release PRs touching it also bump package.json's
-    # version, which the separate version-field check already blocks.
-    # Scoped to the ARRAY BODIES so the explanatory comment doesn't count.
-    local arrays
-    arrays=$(sed -n '/^HARD_DENY=(/,/^)/p;/^ACKABLE_DENY=(/,/^)/p' "$WRAPPER")
-    if printf '%s' "$arrays" | grep -q "CHANGELOG"; then
-        fail "CHANGELOG.md is still denylisted — dead weight, already covered by the version-field check"
+    # INVERTED after Codex disproved the delisting rationale: of 107 commits
+    # touching CHANGELOG.md on main, 27 never touched package.json (3 after
+    # package.json existed), and the release workflow only checks a pushed
+    # tag against the version already in package.json — it does NOT enforce
+    # same-commit coupling. The "already covered" claim was asserted, not
+    # verified. CHANGELOG must stay denylisted.
+    if sed -n '/^HARD_DENY=(/,/^)/p;/^ACKABLE_DENY=(/,/^)/p' "$WRAPPER" | grep -q "CHANGELOG"; then
+        pass "CHANGELOG.md is denylisted (version check does NOT cover every touch)"
     else
-        pass "CHANGELOG.md de-listed (covered by the package.json version check)"
+        fail "CHANGELOG.md must stay denylisted — 27 of 107 CHANGELOG commits never touched package.json"
     fi
 }
 
 test_ack_requires_user_confirmation() {
-    # M7: dropping the requirement must fail. Checking merely that the
-    # string "user_confirmed" appears somewhere is vacuous — the first
-    # version of this test passed a mutation that hardcoded
-    # ACK_CONFIRMED="yes" while leaving the word in a comment. Assert that
-    # the value is actually DERIVED from the artifact.
-    if grep -qE 'ACK_CONFIRMED=\$\(.*user_confirmed.*true' "$WRAPPER"; then
-        pass "denylist ack derives user_confirmed from the clearance artifact"
+    # Must be parsed, not grepped. Codex showed the grep version was
+    # fail-open: "<path>.backup" satisfied a check for "<path>", wrong
+    # fields passed, and duplicate blocks cross-mixed a path from one with
+    # confirmation from another.
+    if grep -q 'a.user_confirmed!==true' "$WRAPPER" && grep -q 'JSON.parse' "$WRAPPER"; then
+        pass "ack is JSON-parsed and requires user_confirmed === true"
     else
-        fail "ack path must DERIVE user_confirmed:true from the artifact, not assume it"
+        fail "ack must be parsed with a real JSON parser and require user_confirmed===true"
     fi
 }
 
@@ -864,13 +853,6 @@ test_hard_deny_rejects_ack() {
     fi
 }
 
-test_hard_deny_covers_live_enforcement
-test_ackable_deny_covers_prose_only
-test_hooks_never_ackable
-test_changelog_delisted
-test_ack_requires_user_confirmation
-test_ack_does_not_skip_other_checks
-test_hard_deny_rejects_ack
 
 # ─────────────────────────────────────────────────────────────────────
 # HARD-TIER APPROVAL PATH (#478 follow-up)
@@ -914,6 +896,30 @@ test_blocked_message_teaches_approval_not_bypass() {
     fi
 }
 
+
+
+# Tier/approval tests (#478). Every invocation MUST precede the results/exit
+# block below — Codex found these ran AFTER it on PR #471, so failures could
+# never affect the exit code and "41/41 passing" meant nothing.
+test_hard_deny_covers_live_enforcement
+test_ackable_deny_covers_prose_only
+test_hooks_never_ackable
+test_changelog_delisted
+test_ack_requires_user_confirmation
+test_ack_does_not_skip_other_checks
+test_hard_deny_rejects_ack
 test_user_approved_flag_exists
 test_user_approved_does_not_skip_checks
 test_blocked_message_teaches_approval_not_bypass
+
+echo "=== Results ==="
+echo "Passed: $PASSED"
+echo "Failed: $FAILED"
+
+if [ $FAILED -gt 0 ]; then
+    exit 1
+fi
+
+echo ""
+echo "All merge gate tests passed!"
+
