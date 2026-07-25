@@ -1686,55 +1686,64 @@ test_escalation_ladder_order_and_threshold() {
     local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     local HOOK="$REPO_ROOT/hooks/sdlc-prompt-check.sh"
 
-    # This guard has been vacuous EIGHT times. Denylisting literal strings
-    # failed every time — Codex defeated the last version by writing
-    # "Ask the human immediately" instead of "ASK USER", semantically
-    # identical and invisible. So the row check is now an ALLOWLIST: the
-    # action cell must match a known-good escalation instruction, and
-    # anything else fails, including wording nobody has thought of yet.
-    local ROW_RE='^\|[^|]*(LOW \(<60%\)|FAILED 2x|CONFUSED)[^|]*\|'
+    # NINE bypasses. Denylisting literals failed 8x (Codex just rephrased).
+    # The "allowlist" then failed too, because it was really a SUBSTRING
+    # check: "Ask the human immediately; Escalate, don't ask" contained the
+    # permitted text and passed, and a 4th row spelled "Low confidence"
+    # dodged the uppercase-literal row regex entirely.
+    #
+    # So: extract the Confidence Check table as a BOUNDED BLOCK and compare
+    # its escalation rows to a canonical expected table by EXACT normalized
+    # equality. Substring matching cannot express this contract.
+    local EXPECTED
+    EXPECTED="| LOW (<60%) | Not sure | Escalate, don't ask ↓ | **escalate now** (per model, see above) |
+| FAILED 2x | Something's wrong | Escalate, don't ask ↓ | **escalate now** |
+| CONFUSED | Can't diagnose | Escalate, don't ask ↓ | **escalate now** |"
     for f in "$SKILL" "$COWORK"; do
         [ -f "$f" ] || { fail "missing $f"; return; }
-        local n_rows
-        n_rows=$(grep -cE "$ROW_RE" "$f")
-        [ "$n_rows" -eq 3 ] || ok=false
-        # action cell (field 4) must be the permitted escalation instruction
-        local bad_action
-        bad_action=$(grep -E "$ROW_RE" "$f" | awk -F'|' '{print $4}' \
-            | grep -vcE 'Escalate, don.t ask' || true)
-        [ "$bad_action" = "0" ] || ok=false
-        # NOTE: no extra keyword denylist here — the allowlist above is
-        # strictly stronger. Any wording that isn't the permitted instruction
-        # fails, including "Ask the human immediately" (Codex's round-3
-        # bypass) and anything not yet imagined. A denylist here would also
-        # false-positive on the permitted string's own "don't ask".
+        # bounded block: the Confidence Check table, from its header row to
+        # the first blank line after it
+        local actual
+        actual=$(awk '/^## Confidence Check/{f=1} f && /^\|/{print} f && /^$/ && seen {exit} f && /^\|/{seen=1}' "$f" \
+                 | grep -vE '^\|[-: ]+\|' | grep -vE '^\| (Level|HIGH|MEDIUM)')
+        [ "$actual" = "$EXPECTED" ] || ok=false
     done
 
-    # Global invariants, on every shipped surface
+    # Global invariants on every shipped surface
     for f in "$SKILL" "$COWORK" "$DOC"; do
         grep -qiE 'Uncertainty ≠ a human question|Never ask the (user|human) what a model can settle|Ask a human only for what no model can settle' "$f" || ok=false
         grep -qiE 'Confidence is not authorization' "$f" || ok=false
         grep -qiE 'merge protections are non-overridable' "$f" || ok=false
     done
 
-    # No generic uncertainty/failure trigger may route straight to a human in
-    # ANY shipped surface. Production deploys are deliberately exempt — that
-    # is an authorization-gated external action where a human IS the gate.
-    for f in "$SKILL" "$COWORK" "$DOC"; do
-        if grep -nE '(LOW|low confidence|FAILED|[Ss]till failing|2 failed|2 attempts)[^|]{0,60}(ASK USER|ask user|Must ask|STOP and ASK|asks for help|ASKS YOU)' "$f" \
-             | grep -viE 'deploy|production|prod\b' | grep -q .; then ok=false; fi
+    # No generic uncertainty/failure route to a human on any shipped surface.
+    # 3-LINE WINDOW, not line-local: Codex round 4 slipped a CI flow diagram
+    # through ("Still failing?" on one line, "STOP and ASK USER" two lines
+    # below). Paragraph mode was too coarse — it false-positived on this
+    # doc's own CORRECTIVE prose ("Low confidence does not mean 'ask the
+    # user'"), so negations are excluded explicitly.
+    for f in "$SKILL" "$COWORK" "$DOC" "$REPO_ROOT/README.md"; do
+        [ -f "$f" ] || continue
+        if awk '
+          { w[NR%3]=$0 }
+          {
+            win = w[(NR-2)%3] "\n" w[(NR-1)%3] "\n" w[NR%3]
+            if (win ~ /(LOW|[Ll]ow confidence|FAILED|[Ss]till failing|[Ss]tuck|2 failed|2 attempts)/ &&
+                win ~ /(ASK USER|ask user|ask the user|Must ask|must ask|STOP and ASK|asks for help|ASKS YOU|asks for clarification)/ &&
+                win !~ /(does not mean|not straight to|rather than|instead of|only if|only for|≠|deploy|production|prod |approval|authoriz|non-overridable)/)
+              print FILENAME ":" NR
+          }' "$f" | grep -q .; then ok=false; fi
     done
 
-    # The shipped runtime hook must agree
     if [ -f "$HOOK" ]; then
         grep -qE 'LOW confidence\? ASK USER' "$HOOK" && ok=false
         grep -qiE 'confidence is not authorization' "$HOOK" || ok=false
     fi
 
     if $ok; then
-        pass "Escalation invariant: LOW/FAILED/CONFUSED rows allowlisted to escalation in BOTH skill copies, no generic direct-to-human route on any shipped surface (deploy gate exempt), confidence-never-authorizes present"
+        pass "Escalation invariant: Confidence Check table matches the canonical escalation rows EXACTLY in both skill copies; no generic direct-to-human route on any shipped surface (deploy/approval gates exempt)"
     else
-        fail "Escalation invariant broken — each LOW/FAILED 2x/CONFUSED action cell in both skill copies must be the permitted escalation instruction and must not mention ask/human/user/stop; no shipped surface may route generic uncertainty or repeated failure straight to a human (production deploys exempt); confidence-is-not-authorization and merge-non-overridable must be present everywhere"
+        fail "Escalation invariant broken — the Confidence Check escalation rows must match the canonical table exactly (no extra rows, no appended text) in BOTH skill copies, and no shipped surface may route generic uncertainty or repeated failure to a human (production deploys and approval gates exempt)"
     fi
 }
 test_escalation_ladder_order_and_threshold
