@@ -88,6 +88,24 @@ if [ $# -lt 1 ]; then
 fi
 
 PR_NUM="$1"
+shift
+# --user-approved "<reason>": the HUMAN ran this command themselves and is
+# approving THIS merge. Unlike MERGE_CLEARANCE_SKIP it disables NOTHING —
+# CI validate, net-test-deletion, and every clearance-artifact check still
+# run. It satisfies only the "a human must confirm a hard-tier path" rule.
+#
+# This exists because the gate previously had no way to say "yes, merge
+# this": the only escape from a hard-tier hit was a full bypass, so
+# expressing approval required turning off the safety system. In a repo
+# whose product IS enforcement code, nearly every PR hits that tier.
+USER_APPROVED=""
+USER_APPROVED_REASON=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --user-approved) USER_APPROVED=1; USER_APPROVED_REASON="${2:-}"; shift 2 || shift ;;
+        *) shift ;;
+    esac
+done
 BYPASSED=0
 [ "${MERGE_CLEARANCE_SKIP:-}" = "1" ] && BYPASSED=1
 
@@ -142,7 +160,15 @@ else
         # acknowledged; a human runs this by design.
         for pattern in "${HARD_DENY[@]}"; do
             if printf '%s' "$f" | grep -qE "$pattern"; then
-                echo "BLOCKED (hard-tier): PR #$PR_NUM touches '$f' ($pattern) — live enforcement or release machinery. This cannot be acknowledged in the clearance artifact; explicit user confirmation is required." >&2
+                if [ -n "$USER_APPROVED" ]; then
+                    echo "HARD-TIER APPROVED BY USER for '$f' ($pattern)${USER_APPROVED_REASON:+ — $USER_APPROVED_REASON}. All other checks still running." >&2
+                    continue
+                fi
+                echo "BLOCKED (hard-tier): PR #$PR_NUM touches '$f' ($pattern) — live enforcement or release machinery." >&2
+                echo "  A human must approve this one. Re-run it yourself with:" >&2
+                echo "    ./scripts/merge-pr.sh $PR_NUM --user-approved \"<why>\"" >&2
+                echo "  That approves THIS merge and disables nothing — CI, test-deletion, and clearance checks all still run." >&2
+                echo "  (MERGE_CLEARANCE_SKIP=1 is the emergency override that skips everything — you almost never want it.)" >&2
                 exit 1
             fi
         done
