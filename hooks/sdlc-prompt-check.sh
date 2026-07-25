@@ -112,8 +112,8 @@ if [ "$SHOULD_EMIT_BASELINE" -eq 1 ]; then
 SDLC BASELINE:
 1. TodoWrite FIRST (plan tasks before coding)
 2. STATE CONFIDENCE: HIGH/MEDIUM/LOW
-3. LOW confidence? ASK USER before proceeding
-4. FAILED 2x? STOP and ASK USER
+3. LOW confidence or FAILED 2x? Ladder: Fable -> Codex xhigh -> human LAST
+4. Never ask what a model can settle; confidence is not authorization
 5. ALL TESTS MUST PASS BEFORE COMMIT - NO EXCEPTIONS
 
 AUTO-INVOKE SKILL (Claude MUST do this FIRST):

@@ -1513,8 +1513,10 @@ test_wizard_doc_e2e_audit_citation_untouched() {
 # protocol documented twice, fixed in only one copy).
 test_skill_files_reviewer_is_gpt56() {
     local bad=""
-    bad="$bad$(_check_line_has_and_lacks "$REPO_ROOT/skills/sdlc/SKILL.md" 140 "5\.6,sol" "5\.5")"
-    bad="$bad$(_check_line_has_and_lacks "$REPO_ROOT/cowork/skills/sdlc/SKILL.md" 140 "5\.6,sol" "5\.5")"
+    # Content-anchored 2026-07-24 (FOURTH drift of a hardcoded line number
+    # in this file — the escalation-ladder codification shifted it again).
+    bad="$bad$(_check_content_line_has_and_lacks "$REPO_ROOT/skills/sdlc/SKILL.md" "adversarial diversity" "5\.6,sol" "5\.5")"
+    bad="$bad$(_check_content_line_has_and_lacks "$REPO_ROOT/cowork/skills/sdlc/SKILL.md" "adversarial diversity" "5\.6,sol" "5\.5")"
     if [ -z "$bad" ]; then
         pass "skills/sdlc/SKILL.md and cowork/skills/sdlc/SKILL.md both reference GPT-5.6 Sol reviewer"
     else
@@ -1815,6 +1817,119 @@ test_wizard_doc_requires_shellcheck_before_review
 # ────────────────────────────────────────────
 
 echo ""
+# The escalation ladder is a PROCESS CONTRACT that ships to every consumer
+# repo. It was codified 2026-07-24 after the maintainer observed that both
+# SKILL.md and the wizard doc encoded the WRONG ladder — the skill said
+# "Research or try Codex; if still LOW, ASK USER" (skipping Fable entirely)
+# and the wizard doc said plain "ASK USER" for LOW/FAILED/CONFUSED with no
+# model rung at all. Agents followed what was written, so the human got
+# asked things a model could settle.
+#
+# Guards ORDER (Fable before Codex before human), not mere presence — a
+# ladder listing the right three names in the wrong order is the same bug.
+test_escalation_ladder_order_and_threshold() {
+    local ok=true
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    local COWORK="$REPO_ROOT/cowork/skills/sdlc/SKILL.md"
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local HOOK="$REPO_ROOT/hooks/sdlc-prompt-check.sh"
+
+    # TEN bypasses. Denylists failed 8x; a substring "allowlist" failed;
+    # exact-equality-on-selected-rows failed too, because (a) the heading
+    # match was a PREFIX so a decoy "## Confidence Check (reference table)"
+    # got compared instead of the operative one, and (b) I stripped the
+    # MEDIUM row before comparing — and MEDIUM covers "some uncertainty",
+    # so it was a live direct-to-human route.
+    #
+    # Now: require EXACTLY ONE literal "## Confidence Check (REQUIRED)"
+    # heading, extract only its table, and compare the COMPLETE table
+    # (header, separator, and all five rows) by exact equality.
+    local EXPECTED
+    EXPECTED="| Level | Meaning | Action | Effort |
+|-------|---------|--------|--------|
+| HIGH (90%+) | Know exactly what to do | Present, proceed after approval | Model default |
+| MEDIUM (60-89%) | Solid approach, some uncertainty | Present, highlight uncertainties | Model default |
+| LOW (<60%) | Not sure | Escalate, don't ask ↓ | **escalate now** (per model, see above) |
+| FAILED 2x | Something's wrong | Escalate, don't ask ↓ | **escalate now** |
+| CONFUSED | Can't diagnose | Escalate, don't ask ↓ | **escalate now** |"
+
+    for f in "$SKILL" "$COWORK"; do
+        [ -f "$f" ] || { fail "missing $f"; return; }
+        local n_head
+        n_head=$(grep -cE '^## Confidence Check' "$f")
+        [ "$n_head" -eq 1 ] || ok=false
+        grep -qxF '## Confidence Check (REQUIRED)' "$f" || ok=false
+        local actual
+        actual=$(awk '/^## Confidence Check \(REQUIRED\)/{f=1;next} f&&/^\|/{print;s=1;next} f&&s&&!/^\|/{exit}' "$f")
+        [ "$actual" = "$EXPECTED" ] || ok=false
+    done
+
+    # Global invariants on every shipped surface
+    for f in "$SKILL" "$COWORK" "$DOC"; do
+        grep -qiE 'Uncertainty ≠ a human question|Never ask the (user|human) what a model can settle|Ask a human only for what no model can settle' "$f" || ok=false
+        grep -qiE 'Confidence is not authorization' "$f" || ok=false
+        grep -qiE 'merge protections are non-overridable' "$f" || ok=false
+    done
+
+    # ---- LIMITS OF THIS TEST (stated, not implied) --------------------
+    # What it PROVES: the canonical Confidence Check table is byte-exact in
+    # both shipped skill copies (Codex verified even a ↓ -> ⇩ swap fails), and
+    # a set of KNOWN direct-to-human regressions is absent.
+    #
+    # What it CANNOT prove: that no shipped surface anywhere routes generic
+    # uncertainty to a human. Codex demonstrated three bypasses of the prose
+    # scan across rounds 5-6 — a greedy strip consuming a semicolon-separated
+    # instruction, a SECOND table added after the canonical one, and a
+    # Cyrillic homoglyph ("АSK USER", U+0410). Its conclusion, and mine: "a
+    # growing regex strip/match list cannot certify the semantic universal."
+    #
+    # So: green here means the canonical table is intact and the known
+    # regressions are gone. It does NOT mean the property holds globally.
+    # That remainder belongs to cross-model review, not to this regex.
+    # -------------------------------------------------------------------
+    # Generic uncertainty/failure must never route to a human. The exemption
+    # binds to the ACTION LINE ITSELF (deploy/production/approval/authz),
+    # NOT to the surrounding window — Codex round 5 defeated a window-wide
+    # negation exemption with "rather than continue troubleshooting, ASK
+    # USER immediately". Nearby words can no longer launder a real
+    # instruction. "Ask the human" is now recognized too.
+    for f in "$SKILL" "$COWORK" "$DOC" "$REPO_ROOT/README.md"; do
+        [ -f "$f" ] || continue
+        if awk '
+          { w[NR%3]=$0 }
+          {
+            cur = w[NR%3]
+            # Strip KNOWN-GOOD phrasings out of the line FIRST, then scan the
+            # remainder. A line-wide exemption is launderable: Codex round 5
+            # hid "ASK USER immediately" on a line that also contained a
+            # benign "ask the user only if". Removing the benign phrases and
+            # re-scanning means a real instruction beside one still trips.
+            gsub(/not\*{0,2} mean[^"]{0,3}"?ask the user[^"]*"?/, "", cur)
+            gsub(/ask the user only (if|when|after)[^.;]*/, "", cur)   # [^.;] — a greedy [^.]* swallowed a semicolon-separated real instruction (Codex round 6)
+            gsub(/not straight to the user/, "", cur)
+            win = w[(NR-2)%3] "\n" w[(NR-1)%3] "\n" cur
+            if (cur ~ /(ASK USER|[Aa]sk user|[Aa]sk the user|[Aa]sk the human|Must ask|must ask|STOP and ASK|asks for help|ASKS YOU|asks for clarification)/ &&
+                cur !~ /(deploy|production|prod |approval|authoriz)/ &&
+                win ~ /(LOW|[Ll]ow confidence|MEDIUM|FAILED|[Ss]till failing|[Ss]tuck|2 failed|2 attempts|uncertain)/ &&
+                cur !~ /(≠|non-overridable)/)
+              print FILENAME ":" NR
+          }' "$f" | grep -q .; then ok=false; fi
+    done
+
+    if [ -f "$HOOK" ]; then
+        grep -qE 'LOW confidence\? ASK USER' "$HOOK" && ok=false
+        grep -qiE 'confidence is not authorization' "$HOOK" || ok=false
+    fi
+
+    if $ok; then
+        pass "Escalation invariant: canonical Confidence Check table byte-exact in both skills; known direct-to-human regressions absent (see LIMITS in this test — it does NOT certify the global property)"
+    else
+        fail "Escalation contract broken — each skill must have exactly one '## Confidence Check (REQUIRED)' whose COMPLETE table (header + HIGH + MEDIUM + LOW + FAILED 2x + CONFUSED) matches the canonical table exactly, and no shipped surface may carry a direct-to-human action line on a generic uncertainty/failure trigger (only deploy/approval/authorization actions are exempt)"
+    fi
+}
+test_escalation_ladder_order_and_threshold
+
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then
