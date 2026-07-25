@@ -1686,26 +1686,33 @@ test_escalation_ladder_order_and_threshold() {
     local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     local HOOK="$REPO_ROOT/hooks/sdlc-prompt-check.sh"
 
-    # NINE bypasses. Denylisting literals failed 8x (Codex just rephrased).
-    # The "allowlist" then failed too, because it was really a SUBSTRING
-    # check: "Ask the human immediately; Escalate, don't ask" contained the
-    # permitted text and passed, and a 4th row spelled "Low confidence"
-    # dodged the uppercase-literal row regex entirely.
+    # TEN bypasses. Denylists failed 8x; a substring "allowlist" failed;
+    # exact-equality-on-selected-rows failed too, because (a) the heading
+    # match was a PREFIX so a decoy "## Confidence Check (reference table)"
+    # got compared instead of the operative one, and (b) I stripped the
+    # MEDIUM row before comparing — and MEDIUM covers "some uncertainty",
+    # so it was a live direct-to-human route.
     #
-    # So: extract the Confidence Check table as a BOUNDED BLOCK and compare
-    # its escalation rows to a canonical expected table by EXACT normalized
-    # equality. Substring matching cannot express this contract.
+    # Now: require EXACTLY ONE literal "## Confidence Check (REQUIRED)"
+    # heading, extract only its table, and compare the COMPLETE table
+    # (header, separator, and all five rows) by exact equality.
     local EXPECTED
-    EXPECTED="| LOW (<60%) | Not sure | Escalate, don't ask ↓ | **escalate now** (per model, see above) |
+    EXPECTED="| Level | Meaning | Action | Effort |
+|-------|---------|--------|--------|
+| HIGH (90%+) | Know exactly what to do | Present, proceed after approval | Model default |
+| MEDIUM (60-89%) | Solid approach, some uncertainty | Present, highlight uncertainties | Model default |
+| LOW (<60%) | Not sure | Escalate, don't ask ↓ | **escalate now** (per model, see above) |
 | FAILED 2x | Something's wrong | Escalate, don't ask ↓ | **escalate now** |
 | CONFUSED | Can't diagnose | Escalate, don't ask ↓ | **escalate now** |"
+
     for f in "$SKILL" "$COWORK"; do
         [ -f "$f" ] || { fail "missing $f"; return; }
-        # bounded block: the Confidence Check table, from its header row to
-        # the first blank line after it
+        local n_head
+        n_head=$(grep -cE '^## Confidence Check' "$f")
+        [ "$n_head" -eq 1 ] || ok=false
+        grep -qxF '## Confidence Check (REQUIRED)' "$f" || ok=false
         local actual
-        actual=$(awk '/^## Confidence Check/{f=1} f && /^\|/{print} f && /^$/ && seen {exit} f && /^\|/{seen=1}' "$f" \
-                 | grep -vE '^\|[-: ]+\|' | grep -vE '^\| (Level|HIGH|MEDIUM)')
+        actual=$(awk '/^## Confidence Check \(REQUIRED\)/{f=1;next} f&&/^\|/{print;s=1;next} f&&s&&!/^\|/{exit}' "$f")
         [ "$actual" = "$EXPECTED" ] || ok=false
     done
 
@@ -1716,21 +1723,31 @@ test_escalation_ladder_order_and_threshold() {
         grep -qiE 'merge protections are non-overridable' "$f" || ok=false
     done
 
-    # No generic uncertainty/failure route to a human on any shipped surface.
-    # 3-LINE WINDOW, not line-local: Codex round 4 slipped a CI flow diagram
-    # through ("Still failing?" on one line, "STOP and ASK USER" two lines
-    # below). Paragraph mode was too coarse — it false-positived on this
-    # doc's own CORRECTIVE prose ("Low confidence does not mean 'ask the
-    # user'"), so negations are excluded explicitly.
+    # Generic uncertainty/failure must never route to a human. The exemption
+    # binds to the ACTION LINE ITSELF (deploy/production/approval/authz),
+    # NOT to the surrounding window — Codex round 5 defeated a window-wide
+    # negation exemption with "rather than continue troubleshooting, ASK
+    # USER immediately". Nearby words can no longer launder a real
+    # instruction. "Ask the human" is now recognized too.
     for f in "$SKILL" "$COWORK" "$DOC" "$REPO_ROOT/README.md"; do
         [ -f "$f" ] || continue
         if awk '
           { w[NR%3]=$0 }
           {
-            win = w[(NR-2)%3] "\n" w[(NR-1)%3] "\n" w[NR%3]
-            if (win ~ /(LOW|[Ll]ow confidence|FAILED|[Ss]till failing|[Ss]tuck|2 failed|2 attempts)/ &&
-                win ~ /(ASK USER|ask user|ask the user|Must ask|must ask|STOP and ASK|asks for help|ASKS YOU|asks for clarification)/ &&
-                win !~ /(does not mean|not straight to|rather than|instead of|only if|only for|≠|deploy|production|prod |approval|authoriz|non-overridable)/)
+            cur = w[NR%3]
+            # Strip KNOWN-GOOD phrasings out of the line FIRST, then scan the
+            # remainder. A line-wide exemption is launderable: Codex round 5
+            # hid "ASK USER immediately" on a line that also contained a
+            # benign "ask the user only if". Removing the benign phrases and
+            # re-scanning means a real instruction beside one still trips.
+            gsub(/not\*{0,2} mean[^"]{0,3}"?ask the user[^"]*"?/, "", cur)
+            gsub(/ask the user only (if|when|after)[^.]*/, "", cur)
+            gsub(/not straight to the user/, "", cur)
+            win = w[(NR-2)%3] "\n" w[(NR-1)%3] "\n" cur
+            if (cur ~ /(ASK USER|ask user|ask the user|Ask the human|ask the human|Must ask|must ask|STOP and ASK|asks for help|ASKS YOU|asks for clarification)/ &&
+                cur !~ /(deploy|production|prod |approval|authoriz)/ &&
+                win ~ /(LOW|[Ll]ow confidence|MEDIUM|FAILED|[Ss]till failing|[Ss]tuck|2 failed|2 attempts|uncertain)/ &&
+                cur !~ /(≠|non-overridable)/)
               print FILENAME ":" NR
           }' "$f" | grep -q .; then ok=false; fi
     done
@@ -1741,9 +1758,9 @@ test_escalation_ladder_order_and_threshold() {
     fi
 
     if $ok; then
-        pass "Escalation invariant: Confidence Check table matches the canonical escalation rows EXACTLY in both skill copies; no generic direct-to-human route on any shipped surface (deploy/approval gates exempt)"
+        pass "Escalation invariant: exactly one Confidence Check (REQUIRED) per skill, COMPLETE table matches canonical exactly (incl. MEDIUM), no direct-to-human action line on a generic-uncertainty trigger (deploy/approval exempt by action line, not by nearby words)"
     else
-        fail "Escalation invariant broken — the Confidence Check escalation rows must match the canonical table exactly (no extra rows, no appended text) in BOTH skill copies, and no shipped surface may route generic uncertainty or repeated failure to a human (production deploys and approval gates exempt)"
+        fail "Escalation invariant broken — each skill must have exactly one '## Confidence Check (REQUIRED)' whose COMPLETE table (header + HIGH + MEDIUM + LOW + FAILED 2x + CONFUSED) matches the canonical table exactly, and no shipped surface may carry a direct-to-human action line on a generic uncertainty/failure trigger (only deploy/approval/authorization actions are exempt)"
     fi
 }
 test_escalation_ladder_order_and_threshold
