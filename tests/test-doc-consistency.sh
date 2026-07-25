@@ -1723,6 +1723,22 @@ test_escalation_ladder_order_and_threshold() {
         grep -qiE 'merge protections are non-overridable' "$f" || ok=false
     done
 
+    # ---- LIMITS OF THIS TEST (stated, not implied) --------------------
+    # What it PROVES: the canonical Confidence Check table is byte-exact in
+    # both shipped skill copies (Codex verified even a ↓ -> ⇩ swap fails), and
+    # a set of KNOWN direct-to-human regressions is absent.
+    #
+    # What it CANNOT prove: that no shipped surface anywhere routes generic
+    # uncertainty to a human. Codex demonstrated three bypasses of the prose
+    # scan across rounds 5-6 — a greedy strip consuming a semicolon-separated
+    # instruction, a SECOND table added after the canonical one, and a
+    # Cyrillic homoglyph ("АSK USER", U+0410). Its conclusion, and mine: "a
+    # growing regex strip/match list cannot certify the semantic universal."
+    #
+    # So: green here means the canonical table is intact and the known
+    # regressions are gone. It does NOT mean the property holds globally.
+    # That remainder belongs to cross-model review, not to this regex.
+    # -------------------------------------------------------------------
     # Generic uncertainty/failure must never route to a human. The exemption
     # binds to the ACTION LINE ITSELF (deploy/production/approval/authz),
     # NOT to the surrounding window — Codex round 5 defeated a window-wide
@@ -1741,10 +1757,10 @@ test_escalation_ladder_order_and_threshold() {
             # benign "ask the user only if". Removing the benign phrases and
             # re-scanning means a real instruction beside one still trips.
             gsub(/not\*{0,2} mean[^"]{0,3}"?ask the user[^"]*"?/, "", cur)
-            gsub(/ask the user only (if|when|after)[^.]*/, "", cur)
+            gsub(/ask the user only (if|when|after)[^.;]*/, "", cur)   # [^.;] — a greedy [^.]* swallowed a semicolon-separated real instruction (Codex round 6)
             gsub(/not straight to the user/, "", cur)
             win = w[(NR-2)%3] "\n" w[(NR-1)%3] "\n" cur
-            if (cur ~ /(ASK USER|ask user|ask the user|Ask the human|ask the human|Must ask|must ask|STOP and ASK|asks for help|ASKS YOU|asks for clarification)/ &&
+            if (cur ~ /(ASK USER|[Aa]sk user|[Aa]sk the user|[Aa]sk the human|Must ask|must ask|STOP and ASK|asks for help|ASKS YOU|asks for clarification)/ &&
                 cur !~ /(deploy|production|prod |approval|authoriz)/ &&
                 win ~ /(LOW|[Ll]ow confidence|MEDIUM|FAILED|[Ss]till failing|[Ss]tuck|2 failed|2 attempts|uncertain)/ &&
                 cur !~ /(≠|non-overridable)/)
@@ -1758,9 +1774,9 @@ test_escalation_ladder_order_and_threshold() {
     fi
 
     if $ok; then
-        pass "Escalation invariant: exactly one Confidence Check (REQUIRED) per skill, COMPLETE table matches canonical exactly (incl. MEDIUM), no direct-to-human action line on a generic-uncertainty trigger (deploy/approval exempt by action line, not by nearby words)"
+        pass "Escalation invariant: canonical Confidence Check table byte-exact in both skills; known direct-to-human regressions absent (see LIMITS in this test — it does NOT certify the global property)"
     else
-        fail "Escalation invariant broken — each skill must have exactly one '## Confidence Check (REQUIRED)' whose COMPLETE table (header + HIGH + MEDIUM + LOW + FAILED 2x + CONFUSED) matches the canonical table exactly, and no shipped surface may carry a direct-to-human action line on a generic uncertainty/failure trigger (only deploy/approval/authorization actions are exempt)"
+        fail "Escalation contract broken — each skill must have exactly one '## Confidence Check (REQUIRED)' whose COMPLETE table (header + HIGH + MEDIUM + LOW + FAILED 2x + CONFUSED) matches the canonical table exactly, and no shipped surface may carry a direct-to-human action line on a generic uncertainty/failure trigger (only deploy/approval/authorization actions are exempt)"
     fi
 }
 test_escalation_ladder_order_and_threshold
