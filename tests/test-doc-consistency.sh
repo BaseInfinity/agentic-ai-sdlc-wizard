@@ -1683,58 +1683,45 @@ test_escalation_ladder_order_and_threshold() {
     local ok=true
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local HOOK="$REPO_ROOT/hooks/sdlc-prompt-check.sh"
+
+    # Codex defeated two earlier versions of this test with decoys: a
+    # correct-looking ladder elsewhere in the file satisfied a global
+    # presence/order check while the operative policy stayed broken.
+    # So assert the INVARIANT, not a model sequence — per Anthropic's
+    # 2026-07-24 context-engineering guidance, the authorization rule is the
+    # "highly important area" that warrants an explicit constraint; the
+    # specific escalation order is a procedural preference that belongs in
+    # progressively-disclosed docs, not in the always-loaded skill.
     for f in "$SKILL" "$DOC"; do
         [ -f "$f" ] || { fail "missing $f"; return; }
-        # human must be named LAST
-        grep -qiE 'human is the LAST rung|human is the LAST' "$f" || ok=false
-        # order: Fable's position must precede Codex's, which precedes the user's
-        # BYTE offsets, not line numbers: SKILL.md puts all three rungs on a
-        # single line, so a line-number comparison sees them as equal and
-        # cannot verify order at all (caught while writing this test).
-        local lf lc lu
-        lf=$(grep -boEi '\*\*Fable\*\*' "$f" | head -1 | cut -d: -f1)
-        lc=$(grep -boEi '\*\*Codex `?xhigh' "$f" | head -1 | cut -d: -f1)
-        lu=$(grep -boEi '\*\*the user\*\*|\*\*The human\*\*' "$f" | head -1 | cut -d: -f1)
-        if [ -z "$lf" ] || [ -z "$lc" ] || [ -z "$lu" ]; then ok=false
-        elif [ "$lf" -ge "$lc" ] || [ "$lc" -ge "$lu" ]; then ok=false; fi
-        # the act-don't-ask threshold must survive
-        # NOTE: `(Fable|)` — an empty alternative — makes BSD grep error out
-        # with "empty (sub)expression" and return non-zero, which read as a
-        # content failure. Caught by debugging the assertion itself.
-        grep -qE '≥ *95%' "$f" || ok=false
-        # the never-ask-what-a-model-can-settle rule must survive
-        grep -qiE 'never ask the (user|human) what a model can settle|Ask a human only for what no model can settle' "$f" || ok=false
-    done
-    # the old wrong ladder must NOT come back, in ANY shipped surface
-    if grep -qE 'if still LOW, ASK USER' "$SKILL"; then ok=false; fi
-    # Codex round-1 on PR #470 defeated the previous version of this test:
-    # it proved a correct ladder existed SOMEWHERE, but not that the
-    # Confidence Check DECISION POINT routed to it. Restoring the old
-    # "ASK USER" action cells while leaving the new prose below passed
-    # 77/77. Now bind the actual action cells.
-    for f in "$SKILL" "$DOC"; do
-        # every LOW / FAILED 2x / CONFUSED row must route to the ladder
-        rows=$(grep -cE '^\|[^|]*(LOW \(<60%\)|FAILED 2x|CONFUSED)[^|]*\|.*([Ee]scalation [Ll]adder|ladder)' "$f")
-        [ "$rows" -ge 3 ] || ok=false
-        # ...and none of them may route to the old "ASK USER" wording
+        # (1) model-answerable uncertainty is not automatically a human question
+        grep -qiE 'Uncertainty ≠ a human question|Never ask the (user|human) what a model can settle|Ask a human only for what no model can settle' "$f" || ok=false
+        # (2) confidence never authorizes — the non-negotiable clause
+        grep -qiE 'Confidence is not authorization' "$f" || ok=false
+        # (3) merge protections cannot be overridden by a confidence score
+        grep -qiE 'merge protections are non-overridable' "$f" || ok=false
+        # (4) no LOW/FAILED/CONFUSED row may route straight to the user
         if grep -qE '^\|[^|]*(LOW \(<60%\)|FAILED 2x|CONFUSED)[^|]*\|[^|]*ASK USER' "$f"; then ok=false; fi
     done
-    # the shipped RUNTIME hook must not contradict the docs (Codex P1 #2:
-    # hooks/sdlc-prompt-check.sh is distributed by cli/init.js and
-    # registered by cli/templates/settings.json, so its baseline text
-    # reaches every consumer session)
-    local HOOK="$REPO_ROOT/hooks/sdlc-prompt-check.sh"
+
+    # (5) the shipped skill must not carry a second, contradicting
+    #     "after 2 attempts ask the user" imperative on another path
+    #     (Codex round-2 P1-2: this shipped via cli/init.js AND Cowork)
+    if grep -qiE 'after 2 attempts\? STOP and ASK USER' "$SKILL"; then ok=false; fi
+
+    # (6) the shipped runtime hook must agree with the docs
     if [ -f "$HOOK" ]; then
         grep -qE 'LOW confidence\? ASK USER' "$HOOK" && ok=false
-        grep -qiE 'Fable -> Codex|Fable → Codex' "$HOOK" || ok=false
+        grep -qiE 'confidence is not authorization' "$HOOK" || ok=false
     fi
+
     if $ok; then
-        pass "Escalation ladder: Fable→Codex→human order, ≥95% act-don't-ask threshold, and never-ask-a-model-answerable rule present in both SKILL.md and wizard doc"
+        pass "Escalation invariant: uncertainty isn't auto-human, confidence never authorizes, merge non-overridable — consistent across skill, wizard doc, and runtime hook"
     else
-        fail "Escalation ladder contract broken — must name Fable(1)→Codex(2)→human(3) IN ORDER, keep the ≥95% act-don't-ask threshold, keep the never-ask-what-a-model-can-settle rule, and must not restore 'if still LOW, ASK USER'"
+        fail "Escalation invariant broken — every shipped surface must state that model-answerable uncertainty is not automatically a human question, that confidence is not authorization, and that merge protections are non-overridable; no LOW/FAILED/CONFUSED path may route straight to the user"
     fi
 }
-
 test_escalation_ladder_order_and_threshold
 
 

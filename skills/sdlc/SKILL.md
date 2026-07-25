@@ -87,7 +87,7 @@ When tests fail:
 1. Identify which test(s) failed
 2. Diagnose WHY: your code broke it (regression — fix code), test is for deleted code (delete test), test has wrong assertions (fix test), "flaky" (investigate — race, shared state, env)
 3. Fix appropriately, run specific test individually first, then run ALL tests
-4. Still failing after 2 attempts? STOP and ASK USER
+4. Still failing after 2 attempts? Escalate (see Confidence Check) — not straight to the user
 
 ## Confidence Check (REQUIRED)
 
@@ -97,15 +97,15 @@ State your confidence before presenting an approach:
 |-------|---------|--------|--------|
 | HIGH (90%+) | Know exactly what to do | Present, proceed after approval | Model default |
 | MEDIUM (60-89%) | Solid approach, some uncertainty | Present, highlight uncertainties | Model default |
-| LOW (<60%) | Not sure | Escalation ladder ↓ | **escalate now** (per model, see above) |
-| FAILED 2x | Something's wrong | Escalation ladder ↓ | **escalate now** |
-| CONFUSED | Can't diagnose | Escalation ladder ↓ | **escalate now** |
+| LOW (<60%) | Not sure | Escalate, don't ask ↓ | **escalate now** (per model, see above) |
+| FAILED 2x | Something's wrong | Escalate, don't ask ↓ | **escalate now** |
+| CONFUSED | Can't diagnose | Escalate, don't ask ↓ | **escalate now** |
 
 **Effort bumping is NOT optional.** Bump BEFORE the next attempt, not after a third failure.
 
 **Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex check.
 
-**Escalation ladder — human is the LAST rung.** 1) **Fable** (`advisor()` before plans; if down, subagent at `xhigh`) → 2) **Codex `xhigh`** → 3) **the user**, only for priority/risk/scope/spend or irreversible calls. Never ask the user what a model can settle. **Act-don't-ask:** Fable ≥95% or Codex ≥95% → proceed, report after — **only** for model-answerable, authorized, reversible decisions. **Confidence is not authorization**: never overrides approval, external-effect, production, release/merge, or policy gates; merge protections are non-overridable. Full ladder (evidence- vs information-limited, the skipped-rung tell, the unconfirmed-fix rule): wizard doc → "Escalation Ladder".
+**Uncertainty ≠ a human question.** Use judgement and the model/tool evidence available to you before interrupting a human — escalate to Fable (`advisor()`; if down, spawn a Fable subagent at `xhigh` — that's the current fallback), then Codex `xhigh`, and reserve the user for priority/risk/scope/spend or irreversible calls. **Confidence is not authorization**: a high score never grants permission — it never overrides approval, external-effect, production, release/merge, or policy gates, and merge protections are non-overridable. Escalation options and rationale: wizard doc → "Escalation Ladder".
 
 ## Plan Mode
 
