@@ -4,6 +4,34 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.88.0] - 2026-07-25
+
+### Changed — Opus 5 becomes the recommended driver
+
+- **Setup A is now Opus 5 + Fable advisor at `xhigh`** (was Sonnet 5). Anthropic's own recommendation for difficult and long-running work. Requires Claude Code **v2.1.219+** — below that, `opus` still resolves to 4.8. Flagged as a trial: strong on paper, unproven by field data at time of writing.
+- **Setup B repurposed to Sonnet 5 at `medium`** for simple/one-off work — no longer the main-workflow driver.
+- Setup C's opusplan table corrected to name Opus 5 as the planner, with a note on pinning 4.8 explicitly if you want its field-proven behavior.
+- Propagated across README, SDLC.md, the wizard doc, both `sdlc/SKILL.md` copies, the setup and update skills, AGENTS.md, CI_CD.md, and `cli/lib/repo-complexity.js`.
+
+### Fixed — autocompact guidance for Opus 5 (consumer-visible)
+
+- **`skills/setup/SKILL.md` was writing `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "30"` into consumer `.claude/settings.json`** for Setup A. That figure was derived for the retired `opus[1m]` extended-context opt-in and was never re-derived. **Setup A now writes no override at all.**
+- Per the official env-vars docs, that variable only lowers the trigger where Claude Code compacts **proactively** — when `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is set, in cloud sessions, on Sonnet 4.6/Opus 4.6 without extended context, and on Sonnet 5. A local Opus session is the docs' own counter-example. A 1M window establishes *capacity*, not proactive mode.
+- Corrected in six wizard-doc locations plus the writer. Deliberately worded as a **documentation gap**, not a runtime claim — the docs are silent on Opus 5's local behavior, so the wizard says what is documented rather than asserting what the model does.
+- **Setup B's `75` is unchanged and still correct** — Sonnet 5 *is* a documented proactive case. Note it is global to the settings file and applies to subagents; switching drivers does not switch it.
+
+### Changed — escalation ladder: the human is the last rung
+
+- Both `sdlc/SKILL.md` copies and the wizard doc previously said **"ASK USER"** for LOW confidence, FAILED-2x, and CONFUSED — skipping model escalation entirely. Now: **Fable → Codex `xhigh` → the human**, with the human reserved for priority, risk appetite, scope, spend, and irreversible or outward-facing calls.
+- **Confidence is not authorization.** A high score never overrides an approval, external-effect, production, release/merge, or policy gate; merge protections are non-overridable. Production-deploy and approval gates remain human-gated by design.
+- Ten more direct-to-human routes removed across the wizard doc and README, including the CI-failure flow diagram and the generated `CLAUDE.md` template.
+- The shipped runtime hook (`hooks/sdlc-prompt-check.sh`) previously emitted the *old* ladder on every consumer session, contradicting the docs. Fixed, and now covered by a regression test.
+
+### Added
+
+- `SDLC.md` — a 2026-07-24 post-mortem: nine portable lessons on test design and process, including why a guard test can be vacuous in several distinct ways and why `bash "$t" </dev/null` matters when looping over test scripts.
+- ROADMAP #468–#479, including the Claude 5 context-engineering realignment (#476), `/doctor` integration (#477), the merge-gate friction analysis (#478), and a `/sdlc` gap where the workflow verifies the solution but never re-checks the diagnosis (#479).
+
 ## [1.87.0] - 2026-07-14
 
 ### Added
