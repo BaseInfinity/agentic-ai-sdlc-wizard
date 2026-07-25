@@ -763,3 +763,111 @@ fi
 
 echo ""
 echo "All merge gate tests passed!"
+
+# ─────────────────────────────────────────────────────────────────────
+# ROADMAP #478 — TIERED DENYLIST
+#
+# The flat denylist fired on 48% of PRs (12 of the last 25 measured), so
+# its exception was the norm rather than the exception — which trains
+# bypass habits. Worse, MERGE_CLEARANCE_SKIP=1 was all-or-nothing: escaping
+# a benign doc hit ALSO disabled the CI check, the test-deletion check, and
+# every clearance-artifact check.
+#
+# Fable xhigh design (see ROADMAP #478): split into HARD_DENY (live
+# enforcement + release machinery — a human runs it, by design) and
+# ACKABLE_DENY (prose that steers but doesn't mechanically enforce — may
+# proceed with an explicit, user-confirmed acknowledgment in the clearance
+# artifact while ALL other checks still run).
+# ─────────────────────────────────────────────────────────────────────
+
+test_hard_deny_covers_live_enforcement() {
+    # hooks/ is this repo's LIVE enforcement (.claude/settings.json runs
+    # codex-gate-check.sh etc. from $CLAUDE_PROJECT_DIR/hooks/), so a PR
+    # gutting it weakens the pipeline that makes CERTIFIED mean anything.
+    # Same for workflows (which define `validate` and hold publish secrets)
+    # and the wrapper itself. These must NEVER be ackable.
+    local missing=""
+    for p in '\^\\\.github/workflows/' '\^hooks/' '\^\\\.claude/' '\^scripts/merge-pr\\\.sh\$'; do
+        grep -A 12 'HARD_DENY=(' "$WRAPPER" | grep -q "$p" || missing="$missing $p"
+    done
+    if [ -z "$missing" ]; then
+        pass "HARD_DENY covers workflows, hooks/, .claude/, and the wrapper itself"
+    else
+        fail "HARD_DENY missing live-enforcement patterns:$missing"
+    fi
+}
+
+test_ackable_deny_covers_prose_only() {
+    local missing=""
+    for p in 'CLAUDE_CODE_SDLC_WIZARD' 'skills/sdlc/SKILL' 'cowork/skills/sdlc/SKILL'; do
+        grep -A 8 'ACKABLE_DENY=(' "$WRAPPER" | grep -q "$p" || missing="$missing $p"
+    done
+    if [ -z "$missing" ]; then
+        pass "ACKABLE_DENY covers the steering-prose paths"
+    else
+        fail "ACKABLE_DENY missing:$missing"
+    fi
+}
+
+test_hooks_never_ackable() {
+    # M2: moving ^hooks/ into the ackable tier must fail this test.
+    if grep -A 8 'ACKABLE_DENY=(' "$WRAPPER" | grep -qE "\^hooks/|\^\\\\\.claude/|merge-pr"; then
+        fail "live-enforcement path found in ACKABLE_DENY — must stay HARD"
+    else
+        pass "no live-enforcement path is ackable"
+    fi
+}
+
+test_changelog_delisted() {
+    # M1: re-adding ^CHANGELOG\.md$ to either tier must fail. It was pure
+    # dead weight — release PRs touching it also bump package.json's
+    # version, which the separate version-field check already blocks.
+    # Scoped to the ARRAY BODIES so the explanatory comment doesn't count.
+    local arrays
+    arrays=$(sed -n '/^HARD_DENY=(/,/^)/p;/^ACKABLE_DENY=(/,/^)/p' "$WRAPPER")
+    if printf '%s' "$arrays" | grep -q "CHANGELOG"; then
+        fail "CHANGELOG.md is still denylisted — dead weight, already covered by the version-field check"
+    else
+        pass "CHANGELOG.md de-listed (covered by the package.json version check)"
+    fi
+}
+
+test_ack_requires_user_confirmation() {
+    # M7: dropping the requirement must fail. Checking merely that the
+    # string "user_confirmed" appears somewhere is vacuous — the first
+    # version of this test passed a mutation that hardcoded
+    # ACK_CONFIRMED="yes" while leaving the word in a comment. Assert that
+    # the value is actually DERIVED from the artifact.
+    if grep -qE 'ACK_CONFIRMED=\$\(.*user_confirmed.*true' "$WRAPPER"; then
+        pass "denylist ack derives user_confirmed from the clearance artifact"
+    else
+        fail "ack path must DERIVE user_confirmed:true from the artifact, not assume it"
+    fi
+}
+
+test_ack_does_not_skip_other_checks() {
+    # M3: the whole point — acking a denylist hit must NOT disable CI,
+    # test-deletion, or clearance freshness the way MERGE_CLEARANCE_SKIP did.
+    if grep -q 'ACK_DENYLIST_ONLY\|ack_scope_note' "$WRAPPER"; then
+        pass "ack is scoped to the denylist; other checks still run"
+    else
+        fail "ack must be scoped — CI, test-deletion, and clearance checks must still run"
+    fi
+}
+
+test_hard_deny_rejects_ack() {
+    # M5: an ack naming a HARD path must be refused outright.
+    if grep -q 'hard-tier\|HARD tier\|cannot be acknowledged' "$WRAPPER"; then
+        pass "HARD tier explicitly rejects acknowledgment"
+    else
+        fail "wrapper must state that HARD-tier hits cannot be acknowledged"
+    fi
+}
+
+test_hard_deny_covers_live_enforcement
+test_ackable_deny_covers_prose_only
+test_hooks_never_ackable
+test_changelog_delisted
+test_ack_requires_user_confirmation
+test_ack_does_not_skip_other_checks
+test_hard_deny_rejects_ack

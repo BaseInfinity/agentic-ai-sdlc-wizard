@@ -35,17 +35,45 @@
 
 set -u
 
-DENYLIST_PATTERNS=(
+# ROADMAP #478 — TIERED, because a flat list fired on 48% of PRs (12 of the
+# last 25 measured) and its all-or-nothing escape hatch disabled the checks
+# that actually matter. Fable xhigh design; see the ROADMAP row for the
+# measurement and the reasoning behind each tier.
+#
+# HARD tier — LIVE ENFORCEMENT and release machinery. A human runs these,
+# by design; they CANNOT be acknowledged. `hooks/` is not merely shipped
+# product: .claude/settings.json runs codex-gate-check.sh and friends from
+# $CLAUDE_PROJECT_DIR/hooks/, so a PR gutting it weakens the very pipeline
+# that makes a CERTIFIED artifact mean anything. `.github/workflows/`
+# defines the `validate` check AND holds publish secrets — and a
+# pull_request workflow runs the PR branch's own definition, so a PR
+# editing ci.yml would pass its own gutted gate.
+HARD_DENY=(
     '^\.github/workflows/'
     '^hooks/'
     '^\.claude/'
-    '^skills/sdlc/SKILL\.md$'
-    '^cowork/skills/sdlc/SKILL\.md$'
-    '^CLAUDE_CODE_SDLC_WIZARD\.md$'
-    '^CHANGELOG\.md$'
-    '^\.github/workflows/release'
     '^scripts/merge-pr\.sh$'
 )
+# ACKABLE tier — prose that STEERS behavior but does not mechanically
+# enforce it. Post-#462 the enforcement is this wrapper, not the prose, and
+# the wrapper still governs every future PR. May proceed when the clearance
+# artifact explicitly acknowledges each matched path with a reason AND
+# user_confirmed:true — every other check (CI validate, net test deletion,
+# CERTIFIED, round>=2, SHA freshness, non-empty review file) still runs.
+# This is ACK_DENYLIST_ONLY: it is NOT the old MERGE_CLEARANCE_SKIP, which
+# short-circuited everything.
+ACKABLE_DENY=(
+    '^CLAUDE_CODE_SDLC_WIZARD\.md$'
+    '^skills/sdlc/SKILL\.md$'
+    '^cowork/skills/sdlc/SKILL\.md$'
+)
+# ^CHANGELOG\.md$ DELISTED (#478): pure dead weight. It appeared only on
+# release PRs that also bump package.json's version, which the separate
+# version-field content check below already blocks. Removing it blocks
+# nothing that wasn't already blocked.
+# ^\.github/workflows/release DELISTED: subsumed by the broader
+# '^\.github/workflows/' HARD pattern above.
+DENYLIST_PATTERNS=("${HARD_DENY[@]}" "${ACKABLE_DENY[@]}")
 # CLAUDE_CODE_SDLC_WIZARD.md added per Codex round-1 finding (2026-07-21):
 # it now contains this exception's own portable policy prose, so a PR
 # weakening that policy wasn't excluded from the exception it was editing.
@@ -95,12 +123,42 @@ else
         echo "FAILED CLOSED: could not fetch diff for PR #$PR_NUM: $DIFF_FILES" >&2
         exit 1
     fi
+    CLEARANCE_FILE=".reviews/merge-clearance-$PR_NUM.json"
+
+    # Read the ack block once (if any) so the ackable tier can consult it.
+    # ACK_DENYLIST_ONLY: this acknowledgment scopes ONLY the denylist. Every
+    # other check below still runs — unlike the retired MERGE_CLEARANCE_SKIP,
+    # which short-circuited all of them for any hit.
+    ACK_PATHS=""
+    ACK_CONFIRMED=""
+    if [ -f "$CLEARANCE_FILE" ]; then
+        ACK_PATHS=$(grep -o '"denylist_ack"[[:space:]]*:[[:space:]]*{[^}]*}' "$CLEARANCE_FILE" || true)
+        ACK_CONFIRMED=$(printf '%s' "$ACK_PATHS" | grep -o '"user_confirmed"[[:space:]]*:[[:space:]]*true' || true)
+    fi
+
     while IFS= read -r f; do
         [ -z "$f" ] && continue
-        for pattern in "${DENYLIST_PATTERNS[@]}"; do
+        # HARD tier — live enforcement / release machinery. Cannot be
+        # acknowledged; a human runs this by design.
+        for pattern in "${HARD_DENY[@]}"; do
             if printf '%s' "$f" | grep -qE "$pattern"; then
-                echo "BLOCKED: PR #$PR_NUM touches '$f', which matches the release/policy-adjacency denylist ($pattern). This exception does not apply — explicit user confirmation is required." >&2
+                echo "BLOCKED (hard-tier): PR #$PR_NUM touches '$f' ($pattern) — live enforcement or release machinery. This cannot be acknowledged in the clearance artifact; explicit user confirmation is required." >&2
                 exit 1
+            fi
+        done
+        # ACKABLE tier — steering prose. Proceeds only with an explicit,
+        # user-confirmed acknowledgment naming this exact path.
+        for pattern in "${ACKABLE_DENY[@]}"; do
+            if printf '%s' "$f" | grep -qE "$pattern"; then
+                if [ -z "$ACK_CONFIRMED" ]; then
+                    echo "BLOCKED (ackable-tier): PR #$PR_NUM touches '$f' ($pattern). Add a \"denylist_ack\" block to $CLEARANCE_FILE naming this path with a reason and \"user_confirmed\": true (written only AFTER an explicit in-chat yes), or get user confirmation to merge." >&2
+                    exit 1
+                fi
+                if ! printf '%s' "$ACK_PATHS" | grep -qF "$f"; then
+                    echo "BLOCKED (ackable-tier): PR #$PR_NUM touches '$f' but the denylist_ack does not name that exact path. Every matched path must be enumerated." >&2
+                    exit 1
+                fi
+                echo "DENYLIST ACKNOWLEDGED for '$f' (user_confirmed) — all other checks still running." >&2
             fi
         done
         if [ "$f" = "package.json" ]; then
@@ -151,7 +209,6 @@ else
     fi
 
     # --- Clearance artifact check ---
-    CLEARANCE_FILE=".reviews/merge-clearance-$PR_NUM.json"
     if [ ! -f "$CLEARANCE_FILE" ]; then
         echo "BLOCKED: no clearance artifact found at $CLEARANCE_FILE. Run the full cross-model review protocol and write this file before merging without explicit confirmation." >&2
         exit 1
