@@ -180,7 +180,7 @@ You CAN change these, but understand the trade-offs:
 | **Testing shape** | Diamond (integration-heavy) | Pyramid (unit-heavy) = mocks can hide real bugs, AI gets false confidence |
 | **TDD strictness** | Strict (test first always) | Flexible = AI may skip tests, no verification of correctness |
 | **Planning mode** | Required for implementation | Skipping = Claude codes without understanding, wasted effort |
-| **Confidence thresholds** | LOW < 60% = must ask | Higher threshold = Claude proceeds when unsure, mistakes |
+| **Confidence thresholds** | LOW < 60% = must escalate | Higher threshold = Claude proceeds when unsure, mistakes |
 
 **If you change these:** The wizard will warn you. You can override, but you're accepting the risk.
 
@@ -221,7 +221,7 @@ This frames the wizard as a partnership, not a constraint.
 1. Have a process that Claude follows consistently
 2. Make the process visible (TodoWrite, confidence levels)
 3. Enforce quality gates (tests pass, review before commit)
-4. Let Claude ask when uncertain
+4. Let Claude escalate when uncertain (models first, human last)
 5. **Customize what makes sense, keep what keeps AI on track**
 
 ### Leverage Official Tools (Don't Reinvent)
@@ -2708,7 +2708,7 @@ Local tests pass -> Commit -> Push -> Watch CI
                                                            |
                                                    Still failing?
                                                            |
-                                                   STOP and ASK USER
+                                                   ESCALATE: Fable→Codex
 ```
 
 **How to watch CI:**
@@ -2739,7 +2739,7 @@ Local tests pass -> Commit -> Push -> Watch CI
 - Your code broke it? Fix your code
 - CI config issue? Fix the config
 - Flaky? Investigate - flakiness is a bug
-- Stuck? ASK USER
+- Stuck? Escalate — Fable, then Codex `xhigh`; the user last
 
 ## CI Review Feedback Loop — Local Shepherd (After CI Passes)
 
@@ -3545,7 +3545,7 @@ You've successfully set up the system when:
 - [ ] Claude auto-invokes sdlc skill for all tasks
 - [ ] Claude uses TodoWrite to track progress
 - [ ] Claude states confidence levels
-- [ ] Claude asks for clarification when LOW confidence
+- [ ] Claude escalates (Fable → Codex) when LOW confidence, before asking
 - [ ] TDD hook reminds about tests before editing source files
 - [ ] Claude requests /compact before implementation
 
@@ -4129,7 +4129,7 @@ Occasionally (not every task), Claude can ask:
 If Claude repeatedly struggles in a codebase area:
 - Low confidence is an indicator of a problem
 - Might be legacy code, bad docs, or just unfamiliar patterns
-- Claude should ask questions rather than guess wrong
+- Claude should escalate to a model, then ask, rather than guess wrong
 - Better to ask and be right than to assume and create rework
 
 **Don't be afraid to ask questions.** It prevents being wrong. This is a symbiotic relationship - the more interaction, the better both sides get.
@@ -4474,7 +4474,7 @@ When something doesn't work:
 
 1. **"Plan before coding"** not "use exactly this planning template"
 2. **"Test your work"** not "use Jest with this exact config"
-3. **"Ask when uncertain"** not "if confidence < 60% then ask"
+3. **"Escalate when uncertain"** not "if confidence < 60% then ask"
 
 **Claude adapts the principles to YOUR stack.** Give Claude the philosophy, it figures out your tech details - your commands, your patterns, your workflow.
 
