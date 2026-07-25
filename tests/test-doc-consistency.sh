@@ -1285,13 +1285,13 @@ test_ai_setup_lanes_reviewer_is_gpt56() {
     local bad=""
     # "5\.6" AND "Sol" (not just one or the other) so a Sol->Terra swap, or a
     # future GPT-5.7 Sol rename, both fail.
-    # (Line numbers re-pinned +4 after the 2026-07-13 Setup A clarity insertion.)
-    for n in 13 16 32 45 47 123 168 172 210 211 214; do
+    # (Line numbers re-pinned after the 2026-07-24 Opus 5 A/B lane restructure.)
+    for n in 15 26 43 58 60 138 178 182 220 221 224; do
         bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
     done
-    # L127 is the fallback-chain line: must name "5\.6" AND BOTH Sol (primary)
+    # L142 is the fallback-chain line: must name "5\.6" AND BOTH Sol (primary)
     # and Terra (fallback target) so a Terra->Luna swap also fails.
-    bad="$bad$(_check_line_has_and_lacks "$F" 127 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    bad="$bad$(_check_line_has_and_lacks "$F" 142 "5\.6,Sol,Terra" "5\.5" "5\.4")"
     if [ -z "$bad" ]; then
         pass "AI_SETUP_LANES.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
     else
@@ -1305,7 +1305,7 @@ test_readme_reviewer_is_gpt56() {
     local bad=""
     # L126 is the fallback-chain line: must name "5\.6" AND BOTH Sol and Terra.
     bad="$bad$(_check_line_has_and_lacks "$F" 126 "5\.6,Sol,Terra" "5\.5" "5\.4")"
-    for n in 186 187 188; do
+    for n in 189 190 191; do
         bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
     done
     if [ -z "$bad" ]; then
@@ -1332,8 +1332,8 @@ test_wizard_doc_reviewer_is_gpt56() {
     local F="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     if [ ! -f "$F" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
     local bad=""
-    bad="$bad$(_check_line_has_and_lacks "$F" 1090 "5\.6,Sol" "5\.5")"
-    bad="$bad$(_check_line_has_and_lacks "$F" 1113 "5\.6,Sol" "5\.5")"
+    bad="$bad$(_check_line_has_and_lacks "$F" 1091 "5\.6,Sol" "5\.5")"
+    bad="$bad$(_check_line_has_and_lacks "$F" 1111 "5\.6,Sol" "5\.5")"
     # Fallback-chain lines: must name "5\.6" AND BOTH Sol and Terra.
     # Content-anchored (not hardcoded line numbers) — this pair drifted
     # 3855->3863->3865->3867 across three separate insertions in one day
@@ -1456,7 +1456,7 @@ test_sonnet5_default_effort_is_medium() {
         || bad="$bad cowork/skills/sdlc/SKILL.md"
     grep -q 'Effort: `medium`' "$REPO_ROOT/skills/setup/SKILL.md" \
         || bad="$bad skills/setup/SKILL.md"
-    grep -q 'Sonnet 5 (recommended default) | `medium`' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" \
+    grep -q 'Sonnet 5 (Simple/One-Off lane) | `medium`' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" \
         || bad="$bad CLAUDE_CODE_SDLC_WIZARD.md(effort-table)"
     # Codex round-1 catch: presence-of-medium alone false-greens while a
     # contradictory high-default ladder survives elsewhere in the same repo

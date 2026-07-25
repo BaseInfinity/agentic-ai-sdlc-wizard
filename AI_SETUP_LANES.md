@@ -4,7 +4,20 @@ Four recommended AI coding setups for this repo. Setups A, B, and C are complete
 
 This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
-## Setup A — Sonnet 5 + Fable Advisor (Recommended)
+## Setup A — Opus 5 + Fable Advisor (Recommended default, trial-flagged)
+
+**Default for genuine autonomous/agentic work on complex repos, trial-flagged not settled.** Opus 5 launched 2026-07-24; every capability claim behind this trial is Anthropic's own launch-day material, unreplicated by field data (confidence ~70%, not higher — see `project_opus5_launch_research` memory). Maintainer explicitly chose to adopt Opus 5 as default ahead of the 1-2 week field-data window this research recommended, judging the risk acceptable given Codex still gates every task and rollback is one settings change — an accepted-risk decision, not a refutation of the underlying uncertainty. Requires Claude Code v2.1.219+ (`claude update`) for the `opus` alias to resolve to Opus 5 — on older versions it still resolves to Opus 4.8. **Common gotcha:** a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` env var (e.g. in `~/.zshrc`) silently pins an older Opus version and overrides `/model` picker choices — check your shell rc files if `/model opus` doesn't show Opus 5.
+
+| Role | Model | Effort |
+|------|-------|--------|
+| **Advisor** | Fable 5 (via `advisorModel: "fable"`) — **currently server-side disabled** ("temporarily unavailable" pending an Anthropic rollout, confirmed 2026-07-24 per `code.claude.com/docs/en/advisor`). **On `advisor()` failure, immediately fall back to a Fable subagent call** (`Agent({model: "fable", effort: "xhigh"})`) — do not wait or retry, go straight to the fallback every time. | `high` (server-side); subagent fallback explicit `xhigh` |
+| **Driver** | Opus 5 (`claude-opus-5`, via the `opus` alias) | `xhigh` — Anthropic's own recommendation for "difficult tasks and long-running asynchronous workflows," which is Setup A's target use case, not `high`'s routine-work default |
+| **Reviewer** | Codex (GPT-5.6 Sol) xhigh | Still gates every task at the end — unaffected by the driver/advisor change |
+| **Escalation** | `max` only as a last resort (marginal gains, doubles cost — not the default escalation path); Opus 4.8 pinned explicitly (`claude-opus-4-8`) as a secondary check when Opus-5-driver + Opus-5-fallback-advisor would otherwise be a same-family self-check | Stuck (2 failed attempts / LOW confidence) or high-stakes |
+
+**Effort mechanics — read this before assuming "set and forget."** The effort *tier* (low/medium/high/xhigh/max) is a static per-session setting — Claude Code never auto-switches tiers based on task difficulty; changing tiers still requires an explicit `/effort`. Setup A starts at `xhigh` already — Anthropic's own launch guidance recommends "extra" (`xhigh`) specifically "for difficult tasks and long-running asynchronous workflows," which is Setup A's target use case, not the `high` tier meant for routine work. What Opus 5 *does* have on top of that is documented **adaptive reasoning within a fixed tier**: at whatever tier you're on, it modulates how much it thinks per step (deeper on hard sub-problems, lighter on easy ones) without any manual intervention. Don't conflate the two — "effort scales with complexity" is only true within a tier, not across tiers.
+
+**Fallback lane (Sonnet 5 medium) — restore if the Opus 5 trial doesn't pan out:**
 
 | Role | Model | Effort |
 |------|-------|--------|
@@ -13,40 +26,40 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 | **Reviewer** | Codex (GPT-5.6 Sol) xhigh | — |
 | **Escalation** | Opus 4.8 xhigh takes over as driver (or run a Fable 5 review pass) | When stuck (2 failed attempts / LOW confidence) or high-stakes |
 
-The new standard. Sonnet 5 beats Opus 4.6 on every coding benchmark (SWE-bench Verified 85.2% vs 80.8%, Terminal-Bench 80.4% vs 65.4%) and generally uses less Max quota — but the savings are not a fixed ratio: Sonnet 5's newer tokenizer produces ~30% more tokens for the same text than Opus 4.6's (per Anthropic's pricing docs), and community cost reports suggest the advantage narrows at `high`/`xhigh`. No controlled Sonnet-5-vs-Opus-4.6 quota measurement exists — check your own burn with `/usage`. Fable 5 advises at key decision points via native `advisorModel` (v2.1.170+). GPT-5.6 Sol xhigh reviews cross-family. Escalate to Opus 4.8 xhigh for the hardest debugging or architecture decisions — don't run Opus as the daily driver.
+Sonnet 5 medium remains a fine default for less complex repos — see Setup B below. It's demoted from Setup A's primary slot here specifically because the maintainer's own workload is dominated by complex, agentic-heavy repos where Opus 5's extra capability is worth the cost; that's a workload-specific call, not a universal verdict that Sonnet 5 medium is inferior.
 
-**Effort escalation ladder:** Start at `medium` — CodeRabbit's testing found it captures most of Sonnet 5's upside at the lowest cost. Raise to `high` when medium struggles, `xhigh` for hard debugging, multi-file migrations, or long agent runs. `max` is rarely worth it — doubles cost for marginal gains per the same CodeRabbit testing.
+**Advisor failure has a fallback, not a shrug.** `advisor()` is a server-side tool and can fail (currently: Fable is disabled as an advisor repo-wide via an Anthropic rollout, not an incident). When it errors, spawn a Fable subagent as the fallback reviewer — the same rule the `/sdlc` skill carries ("if down, spawn Fable subagent at `xhigh`"). The advisor check is never skipped; only its transport changes.
 
-**Two escalation axes — don't conflate them.** The effort ladder above raises reasoning *within* the Sonnet 5 driver. Model escalation is a different move: it *swaps the driver* — after 2 failed attempts, LOW confidence, or on a high-stakes change, Opus 4.8 xhigh takes over as driver (or run a Fable 5 review pass on the diff). Cranking Sonnet's effort past `xhigh` is not the escalation path.
+**Requires:** Claude Code v2.1.219+ (Opus 5 alias resolution), Fable 5 access for advisor/subagent fallback.
 
-**Advisor failure has a fallback, not a shrug.** `advisor()` is a server-side tool and does fail during API incidents. When it errors, spawn a Fable subagent as the fallback reviewer — the same rule the `/sdlc` skill carries ("if down, spawn Fable subagent"). The advisor check is never skipped; only its transport changes.
+## Setup B — Sonnet 5 Simple/One-Off (Legacy Flagship slot repurposed)
 
-**Requires:** Claude Code v2.1.197+ (Sonnet 5 alias resolution), Fable 5 access for advisor.
-
-## Setup B — Opus 4.6 Stability (Legacy Flagship)
+**For one-off tasks, scripts, and less complex repos — not the main workflow.** Where Setup A is the default for genuine autonomous agentic work, Setup B is for lower-stakes, lower-complexity work where Sonnet 5's speed and cost outweigh Opus 5's extra capability.
 
 | Role | Model | Effort |
 |------|-------|--------|
-| **Advisor** | Fable 5 (via `advisorModel: "fable"`) | `high` (server-side) |
-| **Driver** | Opus 4.6 (`claude-opus-4-6`) | `max` |
+| **Advisor** | Fable 5 (via `advisorModel: "fable"`) — same server-side-disabled caveat as Setup A; fall back to a Fable subagent at `xhigh` on failure | `high` (server-side); subagent fallback explicit `xhigh` |
+| **Driver** | Sonnet 5 (`claude-sonnet-5`) | `medium` default, escalate `high` → `xhigh` for tasks that turn out harder than expected |
 | **Reviewer** | Codex (GPT-5.6 Sol) xhigh | — |
 
-The consistency-first lane. Opus 4.6 is the only model where `max` effort works without overthinking — months of field data, Active through at least Feb 2027, proven predictable. Lower benchmark scores than Sonnet 5 but higher consistency. Choose this when you've tuned prompts to Opus 4.6 behavior and reliability matters more than peak capability.
+Choose this lane deliberately for scope, not by default — a one-off script, a small doc fix, a low-blast-radius repo. If a Setup B task turns out to need real agentic depth, swap to Setup A rather than cranking Sonnet 5's effort past `xhigh`; that's a model swap, not an effort-tier problem.
 
-**Effort:** Opus 4.6 at `max` (no xhigh support — only low/medium/high/max). This is the sweet spot; community reports confirm 4.6 is the only Opus where `max` doesn't over-engineer.
+**Effort escalation ladder:** Start at `medium` — CodeRabbit's testing found it captures most of Sonnet 5's upside at the lowest cost. Raise to `high` when medium struggles, `xhigh` for hard debugging, multi-file migrations, or long agent runs. `max` is rarely worth it — doubles cost for marginal gains per the same CodeRabbit testing.
+
+**Opus 4.6/4.8 remain reachable as the field-proven stability/escalation backstop** for installer, release, or other high-blast-radius work regardless of which lane you're in — months of field data, Active through at least Feb 2027. Pin `claude-opus-4-8` explicitly rather than relying on the `opus` alias, which now resolves to Opus 5. **Opus 4.6 is the only Opus where `max` effort works without overthinking** — community reports confirm this is the sweet spot specific to 4.6 (no xhigh support on 4.6 — only low/medium/high/max); pin `claude-opus-4-6` explicitly when you want that specific consistency profile over Opus 5 or 4.8.
 
 ## Setup C — OpusPlan Hybrid (Saver)
 
 | Role | Model | Effort |
 |------|-------|--------|
-| **Planner** | Opus 4.8 (via Plan Mode — Shift+Tab) | `xhigh` |
-| **Advisor** | Fable 5 or Opus 4.8 (via `advisorModel`) | — |
+| **Planner** | Opus 5 (via Plan Mode — Shift+Tab, follows the `opus` alias) | `xhigh` |
+| **Advisor** | Fable 5 or Opus 5 (via `advisorModel`) | — |
 | **Driver** | Sonnet 5 (auto execute mode) | `medium`, escalate `high` for hard runs |
 | **Reviewer** | Codex (GPT-5.6 Sol) xhigh | — |
 
-Cost-efficient hybrid using CC's native `opusplan` alias. Opus 4.8 reasons during Plan Mode, Sonnet 5 executes. Max-bundled — no API credit drain. Pin `model: "opusplan"` + `advisorModel: "fable"` in project settings. Sonnet 5 now uses 1M context natively (no `[1m]` suffix needed). GPT-5.6 Sol xhigh is the cross-model reviewer.
+Cost-efficient hybrid using CC's native `opusplan` alias. `opusplan` follows the `opus` alias for its planning phase — currently Opus 5 — and executes with Sonnet. Max-bundled — no API credit drain. Pin `model: "opusplan"` + `advisorModel: "fable"` in project settings. Sonnet 5 now uses 1M context natively (no `[1m]` suffix needed). GPT-5.6 Sol xhigh is the cross-model reviewer.
 
-**Note:** Opus 4.6 cannot advise Sonnet 5 (rejected in the advisor pairing table). Use Fable 5 or Opus 4.8 as advisor for this lane.
+**Note:** Opus 4.6 cannot advise Sonnet 5 (rejected in the advisor pairing table). Use Fable 5 or Opus 5 as advisor for this lane. Pin `claude-opus-4-8` explicitly (not the `opus` alias) if you specifically want Opus 4.8's field-proven planning behavior instead of Opus 5's.
 
 ## Setup D — Claude Lite
 
@@ -60,28 +73,30 @@ The "just do the thing" lane. No TDD enforcement, no cross-model review, no plan
 
 ## When to Use Setup A
 
-The default choice for most SDLC work — full discipline (TDD, cross-model review) at generally lower quota cost than Setup B (see Credit-Spend Warning below):
+The default for genuine autonomous/agentic work on complex repos — full discipline (TDD, cross-model review) with Opus 5's extra capability at higher quota cost than Setup B (see Credit-Spend Warning below):
 
-- Feature implementation and routine development
+- Architecture or methodology changes
+- Complex multi-file features or refactors
+- Ambiguous debugging, root-cause investigation
+- Installer behavior (`cli/`, `init`, `claude-setup-wizard`)
+- CI / release automation
+- Security-sensitive behavior
+- Anything that could damage a consumer repo
+- Any task where you'd otherwise reach for Setup B and find yourself needing more than one or two escalation rounds
+
+## When to Use Setup B
+
+Reach for Setup B for one-off tasks, scripts, and lower-stakes/lower-complexity repos where Sonnet 5's speed and cost outweigh Opus 5's extra capability:
+
+- Feature implementation on well-understood, routine work
 - Documentation and examples
 - Test writing
 - Normal CLI changes
 - Mechanical refactors
-- Anything where you'd reach for Setup B out of habit rather than a specific need for Opus 4.6's proven consistency
+- Small, low-blast-radius scripts or one-off tasks
+- Anything where the task is clearly scoped and doesn't need Opus 5's deeper agentic reasoning
 
-## When to Use Setup B
-
-Reach for Setup B when the change can damage a consumer repo, has high blast radius, or you've specifically tuned your workflow to Opus 4.6's behavior:
-
-- Architecture or methodology changes
-- Tagged release prep
-- Installer behavior (`cli/`, `init`, `claude-setup-wizard`)
-- Destructive file operations
-- Package publishing
-- Generated repo modifications (template changes)
-- CI / release automation
-- Security-sensitive behavior
-- Anything that could damage a consumer repo
+If a Setup B task turns out to need more depth than expected, swap to Setup A rather than cranking Sonnet 5's effort past `xhigh` — that's a model swap, not an effort-tier problem.
 
 ## When to Use Setup C
 
@@ -100,7 +115,7 @@ Setup C is sufficient for routine work where a Sonnet driver can ship with a str
 Setup D is for work where SDLC discipline overhead exceeds the value:
 
 - Run a script with basic intelligence
-- Deploy to staging (prod deploys need Setup A's or B's discipline — human gate + rollback plan)
+- Deploy to staging (prod deploys need Setup A's or B's discipline — human gate + rollback plan; Setup A for anything complex/high-stakes, Setup B for simple ones)
 - Config updates, env var changes
 - File moves, renames, bulk operations
 - Repo maintenance (dependency bumps, lockfile refreshes)
@@ -114,7 +129,7 @@ Setup D is for work where SDLC discipline overhead exceeds the value:
 - No TDD (no test-first for running a deploy script)
 - No cross-model review (not worth the cost or time for grunt work)
 - No planning phase (you are the planner)
-- No effort escalation (Sonnet standard is plenty)
+- No effort escalation (Sonnet 5 medium is plenty)
 
 **The discipline of knowing when NOT to use discipline.** Documenting this lane tells users "here's when to switch off the heavy methodology" rather than silently tempting them to skip it. If the task turns out to be harder than expected, escalate to Setup A or B.
 
@@ -130,56 +145,51 @@ If GPT-5.6 Sol isn't available on your OpenAI account, Codex auto-falls back to 
 
 ## Version Requirement
 
-`advisorModel` in settings.json requires **Claude Code v2.1.170+**. Check your version with `claude --version`. If below v2.1.170, update from inside a CC session:
+Opus 5 (Setup A's driver) requires **Claude Code v2.1.219+**. `advisorModel` in settings.json requires **v2.1.170+**. Check your version with `claude --version`. If below v2.1.219, update from inside a CC session:
 
 ```
 ! claude update
 ```
 
-The `!` prefix runs shell commands inside your CC session — no need to exit and re-enter. After updating, restart the session for the advisor to activate.
+The `!` prefix runs shell commands inside your CC session — no need to exit and re-enter. After updating, restart the session to pick up the new alias resolution. **Also check for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` env var** (e.g. in `~/.zshrc`) — if set to an older Opus version, it silently overrides `/model opus` picker choices and prevents Opus 5 from resolving even after updating.
 
-Fable 5 as advisor also requires Fable 5 access for your organization/plan. Fable's inclusion in subscriptions has run in separate windows rather than continuously — free through June 22, 2026, then a second window July 1-7, 2026 (up to 50% of weekly usage limits), then usage-credit metered. Check [anthropic.com/claude/fable](https://www.anthropic.com/claude/fable) for current status rather than assuming either window is still open.
+Fable 5 as advisor also requires Fable 5 access for your organization/plan.
 
 ## When the Advisor Is Unavailable
 
-If the advisor returns "Advisor unavailable," the server-side harness failed to initialize. No in-session action (`/model`, `/clear`) can recover it.
+**As of 2026-07-24, Fable-as-advisor is server-side disabled for everyone**, confirmed per `code.claude.com/docs/en/advisor`: "Claude Code doesn't offer Fable 5 as the advisor... A remotely configured rollout controls when Fable 5 returns as an advisor option." This is a deliberate Anthropic gate, not an incident — no session restart, `/clear`, or waiting fixes it. Periodically re-check the docs page for rollout status; don't assume this is permanent or assume it's still true indefinitely without re-checking.
 
-**Step 1 — restart the session.** Exit and run `claude` (not `--resume`). A fresh process re-initializes the server handshake. This resolves most advisor failures.
+**Step 1 — skip the restart, go straight to the fallback.** Unlike a transient API incident, no session restart, `/clear`, or wait fixes a rollout-gated block — spawn a Fable subagent as the fallback reviewer immediately, explicit `effort: "xhigh"` (per this repo's own `/sdlc` skill: "if down, spawn Fable subagent at `xhigh`"). Batch your plan or open questions into one subagent consult at each point where you'd have called `advisor()`. Runs interactively on your Max subscription like any other agent.
 
-**Step 2 — if the API incident persists, swap the transport, not the check:**
+**Step 2 — keep driving with your lane's model.** `/model opus` for Setup A, `/model sonnet` for Setup B. The subagent replaces the advisor's transport; the Codex xhigh PR gate remains the separate final backstop, not a substitute for the advisor check.
 
-- Spawn a Fable subagent as the fallback reviewer — the `/sdlc` skill's standing rule ("if down, spawn Fable subagent"). Batch your plan or open questions into one subagent consult at each point where you'd have called `advisor()`. Runs interactively on your Max subscription like any other agent.
-- Keep driving with your lane's model (`/model sonnet` for Setup A, `/model claude-opus-4-6` for Setup B). The subagent replaces the advisor's transport; the Codex xhigh PR gate remains the separate final backstop, not a substitute for the advisor check.
-
-**Last resort (scripted/CI only):**
+**Step 3 (last resort, scripted/CI only):**
 
 - `claude --model fable --effort high -p "$(cat <file>)"` — headless mode bills API credits, not your Max subscription.
-
-Check [status.claude.com](https://status.claude.com) if the advisor fails across multiple fresh sessions.
 
 Whichever path you use, the cross-model PR review gate still applies.
 
 ## Credit-Spend Warning
 
-**Setup B (Opus 4.6 max as both planner and driver) burns the 5-hour cap faster than Setup A** — Opus 4.6 max driving implementation is the expensive path; Sonnet 5 at `medium`/`high` generally uses less quota for comparable benchmark results (the advantage narrows at `xhigh` — more turns per task plus tokenizer overhead). If you're hitting the cap mid-session on Setup B:
+**Setup A (Opus 5 as driver) burns the 5-hour cap faster than Setup B** — Opus 5 driving implementation at `xhigh` is the more expensive path; Sonnet 5 at `medium`/`high` (Setup B) generally uses less quota for comparable-scope work (the advantage narrows at `xhigh` — more turns per task plus tokenizer overhead). If you're hitting the cap mid-session on Setup A:
 
-- Drop to Setup A (Sonnet 5) for the remainder of the day — same discipline, typically lower quota burn (widest advantage at `medium`)
+- Drop to Setup B (Sonnet 5) for the remainder of the day, or for the rest of a task that turns out simpler than expected
 - Or drop to Setup D for grunt work that doesn't need deep reasoning
 - Or use Sonnet directly for the final mechanical edits, then run the GPT-5.6 Sol reviewer over the whole diff at the end
 
-**Setup D uses Sonnet** — same model as Setup A's driver, Max-bundled. One less model to manage if you're already on Setup A.
+**Setup D uses Sonnet** — same model as Setup B's driver, Max-bundled. One less model to manage if you're already reaching for Setup B for lighter work.
 
 The reviewer (GPT-5.6 Sol xhigh) is billed against your OpenAI account, separately. Watch both bills.
 
 ## Autocompact Thresholds
 
-For recommended `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` values per context window and task shape, see [CLAUDE_CODE_SDLC_WIZARD.md → Autocompact Tuning](CLAUDE_CODE_SDLC_WIZARD.md#autocompact-tuning). Sonnet 5 (Setup A, D) has its own native ~967K-token proactive-compaction default at 1M context — don't carry over Opus-era 1M threshold guidance unexamined.
+For recommended `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` values per context window and task shape, see [CLAUDE_CODE_SDLC_WIZARD.md → Autocompact Tuning](CLAUDE_CODE_SDLC_WIZARD.md#autocompact-tuning). Sonnet 5 (Setup B, D) has its own native ~967K-token proactive-compaction default at 1M context — don't carry over Opus-era 1M threshold guidance unexamined.
 
 ## How Billing Works — 1M Context, Max Plan, and the June 15 Split
 
 A common question: **"does the `[1m]` model alias get billed differently? Does it pull from my Max plan or from API credits?"**
 
-The short answer: **Setup A (Sonnet 5, native 1M) and Setup C (opusplan, Opus plan-mode + Sonnet execute) are both fully Max-bundled in interactive sessions. Setup B (Opus 4.6 max) is also Max-bundled, including its 1M context.** Here's the detail.
+The short answer: **all four lanes are fully Max-bundled in interactive sessions** — Setup A (Opus 5), Setup B (Sonnet 5, native 1M), Setup C (opusplan, Opus plan-mode + Sonnet execute), and Setup D (Sonnet). Here's the detail.
 
 ### 1M context is free on Max — no API premium
 
@@ -207,10 +217,10 @@ Credit allocations: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. **No rollover.*
 
 ### What this means for the lanes
 
-- **Setup A — Sonnet 5 + Fable advisor:** Sonnet 5's native 1M context — interactive session, Max-bundled, no `[1m]` suffix needed. Fable 5 advisor via `advisorModel: "fable"` — also Max-bundled. GPT-5.6 Sol xhigh reviewer on ChatGPT subscription. Generally lower Max quota consumption than Setup B at the `medium` default (savings shrink at higher effort).
-- **Setup B — Opus 4.6 Stability:** Opus 4.6 max driver on Max, 1M context included at standard rates (see above). Fable 5 advisor, Max-bundled. GPT-5.6 Sol xhigh reviewer, separate.
-- **Setup C — OpusPlan Hybrid:** **fully Max-bundled.** `opusplan` uses Opus (plan mode) + Sonnet (execute mode), both at their native context windows — no credit drain.
-  - **⚠️ Avoid `sonnet[1m]` as a manual pin outside Setup A/C:** if your provider or gateway doesn't resolve Sonnet 5 to its native 1M automatically, forcing a `[1m]`-suffixed pin on an older Sonnet can draw from your usage credits pool ($3/$15 per Mtok) instead of your Max subscription. The `/model` picker shows this explicitly — watch for "Draws from usage credits."
+- **Setup A — Opus 5 + Fable advisor (fallback subagent):** Opus 5 driver on Max, 1M context included at standard rates (see above). Fable 5 advisor server-side disabled currently — Fable subagent fallback also Max-bundled. GPT-5.6 Sol xhigh reviewer, separate. Higher Max quota consumption than Setup B at the `xhigh` default.
+- **Setup B — Sonnet 5 Simple/One-Off:** Sonnet 5's native 1M context — interactive session, Max-bundled, no `[1m]` suffix needed. Fable 5 advisor (fallback subagent) — also Max-bundled. GPT-5.6 Sol xhigh reviewer on ChatGPT subscription. Generally lower Max quota consumption than Setup A at the `medium` default (savings shrink at higher effort).
+- **Setup C — OpusPlan Hybrid:** **fully Max-bundled.** `opusplan` uses Opus (plan mode, now Opus 5) + Sonnet (execute mode), both at their native context windows — no credit drain.
+  - **⚠️ Avoid `sonnet[1m]` as a manual pin outside Setup B/C:** if your provider or gateway doesn't resolve Sonnet 5 to its native 1M automatically, forcing a `[1m]`-suffixed pin on an older Sonnet can draw from your usage credits pool ($3/$15 per Mtok) instead of your Max subscription. The `/model` picker shows this explicitly — watch for "Draws from usage credits."
 - **Reviewer (GPT-5.6 Sol xhigh) in all three triads:** billed against your OpenAI account, completely separate from Anthropic.
 - **CI loops that use `claude -p` post-June-15:** these now bill against the separate Anthropic credit pool, not your Max subscription. The wizard's CI shepherd loops (E2E scoring, weekly-update jobs) are local-only on the maintainer's machine and stay on Max; consumer-repo CI integrations may need to budget the new credit pool.
 

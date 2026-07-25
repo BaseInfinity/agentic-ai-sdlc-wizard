@@ -160,11 +160,14 @@ test_advisor_fallback_exists() {
 }
 
 test_advisor_fallback_escalation_ladder() {
-    # Must have restart as step 1, not a flat menu
+    # Must be a numbered step sequence, not a flat menu. As of the
+    # 2026-07-24 correction (Fable-as-advisor is server-side rollout-gated,
+    # not a transient incident), Step 1 is the immediate subagent fallback,
+    # NOT a session restart — restarting doesn't fix a rollout gate.
     local fallback_section
     fallback_section=$(sed -n '/## When the Advisor Is Unavailable/,/^## /p' "$LANES")
-    if echo "$fallback_section" | grep -q "Step 1"; then
-        pass "Advisor fallback uses escalation ladder (Step 1)"
+    if echo "$fallback_section" | grep -q "Step 1" && echo "$fallback_section" | grep -q "Step 2"; then
+        pass "Advisor fallback uses escalation ladder (Step 1, Step 2)"
     else
         fail "Advisor fallback missing escalation ladder structure"
     fi
