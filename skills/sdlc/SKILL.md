@@ -192,7 +192,7 @@ Mandatory steps:
 
 ## Debugging Workflow (Systematic)
 
-Reproduce → Isolate → Root Cause → Fix → Regression Test. Do not skip steps. `git bisect` for regressions. 2 failed attempts → STOP and ASK USER.
+Reproduce → Isolate → Root Cause → Fix → Regression Test. Do not skip steps. `git bisect` for regressions. 2 failed attempts → escalate (see Confidence Check), not straight to the user.
 
 ## Release Planning (Task Ships a Release)
 
