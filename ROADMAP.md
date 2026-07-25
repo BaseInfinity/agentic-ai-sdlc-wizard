@@ -1,5 +1,14 @@
 # Roadmap
 
+## Currently In Flight (update this section as items move — don't let it go stale)
+
+Cold-open pointer: if you're picking this repo back up and don't know where to look, start here before scrolling the tables below.
+
+- **PR #468** (`docs/opus5-ab-lane-restructure`) — Opus 5 becomes Setup A default driver, Sonnet 5 moves to Setup B. Codex-certified (5 rounds). Awaiting merge.
+- **PR #469** (`docs/roadmap-469-470-followups`) — adds rows #468, #469, #470 below (Unprioritized section). Awaiting merge.
+- **Row #469** (below) — once PR #468 merges, write the "Fable Pre-Review (Situational)" subsection into `AI_SETUP_LANES.md`. Not started; intentionally deferred until after #468 merges.
+- **Row #470** (below) — runtime-verify Setup A (Opus 5) and Setup B (Sonnet 5) actually behave as documented, not just doc-consistency-tested. Not started.
+
 ## Entry gate (Demand-Signal-First, added 2026-05-24)
 
 New ROADMAP entries are required to declare ONE of these on entry:
