@@ -1027,11 +1027,64 @@ test_wizard_doc_autocompact_sonnet5_scoped_not_opus5() {
     #     vacuousness this rewrite exists to eliminate.
     echo "$section" | grep -qE '^\*\*Opus 5 specifics' || ok=false
 
-    # (c) THE REGRESSION GUARD: no line may bind a percentage recommendation
-    #     to Opus 5. Catches "Opus 5 ... 30%", "**30%**" in an Opus 5 table
-    #     row, and "so the 30% override applies" — the three shapes the
-    #     restructure actually produced.
-    if echo "$section" | grep -nE 'Opus 5' | grep -qE '[0-9]+%'; then
+    # (c) THE REGRESSION GUARD — bind the actual Setup A TABLE ROW to "none".
+    #
+    #     Codex xhigh defeated the previous version of this check
+    #     (2026-07-24) with a one-line mutation:
+    #       | **Setup A default driver (...)** | **30%** | Fires around 300K ... |
+    #     The old check grepped for lines containing the literal string
+    #     "Opus 5" and a percentage. The mutation says "Setup A" instead,
+    #     so it sailed through — the test never associated Setup A WITH
+    #     Opus 5. Second vacuousness in the same assertion in one session;
+    #     self-chosen mutations all happened to use the literal "Opus 5".
+    #
+    #     Round-2 recheck found a THIRD hole (2026-07-24): checking only the
+    #     threshold cell (field 3) let the recommendation move to the "Why"
+    #     cell — `| **Setup A ...** | **none** | ...but set
+    #     `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` for long work. |` passed 77/77
+    #     while restoring the defect. A second bypass: add a SECOND Setup A
+    #     row, since grep|awk|grep accepted the valid `none` from either match.
+    #
+    #     Now: require EXACTLY ONE Setup A row, its threshold cell to be
+    #     `none`, and NO percentage or PCT key anywhere in the whole row.
+    local setup_a_rows setup_a_count setup_a_row
+    setup_a_rows=$(echo "$section" | grep -E '^\|[^|]*Setup A[^|]*\|')
+    setup_a_count=$(printf '%s\n' "$setup_a_rows" | grep -c . || true)
+    if [ "$setup_a_count" != "1" ]; then
+        ok=false
+    else
+        setup_a_row="$setup_a_rows"
+        # threshold cell must be exactly "none"
+        echo "$setup_a_row" | awk -F'|' '{print $3}' \
+            | grep -qiE '^[[:space:]]*\*{0,2}none\*{0,2}[[:space:]]*$' || ok=false
+        # ...and no percentage or PCT key ANYWHERE in the row, including the
+        # "Why" cell. This is the check the round-2 mutation defeated.
+        if echo "$setup_a_row" | grep -qE '[0-9]+%|CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'; then
+            ok=false
+        fi
+    fi
+
+    # (c2) Belt-and-braces: still reject a percentage bound to a line that
+    #      does name Opus 5 (the original shape), so both spellings fail.
+    if echo "$section" | grep -E 'Opus 5' | grep -qE '[0-9]+%'; then
+        ok=false
+    fi
+
+    # (c3) Round-3 recheck found a FOURTH bypass: a prose recommendation
+    #      with the number spelled out — "set the autocompact threshold to
+    #      thirty percent for long-running work" — evading `[0-9]+%`, the
+    #      PCT key name, and the strings "Setup A"/"Opus 5" at once.
+    #      This check catches spelled-out numerals near threshold language.
+    #
+    #      LIMITS — stated deliberately, not an oversight. A regex cannot be
+    #      semantically complete against natural language: "roughly a third",
+    #      "0.3 of the window", or "300K of 1M" would still pass. This guard
+    #      covers the shapes the real regression took (table cell, adjacent
+    #      cell, duplicate row, literal-string evasion) plus the cheapest
+    #      prose evasion. Beyond that the control is cross-model review, not
+    #      this test. Do not read a green result as proof no recommendation
+    #      exists — read it as proof the known shapes are absent.
+    if echo "$section" | grep -qiE '(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety) percent'; then
         ok=false
     fi
 
@@ -1041,12 +1094,55 @@ test_wizard_doc_autocompact_sonnet5_scoped_not_opus5() {
         ok=false
     fi
 
+    # (e) No runtime assertion about what a local Opus session DOES.
+    #     Codex set the leash: ~96% confidence on the documentation policy,
+    #     only ~65% on the runtime behavior, because the official text scopes
+    #     its example to "a local session on Opus 4.8" specifically. Prose
+    #     that generalizes it to "a local Opus session" overclaims.
+    if echo "$section" | grep -qiE 'a local Opus session (is|triggers|compacts|fires)'; then
+        ok=false
+    fi
+
     if $ok; then
-        pass "Autocompact Tuning scopes 75% to Sonnet 5 and binds no percentage to Opus 5"
+        pass "Autocompact Tuning: Setup A row is 'none', 75% stays scoped to Sonnet 5, no runtime overclaim"
     else
-        fail "Autocompact Tuning must keep Sonnet 5's scoped guidance, address Opus 5 explicitly, and bind NO percentage (and no 1M-implies-30% inference) to Opus 5"
+        fail "Autocompact Tuning must set Setup A's threshold cell to 'none', keep Sonnet 5's scoped guidance and Opus 5 specifics headings, bind NO percentage to Setup A/Opus 5, and make no runtime claim about a local Opus session"
     fi
 }
+
+# The EMITTED consumer-settings contract, separate from prose: Step 9.5's
+# [o] handler must write no autocompact key at all, and [s] must keep its
+# scoped 75. Codex's review found the prose test alone couldn't catch a
+# regression in the handler that physically writes consumer settings.
+test_setup_skill_handlers_autocompact_shape() {
+    local F="$REPO_ROOT/skills/setup/SKILL.md"
+    if [ ! -f "$F" ]; then fail "skills/setup/SKILL.md not found"; return; fi
+    local ok=true
+
+    # [o] handler: the json block containing "model": "opus" must have no PCT key.
+    local o_block
+    o_block=$(awk '/"model": "opus"/{f=1} f{print} f&&/^\}/{exit}' "$F")
+    if [ -z "$o_block" ]; then
+        ok=false
+    elif echo "$o_block" | grep -q 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'; then
+        ok=false
+    fi
+
+    # [s] handler: the json block containing "model": "sonnet" must keep 75.
+    local s_block
+    s_block=$(awk '/"model": "sonnet"/{f=1} f{print} f&&/^\}/{exit}' "$F")
+    if ! echo "$s_block" | grep -q '"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"'; then
+        ok=false
+    fi
+
+    if $ok; then
+        pass "setup SKILL.md: [o] writes no autocompact key, [s] keeps its scoped 75"
+    else
+        fail "setup SKILL.md: Setup A's [o] handler must emit NO CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, and Setup B's [s] handler must keep \"75\""
+    fi
+}
+
+test_setup_skill_handlers_autocompact_shape
 
 test_wizard_doc_autocompact_sonnet5_scoped_not_opus5
 
