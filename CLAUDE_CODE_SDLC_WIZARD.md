@@ -253,10 +253,11 @@ Claude Code's **effort level** controls how much thinking the model does before 
 
 | Model | Recommended Effort | Why |
 |-------|--------------------|-----|
-| Sonnet 5 (recommended default) | `medium`, escalate to `high`/`xhigh` for hard tasks | CodeRabbit testing: `medium` captures most of the upside at the lowest cost; blanket `xhigh`/`max` defaults add cost for marginal gains |
-| Opus 4.8 (escalation only) | `xhigh` | `max` triggers excessive reasoning on 4.7/4.8 — documented 40-60x cache-token jump vs `high` (see "Opus 4.6 Stability" tier below) |
-| Fable 5 (advisor) | `high` (its own designed default) | Adaptive thinking always on; `xhigh`/`max` mainly move the thinking-token budget with small marginal gain for review work |
-| Opus 4.6 (Stability lane) | `max` | The one model where `max` doesn't overthink — no `xhigh` support at all (only low/medium/high/max) |
+| Opus 5 (recommended default, trial) | `xhigh` | Anthropic's own recommendation for "difficult tasks and long-running asynchronous workflows" — Setup A's target use case, not `high`'s routine-work default. Effort tier is static per session, but adaptive reasoning modulates depth within it. Trial-flagged as of 2026-07-24 — see `AI_SETUP_LANES.md` |
+| Sonnet 5 (Simple/One-Off lane) | `medium`, escalate to `high`/`xhigh` for hard tasks | CodeRabbit testing: `medium` captures most of the upside at the lowest cost; blanket `xhigh`/`max` defaults add cost for marginal gains |
+| Opus 4.8 (escalation, pinned) | `xhigh` | `max` triggers excessive reasoning on 4.7/4.8 — documented 40-60x cache-token jump vs `high` (see "Opus 4.6" row below) |
+| Fable 5 (advisor / subagent fallback) | `high` (driver), `xhigh` (subagent fallback) | Adaptive thinking always on; server-side disabled as advisor currently — see "Advisor Model" below |
+| Opus 4.6 (pinned, stability profile) | `max` | The one model where `max` doesn't overthink — no `xhigh` support at all (only low/medium/high/max) |
 | OpenAI/Codex (cross-model reviewer) | `xhigh` default, escalate to `max`/Pro for unusually risky PRs | Lower reasoning misses subtle bugs the reviewer exists to catch; see `AI_SETUP_LANES.md`'s Final Review Policy for when to escalate |
 
 **Strict effort behavior (Opus 4.7+, carried forward in 4.8):**
@@ -409,14 +410,14 @@ New built-in commands available to use alongside the wizard:
 
 | Driver | Advisor | Lane |
 |--------|---------|------|
-| Sonnet 5 (`sonnet`) | Fable (`"fable"`) | Setup A — default |
-| Opus 4.6 (`claude-opus-4-6`) | Fable (`"fable"`) | Setup B — Stability |
-| Sonnet via opusplan | Opus 4.8 (`"claude-opus-4-8"`) | Setup C — OpusPlan Hybrid |
-| Opus 4.8 (`claude-opus-4-8`) | Fable (`"fable"`) | Escalation tier |
+| Opus 5 (`opus`) | Fable (`"fable"`) | Setup A — default (trial) |
+| Sonnet 5 (`sonnet`) | Fable (`"fable"`) | Setup B — Simple/One-Off |
+| Sonnet via opusplan | Opus 5 (`"claude-opus-5"`) | Setup C — OpusPlan Hybrid |
+| Opus 4.8 (`claude-opus-4-8`, pinned) | Fable (`"fable"`) | Escalation tier |
 
 **Settings precedence:** Managed > CLI flags > Local (`.claude/settings.local.json`) > Project (`.claude/settings.json`) > User (`~/.claude/settings.json`). The wizard writes project-level by default — never nukes global settings. Setup skill Step 9.5 asks if you also want global.
 
-**Important:** Fable does NOT appear in the `/advisor` interactive picker. Set it via `/advisor fable`, `--advisor fable`, or `advisorModel: "fable"` in settings.json.
+**Important:** Fable does NOT appear in the `/advisor` interactive picker, and as of 2026-07-24 is **server-side disabled as an advisor entirely** — "Claude Code doesn't offer Fable 5 as the advisor," per `code.claude.com/docs/en/advisor`, pending an Anthropic-controlled rollout. This is not a transient incident; restarting the session doesn't fix it. Set `advisorModel: "fable"` anyway (it activates automatically once the rollout returns), and in the meantime fall back to a Fable subagent (`Agent({model: "fable", effort: "xhigh"})`) at every point you'd have called `advisor()`.
 
 **Billing:** Advisor queries in interactive sessions are Max-bundled (same pool as the driver). The advisor does not trigger headless/credit-pool billing.
 
@@ -510,7 +511,7 @@ When a cached prompt prefix is re-served after idle pruning, downstream thinking
 
 **Workaround**: if you hit suspicious shallow reasoning mid-session — especially after a long idle gap — start a fresh session with `claude --continue` to reset cache state. The wizard's PreCompact hook gates manual `/compact` precisely because compacting at bad seams can also pull thinking blocks out of context.
 
-**Detection signal**: the wizard's `model-effort-check.sh` loud-warns below `high` (the model-aware floor — see "Recommended Effort Level" above). Combine with token-spike anomaly detection (ROADMAP #220) once shipped.
+**Detection signal**: the wizard's `model-effort-check.sh` loud-warns below `medium` — the hook's real cross-model floor, since it can't tell which model is active and `medium` is a valid, intended default for Setup B's Sonnet 5. Above that floor, match effort to your actual lane: Opus 5 (Setup A) starts at `xhigh`, Sonnet 5 (Setup B) starts at `medium` and escalates only when a task proves harder (see "Recommended Effort Level" above). Combine with token-spike anomaly detection (ROADMAP #220) once shipped.
 
 ### Prompt brevity caps can compound across turns (post-mortem 2026-04-23)
 
@@ -998,22 +999,25 @@ Override the default auto-compact threshold with environment variables. Per offi
 
 **Sonnet 5 specifics:** Sonnet 5 always runs at 1M context (no 200K variant, no `[1m]` suffix needed) and proactively compacts at its own tuned default of **~967K tokens (96.7%)** — not the generic 1M ceiling. `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` on Sonnet 5 fires at ~75% *of that 967K*, i.e. ~725K tokens — earlier and safer than the native default, not later. **Do not carry over an `opus[1m]`-era `30%` setting to Sonnet 5** — that figure was derived for `opus[1m]`'s older extended-context opt-in, never re-derived for Sonnet 5's smarter native default, and is needlessly conservative here (verified 2026-07-05).
 
-**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model`, `advisorModel`, or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 offers four choices: no pin (default, auto-mode), Sonnet 5 + Fable advisor (recommended if pinning at all, Setup A), OpusPlan Hybrid with an Opus 4.8 advisor (Setup C), and Opus 4.6 Stability + Fable advisor (legacy flagship, Setup B). Opus 4.8 itself is an escalation model, not a persistent Step 9.5 pin — reach for it per-session via `/model claude-opus-4-8` when Sonnet 5 gets stuck (see "Latest tier" below). Default is **No pin**. Pinning the model turns off per-turn auto-selection — a real tradeoff, so we ask.
+**Opus 5 specifics (Setup A):** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` only causes *earlier* compaction where Claude Code compacts **proactively** — per [env-vars](https://code.claude.com/docs/en/env-vars): when `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is set, in cloud sessions, on Sonnet 4.6/Opus 4.6 without extended context, and on Sonnet 5 at its own default threshold. The docs' example of the non-proactive bucket is a local session on **Opus 4.8** ("auto-compaction triggers when the conversation reaches the model's context limit"); they give no Opus-5-specific threshold or behavior either way. **Claude Code documents no Opus-5-specific proactive threshold or percentage — so Setup A sets no `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` at all.** On Max, bare `opus` auto-upgrades to 1M ([model-config](https://code.claude.com/docs/en/model-config)); that establishes *capacity*, not proactive mode, and does not license a percentage. If you want a deliberately earlier boundary on 1M Opus, `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (e.g. `500000`) is the documented knob — but setting it *makes* compaction proactive, at which point a PCT override compounds with it (#207). Pick one, never both. `/compact` at a phase boundary works regardless of model.
 
-To opt in by hand, edit `.claude/settings.json` (Sonnet 5 example — the recommended default):
+> **`env` is global, not per-model.** `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in `.claude/settings.json` applies to whichever model runs under that file — and, per the same doc row, "to both main conversations and subagents". Switching drivers does **not** switch its value: a file carrying Setup B's `75` keeps supplying `75` after you switch to Opus. No static `env` object can express "75 for Sonnet, none for Opus" — if you want per-model tuning, edit the key when you change persistent pins, or keep separate settings profiles.
+
+**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model`, `advisorModel`, or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 offers four choices: no pin (default, auto-mode), Opus 5 + Fable advisor (recommended if pinning at all, Setup A, trial as of 2026-07-24), OpusPlan Hybrid with a Fable advisor (Setup C), and Sonnet 5 Simple/One-Off + Fable advisor (Setup B). Opus 4.8 itself is a pinned escalation model, not a persistent Step 9.5 pin — reach for it per-session via `/model claude-opus-4-8` when the driver gets stuck (see "Latest tier" below). Default is **No pin**. Pinning the model turns off per-turn auto-selection — a real tradeoff, so we ask.
+
+To opt in by hand, edit `.claude/settings.json` (Opus 5 example — the recommended default, trial as of 2026-07-24):
 
 ```json
 {
-  "model": "sonnet",
+  "model": "opus",
   "advisorModel": "fable",
-  "effortLevel": "xhigh",
-  "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"
-  }
+  "effortLevel": "xhigh"
 }
 ```
 
-For `opus[1m]` instead (older pin, still valid for proven stability), pair with a lower override since it lacks Sonnet 5's smarter native default:
+No `env` block: Claude Code documents no Opus-5 proactive threshold, so there is no supported percentage to set (see "Opus 5 specifics" above).
+
+For the older `claude-opus-4-6` pin instead (still valid for proven stability), a lower override *is* supported — Opus 4.6 without extended context is one of the documented proactive-compaction cases:
 
 ```json
 {
@@ -1026,14 +1030,14 @@ For `opus[1m]` instead (older pin, still valid for proven stability), pair with 
 }
 ```
 
-If you switch back to the 200K model (`opus`, no `[1m]`), raise the override to `75` — otherwise 30% of 200K = 60K compacts too early.
+That block is the **legacy Opus 4.6 pin**, not Setup A. Setup A pins bare `opus` and sets no override — see "Opus 5 specifics" above for why a 1M window alone doesn't justify a percentage.
 
 **Recommended thresholds by use case:**
 
 | Use Case | AUTOCOMPACT % | Why |
 |----------|--------------|-----|
-| **Sonnet 5 (default driver)** | **75%** | Fires at ~75% of its native ~967K threshold (~725K tokens) — safe margin without being overly conservative. Verified against official docs 2026-07-05. |
-| `opus[1m]` (opt-in extended context) | 30% | Fires at ~300K on 1M — right balance for plan + TDD + review sessions. Paired with the opt-in `opus[1m]` pin (see issue #198) |
+| **Setup A default driver (trial as of 2026-07-24)** | **none** | No proactive-compaction threshold is documented for it, so no percentage is supported — see "Opus 5 specifics". Use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` if you want an earlier boundary. |
+| Sonnet 5 (Simple/One-Off driver) | **75%** | Fires at ~75% of its native ~967K threshold (~725K tokens) — safe margin without being overly conservative. Verified against official docs 2026-07-05. |
 | General development (200K `opus`) | 75% | Leaves room for implementation after planning |
 | Complex refactors (200K `opus`) | 80% | Slightly more context before compaction |
 | CI pipelines | 60% | Short tasks, compact early to stay fast |
@@ -1057,55 +1061,52 @@ Claude Code supports both 200K and 1M context windows. **This section is about O
 | **Typical usage** | 50-80K tokens per task | 50-80K typical, up to 200K+ for complex workflows |
 | **Cost** | Standard pricing | Anthropic currently lists the 1M window at standard pricing across the full context for supported Opus/Sonnet models — **verify current rates at [docs.anthropic.com/pricing](https://docs.anthropic.com/)** before assuming no premium |
 | **Auto-mode** | **Enabled** — Claude Code chooses model per turn | **Disabled** — top-level `model` tells CC you've chosen explicitly |
-| **Auto-compact** | Default ~95% works well | Fires at ~76K by default ([issue #34332](https://github.com/anthropics/claude-code/issues/34332)) — pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` |
-| **Suggested override (if you pin)** | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` **OR** `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000` (pick one) |
+| **Auto-compact** | Default ~95% works well | `opus[1m]` resolves to whichever Opus is current, so no fixed threshold is documented for it. The ~76K figure in [issue #34332](https://github.com/anthropics/claude-code/issues/34332) was observed on the older extended-context opt-in and has not been re-derived since — don't treat it as current behavior. See "Opus 5 specifics" above. |
+| **Suggested override (if you pin)** | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` | None by default — no proactive threshold is documented for a current-Opus local session. If you want an earlier boundary, use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (e.g. `400000`), which does make compaction proactive. Never set both (see below). |
 
-> **⚠ Do NOT set both.** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` are alternatives, not complementary. Setting both compounds: `30% × 400000 = 120000` tokens, which is ~12% of a 1M window — autocompact fires almost immediately, destroying the headroom you opted in for. Pick one knob: either lower the trigger percentage (`PCT_OVERRIDE=30`) on the model's default 1M window, OR cap the working window (`AUTO_COMPACT_WINDOW=400000`) at the model's default 95% trigger. The `instructions-loaded-check.sh` `InstructionsLoaded` hook (fires on session start/resume) detects this misconfig and prints the effective trigger so you can debug from the warning alone (#207).
+> **⚠ Do NOT set both.** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` are alternatives, not complementary. Setting both compounds: `30% × 400000 = 120000` tokens, which is ~12% of a 1M window — autocompact fires almost immediately, destroying the headroom you opted in for. Pick one knob: either lower the trigger percentage (`PCT_OVERRIDE`) **on a model that compacts proactively** — Sonnet 5, or Sonnet 4.6/Opus 4.6 without extended context — OR cap the working window (`AUTO_COMPACT_WINDOW=400000`), which is the option that applies when no proactive threshold is documented for your model. The `instructions-loaded-check.sh` `InstructionsLoaded` hook (fires on session start/resume) detects this misconfig and prints the effective trigger so you can debug from the warning alone (#207).
 
 **Why `opus[1m]` is opt-in (issue #198):**
 - **Pinning disables auto-mode.** Max-plan users pay for Claude Code's per-turn model selection (Sonnet for cheap tasks, Opus for hard ones, plus weekly-limit smoothing). A top-level `model` gives that up.
 - **The 1M headroom has to earn it.** If your typical session stays under 150K, you're giving up auto-mode for headroom you're not using.
-- **⚠️ `opus[1m]` is NOT guaranteed to mean Opus 4.6.** The alias auto-resolves to whichever Opus model Claude Code currently considers "latest" — that was Opus 4.6 when this alias was introduced, but it now means **Opus 4.8**. If you specifically want Opus 4.6 (Setup B — Stability, proven consistency), pin the explicit model string `claude-opus-4-6`, not the `opus[1m]` alias.
+- **⚠️ `opus[1m]` is NOT guaranteed to mean any specific version.** The alias auto-resolves to whichever Opus model Claude Code currently considers "latest" — that was Opus 4.6, then 4.8, and as of 2026-07-24 means **Opus 5**. If you specifically want Opus 4.6 (proven `max`-effort consistency) or Opus 4.8 (field-proven, pre-Opus-5), pin the explicit model string (`claude-opus-4-6` or `claude-opus-4-8`), not the `opus[1m]` alias.
 
 **Opt in when:** you routinely cross 100K tokens in a single session (plan → TDD → review → CI shepherd on one feature), you want guaranteed 1M context on whichever Opus is current (or `claude-opus-4-6` explicitly if you want Opus 4.6 specifically), and you're OK losing auto-mode.
 
 **Stay on auto-mode (default) when:** you're unsure, your work is mixed short/long, or you want Claude Code to do the model math for you.
 
-**How to opt in:** run `/model opus[1m]` in your session (transient) for whichever Opus is current, or `/model claude-opus-4-6` if you specifically want Opus 4.6; set `"model"` to either value in `.claude/settings.json` for a persistent pin. Requires Claude Code v2.1.154+ for the `opus[1m]` alias. The setup wizard's Step 9.5 also asks once, with default No.
+**How to opt in:** run `/model opus` in your session (transient) for the current default (Opus 5 on Max, auto-upgraded to 1M), `/model opus[1m]` to force 1M explicitly on other plans, or `/model claude-opus-4-6` if you specifically want Opus 4.6; set `"model"` to any of these values in `.claude/settings.json` for a persistent pin. Requires Claude Code v2.1.219+ for `opus` to resolve to Opus 5 (v2.1.154+ for the older `opus[1m]` alias, which still resolves to whichever Opus is current). The setup wizard's Step 9.5 also asks once, with default No.
 
 **How to opt out:** remove the `model` line from `.claude/settings.json`, or run `/model` and pick "Default (recommended)".
 
 **Cost awareness:** Larger windows let you consume more tokens in one session, and total cost always scales with tokens consumed regardless of tier. Use `/usage` to monitor (aliases: `/cost`, `/stats`) — a 900K-token session is meaningfully more expensive than an 80K one even at standard rates.
 
-**Autocompact pairing (important):** If you opt into `opus[1m]`, also set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` — otherwise CC's default autocompact fires at ~76K and destroys the headroom you're paying for. Step 9.5 writes both together when you opt in.
+**Autocompact pairing — no longer recommended for `opus[1m]`:** older versions of this doc told you to pair the `opus[1m]` pin with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. That pairing was derived for the original extended-context opt-in and has never been re-derived; since `opus[1m]` now resolves to the current Opus, the docs give no proactive threshold that the percentage would act on. **Set no override** unless you also set `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (which does make compaction proactive — and then the two compound, #207). Setup A pins bare `opus` and Step 9.5 writes no override at all. See "Opus 5 specifics" above.
 
 ### OpusPlan Tier (Opus planner + Sonnet driver, #395) — Setup C
 
-This is **Setup C (OpusPlan Hybrid/Saver)** in `AI_SETUP_LANES.md`. CC's native `opusplan` alias gives you Opus reasoning during Plan Mode (Shift+Tab) and Sonnet execution — both Max-bundled, no API credit drain.
+This is **Setup C (OpusPlan Hybrid/Saver)** in `AI_SETUP_LANES.md`. CC's native `opusplan` alias gives you Opus reasoning during Plan Mode (Shift+Tab) and Sonnet execution — both Max-bundled, no API credit drain. `opusplan` follows the `opus` alias, currently Opus 5.
 
-| Layer | Setup C (OpusPlan) | Setup A (default) | Setup B (Stability) |
-|-------|--------------------|--------------------|----------------------|
-| Planner | Opus 4.8 `xhigh` (Plan Mode) | Sonnet 5 `medium`→`high`→`xhigh` | Opus 4.6 `max` |
-| Driver | Sonnet 5 `medium` (execute mode) | Sonnet 5 `medium`→`high`→`xhigh` | Opus 4.6 `max` |
+| Layer | Setup C (OpusPlan) | Setup A (default, trial) | Setup B (Simple/One-Off) |
+|-------|--------------------|---------------------------|----------------------------|
+| Planner | Opus 5 `xhigh` (Plan Mode) | Opus 5 `xhigh` | Sonnet 5 `medium`→`high`→`xhigh` |
+| Driver | Sonnet 5 `medium` (execute mode) | Opus 5 `xhigh` | Sonnet 5 `medium`→`high`→`xhigh` |
 | Reviewer | GPT-5.6 Sol xhigh | GPT-5.6 Sol xhigh | GPT-5.6 Sol xhigh |
 
 **How to opt in:**
 ```json
 {
-  "model": "opusplan",
-  "env": {
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8"
-  }
+  "model": "opusplan"
 }
 ```
 
-Set effort per-session with `/effort` (planner `xhigh`, driver `high`) rather than a shell-rc env var — see "Recommended Effort Level" above for why.
+Set effort per-session with `/effort` (planner `xhigh`, driver `medium`, escalate `high`→`xhigh` only if the execution phase proves harder than expected) rather than a shell-rc env var — see "Recommended Effort Level" above for why. Pin `ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8"` explicitly if you want Opus 4.8's field-proven planning behavior instead of Opus 5's.
 
 **⚠️ Avoid `sonnet[1m]`** — Sonnet with 1M context draws from usage credits ($3/$15 per Mtok), not your Max subscription (#390). Plain `sonnet` (200K) or `opusplan` stays on Max.
 
-**When to use OpusPlan (Setup C):** routine SDLC work, simple repos, cost-conscious sessions where you still want an Opus plan-mode pass. Press Shift+Tab before architecture/blast-radius decisions to get Opus reasoning. For most day-to-day work, Setup A (Sonnet 5 + Fable) is the simpler default — see "Choosing Your Model" in [README.md](../README.md).
+**When to use OpusPlan (Setup C):** routine SDLC work, simple repos, cost-conscious sessions where you still want an Opus plan-mode pass. Press Shift+Tab before architecture/blast-radius decisions to get Opus reasoning. For most day-to-day work, Setup B (Sonnet 5 + Fable) is the simpler, lower-cost option — see "Choosing Your Model" in [README.md](../README.md).
 
-**When to stay on Setup B (Stability):** stakes-flagged repos, architecture work, security review, long shepherd sessions where you want proven Opus 4.6 consistency end-to-end rather than a split planner/driver.
+**When to reach for Setup A (default, Opus 5):** genuine autonomous/agentic work on complex repos, architecture decisions, ambiguous debugging — Opus 5's extra capability at higher quota cost, not a split planner/driver.
 
 **Prove-It Gate (#233 acceptance criterion):** mixed-mode ships only if pair-tested on 3+ simple repos shows Sonnet-coder + Opus-reviewer produces ≥ same SDLC scores as full-Opus baseline. The first version of the heuristic ships v1.38.0; pair-test results land in CHANGELOG before recommending mixed-mode as the default for any tier.
 
@@ -1113,12 +1114,12 @@ Set effort per-session with `/effort` (planner `xhigh`, driver `high`) rather th
 - The Sonnet driver will drop some fine-grained self-review moves compared to an Opus-coder run — it's fast, less deliberate. The Opus planner and GPT-5.6 Sol reviewer catch them, but expect more "fix in round 2" cycles.
 - Mixed-mode disables auto-mode (same as any pinned model). The pin is per-session — to switch back, remove the `model` line.
 
-### Latest tier — Opus 4.8 (escalation model, #395)
+### Latest tier — Opus 4.8 (pinned escalation model, #395)
 
-The wizard's default is **Sonnet 5** (Setup A — see "Choosing Your Model" in [README.md](../README.md) for the full evidence). **Opus 4.8** is the escalation model: reach for it when Sonnet 5 stalls on architecture, a stuck bug, or anything needing deeper reasoning — not as a daily driver. It ships SWE-Bench Pro / Terminal-Bench 2.1 gains, dynamic-workflows, and parallel-subagent-swarm features 4.6 doesn't have.
+The wizard's default is **Opus 5** (Setup A, trial as of 2026-07-24 — see "Choosing Your Model" in [README.md](../README.md) for the full evidence, including the accepted-risk framing). **Opus 4.8**, pinned explicitly (`claude-opus-4-8`), is the same-family-check escalation model: reach for it when the default driver stalls on architecture, a stuck bug, or anything needing a genuinely independent second pass — not as a daily driver. It ships SWE-Bench Pro / Terminal-Bench 2.1 gains, dynamic-workflows, and parallel-subagent-swarm features 4.6 doesn't have.
 
 **When Opus 4.8 is the right call:**
-- Sonnet 5 is stuck (2+ failed attempts) and you want a fresh, deeper-reasoning pass
+- The driver is stuck (2+ failed attempts) and you want a fresh, deeper-reasoning pass
 - You use dynamic workflows / parallel subagent swarms — introduced in 4.8, not available in 4.6
 - You want Anthropic's newest benchmark wins (SWE-Bench Pro 69.2% vs 4.7's 64.3%, Terminal-Bench 2.1 74.6% vs 4.7's 66.1%) for a specific hard task
 - You haven't hit 4.7/4.8 token burn / false-green / dropped-constraint regressions in your own work
@@ -1142,7 +1143,7 @@ On Max plans, Opus auto-upgrades to 1M context. No `[1m]` suffix needed.
 
 **Effort tuning for 4.8:** `xhigh` (see the per-model effort table in "Recommended Effort Level" above — Opus 4.8 is escalation-only, so it doesn't get its own `max` tier the way Opus 4.6 does).
 
-**Escape hatch:** remove the `model` line (or run `/model sonnet`) to return to Sonnet 5, the wizard's recommended default.
+**Escape hatch:** remove the `model` line (or run `/model opus`) to return to Opus 5, the wizard's recommended default.
 
 ### Community Feature-Discovery Scanner (roadmap #207)
 
@@ -2385,7 +2386,7 @@ Before presenting approach, STATE your confidence:
 | FAILED 2x | Something's wrong | Run the **Escalation Ladder** below | **Escalate effort now** — you're burning cycles at lower effort |
 | CONFUSED | Can't diagnose why something is failing | Run the **Escalation Ladder** below | **Escalate effort now** — stop spinning |
 
-"Model default" and "escalate" are model-aware, not a blanket `max` — see "Recommended Effort Level" above for the per-model table (Sonnet 5: `medium`→`high`→`xhigh`; Opus 4.8: `xhigh`; Opus 4.6: `max`; Fable: `high`).
+"Model default" and "escalate" are model-aware, not a blanket `max` — see "Recommended Effort Level" above for the per-model table (Opus 5: `xhigh`; Sonnet 5: `medium`→`high`→`xhigh`; Opus 4.8: `xhigh`; Opus 4.6: `max`; Fable: `high`).
 
 **Dynamic bumping is NOT optional.** "Consider higher effort" is the same as "ignore this" in practice. If your confidence drops or tests fail twice, bump effort BEFORE the next attempt — spinning at low effort is an SDLC failure mode.
 
@@ -3773,8 +3774,8 @@ These signals are community-observed behavior on paid plans (Max/Team) — not i
 
 | Signal | What It Means | SDLC Action |
 |--------|---------------|-------------|
-| **Subagent-heavy** | Each subagent runs its own context. The advisor is a separate server-side consultation (full transcript forwarded, different token profile). Explore agents, full Agent delegates, and workflow agents each spawn separate contexts. | Expected in Setup A (Fable advisor fires per-decision). If unexpectedly high: use `subagent_type: "Explore"` for search (lighter), reserve full agents for implementation. |
-| **>150K context** | Sessions staying large between compactions. | **Context-window dependent.** Setup A (Sonnet 5, native 1M): recommended `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` fires at ~725K — >150K is expected and fine, the real question is whether the task needed that much headroom. Setup B (Opus 4.6, 200K unless you opt into `opus[1m]`): if you opted into `opus[1m]`, pair it with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`; on plain 200K, the default ~95% trigger is fine. `/compact` between planning and implementation regardless of lane. |
+| **Subagent-heavy** | Each subagent runs its own context. The advisor is a separate server-side consultation (full transcript forwarded, different token profile). Explore agents, full Agent delegates, and workflow agents each spawn separate contexts. | Expected in both A and B (Fable advisor/subagent-fallback fires per-decision). If unexpectedly high: use `subagent_type: "Explore"` for search (lighter), reserve full agents for implementation. |
+| **>150K context** | Sessions staying large between compactions. | **Context-window dependent.** Setup A (Opus 5, 1M auto-upgraded on Max): no `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` — none is documented to apply; use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` if you want an earlier boundary (see Autocompact Tuning → "Opus 5 specifics"). Setup B (Sonnet 5, native 1M): recommended `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` fires at ~725K — >150K is expected and fine, the real question is whether the task needed that much headroom. `/compact` between planning and implementation regardless of lane. |
 | **8+ hour sessions** | Long-running sessions accumulate stale context. | `/clear` between unrelated tasks. Split multi-feature work into separate sessions. After committing a PR, start fresh. Background `/loop` sessions count toward this — audit which are still needed. |
 
 ### Reduce Consumption

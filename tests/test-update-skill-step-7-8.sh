@@ -117,14 +117,20 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Test 7 (#452 round 1 finding 4): the Setup A quota claim must be hedged
-# ("generally lower ... narrow[s]") to match AI_SETUP_LANES.md, not an
-# unqualified "less quota" claim.
+# Test 7 (#452 round 1 finding 4, updated 2026-07-24 for the Opus 5 A/B
+# swap): Setup A is now Opus 5, whose real hedge is "unproven by field
+# data" (not a quota-vs-Opus-4.6 comparison, which no longer applies).
+# Setup B (Sonnet 5) keeps the original hedged quota claim.
 # ---------------------------------------------------------------------------
-if echo "$step_block" | grep -qiE 'generally lower quota' && echo "$step_block" | grep -qiE 'narrow'; then
-    pass "Step 7.8's Setup A quota claim is hedged, matching AI_SETUP_LANES.md"
+if echo "$step_block" | grep -qiE 'unproven by field data'; then
+    pass "Step 7.8's Setup A claim is hedged as unproven, matching AI_SETUP_LANES.md's trial framing"
 else
-    fail "Step 7.8's Setup A quota claim is unqualified, drifting from AI_SETUP_LANES.md"
+    fail "Step 7.8's Setup A claim is unqualified, drifting from AI_SETUP_LANES.md"
+fi
+if echo "$step_block" | grep -qiE 'generally lower quota' && echo "$step_block" | grep -qiE 'narrow'; then
+    pass "Step 7.8's Setup B quota claim is hedged, matching AI_SETUP_LANES.md"
+else
+    fail "Step 7.8's Setup B quota claim is unqualified, drifting from AI_SETUP_LANES.md"
 fi
 
 echo ""

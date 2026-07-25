@@ -1,8 +1,8 @@
 // Roadmap #233: repo complexity heuristic for setup-lane suggestion.
 //
 // Output: { tier: 'simple' | 'complex', score: <number>, signals: [...] }
-//   - 'simple' → setup wizard suggests Setup A (Sonnet 5 + Fable) or no pin
-//   - 'complex' → setup wizard suggests Setup B (Opus 4.6 Stability) or escalating to Opus 4.8
+//   - 'simple' → setup wizard suggests Setup B (Sonnet 5 + Fable) or no pin
+//   - 'complex' → setup wizard suggests Setup A (Opus 5) or escalating to Opus 4.8
 // Cross-model review (Codex xhigh) always runs regardless of driver
 // selection — see CLAUDE_CODE_SDLC_WIZARD.md.
 //
