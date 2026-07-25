@@ -1908,11 +1908,11 @@ test_model_effort_check_xhigh_env_var_silent() {
     fi
 }
 
-# RECOMMENDED_MODELS must include Sonnet 5 — it's now the recommended default
-# driver (beats Opus 4.6 on every coding benchmark at generally lower quota).
+# RECOMMENDED_MODELS must include Sonnet 5 — it's Setup B's driver
+# (Simple/One-Off lane; Opus 5 is Setup A's default as of 2026-07-24).
 test_model_effort_check_recommends_sonnet_5() {
     if grep -qi 'sonnet' "$HOOKS_DIR/model-effort-check.sh"; then
-        pass "#434: model-effort-check.sh recommends Sonnet 5 (new default driver)"
+        pass "#434: model-effort-check.sh recommends Sonnet 5 (Setup B driver)"
     else
         fail "#434: model-effort-check.sh must mention Sonnet in RECOMMENDED_MODELS"
     fi

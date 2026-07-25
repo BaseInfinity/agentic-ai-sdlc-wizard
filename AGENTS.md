@@ -13,7 +13,7 @@ Meta-repository — SDLC Wizard documentation, automation, and a zero-dep Node.j
 
 ## AI Setup Lanes
 
-This repo recommends four setup lanes — Setup A (Sonnet 5 + Fable advisor, GPT-5.6 Sol xhigh reviewer, recommended default), Setup B (Opus 4.6 Stability: Fable advisor, Opus 4.6 max driver, GPT-5.6 Sol xhigh reviewer — legacy flagship), Setup C (OpusPlan Hybrid: Opus 4.8 plan mode + Sonnet 5 execute, GPT-5.6 Sol xhigh reviewer), and Setup D (Claude Lite: Sonnet driver, no reviewer). See [`AI_SETUP_LANES.md`](AI_SETUP_LANES.md) for the full pick list.
+This repo recommends four setup lanes — Setup A (Opus 5 + Fable advisor, GPT-5.6 Sol xhigh reviewer, recommended default, trial as of 2026-07-24), Setup B (Sonnet 5 Simple/One-Off: Fable advisor, Sonnet 5 medium driver, GPT-5.6 Sol xhigh reviewer), Setup C (OpusPlan Hybrid: Opus 5 plan mode + Sonnet 5 execute, GPT-5.6 Sol xhigh reviewer), and Setup D (Claude Lite: Sonnet driver, no reviewer). See [`AI_SETUP_LANES.md`](AI_SETUP_LANES.md) for the full pick list.
 
 The lanes are guidance, not a hard rule — maintainer override is always allowed.
 

@@ -989,19 +989,162 @@ test_wizard_doc_has_cowork_section
 # model-config#sonnet-5-context-window) — the 30% figure was never
 # re-derived for it and doesn't apply. Verified via live research
 # 2026-07-05, not carried over from the Opus-era table unexamined.
-test_wizard_doc_autocompact_mentions_sonnet_5() {
+#
+# 2026-07-24 REWRITE (PR #468 review): the previous assertion was
+# `grep -qE 'Sonnet 5'` — a substring check that passed as long as the
+# string appeared anywhere in the section. It green-lit the exact
+# regression it was written to prevent: the Opus 5 lane restructure
+# relabeled Setup A from Sonnet 5 to Opus 5 and carried the 30% figure
+# onto Opus 5 unexamined. Vacuous-test pattern (cf. #462's keyword-only
+# findings). Now asserts the semantic, and is mutation-tested.
+#
+# The contract, per raw env-vars.md (fetched via curl, not WebFetch —
+# ROADMAP #450): CLAUDE_AUTOCOMPACT_PCT_OVERRIDE only lowers the trigger
+# where compaction is PROACTIVE — when CLAUDE_CODE_AUTO_COMPACT_WINDOW is
+# set, in cloud sessions, on Sonnet 4.6/Opus 4.6 without extended context,
+# and on Sonnet 5 at its default threshold. A local Opus session is the
+# doc's own counter-example. So Sonnet 5's scoped 75% is legitimate; an
+# Opus-5-bound percentage is not. Deliberately worded as a documentation
+# gap, NOT a runtime claim — Codex xhigh put ~96% on the policy and only
+# ~65% on "a local Opus 5 override is inert", so the docs must not assert
+# the latter.
+test_wizard_doc_autocompact_sonnet5_scoped_not_opus5() {
     local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
     local section
     section=$(awk '/^### Autocompact Tuning/{f=1} f && /^###[^#]/ && !/^### Autocompact Tuning/{f=0} f' "$DOC")
-    if echo "$section" | grep -qE 'Sonnet 5'; then
-        pass "Autocompact Tuning section addresses Sonnet 5 specifically"
+    local ok=true
+
+    # (a) Sonnet 5's own scoped guidance must survive — it is correct.
+    #     Line-anchored to the paragraph itself, not a cross-reference.
+    echo "$section" | grep -qE '^\*\*Sonnet 5 specifics' || ok=false
+
+    # (b) Opus 5 must be addressed explicitly, not left to inherit
+    #     whatever the Opus-era rows said. MUST be line-anchored: the
+    #     section contains three `see "Opus 5 specifics" above` cross-refs,
+    #     so an unanchored grep still matched after the real paragraph was
+    #     deleted — caught by mutation 3 on 2026-07-24, and exactly the
+    #     vacuousness this rewrite exists to eliminate.
+    echo "$section" | grep -qE '^\*\*Opus 5 specifics' || ok=false
+
+    # (c) THE REGRESSION GUARD — bind the actual Setup A TABLE ROW to "none".
+    #
+    #     Codex xhigh defeated the previous version of this check
+    #     (2026-07-24) with a one-line mutation:
+    #       | **Setup A default driver (...)** | **30%** | Fires around 300K ... |
+    #     The old check grepped for lines containing the literal string
+    #     "Opus 5" and a percentage. The mutation says "Setup A" instead,
+    #     so it sailed through — the test never associated Setup A WITH
+    #     Opus 5. Second vacuousness in the same assertion in one session;
+    #     self-chosen mutations all happened to use the literal "Opus 5".
+    #
+    #     Round-2 recheck found a THIRD hole (2026-07-24): checking only the
+    #     threshold cell (field 3) let the recommendation move to the "Why"
+    #     cell — `| **Setup A ...** | **none** | ...but set
+    #     `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` for long work. |` passed 77/77
+    #     while restoring the defect. A second bypass: add a SECOND Setup A
+    #     row, since grep|awk|grep accepted the valid `none` from either match.
+    #
+    #     Now: require EXACTLY ONE Setup A row, its threshold cell to be
+    #     `none`, and NO percentage or PCT key anywhere in the whole row.
+    local setup_a_rows setup_a_count setup_a_row
+    setup_a_rows=$(echo "$section" | grep -E '^\|[^|]*Setup A[^|]*\|')
+    setup_a_count=$(printf '%s\n' "$setup_a_rows" | grep -c . || true)
+    if [ "$setup_a_count" != "1" ]; then
+        ok=false
     else
-        fail "Autocompact Tuning section must address Sonnet 5's native 1M/967K default, not just Opus-era guidance"
+        setup_a_row="$setup_a_rows"
+        # threshold cell must be exactly "none"
+        echo "$setup_a_row" | awk -F'|' '{print $3}' \
+            | grep -qiE '^[[:space:]]*\*{0,2}none\*{0,2}[[:space:]]*$' || ok=false
+        # ...and no percentage or PCT key ANYWHERE in the row, including the
+        # "Why" cell. This is the check the round-2 mutation defeated.
+        if echo "$setup_a_row" | grep -qE '[0-9]+%|CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'; then
+            ok=false
+        fi
+    fi
+
+    # (c2) Belt-and-braces: still reject a percentage bound to a line that
+    #      does name Opus 5 (the original shape), so both spellings fail.
+    if echo "$section" | grep -E 'Opus 5' | grep -qE '[0-9]+%'; then
+        ok=false
+    fi
+
+    # (c3) Round-3 recheck found a FOURTH bypass: a prose recommendation
+    #      with the number spelled out — "set the autocompact threshold to
+    #      thirty percent for long-running work" — evading `[0-9]+%`, the
+    #      PCT key name, and the strings "Setup A"/"Opus 5" at once.
+    #      This check catches spelled-out numerals near threshold language.
+    #
+    #      LIMITS — stated deliberately, not an oversight. A regex cannot be
+    #      semantically complete against natural language: "roughly a third",
+    #      "0.3 of the window", or "300K of 1M" would still pass. This guard
+    #      covers the shapes the real regression took (table cell, adjacent
+    #      cell, duplicate row, literal-string evasion) plus the cheapest
+    #      prose evasion. Beyond that the control is cross-model review, not
+    #      this test. Do not read a green result as proof no recommendation
+    #      exists — read it as proof the known shapes are absent.
+    if echo "$section" | grep -qiE '(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety) percent'; then
+        ok=false
+    fi
+
+    # (d) The unsupported causal inference must be gone: a 1M upgrade
+    #     establishes capacity, not proactive mode.
+    if echo "$section" | grep -qiE 'auto-upgrade[sd]? to 1M context, so|so the `?[0-9]+%`? override applies'; then
+        ok=false
+    fi
+
+    # (e) No runtime assertion about what a local Opus session DOES.
+    #     Codex set the leash: ~96% confidence on the documentation policy,
+    #     only ~65% on the runtime behavior, because the official text scopes
+    #     its example to "a local session on Opus 4.8" specifically. Prose
+    #     that generalizes it to "a local Opus session" overclaims.
+    if echo "$section" | grep -qiE 'a local Opus session (is|triggers|compacts|fires)'; then
+        ok=false
+    fi
+
+    if $ok; then
+        pass "Autocompact Tuning: Setup A row is 'none', 75% stays scoped to Sonnet 5, no runtime overclaim"
+    else
+        fail "Autocompact Tuning must set Setup A's threshold cell to 'none', keep Sonnet 5's scoped guidance and Opus 5 specifics headings, bind NO percentage to Setup A/Opus 5, and make no runtime claim about a local Opus session"
     fi
 }
 
-test_wizard_doc_autocompact_mentions_sonnet_5
+# The EMITTED consumer-settings contract, separate from prose: Step 9.5's
+# [o] handler must write no autocompact key at all, and [s] must keep its
+# scoped 75. Codex's review found the prose test alone couldn't catch a
+# regression in the handler that physically writes consumer settings.
+test_setup_skill_handlers_autocompact_shape() {
+    local F="$REPO_ROOT/skills/setup/SKILL.md"
+    if [ ! -f "$F" ]; then fail "skills/setup/SKILL.md not found"; return; fi
+    local ok=true
+
+    # [o] handler: the json block containing "model": "opus" must have no PCT key.
+    local o_block
+    o_block=$(awk '/"model": "opus"/{f=1} f{print} f&&/^\}/{exit}' "$F")
+    if [ -z "$o_block" ]; then
+        ok=false
+    elif echo "$o_block" | grep -q 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'; then
+        ok=false
+    fi
+
+    # [s] handler: the json block containing "model": "sonnet" must keep 75.
+    local s_block
+    s_block=$(awk '/"model": "sonnet"/{f=1} f{print} f&&/^\}/{exit}' "$F")
+    if ! echo "$s_block" | grep -q '"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"'; then
+        ok=false
+    fi
+
+    if $ok; then
+        pass "setup SKILL.md: [o] writes no autocompact key, [s] keeps its scoped 75"
+    else
+        fail "setup SKILL.md: Setup A's [o] handler must emit NO CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, and Setup B's [s] handler must keep \"75\""
+    fi
+}
+
+test_setup_skill_handlers_autocompact_shape
+
+test_wizard_doc_autocompact_sonnet5_scoped_not_opus5
 
 # ROADMAP #437: the wizard doc has 2 separate copies of the cross-model
 # review protocol (a condensed summary section and a fuller tutorial
@@ -1285,13 +1428,13 @@ test_ai_setup_lanes_reviewer_is_gpt56() {
     local bad=""
     # "5\.6" AND "Sol" (not just one or the other) so a Sol->Terra swap, or a
     # future GPT-5.7 Sol rename, both fail.
-    # (Line numbers re-pinned +4 after the 2026-07-13 Setup A clarity insertion.)
-    for n in 13 16 32 45 47 123 168 172 210 211 214; do
+    # (Line numbers re-pinned after the 2026-07-24 Opus 5 A/B lane restructure.)
+    for n in 15 26 43 58 60 138 178 182 220 221 224; do
         bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
     done
-    # L127 is the fallback-chain line: must name "5\.6" AND BOTH Sol (primary)
+    # L142 is the fallback-chain line: must name "5\.6" AND BOTH Sol (primary)
     # and Terra (fallback target) so a Terra->Luna swap also fails.
-    bad="$bad$(_check_line_has_and_lacks "$F" 127 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    bad="$bad$(_check_line_has_and_lacks "$F" 142 "5\.6,Sol,Terra" "5\.5" "5\.4")"
     if [ -z "$bad" ]; then
         pass "AI_SETUP_LANES.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
     else
@@ -1305,7 +1448,7 @@ test_readme_reviewer_is_gpt56() {
     local bad=""
     # L126 is the fallback-chain line: must name "5\.6" AND BOTH Sol and Terra.
     bad="$bad$(_check_line_has_and_lacks "$F" 126 "5\.6,Sol,Terra" "5\.5" "5\.4")"
-    for n in 186 187 188; do
+    for n in 189 190 191; do
         bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
     done
     if [ -z "$bad" ]; then
@@ -1332,8 +1475,13 @@ test_wizard_doc_reviewer_is_gpt56() {
     local F="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     if [ ! -f "$F" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
     local bad=""
-    bad="$bad$(_check_line_has_and_lacks "$F" 1090 "5\.6,Sol" "5\.5")"
-    bad="$bad$(_check_line_has_and_lacks "$F" 1113 "5\.6,Sol" "5\.5")"
+    # Content-anchored (2026-07-24): these two were hardcoded at 1091/1111
+    # and broke again when the Opus 5 autocompact fix inserted lines above
+    # them — the third such drift. Same failure mode already documented for
+    # the fallback-chain pair below; applying the same remedy rather than
+    # re-pinning numbers that will drift on the next insertion.
+    bad="$bad$(_check_content_line_has_and_lacks "$F" "| Reviewer |" "5\.6,Sol" "5\.5")"
+    bad="$bad$(_check_content_line_has_and_lacks "$F" "The Sonnet driver will drop some fine-grained self-review moves" "5\.6,Sol" "5\.5")"
     # Fallback-chain lines: must name "5\.6" AND BOTH Sol and Terra.
     # Content-anchored (not hardcoded line numbers) — this pair drifted
     # 3855->3863->3865->3867 across three separate insertions in one day
@@ -1456,7 +1604,7 @@ test_sonnet5_default_effort_is_medium() {
         || bad="$bad cowork/skills/sdlc/SKILL.md"
     grep -q 'Effort: `medium`' "$REPO_ROOT/skills/setup/SKILL.md" \
         || bad="$bad skills/setup/SKILL.md"
-    grep -q 'Sonnet 5 (recommended default) | `medium`' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" \
+    grep -q 'Sonnet 5 (Simple/One-Off lane) | `medium`' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" \
         || bad="$bad CLAUDE_CODE_SDLC_WIZARD.md(effort-table)"
     # Codex round-1 catch: presence-of-medium alone false-greens while a
     # contradictory high-default ladder survives elsewhere in the same repo
