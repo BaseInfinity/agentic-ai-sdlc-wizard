@@ -179,7 +179,7 @@ Mandatory steps:
 5. CI fails → fix, push (max 2 attempts)
 6. CI passes → `gh api .../pulls/PR/comments` for review feedback
 7. Implement valid suggestions (bugs, perf, dedup). Skip opinions. Max 3 iterations
-8. Explicit `gh pr merge --squash` — needs confirmation. **Exception (2026-07-21):** skip only if ALL hold: CI `validate` green; Codex xhigh CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) found **zero unresolved findings** after **≥1 dialogue round**; PR touches none of: workflows, `hooks/`, `.claude/`, this file, CHANGELOG, `package.json` version (npm publish always needs confirmation). Enforced here via `scripts/merge-pr.sh` (repo-local). Tell the user afterward what merged and why — never silent.
+8. Explicit `gh pr merge --squash` — needs confirmation. **Exception:** skip only if ALL hold: CI `validate` green; Codex xhigh CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) found **zero unresolved findings** after **≥1 dialogue round**; and the PR touches no **merge-evidence** path (workflows, `hooks/`, `.claude/`, the merge script) — those define their own CI check and gate, so a human decides. Policy prose is clearable on cross-model evidence. Enforced via `scripts/merge-pr.sh`. Tell the user afterward — never silent.
 
 **Evidence:** PR #145 auto-merged, shipped a P1 bug.
 

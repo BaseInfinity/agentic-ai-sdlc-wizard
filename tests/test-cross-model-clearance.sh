@@ -165,7 +165,7 @@ fi
 # Setting the retired variable must have NO effect: a denylist hit still blocks.
 t=$(make_stub_env)
 write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" MERGE_CLEARANCE_SKIP=1 run_wrapper "$t" 123; then
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" MERGE_CLEARANCE_SKIP=1 run_wrapper "$t" 123; then
     fail "retired MERGE_CLEARANCE_SKIP=1 still bypasses a denylist hit"
 else
     pass "retired MERGE_CLEARANCE_SKIP=1 has no effect"
@@ -178,7 +178,7 @@ rm -rf "$t"
 echo "[2] --cross-model-cleared clears a denylist hit when evidence is valid"
 
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" \
    CLEARANCE_COMMENTS="codex-gpt-5.6-sol|100|$HEAD_SHA
 fable-xhigh|96|$HEAD_SHA" \
    run_wrapper "$t" 123 --cross-model-cleared; then
@@ -189,7 +189,7 @@ fi
 rm -rf "$t"
 
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" \
    CLEARANCE_COMMENTS="codex-gpt-5.6-sol|100|$HEAD_SHA" \
    run_wrapper "$t" 123 --cross-model-cleared; then
     fail "a SINGLE reviewer was accepted as cross-model clearance"
@@ -199,7 +199,7 @@ fi
 rm -rf "$t"
 
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" \
    CLEARANCE_COMMENTS="codex-gpt-5.6-sol|100|$HEAD_SHA
 codex-gpt-5.6-sol|97|$HEAD_SHA" \
    run_wrapper "$t" 123 --cross-model-cleared; then
@@ -210,7 +210,7 @@ fi
 rm -rf "$t"
 
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" \
    CLEARANCE_COMMENTS="codex-gpt-5.6-sol|100|$HEAD_SHA
 fable-xhigh|94|$HEAD_SHA" \
    run_wrapper "$t" 123 --cross-model-cleared; then
@@ -221,7 +221,7 @@ fi
 rm -rf "$t"
 
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" \
    CLEARANCE_COMMENTS="codex-gpt-5.6-sol|100|$OTHER_SHA
 fable-xhigh|96|$OTHER_SHA" \
    run_wrapper "$t" 123 --cross-model-cleared; then
@@ -232,7 +232,7 @@ fi
 rm -rf "$t"
 
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" CLEARANCE_COMMENTS="" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" CLEARANCE_COMMENTS="" \
    run_wrapper "$t" 123 --cross-model-cleared; then
     fail "the flag alone cleared a denylist hit with NO evidence on the PR"
 else
@@ -251,7 +251,7 @@ VALID="codex-gpt-5.6-sol|100|$HEAD_SHA
 fable-xhigh|96|$HEAD_SHA"
 
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" CLEARANCE_COMMENTS="$VALID" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" CLEARANCE_COMMENTS="$VALID" \
    VALIDATE_CONCLUSION="failure" run_wrapper "$t" 123 --cross-model-cleared; then
     fail "cleared merge proceeded with CI validate FAILING"
 else
@@ -260,7 +260,7 @@ fi
 rm -rf "$t"
 
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" CLEARANCE_COMMENTS="$VALID" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" CLEARANCE_COMMENTS="$VALID" \
    DELETED_TEST_FILES="tests/test-merge-gate.sh" \
    run_wrapper "$t" 123 --cross-model-cleared; then
     fail "cleared merge proceeded while DELETING a test"
@@ -270,7 +270,7 @@ fi
 rm -rf "$t"
 
 t=$(make_stub_env)  # deliberately no local clearance artifact written
-if DIFF_FILES="hooks/codex-gate-check.sh" CLEARANCE_COMMENTS="$VALID" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" CLEARANCE_COMMENTS="$VALID" \
    run_wrapper "$t" 123 --cross-model-cleared; then
     fail "cleared merge proceeded with NO local clearance artifact"
 else
@@ -284,7 +284,7 @@ rm -rf "$t"
 echo "[4] Unflagged behaviour is unchanged"
 
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" CLEARANCE_COMMENTS="$VALID" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" CLEARANCE_COMMENTS="$VALID" \
    run_wrapper "$t" 123; then
     fail "a denylist hit merged WITHOUT the flag just because evidence existed"
 else
@@ -311,7 +311,7 @@ echo "[5] Codex round-1 attacks stay closed"
 # F1: `set -- $reviewers` word-split on IFS, so ONE comment naming a reviewer
 # with a space in it satisfied the two-distinct-reviewer threshold.
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" \
    CLEARANCE_COMMENTS="alice bob|100|$HEAD_SHA" \
    run_wrapper "$t" 123 --cross-model-cleared; then
     fail "F1: one reviewer whose name contains a space counted as two"
@@ -327,7 +327,7 @@ t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
 cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
-elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "hooks/codex-gate-check.sh"; exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
@@ -349,7 +349,7 @@ rm -rf "$t"
 # F4: the confidence regex grabbed leading digits lexically, so the valid JSON
 # number 95e-100 (~9.5e-99) read as 95 and passed the >=95 floor.
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" \
    CLEARANCE_COMMENTS="codex|95e-100|$HEAD_SHA
 fable|95e-100|$HEAD_SHA" \
    run_wrapper "$t" 123 --cross-model-cleared; then
@@ -361,7 +361,7 @@ rm -rf "$t"
 
 # F4b: a confidence above 100 is not a valid percentage.
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh" \
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" \
    CLEARANCE_COMMENTS="codex|999|$HEAD_SHA
 fable|999|$HEAD_SHA" \
    run_wrapper "$t" 123 --cross-model-cleared; then
@@ -379,7 +379,7 @@ echo "[6] Fable round-1 attacks stay closed"
 # F7: comment authorship was not gated at all — any GitHub user who could
 # comment could mint clearance.
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if ( cd "$t" && PATH="$t/bin:$PATH" HEAD_SHA="$HEAD_SHA"      DIFF_FILES="hooks/codex-gate-check.sh" VALIDATE_CONCLUSION=success      ASSOC="NONE" AUTHOR="random-drive-by"      CLEARANCE_COMMENTS="codex|100|$HEAD_SHA
+if ( cd "$t" && PATH="$t/bin:$PATH" HEAD_SHA="$HEAD_SHA"      DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md" VALIDATE_CONCLUSION=success      ASSOC="NONE" AUTHOR="random-drive-by"      CLEARANCE_COMMENTS="codex|100|$HEAD_SHA
 fable|100|$HEAD_SHA"      "$WRAPPER" 123 --cross-model-cleared ) >/dev/null 2>&1; then
     fail "F7: a drive-by commenter minted clearance"
 else
@@ -409,7 +409,7 @@ PY
 cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
-elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "hooks/codex-gate-check.sh"; exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
@@ -431,11 +431,73 @@ rm -rf "$t"
 # F9: honest payloads were dropped silently. jq renders an integer-valued float
 # as 100.0, and a differently-cased SHA is the same commit.
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES="hooks/codex-gate-check.sh"    CLEARANCE_COMMENTS="codex|100.0|$HEAD_SHA
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md"    CLEARANCE_COMMENTS="codex|100.0|$HEAD_SHA
 fable|96|$(printf '%s' "$HEAD_SHA" | tr 'a-f' 'A-F')"    run_wrapper "$t" 123 --cross-model-cleared; then
     pass "F9: 100.0 and an upper-case SHA are accepted as valid"
 else
     fail "F9: honest payloads still silently rejected"
+fi
+rm -rf "$t"
+
+# ---------------------------------------------------------------------------
+# Group 7: HARD vs ACKABLE tiers
+#
+# Codex (96%) and Fable (85%) independently reached the same conclusion: the
+# agent must not be able to self-clear the merge-EVIDENCE CHAIN. On those paths
+# every leg of the evidence stack becomes the agent's own say-so at once —
+# `validate` is defined by the PR (branch protection requires the check by NAME,
+# so any new workflow file can mint one), the gate that runs is the PR's own
+# gate, and both clearance comments are posted by the same token. Errors in the
+# control plane compound; errors in the data plane do not.
+# ---------------------------------------------------------------------------
+echo "[7] HARD tier is not agent-clearable; ACKABLE tier is"
+
+VALID_2="codex-gpt-5.6-sol|100|$HEAD_SHA
+fable-xhigh|96|$HEAD_SHA"
+
+for hard in "scripts/merge-pr.sh" ".claude/hooks/merge-gate-check.sh" \
+            ".github/workflows/ci.yml" ".github/workflows/brand-new.yml" \
+            "hooks/codex-gate-check.sh"; do
+    t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+    if DIFF_FILES="$hard" CLEARANCE_COMMENTS="$VALID_2" \
+       run_wrapper "$t" 123 --cross-model-cleared; then
+        fail "HARD tier '$hard' was self-cleared by the agent"
+    else
+        pass "HARD tier '$hard' still requires a human"
+    fi
+    rm -rf "$t"
+done
+
+for ackable in "skills/sdlc/SKILL.md" "cowork/skills/sdlc/SKILL.md" \
+               "CLAUDE_CODE_SDLC_WIZARD.md"; do
+    t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+    if DIFF_FILES="$ackable" CLEARANCE_COMMENTS="$VALID_2" \
+       run_wrapper "$t" 123 --cross-model-cleared; then
+        pass "ACKABLE tier '$ackable' is agent-clearable on valid evidence"
+    else
+        fail "ACKABLE tier '$ackable' should be clearable, but blocked"
+    fi
+    rm -rf "$t"
+done
+
+# HARD wins when a PR touches both tiers.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+if DIFF_FILES="CLAUDE_CODE_SDLC_WIZARD.md
+hooks/codex-gate-check.sh" CLEARANCE_COMMENTS="$VALID_2" \
+   run_wrapper "$t" 123 --cross-model-cleared; then
+    fail "a PR touching both tiers was cleared; HARD must win"
+else
+    pass "HARD wins when a PR touches both tiers"
+fi
+rm -rf "$t"
+
+# Both models measured CHANGELOG.md as dead weight: it only ever co-fires with
+# the package.json version check, which is unconditional and separate.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+if DIFF_FILES="CHANGELOG.md" run_wrapper "$t" 123; then
+    pass "CHANGELOG.md is no longer denylisted (needs no flag at all)"
+else
+    fail "CHANGELOG.md still blocks; both reviewers measured it as dead weight"
 fi
 rm -rf "$t"
 
