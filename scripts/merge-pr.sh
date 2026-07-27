@@ -25,7 +25,7 @@
 # this honestly, don't oversell it): "Codex reached CERTIFIED via a genuine
 # adversarial dialogue" and "the Fable subagent was truly fresh/diff-only"
 # can never be confirmed by a local script — an agent willing to forge the
-# clearance artifact would also set MERGE_CLEARANCE_SKIP. round >= 2 plus a
+# clearance artifact would also set the old all-or-nothing bypass. round >= 2 plus a
 # non-empty review file is the best available proxy that review wasn't
 # skipped or stale, not proof it wasn't faked. Real fake-resistance needs a
 # server-side required check (tracked as a Research Parking Lot row in
@@ -54,14 +54,70 @@ DENYLIST_PATTERNS=(
 # denylist, but a version-field change is release-adjacent) — checked
 # separately below via a content diff, not the path-only denylist above.
 
+# --- Cross-model clearance, read from the REMOTE PR (ROADMAP #479) ---
+# This is the only thing --cross-model-cleared can satisfy, and it satisfies
+# ONLY the denylist finding. The evidence deliberately does not live in
+# .reviews/ — that directory is gitignored, so a local artifact has no audit
+# trail and is written by the same agent that wants to merge. A PR comment is
+# timestamped, attributable, SHA-bound, and auditable by anyone afterwards.
+#
+# Required: at least two DISTINCT reviewers, each at confidence >= 95, each
+# bound to the exact head SHA being merged. Pushing a commit invalidates it.
+CLEARED_BY=""
+verify_cross_model_clearance() {
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "FAILED CLOSED: jq is required to verify cross-model clearance." >&2
+        return 1
+    fi
+    local comments bodies body who conf sha reviewers=""
+    if ! comments=$(gh api --paginate "repos/:owner/:repo/issues/$PR_NUM/comments" 2>&1); then
+        echo "FAILED CLOSED: could not fetch PR comments for #$PR_NUM: $comments" >&2
+        return 1
+    fi
+    # Flatten each comment body to ONE line. jq -r expands the body's \n, so a
+    # line-wise loop would split the marker away from the JSON payload and
+    # match neither — the first implementation found 0 reviewers for exactly
+    # this reason.
+    bodies=$(printf '%s' "$comments" \
+        | jq -r '.[]? | select(.body != null) | .body | gsub("[\n\r]"; " ")' 2>/dev/null)
+    [ -z "$bodies" ] && { echo "BLOCKED: no cross-model clearance comments on PR #$PR_NUM." >&2; return 1; }
+
+    while IFS= read -r body; do
+        case "$body" in *CROSS-MODEL-CLEARANCE*) ;; *) continue ;; esac
+        who=$(printf '%s' "$body" | grep -oE '"reviewer"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"reviewer"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        conf=$(printf '%s' "$body" | grep -oE '"confidence"[[:space:]]*:[[:space:]]*[0-9]+' | head -1 | grep -oE '[0-9]+$')
+        sha=$(printf '%s' "$body" | grep -oE '"sha"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"sha"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        [ -z "$who" ] || [ -z "$conf" ] || [ -z "$sha" ] && continue
+        [ "$sha" != "$HEAD_SHA" ] && continue          # stale: clearance was for another commit
+        [ "$conf" -lt 95 ] && continue                 # below the maintainer's bar
+        case " $reviewers " in *" $who "*) continue ;; esac   # distinct reviewers only
+        reviewers="$reviewers $who"
+    done <<< "$bodies"
+
+    set -- $reviewers
+    if [ $# -lt 2 ]; then
+        echo "BLOCKED: cross-model clearance needs 2 distinct reviewers at >=95% bound to $HEAD_SHA; found ${#}: ${reviewers:-none}." >&2
+        return 1
+    fi
+    CLEARED_BY=$(echo "$reviewers" | sed 's/^ *//; s/ /, /g')
+    return 0
+}
+
 if [ $# -lt 1 ]; then
     echo "Usage: scripts/merge-pr.sh <PR_NUMBER>" >&2
     exit 1
 fi
 
 PR_NUM="$1"
-BYPASSED=0
-[ "${MERGE_CLEARANCE_SKIP:-}" = "1" ] && BYPASSED=1
+shift
+CROSS_MODEL_CLEARED=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --cross-model-cleared) CROSS_MODEL_CLEARED=1 ;;
+        *) echo "Usage: scripts/merge-pr.sh <PR_NUMBER> [--cross-model-cleared]" >&2; exit 1 ;;
+    esac
+    shift
+done
 
 if ! PR_JSON=$(gh pr view "$PR_NUM" --json headRefOid,number,state 2>&1); then
     echo "FAILED CLOSED: could not fetch PR #$PR_NUM (gh error): $PR_JSON" >&2
@@ -73,9 +129,10 @@ if [ -z "$HEAD_SHA" ]; then
     exit 1
 fi
 
-if [ "$BYPASSED" -eq 1 ]; then
-    echo "BYPASSED: MERGE_CLEARANCE_SKIP=1 set — skipping all clearance checks for PR #$PR_NUM at $HEAD_SHA. This is an emergency override; the merge is not otherwise verified." >&2
-else
+# --- Every check below is UNCONDITIONAL. ROADMAP #479: the old
+# the old all-or-nothing bypass disabled all of them at once, so acknowledging one
+# denylist row meant disarming CI, test-deletion, SHA-freshness and the
+# clearance artifact. There is now no flag that turns any of these off.
     # --- Fetch per-file status/patch data once, with pagination. Codex
     # round-1 finding: without --paginate, gh's API call silently returns
     # only the first page (default 30 entries) — a deleted test outside
@@ -99,7 +156,11 @@ else
         [ -z "$f" ] && continue
         for pattern in "${DENYLIST_PATTERNS[@]}"; do
             if printf '%s' "$f" | grep -qE "$pattern"; then
-                echo "BLOCKED: PR #$PR_NUM touches '$f', which matches the release/policy-adjacency denylist ($pattern). This exception does not apply — explicit user confirmation is required." >&2
+                if [ "$CROSS_MODEL_CLEARED" -eq 1 ] && verify_cross_model_clearance; then
+                    echo "DENYLIST ACKNOWLEDGED: '$f' matches $pattern, cleared by $CLEARED_BY. Every other check still ran." >&2
+                    continue
+                fi
+                echo "BLOCKED: PR #$PR_NUM touches '$f', which matches the release/policy-adjacency denylist ($pattern). Post cross-model clearance to the PR and re-run with --cross-model-cleared." >&2
                 exit 1
             fi
         done
@@ -176,7 +237,6 @@ else
         echo "BLOCKED: $CLEARANCE_FILE's referenced review artifact ('$CL_REVIEW_FILE') is missing or empty — can't verify the dialogue was substantive. Explicit user confirmation is required." >&2
         exit 1
     fi
-fi
 
 # --- Execute: always squash, no passthrough flags, atomically bound to the
 # checked SHA. Only the PR number is accepted as input, closing the
@@ -189,5 +249,5 @@ if [ "$MERGE_EXIT" -ne 0 ]; then
 fi
 
 echo "$MERGE_OUTPUT"
-echo "MERGED: PR #$PR_NUM at $HEAD_SHA (squash, match-head-commit). Conditions verified: $([ "$BYPASSED" -eq 1 ] && echo 'BYPASSED via MERGE_CLEARANCE_SKIP=1' || echo 'denylist clear, no test deletions, CI validate green, clearance CERTIFIED round>=2 fresh')."
+echo "MERGED: PR #$PR_NUM at $HEAD_SHA (squash, match-head-commit). Verified: no test deletions, CI validate green, clearance CERTIFIED round>=2 fresh, and $([ "$CROSS_MODEL_CLEARED" -eq 1 ] && echo "denylist acknowledged by $CLEARED_BY" || echo 'denylist clear')."
 exit 0
