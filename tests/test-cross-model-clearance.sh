@@ -11,17 +11,26 @@
 # This replaces it with `--cross-model-cleared`, which satisfies the DENYLIST
 # FINDING ONLY. Every other check stays mandatory and fail-closed.
 #
-# The key property, and the reason this is not just a renamed bypass: the
-# evidence is EXTERNALLY VERIFIABLE. Clearance is read from comments on the
-# remote PR, not from a local file the agent just wrote. `.reviews/` is
-# gitignored, so a local artifact has no audit trail and merge-pr.sh's own
-# header concedes it is "not a security boundary against a determined agent".
-# A PR comment is timestamped, attributable, SHA-bound, and readable by anyone
-# after the fact — including a future maintainer auditing why something merged.
+# WHAT THIS IS — corrected after review, having first been overstated here.
+# The original version of this comment claimed the evidence is "EXTERNALLY
+# VERIFIABLE ... timestamped, attributable, SHA-bound" and therefore harder to
+# forge than a local artifact. Codex disproved *attributable* by execution: the
+# author was discarded, so the reviewer identity was a self-declared string, and
+# one account posted two comments claiming to be two different models. Binding
+# to the author does not rescue it either — both reviews come from the same `gh`
+# token, so there is no second authenticated principal.
 #
-# Required shape of a clearance comment on the PR:
+# The honest claim is narrower: this is an AUDIT TRAIL, not an authentication
+# boundary. It is durable, timestamped, visibly rendered, and invalidated by any
+# new push. It does NOT prove two models ran. The genuinely load-bearing win is
+# the SCOPE fix — the acknowledgement no longer disarms CI, test-deletion,
+# SHA-freshness or the clearance artifact, which was #479's actual defect.
 #
-#   <!-- CROSS-MODEL-CLEARANCE -->
+# Required shape of a clearance comment on the PR (the marker is deliberately
+# VISIBLE — an HTML-comment marker let the whole payload be hidden from the
+# human the audit trail exists for):
+#
+#   **CROSS-MODEL-CLEARANCE**
 #   ```json
 #   {"reviewer":"codex-gpt-5.6-sol","confidence":100,"sha":"<40 hex>"}
 #   ```
@@ -84,8 +93,8 @@ elif [ "$1" = "api" ]; then
                     [ -z "$who" ] && continue
                     [ "$first" = 0 ] && printf ','
                     first=0
-                    printf '{"body":"<!-- CROSS-MODEL-CLEARANCE -->\\n{\\"reviewer\\":\\"%s\\",\\"confidence\\":%s,\\"sha\\":\\"%s\\"}"}' \
-                        "$who" "$conf" "$sha"
+                    printf '{"user":{"login":"%s"},"author_association":"%s","body":"**CROSS-MODEL-CLEARANCE**\\n```json\\n{\\"reviewer\\":\\"%s\\",\\"confidence\\":%s,\\"sha\\":\\"%s\\"}\\n```"}' \
+                        "${AUTHOR:-maintainer}" "${ASSOC:-OWNER}" "$who" "$conf" "$sha"
                 done <<EOF
 $CLEARANCE_COMMENTS
 EOF
@@ -288,6 +297,145 @@ if DIFF_FILES="README.md" run_wrapper "$t" 123; then
     pass "a clean PR still merges with no flag and no comments"
 else
     fail "a clean PR no longer merges"
+fi
+rm -rf "$t"
+
+# ---------------------------------------------------------------------------
+# Group 5: Codex round-1 findings, replayed as regression tests
+#
+# All four were reproduced by execution against the first implementation. Each
+# is kept here verbatim so the specific defect cannot come back.
+# ---------------------------------------------------------------------------
+echo "[5] Codex round-1 attacks stay closed"
+
+# F1: `set -- $reviewers` word-split on IFS, so ONE comment naming a reviewer
+# with a space in it satisfied the two-distinct-reviewer threshold.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+if DIFF_FILES="hooks/codex-gate-check.sh" \
+   CLEARANCE_COMMENTS="alice bob|100|$HEAD_SHA" \
+   run_wrapper "$t" 123 --cross-model-cleared; then
+    fail "F1: one reviewer whose name contains a space counted as two"
+else
+    pass "F1: a space in a reviewer name cannot fake two reviewers"
+fi
+rm -rf "$t"
+
+# F3: reviewer/confidence/sha were pulled by three independent `head -1` greps
+# over the whole body, so unrelated snippets in prose were spliced into a
+# synthetic clearance record. The payload must now be exactly one fenced object.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+cat > "$t/bin/gh" <<STUB
+#!/bin/bash
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "hooks/codex-gate-check.sh"; exit 0
+elif [ "\$1" = "api" ]; then
+  case "\$*" in
+    *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
+    *issues*comments*) printf '[{"user":{"login":"x"},"body":"<!-- CROSS-MODEL-CLEARANCE --> {\\\\"reviewer\\\\":\\\\"codex\\\\"} prose {\\\\"confidence\\\\":100} prose {\\\\"sha\\\\":\\\\"$HEAD_SHA\\\\"}"},{"user":{"login":"x"},"body":"<!-- CROSS-MODEL-CLEARANCE --> {\\\\"reviewer\\\\":\\\\"fable\\\\"} prose {\\\\"confidence\\\\":100} prose {\\\\"sha\\\\":\\\\"$HEAD_SHA\\\\"}"}]\n';;
+    *pulls*files*) : ;;
+  esac
+  exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "merge" ]; then echo GH_MERGE_INVOKED; exit 0; fi
+exit 1
+STUB
+chmod +x "$t/bin/gh"
+if ( cd "$t" && PATH="$t/bin:$PATH" "$WRAPPER" 123 --cross-model-cleared ) >/dev/null 2>&1; then
+    fail "F3: fields spliced from unrelated JSON objects were accepted"
+else
+    pass "F3: loose snippets in prose are not a clearance payload"
+fi
+rm -rf "$t"
+
+# F4: the confidence regex grabbed leading digits lexically, so the valid JSON
+# number 95e-100 (~9.5e-99) read as 95 and passed the >=95 floor.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+if DIFF_FILES="hooks/codex-gate-check.sh" \
+   CLEARANCE_COMMENTS="codex|95e-100|$HEAD_SHA
+fable|95e-100|$HEAD_SHA" \
+   run_wrapper "$t" 123 --cross-model-cleared; then
+    fail "F4: confidence 95e-100 was read as 95 and accepted"
+else
+    pass "F4: 95e-100 is not >=95"
+fi
+rm -rf "$t"
+
+# F4b: a confidence above 100 is not a valid percentage.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+if DIFF_FILES="hooks/codex-gate-check.sh" \
+   CLEARANCE_COMMENTS="codex|999|$HEAD_SHA
+fable|999|$HEAD_SHA" \
+   run_wrapper "$t" 123 --cross-model-cleared; then
+    fail "F4b: confidence 999 was accepted"
+else
+    pass "F4b: confidence above 100 is rejected"
+fi
+rm -rf "$t"
+
+# ---------------------------------------------------------------------------
+# Group 6: Fable round-1 findings that survived the first patch
+# ---------------------------------------------------------------------------
+echo "[6] Fable round-1 attacks stay closed"
+
+# F7: comment authorship was not gated at all — any GitHub user who could
+# comment could mint clearance.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+if ( cd "$t" && PATH="$t/bin:$PATH" HEAD_SHA="$HEAD_SHA"      DIFF_FILES="hooks/codex-gate-check.sh" VALIDATE_CONCLUSION=success      ASSOC="NONE" AUTHOR="random-drive-by"      CLEARANCE_COMMENTS="codex|100|$HEAD_SHA
+fable|100|$HEAD_SHA"      "$WRAPPER" 123 --cross-model-cleared ) >/dev/null 2>&1; then
+    fail "F7: a drive-by commenter minted clearance"
+else
+    pass "F7: non-OWNER/MEMBER/COLLABORATOR comments are ignored"
+fi
+rm -rf "$t"
+
+# F8: the payload could be wrapped in an HTML comment, rendering as innocuous
+# prose in the GitHub UI while still clearing the merge — defeating the only
+# thing the audit trail is for. The fixture is generated with exact bytes: an
+# earlier hand-escaped heredoc version was VACUOUS (it passed even with the
+# protection removed) because the backticks were mangled.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+python3 - "$t/comments.json" "$HEAD_SHA" <<'PY'
+import json, sys
+path, sha = sys.argv[1], sys.argv[2]
+def hidden(rev):
+    return ("LGTM, nice work!\n"
+            "<!-- **CROSS-MODEL-CLEARANCE**\n"
+            "```json\n"
+            + json.dumps({"reviewer": rev, "confidence": 100, "sha": sha})
+            + "\n```\n-->")
+json.dump([{"user": {"login": "m"}, "author_association": "OWNER", "body": hidden("codex")},
+           {"user": {"login": "m"}, "author_association": "OWNER", "body": hidden("fable")}],
+          open(path, "w"))
+PY
+cat > "$t/bin/gh" <<STUB
+#!/bin/bash
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "hooks/codex-gate-check.sh"; exit 0
+elif [ "\$1" = "api" ]; then
+  case "\$*" in
+    *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
+    *issues*comments*) cat "$t/comments.json";;
+    *pulls*files*) : ;;
+  esac
+  exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "merge" ]; then echo GH_MERGE_INVOKED; exit 0; fi
+exit 1
+STUB
+chmod +x "$t/bin/gh"
+if ( cd "$t" && PATH="$t/bin:$PATH" "$WRAPPER" 123 --cross-model-cleared ) >/dev/null 2>&1; then
+    fail "F8: clearance hidden inside an HTML comment was accepted"
+else
+    pass "F8: a payload invisible in the rendered UI is not evidence"
+fi
+rm -rf "$t"
+
+# F9: honest payloads were dropped silently. jq renders an integer-valued float
+# as 100.0, and a differently-cased SHA is the same commit.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+if DIFF_FILES="hooks/codex-gate-check.sh"    CLEARANCE_COMMENTS="codex|100.0|$HEAD_SHA
+fable|96|$(printf '%s' "$HEAD_SHA" | tr 'a-f' 'A-F')"    run_wrapper "$t" 123 --cross-model-cleared; then
+    pass "F9: 100.0 and an upper-case SHA are accepted as valid"
+else
+    fail "F9: honest payloads still silently rejected"
 fi
 rm -rf "$t"
 

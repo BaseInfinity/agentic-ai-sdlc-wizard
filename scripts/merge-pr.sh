@@ -55,51 +55,116 @@ DENYLIST_PATTERNS=(
 # separately below via a content diff, not the path-only denylist above.
 
 # --- Cross-model clearance, read from the REMOTE PR (ROADMAP #479) ---
-# This is the only thing --cross-model-cleared can satisfy, and it satisfies
-# ONLY the denylist finding. The evidence deliberately does not live in
-# .reviews/ — that directory is gitignored, so a local artifact has no audit
-# trail and is written by the same agent that wants to merge. A PR comment is
-# timestamped, attributable, SHA-bound, and auditable by anyone afterwards.
 #
-# Required: at least two DISTINCT reviewers, each at confidence >= 95, each
-# bound to the exact head SHA being merged. Pushing a commit invalidates it.
+# WHAT THIS IS, STATED HONESTLY (corrected after Codex round 1):
+# This is an AUDIT TRAIL, not an authentication boundary. An earlier version of
+# this comment claimed PR comments are harder to forge than a local artifact
+# because they are "timestamped, attributable, SHA-bound". Attributable was
+# never true: the parser discarded the comment's author. Worse, binding to the
+# author does not rescue the claim here, because both reviews are posted by the
+# SAME gh token — there is no second authenticated principal to tell them apart.
+#
+# What it does give you: evidence that is durable, timestamped, readable by a
+# human long afterwards, and invalidated by any new push. Against the stated
+# threat model — an honest agent that is degraded or under time pressure — that
+# is worth having. Against a determined agent it is not, and nothing here
+# should be read as claiming otherwise.
+#
+# Requires: at least two DISTINCT reviewers, each at confidence >= 95 (integer
+# 0..100), each bound to the exact head SHA. The author login of each comment
+# is recorded in the output so an auditor can see who actually posted it.
 CLEARED_BY=""
 verify_cross_model_clearance() {
     if ! command -v jq >/dev/null 2>&1; then
         echo "FAILED CLOSED: jq is required to verify cross-model clearance." >&2
         return 1
     fi
-    local comments bodies body who conf sha reviewers=""
+    local comments records who conf sha author reviewers="" count=0
     if ! comments=$(gh api --paginate "repos/:owner/:repo/issues/$PR_NUM/comments" 2>&1); then
         echo "FAILED CLOSED: could not fetch PR comments for #$PR_NUM: $comments" >&2
         return 1
     fi
-    # Flatten each comment body to ONE line. jq -r expands the body's \n, so a
-    # line-wise loop would split the marker away from the JSON payload and
-    # match neither — the first implementation found 0 reviewers for exactly
-    # this reason.
-    bodies=$(printf '%s' "$comments" \
-        | jq -r '.[]? | select(.body != null) | .body | gsub("[\n\r]"; " ")' 2>/dev/null)
-    [ -z "$bodies" ] && { echo "BLOCKED: no cross-model clearance comments on PR #$PR_NUM." >&2; return 1; }
 
-    while IFS= read -r body; do
-        case "$body" in *CROSS-MODEL-CLEARANCE*) ;; *) continue ;; esac
-        who=$(printf '%s' "$body" | grep -oE '"reviewer"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"reviewer"[[:space:]]*:[[:space:]]*"//; s/"$//')
-        conf=$(printf '%s' "$body" | grep -oE '"confidence"[[:space:]]*:[[:space:]]*[0-9]+' | head -1 | grep -oE '[0-9]+$')
-        sha=$(printf '%s' "$body" | grep -oE '"sha"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"sha"[[:space:]]*:[[:space:]]*"//; s/"$//')
-        [ -z "$who" ] || [ -z "$conf" ] || [ -z "$sha" ] && continue
-        [ "$sha" != "$HEAD_SHA" ] && continue          # stale: clearance was for another commit
-        [ "$conf" -lt 95 ] && continue                 # below the maintainer's bar
-        case " $reviewers " in *" $who "*) continue ;; esac   # distinct reviewers only
-        reviewers="$reviewers $who"
-    done <<< "$bodies"
+    # Codex round-1 findings F3 and F4: the previous version pulled reviewer,
+    # confidence and sha with three INDEPENDENT `grep | head -1` pipelines over
+    # the whole comment body, so the three fields need not have come from the
+    # same JSON object — or from any valid object at all. Three unrelated
+    # snippets quoted in prose were accepted as clearance. And the confidence
+    # regex grabbed leading digits lexically, so the valid JSON number 95e-100
+    # (~9.5e-99) read as 95.
+    #
+    # Both are fixed the same way: extract exactly ONE fenced json payload per
+    # comment and let jq parse it as JSON, evaluating all three fields from that
+    # single object and comparing confidence numerically. A comment with zero or
+    # more than one payload is rejected rather than partially parsed.
+    # Fable finding 8: the previous marker was an HTML comment, and the whole
+    # payload could be wrapped in one too — rendering as "LGTM, nice work!" in
+    # the GitHub UI while still clearing the merge. Since the entire remaining
+    # justification is "a human can read this later", evidence a human cannot
+    # see is worse than useless. HTML comments are now STRIPPED before scanning,
+    # so both the marker and the payload must be visibly rendered.
+    #
+    # Fable finding 7: comment authorship was not gated at all — any GitHub user
+    # who can comment could mint clearance. Now restricted to OWNER/MEMBER/
+    # COLLABORATOR. This does not make forgery hard (see the header), it just
+    # stops a drive-by.
+    records=$(printf '%s' "$comments" | jq -r '
+        .[]?
+        | select(.body != null)
+        | select((.author_association // "") | . == "OWNER" or . == "MEMBER" or . == "COLLABORATOR")
+        | . as $c
+        | ($c.body | gsub("(?s)<!--.*?-->"; " ")) as $visible
+        | select($visible | test("CROSS-MODEL-CLEARANCE"))
+        | ($visible | [scan("(?s)```json\\s*(\\{.*?\\})\\s*```")] ) as $payloads
+        | select(($payloads | length) == 1)
+        | ($payloads[0][0] | fromjson? // empty) as $p
+        | select($p.reviewer != null and $p.confidence != null and $p.sha != null)
+        | select($p.confidence | type == "number")
+        | select($p.reviewer | type == "string")
+        | select($p.sha | type == "string")
+        | [($c.user.login // "unknown"), $p.reviewer, ($p.confidence|tostring), $p.sha]
+        | @tsv
+    ' 2>/dev/null)
 
-    set -- $reviewers
-    if [ $# -lt 2 ]; then
-        echo "BLOCKED: cross-model clearance needs 2 distinct reviewers at >=95% bound to $HEAD_SHA; found ${#}: ${reviewers:-none}." >&2
+    if [ -z "$records" ]; then
+        echo "BLOCKED: no well-formed cross-model clearance comments on PR #$PR_NUM." >&2
         return 1
     fi
-    CLEARED_BY=$(echo "$reviewers" | sed 's/^ *//; s/ /, /g')
+
+    while IFS=$'\t' read -r author who conf sha; do
+        [ -z "$who" ] && continue
+        # F1: the reviewer identity must be a single safe token. The previous
+        # version later ran `set -- $reviewers`, which word-splits on IFS, so a
+        # reviewer value of "alice bob" satisfied the two-reviewer threshold
+        # from ONE comment.
+        case "$who" in *[!A-Za-z0-9._-]*)
+            echo "  ignored: reviewer '$who' is not a single [A-Za-z0-9._-] token" >&2; continue ;;
+        esac
+        # Fable finding 9: honest payloads were silently dropped with no reason
+        # given — "the gate refused my valid clearance and won't say why" is the
+        # exact frustration loop #479 exists to end. Every rejection now says why,
+        # and a SHA differing only in case is accepted.
+        if [ "$(printf '%s' "$sha" | tr 'A-F' 'a-f')" != "$(printf '%s' "$HEAD_SHA" | tr 'A-F' 'a-f')" ]; then
+            echo "  ignored: $who cleared $sha, not the current head $HEAD_SHA" >&2; continue
+        fi
+        conf=${conf%.0}                          # jq renders an integer-valued float as 100.0
+        case "$conf" in *[!0-9]*)
+            echo "  ignored: $who gave a non-integer confidence '$conf'" >&2; continue ;;
+        esac
+        if [ "$conf" -lt 95 ] || [ "$conf" -gt 100 ]; then
+            echo "  ignored: $who gave confidence $conf, outside the 95..100 range" >&2; continue
+        fi
+        case " $reviewers " in *" $who "*) continue ;; esac
+        reviewers="$reviewers $who"
+        CLEARED_BY="$CLEARED_BY${CLEARED_BY:+, }$who (posted by @$author)"
+        count=$((count + 1))
+    done <<< "$records"
+
+    # F1: count parsed RECORDS, never shell words.
+    if [ "$count" -lt 2 ]; then
+        echo "BLOCKED: cross-model clearance needs 2 distinct reviewers at >=95% bound to $HEAD_SHA; found $count." >&2
+        return 1
+    fi
     return 0
 }
 
