@@ -146,9 +146,26 @@ verify_cross_model_clearance() {
         | select((.author_association // "") | . == "OWNER" or . == "MEMBER" or . == "COLLABORATOR")
         | . as $c
         | ($c.body | gsub("(?s)<!--.*?-->"; " ")) as $visible
-        | ($visible | gsub("(?s)```.*?```"; " ") | gsub("`[^`]*`"; " ")) as $prose
-        | select($prose | test("<!--") | not)   # unbalanced opener hides the rest; code-quoted tokens are fine
-        | select($visible | test("CROSS-MODEL-CLEARANCE"))
+        # POSITIVE VISIBILITY SHAPE (Fable round-3 N4/N5). Blacklisting hiding
+        # mechanisms one at a time does not converge: after HTML comments came
+        # <details><summary>, then [//]: # link-reference definitions. So the
+        # rule is inverted — a clearance comment must have a known-good shape,
+        # and anything that could render it invisible disqualifies it.
+        #
+        # Code spans and fences are removed FIRST, so a reviewer who legitimately
+        # quotes `<!--` or <details> while discussing markup is not punished for
+        # it (N5: those honest comments were being silently dropped).
+        | ($visible
+            | gsub("(?s)```.*?```"; " ")
+            | gsub("`[^`]*`"; " ")) as $prose
+        # No raw HTML outside code: covers <!--, <details>, <summary>, <div>,
+        # and anything else that can collapse or hide the payload.
+        | select($prose | test("<[a-zA-Z!/]") | not)
+        # No link-reference definitions: "[//]: # (...)" renders as nothing.
+        | select($prose | test("(?m)^[ \t]*\\[[^]]*\\][ \t]*:") | not)
+        # The marker must start its own line — not indented into a list item or
+        # blockquote, where it can be visually buried.
+        | select($visible | test("(?m)^\\*\\*CROSS-MODEL-CLEARANCE\\*\\*"))
         | ($visible | [scan("(?s)```json\\s*(\\{.*?\\})\\s*```")] ) as $payloads
         | select(($payloads | length) == 1)
         | ($payloads[0][0] | fromjson? // empty) as $p
