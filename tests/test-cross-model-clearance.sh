@@ -747,6 +747,72 @@ else
 fi
 rm -rf "$t"
 
+# ---------------------------------------------------------------------------
+# Group 10: Fable round-3 N4/N5 — positive visibility shape
+# ---------------------------------------------------------------------------
+echo "[10] Payload must be visibly rendered; honest comments are not punished"
+
+mk_comments() {  # $1=tmpdir  $2=python expression building each body from `rev`
+    python3 - "$1/comments.json" "$HEAD_SHA" "$2" <<'PY'
+import json, sys
+path, sha, tmpl = sys.argv[1], sys.argv[2], sys.argv[3]
+def body(rev):
+    payload = json.dumps({"reviewer": rev, "confidence": 100, "sha": sha})
+    return eval(tmpl, {"rev": rev, "payload": payload})
+json.dump([{"user": {"login": "m"}, "author_association": "OWNER", "body": body("codex")},
+           {"user": {"login": "m"}, "author_association": "OWNER", "body": body("fable")}],
+          open(path, "w"))
+PY
+    cat > "$1/bin/gh" <<STUB
+#!/bin/bash
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
+  case "\$*" in *changedFiles*) echo 1; exit 0;; esac
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
+elif [ "\$1" = "api" ]; then
+  case "\$*" in
+    *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
+    *issues*comments*) cat "$1/comments.json";;
+    *pulls*files*) echo '[{"filename":"CLAUDE_CODE_SDLC_WIZARD.md","status":"modified"}]';;
+  esac
+  exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "merge" ]; then echo GH_MERGE_INVOKED; exit 0; fi
+exit 1
+STUB
+    chmod +x "$1/bin/gh"
+}
+
+# N4a: <details><summary> collapses the payload — reader sees a triangle.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+mk_comments "$t" '"LGTM, nice work!\n<details><summary>build log</summary>\n\n**CROSS-MODEL-CLEARANCE**\n```json\n" + payload + "\n```\n</details>"'
+if ( cd "$t" && PATH="$t/bin:$PATH" "$WRAPPER" 123 --cross-model-cleared ) >/dev/null 2>&1; then
+    fail "N4a: a payload collapsed inside <details> cleared the merge"
+else
+    pass "N4a: <details>-hidden payload is rejected"
+fi
+rm -rf "$t"
+
+# N4b: "[//]: # (...)" is a link-reference definition — renders as nothing.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+mk_comments "$t" '"ship it\n[//]: # (**CROSS-MODEL-CLEARANCE**)\n\n**CROSS-MODEL-CLEARANCE**\n```json\n" + payload + "\n```"'
+if ( cd "$t" && PATH="$t/bin:$PATH" "$WRAPPER" 123 --cross-model-cleared ) >/dev/null 2>&1; then
+    fail "N4b: a link-reference definition was accepted as visible evidence"
+else
+    pass "N4b: link-reference definitions disqualify a comment"
+fi
+rm -rf "$t"
+
+# N5: an HONEST reviewer discussing markup must NOT be punished. This repo's
+# reviewers quote `<!--` and <details> constantly.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+mk_comments "$t" '"I reproduced the literal `<!--` token and the `<details>` case.\n\n**CROSS-MODEL-CLEARANCE**\n```json\n" + payload + "\n```"'
+if ( cd "$t" && PATH="$t/bin:$PATH" "$WRAPPER" 123 --cross-model-cleared ) >/dev/null 2>&1; then
+    pass "N5: an honest comment quoting markup in code still clears"
+else
+    fail "N5: an honest comment quoting markup was rejected"
+fi
+rm -rf "$t"
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
