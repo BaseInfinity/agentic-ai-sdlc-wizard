@@ -75,7 +75,19 @@ make_stub_env() {
 #!/bin/bash
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
     case "$*" in
-        *changedFiles*) echo "${CHANGED_FILES_COUNT:-0}"; exit 0 ;;
+        *changedFiles*)
+            # Default to the real number of changed paths, so only tests that
+            # deliberately simulate truncation set CHANGED_FILES_COUNT.
+            if [ "${CHANGED_FILES_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+                echo "$CHANGED_FILES_COUNT"
+            else
+                n=0
+                for _f in $DIFF_FILES; do n=$((n+1)); done
+                [ -n "${RENAMED_FROM:-}" ] && n=$((n+1))
+                for _f in ${DELETED_TEST_FILES:-}; do n=$((n+1)); done
+                echo "$n"
+            fi
+            exit 0 ;;
     esac
     echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":123,\"state\":\"OPEN\"}"
     exit 0
@@ -492,9 +504,9 @@ for hard in "scripts/merge-pr.sh" ".claude/hooks/merge-gate-check.sh" \
 done
 
 for ackable in "skills/sdlc/SKILL.md" "cowork/skills/sdlc/SKILL.md" \
-               "CLAUDE_CODE_SDLC_WIZARD.md"; do
+               "CLAUDE_CODE_SDLC_WIZARD.md" "cowork/hooks/hooks.json"; do
     t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-    if DIFF_FILES="$ackable" CLEARANCE_COMMENTS="$VALID_2" \
+    if DIFF_FILES="$ackable" CLEARANCE_COMMENTS="$VALID_2" CHANGED_FILES_COUNT=1 \
        run_wrapper "$t" 123 --cross-model-cleared; then
         pass "ACKABLE tier '$ackable' is agent-clearable on valid evidence"
     else
@@ -533,13 +545,32 @@ echo "[8] Tier classification is complete and encoding-proof"
 # so a quoted path did not match any column-anchored HARD pattern and merged as
 # "denylist clear". Classification now reads the JSON files API instead.
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
-if DIFF_FILES=".github/workflows/validate-emoji.yml" \
-   CLEARANCE_COMMENTS="codex|100|$HEAD_SHA
-fable|96|$HEAD_SHA" CHANGED_FILES_COUNT=1 \
-   run_wrapper "$t" 123 --cross-model-cleared; then
-    fail "F1: a HARD workflow path was self-cleared"
+# The two surfaces DISAGREE on purpose: `gh pr diff` returns git-quoted display
+# text (leading quote + octal escapes, exactly what cli/cli emits), while the
+# files API returns the decoded pathname. A classifier reading the diff sees a
+# string starting with '"' and matches no column-anchored pattern.
+cat > "$t/bin/gh" <<STUB
+#!/bin/bash
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
+  case "\$*" in *changedFiles*) echo 1; exit 0;; esac
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then
+  printf '"%s"\n' '.github/workflows/validate-\360\237\230\200.yml'; exit 0
+elif [ "\$1" = "api" ]; then
+  case "\$*" in
+    *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
+    *issues*comments*) printf '[]\n';;
+    *pulls*files*) printf '[{"filename":".github/workflows/validate-\\ud83d\\ude00.yml","status":"added"}]\n';;
+  esac
+  exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "merge" ]; then echo GH_MERGE_INVOKED; exit 0; fi
+exit 1
+STUB
+chmod +x "$t/bin/gh"
+if ( cd "$t" && PATH="$t/bin:$PATH" "$WRAPPER" 123 --cross-model-cleared ) >/dev/null 2>&1; then
+    fail "F1: a quoted HARD workflow path escaped the tier"
 else
-    pass "F1: HARD paths are classified from the decoded files API"
+    pass "F1: HARD paths classified from the decoded files API, not diff text"
 fi
 rm -rf "$t"
 
@@ -648,6 +679,70 @@ if DIFF_FILES="cowork/hooks/hooks.json" CHANGED_FILES_COUNT=1 run_wrapper "$t" 1
 else
     pass "F6: cowork/hooks/ requires clearance"
 fi
+rm -rf "$t"
+
+# Codex round-3 P1: `|| echo ""` turned a FAILED changedFiles query into "skip
+# the completeness check" — the exact condition it exists to catch.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+cat > "$t/bin/gh" <<STUB
+#!/bin/bash
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
+  case "\$*" in *changedFiles*) exit 1;; esac        # the query FAILS
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "README.md"; exit 0
+elif [ "\$1" = "api" ]; then
+  case "\$*" in
+    *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
+    *issues*comments*) printf '[]\n';;
+    *pulls*files*) printf '[{"filename":"README.md","status":"modified"}]\n';;
+  esac
+  exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "merge" ]; then echo GH_MERGE_INVOKED; exit 0; fi
+exit 1
+STUB
+chmod +x "$t/bin/gh"
+if ( cd "$t" && PATH="$t/bin:$PATH" "$WRAPPER" 123 ) >/dev/null 2>&1; then
+    fail "a failed changedFiles query merged anyway — completeness silently skipped"
+else
+    pass "a failed changedFiles query fails closed"
+fi
+rm -rf "$t"
+
+# KNOWN VACUOUS — DO NOT TRUST THIS TEST AS COVERAGE (see the note below).
+# Fable round-3 N1: the package.json version check read $DIFF_FILES — the
+# display-text, 300-file-capped source classification was moved OFF. A version
+# bump the diff didn't list merged as "denylist clear", despite the header
+# calling this check unconditional in both tiers.
+t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+cat > "$t/bin/gh" <<STUB
+#!/bin/bash
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
+  case "\$*" in *changedFiles*) echo 1; exit 0;; esac
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "README.md"; exit 0
+elif [ "\$1" = "api" ]; then
+  case "\$*" in
+    *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
+    *issues*comments*) printf '[]\n';;
+    *pulls*files*) printf '%s\n' '[{"filename":"package.json","status":"modified","patch":"@@ -1,3 +1,3 @@\\n {\\n-  \\\\"version\\\\": \\\\"1.87.0\\\\",\\n+  \\\\"version\\\\": \\\\"1.88.0\\\\","}]';;
+  esac
+  exit 0
+elif [ "\$1" = "pr" ] && [ "\$2" = "merge" ]; then echo GH_MERGE_INVOKED; exit 0; fi
+exit 1
+STUB
+chmod +x "$t/bin/gh"
+if ( cd "$t" && PATH="$t/bin:$PATH" "$WRAPPER" 123 ) >/dev/null 2>&1; then
+    fail "N1: a version bump absent from the diff text merged as denylist-clear"
+else
+    pass "N1: the version check reads the complete classified path set"
+fi
+# HONESTY NOTE: the assertion above currently passes EITHER WAY. Reverting the
+# loop to `done <<< "$DIFF_FILES"` (the pre-fix source) with a correctly-applied
+# mutation leaves this test green, so it does not discriminate and must not be
+# counted as coverage for N1. The FIX is verified — running the scenario by hand
+# against the unmutated wrapper blocks with "changes package.json's version
+# field" — but the guard is not. Diagnosing why the mutant still blocks is the
+# next action; do not delete this note until the mutation is shown to fail.
 rm -rf "$t"
 
 echo

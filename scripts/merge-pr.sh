@@ -146,7 +146,8 @@ verify_cross_model_clearance() {
         | select((.author_association // "") | . == "OWNER" or . == "MEMBER" or . == "COLLABORATOR")
         | . as $c
         | ($c.body | gsub("(?s)<!--.*?-->"; " ")) as $visible
-        | select($visible | test("<!--") | not)   # unbalanced opener hides the rest from the reader
+        | ($visible | gsub("(?s)```.*?```"; " ") | gsub("`[^`]*`"; " ")) as $prose
+        | select($prose | test("<!--") | not)   # unbalanced opener hides the rest; code-quoted tokens are fine
         | select($visible | test("CROSS-MODEL-CLEARANCE"))
         | ($visible | [scan("(?s)```json\\s*(\\{.*?\\})\\s*```")] ) as $payloads
         | select(($payloads | length) == 1)
@@ -276,15 +277,28 @@ fi
     # Completeness: never classify a truncated set. If the API returned fewer
     # files than the PR claims to change, fail closed rather than silently
     # judging a subset (GitHub caps the files endpoint at 3000).
-    CHANGED_COUNT=$(gh pr view "$PR_NUM" --json changedFiles --jq '.changedFiles' 2>/dev/null || echo "")
+    # Codex round-3: `|| echo ""` turned an API/CLI failure into "skip the
+    # check" — precisely the condition that must fail closed. A HARD file past
+    # the files-API ceiling was invisible whenever this second query failed.
+    if ! CHANGED_COUNT=$(gh pr view "$PR_NUM" --json changedFiles --jq '.changedFiles' 2>/dev/null); then
+        echo "FAILED CLOSED: could not read changedFiles for PR #$PR_NUM — cannot prove the classified path set is complete." >&2
+        exit 1
+    fi
+    case "$CHANGED_COUNT" in
+        ''|*[!0-9]*)
+            echo "FAILED CLOSED: changedFiles for PR #$PR_NUM was '${CHANGED_COUNT:-empty}', not a number." >&2
+            exit 1 ;;
+    esac
+    if [ "$CHANGED_COUNT" -lt 1 ]; then
+        echo "FAILED CLOSED: PR #$PR_NUM reports $CHANGED_COUNT changed files." >&2
+        exit 1
+    fi
     SEEN_COUNT=$(printf '%s' "$PR_FILES" \
         | jq -rs 'map(if type == "array" then .[] else . end)
                   | map(select(type == "object" and has("filename"))) | length' 2>/dev/null || echo 0)
-    if [ -n "$CHANGED_COUNT" ] && [ "$CHANGED_COUNT" -gt 0 ] 2>/dev/null; then
-        if [ "${SEEN_COUNT:-0}" -lt "$CHANGED_COUNT" ]; then
-            echo "FAILED CLOSED: PR #$PR_NUM changes $CHANGED_COUNT files but only $SEEN_COUNT were retrievable — the tier classifier would be judging a truncated set." >&2
-            exit 1
-        fi
+    if [ "${SEEN_COUNT:-0}" -lt "$CHANGED_COUNT" ]; then
+        echo "FAILED CLOSED: PR #$PR_NUM changes $CHANGED_COUNT files but only $SEEN_COUNT were retrievable — the tier classifier would be judging a truncated set." >&2
+        exit 1
     fi
 
     if [ -z "$CLASSIFY_PATHS" ]; then
@@ -319,6 +333,10 @@ fi
         done
     done <<< "$CLASSIFY_PATHS"
 
+    # Fable round-3 N1: this loop still read $DIFF_FILES — the display-text,
+    # 300-file-capped source that classification was moved OFF for exactly this
+    # reason. A version bump past position 300 merged as "denylist clear",
+    # despite the header calling this check unconditional in both tiers.
     while IFS= read -r f; do
         [ -z "$f" ] && continue
         if [ "$f" = "package.json" ]; then
@@ -328,7 +346,7 @@ fi
                 exit 1
             fi
         fi
-    done <<< "$DIFF_FILES"
+    done <<< "$CLASSIFY_PATHS"
 
     # --- Test-deletion check: covers both outright deletion (status
     # "removed") and renaming a test OUT of tests/ (status "renamed" with a
