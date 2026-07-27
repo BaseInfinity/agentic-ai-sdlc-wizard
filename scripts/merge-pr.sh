@@ -35,24 +35,47 @@
 
 set -u
 
-DENYLIST_PATTERNS=(
+# --- Two tiers (ROADMAP #479). Codex xhigh (96%) and Fable xhigh (85%),
+# consulted independently and blind to each other, both recommended this split.
+#
+# HARD_DENY is the MERGE-EVIDENCE CHAIN: paths where a PR can alter the meaning
+# of the evidence used to merge it. On these, every leg of the evidence stack
+# becomes the agent's own say-so simultaneously — branch protection requires the
+# check by NAME, so ANY new file under .github/workflows/ can mint a green
+# "validate"; the gate that runs is the PR's own working-tree gate; and both
+# clearance comments come from the same gh token. Errors in the control plane
+# compound, errors in the data plane do not. --cross-model-cleared CANNOT
+# satisfy these; a human decides.
+HARD_DENY=(
     '^\.github/workflows/'
     '^hooks/'
     '^\.claude/'
+    '^scripts/merge-pr\.sh$'
+)
+
+# ACKABLE_DENY steers behaviour but does not decide whether THIS PR may merge,
+# so visible SHA-bound cross-model evidence is a proportionate gate for it.
+ACKABLE_DENY=(
     '^skills/sdlc/SKILL\.md$'
     '^cowork/skills/sdlc/SKILL\.md$'
     '^CLAUDE_CODE_SDLC_WIZARD\.md$'
-    '^CHANGELOG\.md$'
-    '^\.github/workflows/release'
-    '^scripts/merge-pr\.sh$'
 )
-# CLAUDE_CODE_SDLC_WIZARD.md added per Codex round-1 finding (2026-07-21):
-# it now contains this exception's own portable policy prose, so a PR
-# weakening that policy wasn't excluded from the exception it was editing.
-# package.json is denylisted only for its version field specifically, not
-# any touch (a PR bumping a dependency shouldn't need this exception's
-# denylist, but a version-field change is release-adjacent) — checked
-# separately below via a content diff, not the path-only denylist above.
+
+# Deliberately NOT denylisted:
+#   CHANGELOG.md — both reviewers measured it as dead weight: across the last
+#     ~25 merged PRs it only ever co-fired with a package.json version bump,
+#     which the unconditional content check below already blocks.
+#   '^\.github/workflows/release' — redundant now that all of
+#     .github/workflows/ is hard-denied.
+# package.json is checked for its VERSION FIELD specifically, not any touch (a
+# dependency bump shouldn't be release-adjacent) — a content diff below, not a
+# path pattern, and unconditional in both tiers.
+#
+# hooks/ granularity: Fable argued a narrower core (only review-evidence hooks
+# hard, advisory ones ackable — 15% vs 26% of PRs needing a human) but said
+# plainly that the broad directory is the zero-cleverness option. Broad is used
+# here: "advisory vs evidence" is a judgement that drifts as hooks change, and
+# it matches the guidance already recorded in ROADMAP #478.
 
 # --- Cross-model clearance, read from the REMOTE PR (ROADMAP #479) ---
 #
@@ -217,18 +240,42 @@ fi
         echo "FAILED CLOSED: could not fetch diff for PR #$PR_NUM: $DIFF_FILES" >&2
         exit 1
     fi
+    # Codex's catch: classify a renamed file by BOTH its new and previous path,
+    # or renaming a protected file out of a protected directory changes its tier.
+    RENAMED_FROM=$(printf '%s' "$PR_FILES" \
+        | grep -o '"previous_filename"[[:space:]]*:[[:space:]]*"[^"]*"' \
+        | sed 's/.*"previous_filename"[[:space:]]*:[[:space:]]*"//; s/"$//' || true)
+    CLASSIFY_PATHS=$(printf '%s\n%s' "$DIFF_FILES" "$RENAMED_FROM" | grep -v '^$' || true)
+
+    # PASS 1 — HARD tier, evaluated across EVERY path before anything can be
+    # acknowledged, so a PR touching both tiers is blocked by the hard one.
     while IFS= read -r f; do
         [ -z "$f" ] && continue
-        for pattern in "${DENYLIST_PATTERNS[@]}"; do
+        for pattern in "${HARD_DENY[@]}"; do
+            if printf '%s' "$f" | grep -qE "$pattern"; then
+                echo "BLOCKED: PR #$PR_NUM touches '$f', part of the merge-evidence chain ($pattern). --cross-model-cleared does NOT apply here: on these paths the PR defines its own CI check, runs its own gate, and posts its own clearance, so every leg of the evidence would be self-produced. A human decides this one." >&2
+                exit 1
+            fi
+        done
+    done <<< "$CLASSIFY_PATHS"
+
+    # PASS 2 — ACKABLE tier.
+    while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        for pattern in "${ACKABLE_DENY[@]}"; do
             if printf '%s' "$f" | grep -qE "$pattern"; then
                 if [ "$CROSS_MODEL_CLEARED" -eq 1 ] && verify_cross_model_clearance; then
                     echo "DENYLIST ACKNOWLEDGED: '$f' matches $pattern, cleared by $CLEARED_BY. Every other check still ran." >&2
                     continue
                 fi
-                echo "BLOCKED: PR #$PR_NUM touches '$f', which matches the release/policy-adjacency denylist ($pattern). Post cross-model clearance to the PR and re-run with --cross-model-cleared." >&2
+                echo "BLOCKED: PR #$PR_NUM touches '$f' ($pattern). Post cross-model clearance to the PR and re-run with --cross-model-cleared." >&2
                 exit 1
             fi
         done
+    done <<< "$CLASSIFY_PATHS"
+
+    while IFS= read -r f; do
+        [ -z "$f" ] && continue
         if [ "$f" = "package.json" ]; then
             PKG_PATCH=$(printf '%s' "$PR_FILES" | grep -oE '"filename"[[:space:]]*:[[:space:]]*"package\.json"[^}]*"patch"[[:space:]]*:.*')
             if printf '%s' "$PKG_PATCH" | grep -qE '[+-][[:space:]]*\\"version\\"'; then
