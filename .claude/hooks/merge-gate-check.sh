@@ -22,10 +22,11 @@
 
 set -e
 
-# Skip gate if explicitly overridden (emergency bypass with logged
-# justification) — separate from scripts/merge-pr.sh's own bypass; both
-# must be set to fully skip the mechanism, intentional friction.
-[ "${MERGE_CLEARANCE_SKIP:-}" = "1" ] && exit 0
+# There is deliberately NO env-var escape here (ROADMAP #479). The old one
+# short-circuited the entire mechanism, and its docstring claiming "both must
+# be set, intentional friction" was false — both scripts read the same
+# variable name. Redirection to the wrapper is now unconditional; the wrapper
+# is where a denylist finding gets acknowledged, on evidence.
 
 TOOL_INPUT=$(cat)
 
@@ -153,5 +154,5 @@ if printf '%s\n%s' "$STRIPPED_COMMAND" "$EXEC_CONTENT" | grep -qE '\-\-auto\b'; 
     exit 2
 fi
 
-echo "BLOCKED: use scripts/merge-pr.sh <PR#> instead of 'gh pr merge' directly — it enforces CI-green + cross-model clearance + release/policy-adjacency checks that a bare gh invocation skips. See CLAUDE_CODE_SDLC_WIZARD.md's CI Feedback Loop section and ROADMAP.md for why. Set MERGE_CLEARANCE_SKIP=1 to bypass with justification (also required on scripts/merge-pr.sh itself to fully skip)." >&2
+echo "BLOCKED: use scripts/merge-pr.sh <PR#> instead of 'gh pr merge' directly — it enforces CI-green + cross-model clearance + release/policy-adjacency checks that a bare gh invocation skips. See CLAUDE_CODE_SDLC_WIZARD.md's CI Feedback Loop section and ROADMAP.md for why. See ROADMAP #479 for how a release/policy denylist finding is acknowledged on posted cross-model evidence." >&2
 exit 2
