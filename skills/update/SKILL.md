@@ -95,9 +95,10 @@ Parse CHANGELOG entries between the user's installed version and the resolved la
 
 ```
 Installed: 1.42.0
-Latest:    1.87.0
+Latest:    1.88.0
 
 What changed:
+- [1.88.0] Opus 5 becomes the Setup A default driver (requires CC v2.1.219+); autocompact fix — Setup A no longer writes a stale CLAUDE_AUTOCOMPACT_PCT_OVERRIDE into consumer settings; escalation ladder codified (Fable → Codex → human last, confidence is not authorization).
 - [1.87.0] First external contribution (@thejesh23, #444): argument-hint frontmatter quoted so Copilot CLI ≥1.0.65 loads skills, plus regression test; GPT-5.6 Sol reviewer sweep; Sonnet 5 default effort → medium (unbacked 5x quota claim removed, hook floor matched).
 - [1.86.0] Fix #437: codex-gate-check.sh now blocks stale certifications — a CERTIFIED handoff.json no longer sails through forever; it records commit_sha at cert time and blocks once HEAD moves past it without a re-cert.
 - [1.85.0] Post-ship retrospective: CI Feedback Loop synced to SKILL.md's stronger version, CERTIFIED≠CI lesson, Policy Migration Inventory checklist, stale round-count correction.
