@@ -31,6 +31,7 @@ Thank you for your interest in improving the SDLC Wizard!
    ./tests/test-update-skill-step-7-8.sh && \
    ./tests/test-merge-gate.sh && \
    ./tests/test-roadmap-integrity.sh && \
+   ./tests/test-cross-model-clearance.sh && \
    ./tests/test-domain-detection.sh && \
    ./tests/test-autocompact-methodology.sh && \
    ./tests/test-node24-compliance.sh && \
