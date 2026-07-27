@@ -81,6 +81,19 @@
 # Markdown to hide an entry; that person can also just edit this test. The
 # prohibition above exists because it is cheap and bounded, not because the
 # adversarial case is the threat.
+#
+# Known residual, recorded rather than hidden (Codex round 4, raised and then
+# ruled out by the reviewer itself): a raw HTML block containing an H2-shaped
+# literal —
+#     <pre>
+#     ## literal, not a Markdown heading
+#     </pre>
+# — makes the awk section reader stop early, so a stale bullet after it is not
+# examined. It is neither a fence nor an HTML comment, so the prohibition does
+# not catch it. Deliberately not fixed: reaching it requires inserting a raw
+# HTML code block plus a heading-shaped delimiter into a cold-open section that
+# has no legitimate code content, which is the adversarial case above and not
+# the accidental rot this file exists to catch.
 
 set -uo pipefail
 
