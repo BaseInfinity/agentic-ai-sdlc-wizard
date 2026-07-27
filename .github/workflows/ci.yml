@@ -21,6 +21,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # test-roadmap-integrity.sh reads `git log` to prove no already-merged
+          # PR is still listed as in-flight. A depth-1 clone makes that check
+          # unverifiable, and it fails loudly rather than passing vacuously.
+          fetch-depth: 0
 
       - name: Configure git identity for tests
         run: |
@@ -276,6 +281,9 @@ jobs:
 
       - name: Run merge-safety gate tests (#462)
         run: ./tests/test-merge-gate.sh
+
+      - name: Run ROADMAP integrity tests (#479)
+        run: ./tests/test-roadmap-integrity.sh
 
   # Clean up old bot comments on PR push (keeps PRs tidy)
   # Also runs on workflow_dispatch (no-op) so branch protection doesn't block auto-merge.
