@@ -285,6 +285,9 @@ jobs:
       - name: Run ROADMAP integrity tests (#479)
         run: ./tests/test-roadmap-integrity.sh
 
+      - name: Run cross-model clearance tests (#479)
+        run: ./tests/test-cross-model-clearance.sh
+
   # Clean up old bot comments on PR push (keeps PRs tidy)
   # Also runs on workflow_dispatch (no-op) so branch protection doesn't block auto-merge.
   cleanup-old-comments:
