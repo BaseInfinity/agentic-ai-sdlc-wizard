@@ -7,11 +7,18 @@
 # What this mechanically proves (hard-verified, fail-closed):
 #   - CI's `validate` check is success for the PR's REMOTE head SHA (not a
 #     cached field — queried fresh every run).
-#   - The PR doesn't touch a release/policy-adjacency denylist, including
+#   - The PR touches NO HARD_DENY path — the merge-evidence chain, including
 #     this wrapper and its redirect hook themselves (closes the
 #     self-referential loophole both Codex and a fresh Fable subagent
 #     independently flagged in the original prose-only policy: a PR editing
 #     the merge policy/mechanism wasn't excluded by a release-only list).
+#   - Every ACKABLE_DENY path the PR touches carries qualifying, SHA-bound
+#     cross-model evidence. NOTE this is deliberately weaker than "touches no
+#     denylist at all": a successful --cross-model-cleared run IS allowed to
+#     touch the policy-prose files, and logs DENYLIST ACKNOWLEDGED when it
+#     does. An auditor reading this contract must not read a clean exit as
+#     "no denylisted path was touched" (Codex round-2 P2 — the earlier
+#     wording asserted exactly that, and became false when tiering landed).
 #   - The PR doesn't net-delete files under tests/.
 #   - A per-PR clearance artifact exists, is CERTIFIED, references a round
 #     >= 2 dialogue (a round-1-only CERTIFIED is treated as suspicious — see
@@ -25,7 +32,7 @@
 # this honestly, don't oversell it): "Codex reached CERTIFIED via a genuine
 # adversarial dialogue" and "the Fable subagent was truly fresh/diff-only"
 # can never be confirmed by a local script — an agent willing to forge the
-# clearance artifact would also set the old all-or-nothing bypass. round >= 2 plus a
+# clearance artifact could equally forge a clearance comment. round >= 2 plus a
 # non-empty review file is the best available proxy that review wasn't
 # skipped or stale, not proof it wasn't faked. Real fake-resistance needs a
 # server-side required check (tracked as a Research Parking Lot row in
@@ -59,6 +66,7 @@ ACKABLE_DENY=(
     '^skills/sdlc/SKILL\.md$'
     '^cowork/skills/sdlc/SKILL\.md$'
     '^CLAUDE_CODE_SDLC_WIZARD\.md$'
+    '^cowork/hooks/'
 )
 
 # Deliberately NOT denylisted:
@@ -103,6 +111,7 @@ verify_cross_model_clearance() {
         return 1
     fi
     local comments records who conf sha author reviewers="" count=0
+    CLEARED_BY=""
     if ! comments=$(gh api --paginate "repos/:owner/:repo/issues/$PR_NUM/comments" 2>&1); then
         echo "FAILED CLOSED: could not fetch PR comments for #$PR_NUM: $comments" >&2
         return 1
@@ -137,6 +146,7 @@ verify_cross_model_clearance() {
         | select((.author_association // "") | . == "OWNER" or . == "MEMBER" or . == "COLLABORATOR")
         | . as $c
         | ($c.body | gsub("(?s)<!--.*?-->"; " ")) as $visible
+        | select($visible | test("<!--") | not)   # unbalanced opener hides the rest from the reader
         | select($visible | test("CROSS-MODEL-CLEARANCE"))
         | ($visible | [scan("(?s)```json\\s*(\\{.*?\\})\\s*```")] ) as $payloads
         | select(($payloads | length) == 1)
@@ -218,7 +228,7 @@ if [ -z "$HEAD_SHA" ]; then
 fi
 
 # --- Every check below is UNCONDITIONAL. ROADMAP #479: the old
-# the old all-or-nothing bypass disabled all of them at once, so acknowledging one
+# ROADMAP #479: the retired bypass disabled all of them at once, so acknowledging one
 # denylist row meant disarming CI, test-deletion, SHA-freshness and the
 # clearance artifact. There is now no flag that turns any of these off.
     # --- Fetch per-file status/patch data once, with pagination. Codex
@@ -240,19 +250,54 @@ fi
         echo "FAILED CLOSED: could not fetch diff for PR #$PR_NUM: $DIFF_FILES" >&2
         exit 1
     fi
-    # Codex's catch: classify a renamed file by BOTH its new and previous path,
-    # or renaming a protected file out of a protected directory changes its tier.
-    RENAMED_FROM=$(printf '%s' "$PR_FILES" \
-        | grep -o '"previous_filename"[[:space:]]*:[[:space:]]*"[^"]*"' \
-        | sed 's/.*"previous_filename"[[:space:]]*:[[:space:]]*"//; s/"$//' || true)
-    CLASSIFY_PATHS=$(printf '%s\n%s' "$DIFF_FILES" "$RENAMED_FROM" | grep -v '^$' || true)
+    # Tier classification reads the FILES API, never `gh pr diff --name-only`
+    # (Codex round-2, two proven HARD-tier bypasses):
+    #
+    #  - `gh pr diff` emits DISPLAY text, preserving core.quotePath quoting and
+    #    octal escapes. `".github/workflows/validate-\360\237\230\200.yml"`
+    #    begins with a quote, so every column-anchored HARD pattern missed it and
+    #    the merge reported "denylist clear". jq decodes the real pathname.
+    #  - A PR diff is capped at 300 files, so a HARD path at position 301 was
+    #    simply absent from the classified set while a visible ACKABLE hit
+    #    cleared normally.
+    #
+    # Both current and previous names are classified, so renaming a protected
+    # file out of a protected directory cannot change its tier.
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "FAILED CLOSED: jq is required to classify changed paths." >&2
+        exit 1
+    fi
+    CLASSIFY_PATHS=$(printf '%s' "$PR_FILES" \
+        | jq -rs 'map(if type == "array" then .[] else . end)
+                  | map(select(type == "object"))
+                  | map(.filename // empty, .previous_filename // empty)
+                  | .[]' 2>/dev/null | grep -v '^$' || true)
+
+    # Completeness: never classify a truncated set. If the API returned fewer
+    # files than the PR claims to change, fail closed rather than silently
+    # judging a subset (GitHub caps the files endpoint at 3000).
+    CHANGED_COUNT=$(gh pr view "$PR_NUM" --json changedFiles --jq '.changedFiles' 2>/dev/null || echo "")
+    SEEN_COUNT=$(printf '%s' "$PR_FILES" \
+        | jq -rs 'map(if type == "array" then .[] else . end)
+                  | map(select(type == "object" and has("filename"))) | length' 2>/dev/null || echo 0)
+    if [ -n "$CHANGED_COUNT" ] && [ "$CHANGED_COUNT" -gt 0 ] 2>/dev/null; then
+        if [ "${SEEN_COUNT:-0}" -lt "$CHANGED_COUNT" ]; then
+            echo "FAILED CLOSED: PR #$PR_NUM changes $CHANGED_COUNT files but only $SEEN_COUNT were retrievable — the tier classifier would be judging a truncated set." >&2
+            exit 1
+        fi
+    fi
+
+    if [ -z "$CLASSIFY_PATHS" ]; then
+        echo "FAILED CLOSED: could not determine any changed path for PR #$PR_NUM." >&2
+        exit 1
+    fi
 
     # PASS 1 — HARD tier, evaluated across EVERY path before anything can be
     # acknowledged, so a PR touching both tiers is blocked by the hard one.
     while IFS= read -r f; do
         [ -z "$f" ] && continue
         for pattern in "${HARD_DENY[@]}"; do
-            if printf '%s' "$f" | grep -qE "$pattern"; then
+            if printf '%s' "$f" | grep -qiE "$pattern"; then
                 echo "BLOCKED: PR #$PR_NUM touches '$f', part of the merge-evidence chain ($pattern). --cross-model-cleared does NOT apply here: on these paths the PR defines its own CI check, runs its own gate, and posts its own clearance, so every leg of the evidence would be self-produced. A human decides this one." >&2
                 exit 1
             fi
@@ -263,7 +308,7 @@ fi
     while IFS= read -r f; do
         [ -z "$f" ] && continue
         for pattern in "${ACKABLE_DENY[@]}"; do
-            if printf '%s' "$f" | grep -qE "$pattern"; then
+            if printf '%s' "$f" | grep -qiE "$pattern"; then
                 if [ "$CROSS_MODEL_CLEARED" -eq 1 ] && verify_cross_model_clearance; then
                     echo "DENYLIST ACKNOWLEDGED: '$f' matches $pattern, cleared by $CLEARED_BY. Every other check still ran." >&2
                     continue

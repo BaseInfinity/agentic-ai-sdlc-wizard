@@ -353,6 +353,12 @@ elif [ "$1" = "api" ]; then
             echo "{\"conclusion\":\"$VALIDATE_CONCLUSION\",\"name\":\"validate\"}"
             ;;
         *pulls*files*)
+            # Tier classification now reads THIS endpoint, not `gh pr diff`
+            # (Codex round-2: diff output is display text and caps at 300
+            # files). So it must list every changed path, not just deletions.
+            for f in $DIFF_FILES; do
+                echo "{\"filename\":\"$f\",\"status\":\"modified\"}"
+            done
             if [ -n "$DELETED_TEST_FILES" ]; then
                 for f in $DELETED_TEST_FILES; do
                     echo "{\"filename\":\"$f\",\"status\":\"removed\"}"
