@@ -342,6 +342,16 @@ CONFIG="$(dirname "$0")/../.gh-stub-config"
 [ -f "$CONFIG" ] && source "$CONFIG"
 
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+    # The wrapper now asks for changedFiles separately to prove the classified
+    # path set is complete; answer with the fixture's real count.
+    case "$*" in
+        *changedFiles*)
+            n=0
+            for _f in $DIFF_FILES; do n=$((n+1)); done
+            for _f in ${DELETED_TEST_FILES:-}; do n=$((n+1)); done
+            [ "$n" -eq 0 ] && n=1
+            echo "$n"; exit 0 ;;
+    esac
     echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":${PR_NUM:-123},\"state\":\"OPEN\"}"
     exit 0
 elif [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
