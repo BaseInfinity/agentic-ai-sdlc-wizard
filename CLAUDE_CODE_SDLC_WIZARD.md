@@ -2563,6 +2563,30 @@ Self-review passes → handoff.json (round 1, PENDING_REVIEW)
 
 **Full protocol:** See the "Cross-Model Review Loop" section below for key flags and reasoning effort guidance.
 
+### Parallel Blind Dual Review
+
+When two models review the same change, **run them in parallel and blind to each other, then merge the findings**. Do not chain them.
+
+**The rule:** neither reviewer sees the other's output, or your own responses to it, until both have reported. Give each the same diff, the same preflight, and the same instruction to attack. Then merge: treat any finding either one raises as real until disproved.
+
+**Why blindness, not just plurality.** A second reviewer shown the first's findings is *anchored* — it tends to confirm, refine, and extend what it was given rather than look where nobody has looked. You pay for two reviews and get one review plus a proofread. Measured on this repo 2026-07-27, across a four-round review of the merge gate: the **parallel blind** round produced findings that barely overlapped — one model found parsing and encoding defects, the other found a case-sensitivity hole that let a protected path merge clean, plus a policy-document regression neither the author nor the first model noticed. The **sequenced** rounds overlapped heavily by comparison. Both models independently found things that would have shipped otherwise.
+
+**Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other.
+
+**Cost control.** This is not free — each round costs wall-clock and, for a paid API reviewer, real money. Scale it to blast radius:
+
+| Change | Review |
+|---|---|
+| Live enforcement: CI config, hooks, agent config, the merge mechanism itself | Parallel blind dual review |
+| Ordinary application code | One reviewer at the pre-commit gate |
+| Docs, roadmap entries, comments | Neither |
+
+**Iterating vs. gating.** Looping with one reviewer while you build is cheap and effective — use the model that does not bill per token if you have one. But that reviewer is no longer independent by the end: it is reading code shaped by its own earlier feedback. So iterate with it freely, then run the **final** gate as a parallel blind round with a *fresh* instance of each model.
+
+**If you only have one model available**, run it twice with genuinely different framings — for example once asked to find correctness defects and once asked to prove a specific safety property false — and treat the result as a single review, not two. It is meaningfully better than one pass and meaningfully worse than two models. Do not report it as dual review.
+
+**Do not show reviewers each other's work to "save a round."** That optimisation removes the only property this technique has.
+
 ### Release Review Focus
 
 Before any release/publish, add these to `review_instructions`:
