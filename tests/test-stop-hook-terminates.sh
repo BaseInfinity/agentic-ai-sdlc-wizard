@@ -91,6 +91,36 @@ if [ -f "$COWORK" ]; then
     fi
 fi
 
+# The judge must not block on things it cannot observe. Each of these was a
+# real block that wasted a turn, and each is now explicitly exempted.
+if [ -f "$COWORK" ]; then
+    P=$(python3 -c "import json;print(json.load(open('$COWORK'))['hooks']['Stop'][0]['hooks'][0]['prompt'])" 2>/dev/null)
+
+    if printf '%s' "$P" | grep -qiE "some FAILED|failing tests are information|pre-existing"; then
+        pass "failing-but-explained tests do not block"
+    else
+        fail "judge still blocks on test OUTCOMES it cannot verify"
+    fi
+
+    if printf '%s' "$P" | grep -qiE "confidence level|ceremony"; then
+        pass "missing ceremony (confidence, self-review narration) does not block"
+    else
+        fail "judge still blocks on missing ceremony"
+    fi
+
+    if printf '%s' "$P" | grep -qiE "quota|infrastructure"; then
+        pass "an infrastructure-blocked suite does not block"
+    else
+        fail "judge still blocks when the suite could not run for infra reasons"
+    fi
+
+    if printf '%s' "$P" | grep -qiE "when uncertain.*ok|default to allowing"; then
+        pass "judge fails OPEN when uncertain"
+    else
+        fail "judge does not default to allowing — it will block on ambiguity"
+    fi
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
