@@ -470,12 +470,28 @@ import json
 d = json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
 prompt = next((hk.get('prompt','') for m in d.get('Stop',[]) for hk in m.get('hooks',[]) if hk.get('type')=='prompt'), '')
 p = prompt.lower()
-assert 'pass' in p, 'no requirement that tests PASS (not just run)'
-assert 'self-review' in p, 'self-review requirement missing (README promises it)'
+# CONTRACT CHANGED 2026-07-27 (issue #477). This previously asserted that the
+# judge REQUIRE a passing suite and narrated self-review. Both were removed
+# deliberately, not weakened by accident:
+#   - The judge sees response text, not tool calls. It cannot verify a test
+#     OUTCOME, only whether prose claims one. Demanding a green suite made the
+#     hook unusable in any repo with known pre-existing failures — it blocked a
+#     consumer 9 consecutive times until the harness force-broke the loop, on a
+#     turn whose only action was a read-only git-status check.
+#   - The wizard installs everywhere, so a gate that assumes a green suite
+#     assumes something most real repos cannot provide.
+# The judge now blocks on ONE thing it can actually see: code changed with no
+# verification attempted at all. These assertions pin the replacement contract
+# so it cannot be silently re-tightened or further loosened.
+assert 'no attempt to test it' in p, 'lost the single blocking condition (unverified work)'
+assert 'failing tests are information' in p, 'test OUTCOMES are being judged again — unverifiable'
+assert 'stop_hook_active' in p, 'repeat-suppression missing — the hook can loop forever'
+assert 'this turn only' in p, 'turn scoping missing — prior work re-triggers the block'
+assert 'when uncertain' in p, 'no fail-open rule — the judge will block on ambiguity'
 " 2>/dev/null; then
-    pass "Stop requires tests to pass (not just run) and restores the self-review check"
+    pass "Stop blocks only on unverified work, fails open, and cannot loop"
   else
-    fail "Stop is missing the tests-must-pass requirement or the self-review check"
+    fail "Stop hook contract broken: see the comment above for what each assertion pins"
   fi
 else
   fail "hooks.json not found (skipping Stop pass/self-review check)"
