@@ -288,6 +288,9 @@ jobs:
       - name: Run cross-model clearance tests (#479)
         run: ./tests/test-cross-model-clearance.sh
 
+      - name: Run Stop-hook termination tests (#477)
+        run: ./tests/test-stop-hook-terminates.sh
+
   # Clean up old bot comments on PR push (keeps PRs tidy)
   # Also runs on workflow_dispatch (no-op) so branch protection doesn't block auto-merge.
   cleanup-old-comments:
