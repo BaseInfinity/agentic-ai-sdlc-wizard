@@ -708,12 +708,21 @@ else
 fi
 rm -rf "$t"
 
-# KNOWN VACUOUS — DO NOT TRUST THIS TEST AS COVERAGE (see the note below).
 # Fable round-3 N1: the package.json version check read $DIFF_FILES — the
-# display-text, 300-file-capped source classification was moved OFF. A version
-# bump the diff didn't list merged as "denylist clear", despite the header
-# calling this check unconditional in both tiers.
+# display-text, 300-file-capped source classification was moved OFF in round 2.
+# A version bump the diff did not list merged as "denylist clear", while the
+# file header called that check unconditional in both tiers.
+#
+# The fixture is generated with EXACT BYTES. A hand-escaped heredoc version was
+# vacuous: the mangled JSON made jq fail, so the wrapper blocked on "could not
+# determine any changed path" with AND without the fix.
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
+python3 - "$t/files.json" <<'PY'
+import json, sys
+json.dump([{"filename": "package.json", "status": "modified",
+            "patch": '@@ -1,3 +1,3 @@\n {\n-  "version": "1.87.0",\n+  "version": "1.88.0",'}],
+          open(sys.argv[1], "w"))
+PY
 cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
@@ -724,7 +733,7 @@ elif [ "\$1" = "api" ]; then
   case "\$*" in
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
     *issues*comments*) printf '[]\n';;
-    *pulls*files*) printf '%s\n' '[{"filename":"package.json","status":"modified","patch":"@@ -1,3 +1,3 @@\\n {\\n-  \\\\"version\\\\": \\\\"1.87.0\\\\",\\n+  \\\\"version\\\\": \\\\"1.88.0\\\\","}]';;
+    *pulls*files*) cat "$t/files.json";;
   esac
   exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "merge" ]; then echo GH_MERGE_INVOKED; exit 0; fi
@@ -736,13 +745,6 @@ if ( cd "$t" && PATH="$t/bin:$PATH" "$WRAPPER" 123 ) >/dev/null 2>&1; then
 else
     pass "N1: the version check reads the complete classified path set"
 fi
-# HONESTY NOTE: the assertion above currently passes EITHER WAY. Reverting the
-# loop to `done <<< "$DIFF_FILES"` (the pre-fix source) with a correctly-applied
-# mutation leaves this test green, so it does not discriminate and must not be
-# counted as coverage for N1. The FIX is verified — running the scenario by hand
-# against the unmutated wrapper blocks with "changes package.json's version
-# field" — but the guard is not. Diagnosing why the mutant still blocks is the
-# next action; do not delete this note until the mutation is shown to fail.
 rm -rf "$t"
 
 echo
