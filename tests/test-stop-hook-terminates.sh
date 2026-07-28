@@ -78,6 +78,19 @@ if [ -f "$COWORK" ]; then
     fi
 fi
 
+# Third defect (observed 2026-07-27, same consumer repo): the judge treated a
+# READ-ONLY turn as a code change because the response summarized commits made
+# earlier in the session. The agent's own correct "no code was changed this
+# turn" was overridden. The judge sees text, not tool calls, so it cannot
+# observe turn boundaries — the prompt has to tell it to defer.
+if [ -f "$COWORK" ]; then
+    if grep -qiE "THIS TURN ONLY|earlier in the session" "$COWORK"; then
+        pass "cowork Stop prompt scopes the judgement to the current turn"
+    else
+        fail "cowork Stop prompt does not scope to this turn — prior work re-triggers it"
+    fi
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
