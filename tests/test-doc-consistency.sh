@@ -1930,6 +1930,49 @@ test_escalation_ladder_order_and_threshold() {
 test_escalation_ladder_order_and_threshold
 
 
+# --- Parallel blind dual review (ROADMAP #469) ---
+# Two reviewers must run BLIND AND IN PARALLEL, with findings merged afterwards.
+# Sequencing them anchors the second reviewer on the first's output: measured
+# 2026-07-27, the parallel round produced findings that barely overlapped while
+# sequential rounds overlapped heavily.
+test_parallel_blind_dual_review() {
+    local WIZARD="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local SECTION
+    SECTION=$(awk '/^### Parallel Blind Dual Review/{f=1; next} /^### /{f=0} f' "$WIZARD")
+
+    if [ -n "$SECTION" ]; then
+        pass "wizard doc has a Parallel Blind Dual Review section"
+    else
+        fail "wizard doc is missing the Parallel Blind Dual Review section"
+        return
+    fi
+
+    local req
+    for req in blind parallel merge; do
+        if printf '%s' "$SECTION" | grep -qi "$req"; then
+            pass "dual-review section covers '$req'"
+        else
+            fail "dual-review section never mentions '$req'"
+        fi
+    done
+
+    # Without the rationale a reader will "optimise" this back into a
+    # sequential pipeline to save wall-clock, losing the only property it has.
+    if printf '%s' "$SECTION" | grep -qiE "anchor|independen"; then
+        pass "dual-review section explains why blindness matters"
+    else
+        fail "dual-review section omits WHY blindness matters — it will be optimised away"
+    fi
+
+    # Most consumers have one model, not two.
+    if printf '%s' "$SECTION" | grep -qiE "one model|single|only have"; then
+        pass "dual-review section gives a single-model fallback"
+    else
+        fail "dual-review section assumes two models with no fallback"
+    fi
+}
+test_parallel_blind_dual_review
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then

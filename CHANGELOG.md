@@ -4,6 +4,37 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.89.0] - 2026-07-27
+
+### Fixed
+- **Stop hook could block a turn forever** (#477). The Cowork prompt-type Stop hook had no
+  repeat-suppression, so once it blocked it re-evaluated the same unchanged state and blocked
+  again — observed 9 consecutive times in a consumer repo before the harness force-broke it.
+  Three distinct defects, all of the same kind: the judge was ruling on things it cannot see.
+  It now honours `stop_hook_active`, judges the current turn only, and blocks on exactly one
+  condition — code changed with no verification attempted at all. It no longer blocks on test
+  *outcomes* (a suite with known, explained failures is fine), scoped runs, infrastructure-blocked
+  suites, or missing ceremony like a stated confidence level. It fails open when uncertain.
+  **This matters because the wizard installs everywhere:** demanding a green suite made the hook
+  unusable in any repo with long-standing failures.
+- **Merge approval no longer means merge bypass** (#479). The single escape past the release/policy
+  denylist also disabled the CI check, the test-deletion check, the SHA-freshness check and the
+  clearance-artifact check — so acknowledging one finding disarmed four working ones. That flag is
+  deleted. `--cross-model-cleared` now satisfies the denylist finding only; every other check is
+  unconditional. Clearance is read from comments on the remote PR (two distinct reviewers, >=95%,
+  bound to the head SHA) and is an audit trail, not an authentication boundary — stated plainly in
+  the script rather than oversold.
+- The denylist is now tiered. Paths that can alter the evidence a merge relies on (CI workflows,
+  hooks, agent config, the merge script) always need a human. Policy prose is clearable on posted
+  cross-model evidence. `CHANGELOG.md` is delisted — measured as dead weight.
+
+### Added
+- **Parallel blind dual review** (ROADMAP #469) in `CLAUDE_CODE_SDLC_WIZARD.md`. Run two reviewers
+  in parallel and blind to each other, then merge findings. Chaining them anchors the second on the
+  first's output. Includes a cost table scaled to blast radius and a single-model fallback.
+- `tests/test-roadmap-integrity.sh`, `tests/test-cross-model-clearance.sh`,
+  `tests/test-stop-hook-terminates.sh`.
+
 ## [1.88.0] - 2026-07-25
 
 ### Changed — Opus 5 becomes the recommended driver

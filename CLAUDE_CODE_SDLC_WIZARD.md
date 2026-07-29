@@ -2563,6 +2563,30 @@ Self-review passes → handoff.json (round 1, PENDING_REVIEW)
 
 **Full protocol:** See the "Cross-Model Review Loop" section below for key flags and reasoning effort guidance.
 
+### Parallel Blind Dual Review
+
+When two models review the same change, **run them in parallel and blind to each other, then merge the findings**. Do not chain them.
+
+**The rule:** neither reviewer sees the other's output, or your own responses to it, until both have reported. Give each the same diff, the same preflight, and the same instruction to attack. Then merge: treat any finding either one raises as real until disproved.
+
+**Why blindness, not just plurality.** A second reviewer shown the first's findings is *anchored* — it tends to confirm, refine, and extend what it was given rather than look where nobody has looked. You pay for two reviews and get one review plus a proofread. Measured on this repo 2026-07-27, across a four-round review of the merge gate: the **parallel blind** round produced findings that barely overlapped — one model found parsing and encoding defects, the other found a case-sensitivity hole that let a protected path merge clean, plus a policy-document regression neither the author nor the first model noticed. The **sequenced** rounds overlapped heavily by comparison. Both models independently found things that would have shipped otherwise.
+
+**Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other.
+
+**Cost control.** This is not free — each round costs wall-clock and, for a paid API reviewer, real money. Scale it to blast radius:
+
+| Change | Review |
+|---|---|
+| Live enforcement: CI config, hooks, agent config, the merge mechanism itself | Parallel blind dual review |
+| Ordinary application code | One reviewer at the pre-commit gate |
+| Docs, roadmap entries, comments | Neither |
+
+**Iterating vs. gating.** Looping with one reviewer while you build is cheap and effective — use the model that does not bill per token if you have one. But that reviewer is no longer independent by the end: it is reading code shaped by its own earlier feedback. So iterate with it freely, then run the **final** gate as a parallel blind round with a *fresh* instance of each model.
+
+**If you only have one model available**, run it twice with genuinely different framings — for example once asked to find correctness defects and once asked to prove a specific safety property false — and treat the result as a single review, not two. It is meaningfully better than one pass and meaningfully worse than two models. Do not report it as dual review.
+
+**Do not show reviewers each other's work to "save a round."** That optimisation removes the only property this technique has.
+
 ### Release Review Focus
 
 Before any release/publish, add these to `review_instructions`:
@@ -2778,7 +2802,7 @@ CI passes -> Read review suggestions
 
 **The default: explicit `gh pr merge --squash` always needs the user's confirmation, every PR.** `gh pr merge --auto` (GitHub's own auto-merge-on-green feature) stays permanently, unconditionally banned regardless of anything below — it fires before review feedback can even be read (PR #145 incident: auto-merged unreviewed, shipped a P1 bug).
 
-**A narrow, conditional exception (2026-07-21)** lets an agent skip that one confirmation click — never the ban above — ONLY if ALL hold: CI's `validate` check is green (verified, not inferred); Codex xhigh reached CERTIFIED via a full adversarial dialogue (not a round-1 rubber stamp); a **fresh, diff-only reviewer subagent** (no prior session context) independently found **zero unresolved findings after at least one dialogue round**; and the PR touches none of a concrete denylist — CI/release workflows, hooks, agent-config directories, the SDLC policy document itself, CHANGELOG, or a package-version bump (any of which always needs confirmation, no exception). Even when it fires, the agent must tell the user immediately afterward what merged and why — this is "skip the click," never a silent merge.
+**A narrow, conditional exception (2026-07-21)** lets an agent skip that one confirmation click — never the ban above — ONLY if ALL hold: CI's `validate` check is green (verified, not inferred); Codex xhigh reached CERTIFIED via a full adversarial dialogue (not a round-1 rubber stamp); a **fresh, diff-only reviewer subagent** (no prior session context) independently found **zero unresolved findings after at least one dialogue round**; and the PR touches nothing in the **merge-evidence chain** — CI/release workflows, hooks, agent-config directories, or the merge wrapper itself. Those always need a human, no exception, because a PR editing them defines its own CI check, runs its own gate, and posts its own review evidence, so every leg of the evidence stack becomes self-produced at once. Note branch protection matches a required check by NAME, so *any* new workflow file can mint a green one. Policy prose that steers behaviour but does not decide whether the current PR may merge (the SDLC policy document, the SDLC skill) may instead be cleared by posted, SHA-bound cross-model evidence. A package-version bump always needs confirmation. **This distinction is not a security boundary** — a local gate never is against a determined agent — it bounds the blast radius of an honest agent that has degraded: a bad docs merge ships one bad doc, a bad control-plane merge silently degrades every later merge's evidence, including the check that would have caught it. Even when it fires, the agent must tell the user immediately afterward what merged and why — this is "skip the click," never a silent merge.
 
 **Be honest with yourself about what's actually enforced.** Some of this repo's own conditions are mechanically verified by local tooling — but that tooling is intentionally repo-local and does **not** ship as part of the wizard install. If you want the same fail-closed guarantee rather than self-certified prose, build the equivalent for your own repo: a wrapper script that independently re-checks CI status against the PR's remote head SHA, scans the diff against your own denylist (including the wrapper and any gate hook themselves — a PR editing the merge policy must not be able to exempt itself from it), and binds the merge atomically to that SHA (e.g. `gh pr merge --match-head-commit <sha>`) to close the race between checking and merging. Absent that, treat every condition above as something your own agent must reason about and self-report against, not something guaranteed.
 
@@ -3113,7 +3137,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.88.0 -->
+<!-- SDLC Wizard Version: 1.89.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
