@@ -135,14 +135,20 @@ test_hook_handles_embedded_quotes() {
     fi
 }
 
-# Test: MERGE_CLEARANCE_SKIP=1 bypasses the hook
-test_hook_bypass_env_var() {
+# Test: the hook has NO env-var escape at all (ROADMAP #479).
+#
+# This test used to assert the opposite — that MERGE_CLEARANCE_SKIP=1 bypassed
+# the redirect. That variable is gone: it was the single lever that disabled
+# every check at once, and its docstring claiming "both scripts must set it,
+# intentional friction" was false, since both read the same variable name.
+# Inverted rather than deleted, so reintroducing any env bypass fails loudly.
+test_hook_has_no_env_bypass() {
     local out exit_code
     out=$(printf '%s' '{"tool_input":{"command":"gh pr merge --squash 123"}}' | MERGE_CLEARANCE_SKIP=1 "$HOOK" 2>&1) && exit_code=0 || exit_code=$?
-    if [ "$exit_code" -eq 0 ]; then
-        pass "MERGE_CLEARANCE_SKIP=1 bypasses the redirect hook"
+    if [ "$exit_code" -ne 0 ]; then
+        pass "the retired env var does not bypass the redirect hook"
     else
-        fail "MERGE_CLEARANCE_SKIP=1 should bypass, got exit=$exit_code out=$out"
+        fail "an env var bypassed the redirect hook, got exit=$exit_code out=$out"
     fi
 }
 
@@ -166,7 +172,7 @@ test_hook_blocks_auto_unconditionally
 test_hook_no_false_positive_on_prose
 test_hook_no_false_positive_on_description_field
 test_hook_handles_embedded_quotes
-test_hook_bypass_env_var
+test_hook_has_no_env_bypass
 test_hook_handles_missing_command_field
 
 # Test: `gh -R owner/repo pr merge` (a global flag between gh and pr) still
@@ -336,6 +342,16 @@ CONFIG="$(dirname "$0")/../.gh-stub-config"
 [ -f "$CONFIG" ] && source "$CONFIG"
 
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+    # The wrapper now asks for changedFiles separately to prove the classified
+    # path set is complete; answer with the fixture's real count.
+    case "$*" in
+        *changedFiles*)
+            n=0
+            for _f in $DIFF_FILES; do n=$((n+1)); done
+            for _f in ${DELETED_TEST_FILES:-}; do n=$((n+1)); done
+            [ "$n" -eq 0 ] && n=1
+            echo "$n"; exit 0 ;;
+    esac
     echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":${PR_NUM:-123},\"state\":\"OPEN\"}"
     exit 0
 elif [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
@@ -347,6 +363,12 @@ elif [ "$1" = "api" ]; then
             echo "{\"conclusion\":\"$VALIDATE_CONCLUSION\",\"name\":\"validate\"}"
             ;;
         *pulls*files*)
+            # Tier classification now reads THIS endpoint, not `gh pr diff`
+            # (Codex round-2: diff output is display text and caps at 300
+            # files). So it must list every changed path, not just deletions.
+            for f in $DIFF_FILES; do
+                echo "{\"filename\":\"$f\",\"status\":\"modified\"}"
+            done
             if [ -n "$DELETED_TEST_FILES" ]; then
                 for f in $DELETED_TEST_FILES; do
                     echo "{\"filename\":\"$f\",\"status\":\"removed\"}"
@@ -715,19 +737,23 @@ test_wrapper_fail_fast_ordering() {
     fi
 }
 
-# Test: MERGE_CLEARANCE_SKIP=1 bypasses the wrapper's own checks but still
-# merges (mirrors CODEX_GATE_SKIP semantics: skip THIS gate, don't do nothing)
-# and logs a distinct BYPASSED line.
-test_wrapper_bypass_still_merges_and_logs() {
+# Test: no env var can make the wrapper merge past a RED CI check (#479).
+#
+# This test used to assert that MERGE_CLEARANCE_SKIP=1 merged anyway while
+# logging BYPASSED. That is precisely the defect #479 names: acknowledging one
+# denylist row also disarmed CI, test-deletion, SHA-freshness and the clearance
+# artifact. CI is pending in this fixture, so a merge here would be a merge on
+# unverified code. Inverted rather than deleted: it now guards the property.
+test_wrapper_has_no_env_bypass() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
     sed -i.bak 's/VALIDATE_CONCLUSION=success/VALIDATE_CONCLUSION=pending/' "$tmpdir/.gh-stub-config"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" MERGE_CLEARANCE_SKIP=1 "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -qi "BYPASSED" && echo "$out" | grep -q "GH_MERGE_INVOKED"; then
-        pass "MERGE_CLEARANCE_SKIP=1 bypasses wrapper checks, still merges, logs BYPASSED"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "no env var merges past a red CI check"
     else
-        fail "bypass should skip checks but still merge and log, got exit=$exit_code out=$out"
+        fail "an env var merged past red CI, got exit=$exit_code out=$out"
     fi
 }
 
@@ -750,7 +776,7 @@ test_wrapper_blocks_package_json_version_change
 test_wrapper_blocks_wizard_doc_touch
 test_wrapper_merges_when_all_conditions_met
 test_wrapper_fail_fast_ordering
-test_wrapper_bypass_still_merges_and_logs
+test_wrapper_has_no_env_bypass
 
 echo ""
 echo "=== Results ==="
