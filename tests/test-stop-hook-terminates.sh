@@ -70,6 +70,12 @@ rm -rf "$tmp"
 # The shipped Cowork prompt-type Stop hook is an LLM judge and cannot read the
 # flag in bash — its PROMPT must carry the instruction instead.
 COWORK="$REPO_ROOT/cowork/hooks/hooks.json"
+# Codex found this suite exited 0 with cowork/hooks/hooks.json DELETED — every
+# check below was wrapped in `if [ -f ]`, so a missing file skipped them all
+# silently. A missing shipped hook is a failure, not a skip.
+if [ ! -f "$COWORK" ]; then
+    fail "cowork/hooks/hooks.json is missing — the shipped Stop hook does not exist"
+fi
 if [ -f "$COWORK" ]; then
     if grep -q 'stop_hook_active' "$COWORK"; then
         pass "cowork Stop prompt instructs the judge about stop_hook_active"
@@ -118,6 +124,43 @@ if [ -f "$COWORK" ]; then
         pass "judge fails OPEN when uncertain"
     else
         fail "judge does not default to allowing — it will block on ambiguity"
+    fi
+
+    # Fourth defect, observed 2026-07-29 in this repo. The judge blocked a turn
+    # because a BACKGROUND REVIEW WAS STILL RUNNING, reasoning that "the turn
+    # cannot end until that gate completes". That is outside its own stated
+    # single blocking criterion, and it is the #477 failure mode wearing new
+    # clothes: the agent cannot make a background task finish sooner, so the
+    # only ways to satisfy the block are to wait forever or to misstate the
+    # state. Work still being in flight is not the same as work being
+    # unverified, and pending is not a violation — the harness re-invokes the
+    # agent when the task completes, so ending the turn abandons nothing.
+    # STOP TRYING TO VERIFY SEMANTICS WITH A GREP. This assertion was beaten
+    # FOUR times by two different reviewers, each time by rephrasing rather than
+    # by breaking anything:
+    #   1. bullet moved to the blocking side
+    #   2. negated in place: "is NOT exempt ... MUST BLOCK"
+    #   3. continuation line: "MUST BLOCK this turn"
+    #   4. reworded past the phrase list: "BLOCK this turn until the background
+    #      work finishes", and an unrelated "Pending work exists" that matched
+    #      the keywords while exempting nothing
+    # Each fix added phrases to a denylist; each time a fifth phrasing existed.
+    # Natural language has unbounded ways to say "block", so no finite list wins.
+    #
+    # So this now asserts ONLY what a static check can actually establish: that
+    # an in-flight exemption is PRESENT in the DO-NOT-BLOCK region. It does NOT
+    # claim the judge will allow — that is a semantic property of an English
+    # prompt evaluated by a model, and it is verifiable only by running it.
+    # Live coverage lives in tests/e2e/codex-cowork-install.md, which now has an
+    # explicit in-flight case (it did not when this comment was first written —
+    # the test claimed E2E covered it while E2E did not).
+    _donotblock=$(printf '%s' "$P" | awk '/DO NOT BLOCK/{f=1} f{print} /You are a backstop/{f=0}')
+    if [ -z "$_donotblock" ]; then
+        fail "could not locate the DO-NOT-BLOCK section"
+    elif printf '%s' "$_donotblock" | grep -qiE "still running|in flight|background task|pending"; then
+        pass "an in-flight exemption is present in the DO-NOT-BLOCK region (presence only; semantics require live E2E verification, not yet run)"
+    else
+        fail "no in-flight exemption in the DO-NOT-BLOCK region — the judge may block on pending work"
     fi
 fi
 
