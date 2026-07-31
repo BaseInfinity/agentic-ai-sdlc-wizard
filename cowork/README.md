@@ -12,7 +12,7 @@ SDLC enforcement for Claude Cowork sessions. Provides methodology guidance via s
 | Feedback skill | `/sdlc-wizard-cowork:feedback` | Privacy-first community feedback and pattern sharing |
 | TDD hook | `PreToolUse` (Write/Edit) | Denies creating a new non-test file that doesn't look like a test (filename heuristic — see limits below) |
 | SDLC baseline hook | `UserPromptSubmit` | Denies prompts that explicitly ask to skip planning/testing/review |
-| Completion hook | `Stop` | Denies stopping if code changed but tests weren't shown passing, self-review is missing, or no confidence was stated |
+| Completion hook | `Stop` | Denies stopping on **one** condition: code changed this turn and no verification of any kind was attempted or explained. Failing-but-explained tests, scoped runs, and infrastructure-blocked suites all pass. Missing confidence or self-review narration does **not** block. |
 
 ## Hooks — Prompt-Based Enforcement
 
@@ -48,7 +48,7 @@ This plugin ships 3 **prompt-based hooks** (`"type": "prompt"`) that enforce SDL
 - **CI shepherd** (`gh pr`, `git push`) — these steps happen outside your Cowork session
 - **`/code-review`** — works in Cowork if the plugin is loaded
 
-The methodology (plan → TDD → self-review → confidence check) is universal. The hooks enforce it; the tooling commands are Claude Code shortcuts for steps you can do manually.
+The methodology (plan → TDD → self-review → confidence check) is universal, and the skills describe all of it. **The hooks enforce only a narrow slice of it** — do not read the table above as full enforcement. `UserPromptSubmit` denies prompts that explicitly ask to skip process; `PreToolUse` applies a filename heuristic to brand-new non-test files; `Stop` blocks only when code changed with no verification attempted, and deliberately does NOT require a stated confidence level or a self-review narration. Everything else is guidance you follow, not a gate that stops you.
 
 ## Installation
 
@@ -103,4 +103,4 @@ This plugin is for Cowork-only users who want methodology guidance without the f
 
 ## Version
 
-Tracks the main wizard version: **1.89.0**
+Tracks the main wizard version: **1.90.0**

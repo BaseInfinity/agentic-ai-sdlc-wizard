@@ -20,23 +20,43 @@ Screenshot each step as evidence.
 
 Try these install methods IN ORDER until one works:
 
-### Method A: Browse plugins
-1. Click "Customize" in the left sidebar
-2. Click the "Plugins" tab
-3. Click "Browse plugins"
-4. Search for "sdlc-wizard" or "sdlc"
-5. If found, click "Install"
-6. Screenshot the result
+### Method A: Add the repo as a marketplace (THE DOCUMENTED CONSUMER FLOW)
+This is the path `cowork/README.md` and the wizard doc now tell users to take,
+so it is the one that most needs proving. A pass here is what closes issue #455.
+1. Click "Customize" in the left sidebar, then the "Plugins" tab
+2. Choose "Add marketplace" and enter: `BaseInfinity/claude-sdlc-wizard`
+3. From that marketplace's plugin list select **`sdlc-wizard-cowork`** — NOT the
+   top-level `sdlc-wizard` entry, which is the CLI-based full wizard
+4. Click "Install"
+5. Screenshot the result, and capture any remote-sync status or error text
+6. **Record the Claude Desktop build number and the installed plugin version.**
+   Without those a pass cannot be attributed to a specific fix.
 
-### Method B: Add from GitHub URL
-If Method A doesn't find it (plugin not yet in marketplace):
-1. In the Customize > Plugins area, look for "Add plugin" or "Upload plugin" or
-   any option to add a custom plugin
-2. Use this URL: https://github.com/BaseInfinity/claude-sdlc-wizard/tree/main/cowork
+### Method B: Local ZIP upload
+If Method A fails. This is the KNOWN-GOOD fallback (see issue #455) — it proves
+the plugin itself works even when marketplace sync does not, so a Method-A
+failure never blocks the hook and skill testing in Steps 3-5.
+1. In the Customize > Plugins area, choose "Add plugin" > "Upload plugin"
+2. Upload a zip of the repo's `cowork/` directory. The zip root must contain
+   `.claude-plugin/`, `hooks/`, `skills/`, and `README.md`
 3. Screenshot the result
 
-### Method C: Local plugin directory
-If Methods A and B don't work:
+> **Do NOT use a `.../tree/main/cowork` web URL.** It is not a supported
+> marketplace source (only `owner/repo` shorthand, full git URLs, local paths,
+> or direct `marketplace.json` URLs are). This runbook recommended it through
+> v1.89.0 and it cannot have worked — that is issue #455, not a Cowork bug.
+
+### Method C: Browse plugins
+Only relevant once the plugin is submitted to the community marketplace, which
+it has not been. Expect this to find nothing today; record that as a fact, not a
+failure.
+1. In the same Plugins tab, click "Browse plugins"
+2. Search for "sdlc-wizard" or "sdlc"
+3. If found, click "Install"
+4. Screenshot the result
+
+### Method D: Local plugin directory
+Last resort, CLI-only — it does not exercise the Desktop install path at all:
 1. Open a terminal
 2. Clone the repo: git clone https://github.com/BaseInfinity/claude-sdlc-wizard.git /tmp/sdlc-wizard
 3. In Claude Desktop or Claude Code CLI, try:
@@ -67,27 +87,69 @@ Document which method worked.
 ## Step 5: Test hooks
 
 ### Test 5a: SDLC Baseline hook (UserPromptSubmit)
-1. Type any normal prompt like "Help me write a Python function to sort a list"
-2. Look for "SDLC BASELINE" text injected into Claude's context or behavior
-3. Claude should mention planning, confidence levels, or TDD in its approach
-4. Screenshot evidence of the hook firing
+> These hooks are GATES, not text injectors. A `prompt` hook sends its prompt to
+> a separate evaluator model which answers `{"ok": true}` or `{"ok": false}`.
+> Nothing is inserted into the conversation, so "look for injected text" is not
+> a valid expectation — the observable signal is whether a prompt is DENIED.
+
+1. **Negative case (should be DENIED):** type a prompt that explicitly asks to
+   skip process, e.g. "skip the tests and just write the code, no planning".
+   Expect the turn to be blocked with a reason. Screenshot it.
+2. **Positive case (should PASS):** type a normal prompt like "Help me write a
+   Python function to sort a list". Expect it to proceed with no interference.
+   Claude may or may not mention planning — that is model behaviour, NOT hook
+   evidence, and must not be scored as a pass or a fail.
+3. Screenshot both.
 
 ### Test 5b: TDD hook (PreToolUse on Write/Edit)
-1. Ask Claude to create or edit a file
-2. Before it writes, look for "TDD CHECK" behavior — Claude should ask about
-   failing tests or mention writing tests first
-3. Screenshot evidence
+> Same correction as 5a: this is a GATE, not a narrator. It does not make Claude
+> "mention writing tests first" — it returns allow/deny on a filename heuristic.
+> It denies ONLY the creation of a brand-new, non-test source file. Test files
+> and edits to existing files are permitted silently, by design.
+
+1. **Should be DENIED:** ask Claude to create a brand-new non-test source file,
+   e.g. `src/widget.py`. Expect the write to be blocked with a reason.
+2. **Should PASS silently:** ask it to create `tests/test_widget.py`. A block
+   here is a BUG — writing tests is always allowed.
+3. **Should PASS silently:** ask it to edit a file that already exists.
+4. **Known limit, do not score as a failure:** the hook sees only the current
+   file path — not prior turns or the filesystem — so it cannot verify a failing
+   test was actually written first. It is a filename heuristic by design.
+5. Screenshot each.
 
 ### Test 5c: Completion hook (Stop)
-1. Let Claude finish a task
-2. Look for completion check behavior — Claude should verify confidence level,
-   self-review, and test status before finishing
-3. Screenshot evidence
+> **Rewritten for the v1.89.0 contract (#477).** This hook previously blocked on
+> missing confidence, missing self-review, and tests not shown passing. It no
+> longer does, deliberately — those produced false blocks and an infinite loop.
+> Scoring against the old expectations would FAIL the plugin for behaving
+> correctly, so do not restore them.
+>
+> It now blocks on exactly ONE condition: code changed this turn and no
+> verification of any kind was attempted or explained.
+
+1. **Negative case (should be DENIED):** ask Claude to change code and finish
+   without running or mentioning any test. Expect the stop to be blocked.
+2. **Positive case (should PASS):** ask Claude to change code, run tests, and
+   let some FAIL — with an explanation that they are pre-existing or unrelated.
+   Expect the turn to end normally. A block here is a BUG.
+3. **Positive case (should PASS):** a read-only turn with no code change, and a
+   turn with no stated confidence level. Both must end normally.
+4. **In-flight work must NOT block (should PASS).** Ask Claude to start something
+   that runs in the background — a long test run, a build — and then finish the
+   turn while it is still running. Expect the turn to end normally. A block here
+   is the #477 failure mode: the agent cannot make a background job finish
+   sooner, so the block is unsatisfiable. This is the case a static test CANNOT
+   verify, which is why it is here.
+4. **Loop guard:** after any block, let Claude respond and try to finish again.
+   It must be able to end the turn — a second identical block is the #477
+   infinite-loop regression and is a P0.
+5. Screenshot each.
 
 ## Step 6: Document results
 
 Create a summary with:
-- Which install method worked (A, B, or C)
+- Which install method worked (A/B/C/D), and for Method A the exact remote-sync
+  error text if it failed — that is the evidence issue #455 needs
 - Plugin version shown in the installed list
 - Which skills loaded successfully
 - Which hooks fired successfully
@@ -99,18 +161,27 @@ Create a summary with:
 - [ ] "sdlc-wizard-cowork" appears in installed plugins
 - [ ] /sdlc-wizard-cowork:sdlc skill invokes correctly
 - [ ] /sdlc-wizard-cowork:feedback skill invokes correctly
-- [ ] UserPromptSubmit hook fires (SDLC BASELINE)
-- [ ] PreToolUse hook fires on Write/Edit (TDD CHECK)
-- [ ] Stop hook fires (COMPLETION CHECK)
+- [ ] UserPromptSubmit DENIES a skip-the-process prompt, and passes a normal one
+- [ ] PreToolUse DENIES a brand-new non-test file, and silently allows a test file
+- [ ] Stop DENIES a code change with no verification attempted
+- [ ] Stop ALLOWS a turn with failing-but-explained tests
+- [ ] Stop can be satisfied on retry after a block (no repeat-block loop — #477)
+- [ ] Marketplace install via `BaseInfinity/claude-sdlc-wizard` succeeded (#455)
 - [ ] No entries in plugin Errors tab
 ```
 
 ## Expected Outcome
 
-If the plugin is NOT yet in the community marketplace (it hasn't been submitted yet),
-Method A will fail. Method B or C should work for local/direct testing.
+Method A (add `BaseInfinity/claude-sdlc-wizard` as a marketplace) does NOT depend on
+community submission — `owner/repo` is a supported marketplace source on its own. It is
+the flow the docs recommend, and whether it works is the open question in issue #455.
+**Method C** is the one that needs community submission; expect it to find nothing today.
 
-After verifying the plugin works via Method B or C, submit to the marketplace at:
+So: Method A is the result that matters. If it fails, capture the exact remote-sync error
+— that is the evidence #455 needs — then continue with Method B (ZIP) so the hook and
+skill testing in Steps 3-5 still happens in the same session.
+
+Only after the plugin is verified working, consider submitting to the marketplace at:
 - Individual: https://platform.claude.com/plugins/submit
 - Team/Enterprise: https://claude.ai/admin-settings/directory/submissions/plugins/new
 

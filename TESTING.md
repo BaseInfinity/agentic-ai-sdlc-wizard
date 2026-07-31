@@ -22,6 +22,69 @@ This is not negotiable. This is not flexible. This is absolute.
 
 ---
 
+## TDD: RED → GREEN, and what to do with an old test
+
+**Write the test first. Run it. Watch it FAIL — that specific assertion, not just the suite.
+Then implement. Run it again. It passes.** If it does not, the implementation is wrong, or
+the test is asserting the wrong thing. Both are information.
+
+**Watch each NEW assertion fail individually.** The common miss is observing red at the
+*suite* level: one assertion fails, the suite is red, you implement, the suite goes green —
+and an assertion that was green from birth is never noticed. It is testing nothing, and you
+will not find out until it fails to catch a real regression.
+
+**Editing an old test is the hard case, and the honest answer depends on what it guards.**
+
+- **Guarding a bug you are about to fix?** RED is free. The bug exists, so write the test
+  first and it fails for the right reason. This is the common case and needs no workaround.
+- **Guarding behaviour that is ALREADY correct?** **You cannot get RED.** Correct code does
+  not fail, and no amount of rewriting changes that. Say so plainly rather than claiming the
+  test is verified — an unverified regression assertion is exactly how this repo shipped
+  eight tests that passed against broken code. If the assertion is load-bearing enough to
+  justify it, breaking the behaviour once to watch the test go red is the only mechanism that
+  validates it; that is a deliberate exception, not the routine.
+
+**Either way, prefer rewriting a suspect test over patching it.** Measured 2026-07-29/30: one
+was found ineffective three separate times and patched twice; the rewrite worked first try.
+Patching guesses which missing piece mattered; a rewrite from a known-good fixture with
+exactly one deliberate defect does not have to guess.
+
+**Signs a test needs rewriting rather than patching:**
+- It passes when you would expect it to fail
+- Its fixture is broken in more than one way, so you cannot tell which one it is detecting
+- It asserts on a substring that appears in both the pass and the fail message
+
+## Testing Diamond — the shape we aim for
+
+| Layer | Share | What it is |
+|---|---|---|
+| E2E | ~5% | Slow, proves the real thing end to end |
+| **Integration** | **~90%** | Real components through real interfaces; the best value |
+| Unit | ~5% | Pure input → output logic only |
+
+**Minimal mocking.** Never mock a database or cache — use a test instance. Mock external
+APIs (real calls are flaky and cost money) and time. Any mock must be built from real captured
+data, never a guessed shape.
+
+### How that maps to THIS repo, and where we actually stand
+
+This is a meta-repo of shell scripts, so "integration" means *run the real script against a
+stubbed external binary* — e.g. `tests/test-cross-model-clearance.sh` puts a fake `gh` on
+`PATH` and executes the real `scripts/merge-pr.sh`. That is the diamond's middle layer, and it
+is where this repo's real bugs have been caught.
+
+**The current distribution is NOT reliably known, and that is the honest state.** Two attempts
+at classifying the 64 script suites disagreed with each other, and 39 fell through both
+heuristics — so any ratio quoted here would be a number nobody has verified. What IS verified:
+26 suites create a temp dir or stub a binary (integration-shaped), 8 E2E suites exist, and at
+least 15 assert only on source text. Producing a real, reproducible per-suite census is the
+first task of ROADMAP #490; until it lands, do not cite a distribution.
+
+What is already clear without a census: **some suites test script behaviour by grepping source
+text rather than executing it.** That is a unit test standing where an integration test belongs,
+and it is the shape behind every ineffective test this repo has found. Prefer executing the real
+script over asserting on its source.
+
 ## Meta-Testing Challenge
 
 This is a **meta-project** - it's a wizard that sets up other projects. Traditional testing doesn't directly apply.
