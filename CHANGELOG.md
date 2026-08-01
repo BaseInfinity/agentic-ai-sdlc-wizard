@@ -4,6 +4,42 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.90.0] - 2026-07-30
+
+### Fixed — things that were broken for consumers
+
+- **Stop hook could block on work it was impossible to satisfy (#477, fourth defect).** The Cowork `Stop` hook denied a turn when a background task, review, or CI run was still in flight. An agent cannot make a background job finish sooner, so the only ways to satisfy the block were to wait forever or misstate the state — the same unsatisfiable-condition shape as the original #477 loop. Pending is not unverified, and the harness re-invokes the agent when the job completes, so ending the turn abandons nothing. Guarded by `tests/test-stop-hook-terminates.sh`.
+- **The install instructions could not work (#455).** `CLAUDE_CODE_SDLC_WIZARD.md` told users to add the plugin from a `.../tree/main/cowork` web URL. That is not a supported marketplace source — only `owner/repo` shorthand, full git URLs, local paths, or a direct `marketplace.json` URL are. It now documents the repo-as-marketplace flow that `cowork/README.md` already described, so the two no longer contradict each other. Whether native Desktop sync then succeeds is still open in #455.
+- **`cowork/README.md` documented a Stop contract that v1.89.0 deleted** — it still claimed the hook blocks on missing confidence, missing self-review, and tests not shown passing. All three were deliberately removed as false-block sources. Corrected to the single real blocking condition — and, after a reviewer caught the file still contradicting itself further down, the "the hooks enforce it" claim about the whole methodology was narrowed too. The hooks enforce a slice; the skills describe the rest.
+- **`tests/e2e/codex-cowork-install.md` would have failed the plugin for behaving correctly.** Its hook expectations still encoded the pre-v1.89.0 Stop contract, told the tester to look for injected text that prompt hooks never emit, and installed via the broken URL above. Rewritten: gates rather than narrators, positive and negative cases per hook, a `stop_hook_active` loop-guard step, and the marketplace flow as the method that matters.
+
+### Added
+
+- **A documented review loop, not just a review protocol.** `CLAUDE_CODE_SDLC_WIZARD.md` gained the iterate/gate cycle with explicit termination rules: "done" means zero *unresolved* findings, a round cap ends in escalation and never in shipping, and both reviewers get the same severity scale so their verdicts are comparable. Take the lower verdict; do not average them.
+- **A convergence test that uses severity, not count.** Finding count rises when a reviewer looks somewhere new, which is the opposite of a stopping signal. Judge by maximum severity per round, and only from a reviewer that has not already cleared the code — one reviewer's trend flattening means only that it has run out of defects it can see.
+- **Style findings become lint rules, not review findings.** A cross-model round is slow and non-deterministic; a linter is free and total. If a style point is worth honouring, add the rule so nothing can violate it again.
+- **The Prove-It Gate now covers PRACTICES, not just components.** It read "new skill/hook/workflow?"; a new process step slipped past it because it was none of those. Now "New skill/hook/workflow/PRACTICE?"
+- **`TESTING.md` now states the Testing Diamond and the TDD contract.** Both existed elsewhere but not in this repo's own testing document, so compliance could not be checked. It also records honestly that the repo's current distribution is **not** reliably known — two census attempts disagreed and 39 of 64 suites went unclassified — so no ratio is quoted until ROADMAP #490 produces a reproducible one.
+
+### Changed
+
+- **TDD guidance is explicit that RED is per-assertion.** The common miss is watching red at the *suite* level: one assertion fails, the suite is red, you implement, it goes green, and an assertion that was green from birth is never noticed. Editing an existing test splits into two cases: if it guards a bug you are about to fix, RED is free; if it guards behaviour that is **already correct**, RED is unavailable — correct code does not fail — and the honest move is to say the assertion is unverified rather than imply otherwise. Prefer rewriting a suspect test over patching it either way.
+- **`/goal` documentation corrected.** The evaluator is the configurable small-fast-model (Haiku by default on the Claude API), it judges the transcript only and cannot run tools, and `ANTHROPIC_DEFAULT_HAIKU_MODEL` is **not** scoped to `/goal` — it also moves conversation summarization onto that model.
+- **Standing instructions stay in force.** Re-asking hands back a decision the human already made. When two of their instructions appear to conflict, apply the stricter bar and act rather than arbitrating upward.
+- **`hooks/sdlc-prompt-check.sh`** heredoc delimiter renamed `SETUP` → `SETUP_REQUIRED`. Behaviour identical. The first content line began with the delimiter word, which made shellcheck report a false SC1122; renaming removes the ambiguity for human readers too.
+
+### Repo-local, but worth stating plainly
+
+- **`.claude/settings.json` gained 22 permission-allow rules**, including Chrome browser-automation tools (`computer`, `browser_batch`) and a set of test scripts. This came from a `/fewer-permission-prompts` pass and is a real broadening of what runs without a prompt **in this repository only** — it is not part of the npm package and affects no consumer. Flagged here because a permission change that reaches a release without appearing in its notes is the kind of thing nobody audits later.
+
+### Note
+
+A **shellcheck CI gate** was built for this release and then deliberately pulled from it. It is repo-local (`.github/workflows/`, absent from this package), and across four review rounds every finding concerned the gate or the tests guarding it rather than anything shipped — including a real bypass where a file named `-S error <path>` was read as command-line options and skipped. Both cross-model reviewers independently recommended removing it rather than holding consumer fixes behind another guard-design cycle. **An unverified gate is worse than no gate: its failure mode is a false green.** It lands separately once its tests hold. Tracked as ROADMAP #492.
+
+### Note
+
+The single-tier merge gate (#485) is **not** in this release. It is repo-local tooling that ships to nobody, and it is still in cross-model review — ten distinct bypasses of its clearance-visibility check were found and fixed across eight rounds. Holding these consumer-facing fixes behind it would have left a broken install instruction in place.
+
 ## [1.89.0] - 2026-07-27
 
 ### Fixed
