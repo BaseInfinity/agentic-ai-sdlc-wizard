@@ -56,13 +56,13 @@ if [ ! -t 0 ]; then
 fi
 
 if [ ! -s "$PROJECT_DIR/SDLC.md" ] || [ ! -s "$PROJECT_DIR/TESTING.md" ]; then
-    cat << 'SETUP'
+    cat << 'SETUP_REQUIRED'
 SETUP NOT COMPLETE: SDLC.md and/or TESTING.md are missing.
 
 MANDATORY FIRST ACTION: Invoke Skill tool, skill="claude-setup-wizard"
 Do NOT proceed with any other task until setup is complete.
 Tell the user: "I need to run the SDLC setup wizard first to configure your project."
-SETUP
+SETUP_REQUIRED
     exit 0
 fi
 

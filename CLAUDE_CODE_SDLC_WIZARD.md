@@ -2336,7 +2336,7 @@ TodoWrite([
 
 ## Prove It Gate (REQUIRED for New Additions)
 
-**Adding a new skill, hook, workflow, or component? PROVE IT FIRST:**
+**Adding a new skill, hook, workflow, component — or a new PRACTICE/process step? PROVE IT FIRST:**
 
 1. **Research:** Does something equivalent already exist (native CC, third-party plugin, existing skill)?
 2. **If YES:** Why is yours better? Show evidence (A/B test, quality comparison, gap analysis)
@@ -2398,6 +2398,13 @@ Low confidence does **not** mean "ask the user." It means "escalate," and the us
 2. **Codex `xhigh`** — when Fable can't close the gap, or when a second, adversarially-framed opinion is what's needed.
 3. **The human** — priority, risk appetite, scope, spend, or anything irreversible or outward-facing. A merge gate that demands explicit confirmation *is* this rung, invoked by design rather than by uncertainty.
 
+**A standing instruction stays in force until it is withdrawn.** Once the human has ruled — "fix findings yourself", "don't ask before X", "stop checking in each round" — re-asking is not caution. It hands back a decision they already made, and it costs them the same interruption twice. Treat "you may proceed without asking" as durable, not as permission for one turn.
+
+**When two of the human's own instructions appear to conflict, resolve it yourself.** This is the failure mode that actually occurs, and it is subtle because it *feels* conscientious. Observed here 2026-07-29: a maintainer said both "don't add process mass without justification" and "stop asking permission." Faced with a documentation change, the agent read those as contradictory and asked — violating the second instruction in the name of honouring the first. They were never in conflict: one sets a *bar to apply*, the other says *who applies it*. Apply the bar, act, and report what you decided and why. If you are genuinely wrong the human corrects one action, which is cheaper than being asked to arbitrate every time.
+
+**The tell:** you are drafting a question whose answer you could defend either way. That is not a decision needing an owner — it is a judgement call you are declining to make. Make it, state the reasoning, and continue.
+
+
 **Diagnose the gap before escalating — the two causes need opposite responses:**
 
 | Cause | Looks like | Do |
@@ -2446,7 +2453,7 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 
 **Prerequisites:** Codex CLI installed (`npm i -g @openai/codex`), OpenAI API key set.
 
-**Before requesting review, run `shellcheck` on any new or modified `.sh` file** (`shellcheck -s bash <files>`). This closes a real gap this repo hit directly (2026-07-21): a merge-safety-gate PR's own mutation-verified test suite passed cleanly, yet Codex's own review still caught bugs `shellcheck` would have flagged for free — including the classic `if [ $? -ne 0 ]` anti-pattern (SC2181), which is fragile against a line accidentally inserted between the command and the check. Mutation testing only proves your tests catch *deliberately broken variants you thought to try* — it can't catch a whole class of mechanical bugs a static analyzer finds instantly. Fix findings before submitting to Codex; don't spend a review round on what a free, instant, deterministic tool already tells you.
+**Before requesting review, run `shellcheck` on any new or modified `.sh` file** (`shellcheck -s bash <files>`). This closes a real gap this repo hit directly (2026-07-21): a merge-safety-gate PR whose own tests had each been watched failing still passed cleanly, yet Codex's own review still caught bugs `shellcheck` would have flagged for free — including the classic `if [ $? -ne 0 ]` anti-pattern (SC2181), which is fragile against a line accidentally inserted between the command and the check. Mutation testing only proves your tests catch *deliberately broken variants you thought to try* — it can't catch a whole class of mechanical bugs a static analyzer finds instantly. Fix findings before submitting to Codex; don't spend a review round on what a free, instant, deterministic tool already tells you.
 
 ### Round 1: Initial Review
 
@@ -2521,8 +2528,7 @@ When the reviewer finds issues, respond per-finding instead of silently fixing e
       FIXED → verify the fix against the original certify condition. \
       DISPUTED → evaluate the justification (ACCEPT if sound, REJECT if not). \
       ACCEPTED → verify it was applied. \
-      Do NOT raise new findings unless P0 (critical/security). \
-      New observations go in 'Notes for next review' (non-blocking). \
+      Do NOT expand the review surface. A new P0, P1 or P2 must be reported and BLOCKS. Lesser observations go in 'Notes for next review' (non-blocking). \
       End with CERTIFIED or NOT CERTIFIED." \
      < /dev/null
    ```
@@ -2551,7 +2557,8 @@ Self-review passes → handoff.json (round 1, PENDING_REVIEW)
                             |
                    handoff.json (round 2+, PENDING_RECHECK)
                             |
-                   Reviewer: TARGETED RECHECK (previous findings only)
+                   Reviewer: TARGETED RECHECK
+                   (scoped surface; any new P0/P1/P2 blocks)
                             |
                    All resolved? → YES → CERTIFIED (write commit_sha)
                             |
@@ -2571,6 +2578,21 @@ When two models review the same change, **run them in parallel and blind to each
 
 **Why blindness, not just plurality.** A second reviewer shown the first's findings is *anchored* — it tends to confirm, refine, and extend what it was given rather than look where nobody has looked. You pay for two reviews and get one review plus a proofread. Measured on this repo 2026-07-27, across a four-round review of the merge gate: the **parallel blind** round produced findings that barely overlapped — one model found parsing and encoding defects, the other found a case-sensitivity hole that let a protected path merge clean, plus a policy-document regression neither the author nor the first model noticed. The **sequenced** rounds overlapped heavily by comparison. Both models independently found things that would have shipped otherwise.
 
+**Give both reviewers the SAME contract.** Same diff, same preflight, same severity scale, same fix policy — otherwise you cannot merge their findings or compare their verdicts, and you will not notice when one is grading on a different curve. Measured here 2026-07-29: one reviewer was given P0-P3 and the other HIGH/MEDIUM/LOW on the same change, which made two genuine reviews look like disagreement.
+
+| Severity | Meaning | Action |
+|---|---|---|
+| P0/P1 | Wrong behaviour, security, data loss, or a test that passes against broken code | **Fix before merge. Restarts the cycle.** |
+| P2 | Real defect, bounded blast radius. Inaccurate shipped prose belongs here | **Fix before merge.** Re-gate, no full restart |
+| P3 | Correctness or accuracy nit — a stale comment, an unclear message | Fix if cheap and it is about being *right* |
+| P3 (style) | Preference, naming, formatting with no correctness content | **Not review's job — encode it as a lint rule instead.** |
+
+**Style findings become lint rules, not review findings.** A cross-model round is expensive, slow, and non-deterministic; a linter is free, instant and total. If a reviewer raises a style point worth honouring, the fix is not "change this line" — it is *add the rule so nothing can ever violate it again*, then let the linter enforce it in every repo that installs this. That converts a recurring review cost into a one-time one. Run the linters **before** requesting review (`shellcheck -s bash` on changed `.sh` files, plus whatever your language uses) so no reviewer round is spent on what a deterministic tool already reports. Review exists for **correctness** — behaviour, security, and whether the tests actually test anything. If you find yourself lacking a standard rather than lacking a fix, the deliverable is the rule.
+
+Tell both reviewers this in the prompt, and tell them explicitly: **do not manufacture findings to appear thorough — "I found nothing real" is a valid and useful answer.** Without that instruction a reviewer under pressure to produce will generate P3s indefinitely, and you will mistake its output for unfinished work.
+
+**Diminishing returns — how to actually tell.** Judge by the *maximum severity per round*, never by finding count: count rises when a reviewer looks somewhere new, which is the opposite of a stopping signal (the round that found the most here also found the most serious bugs). You are converged when two consecutive rounds produce nothing above P3 **from reviewers that had not already cleared this code**. A single reviewer's own trend flattening means only that it has run out of defects *it* can see — one reviewer certified at high confidence here immediately before a fresh reviewer found six P1s in the same code.
+
 **Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other.
 
 **Cost control.** This is not free — each round costs wall-clock and, for a paid API reviewer, real money. Scale it to blast radius:
@@ -2582,6 +2604,45 @@ When two models review the same change, **run them in parallel and blind to each
 | Docs, roadmap entries, comments | Neither |
 
 **Iterating vs. gating.** Looping with one reviewer while you build is cheap and effective — use the model that does not bill per token if you have one. But that reviewer is no longer independent by the end: it is reading code shaped by its own earlier feedback. So iterate with it freely, then run the **final** gate as a parallel blind round with a *fresh* instance of each model.
+
+**The loop, stated explicitly.** Reviewers returning findings is the normal case, not a setback, and the agent must not stop to ask permission each time. Run this until it terminates:
+
+```
+implement  →  fix every finding  →  re-review with the ITERATION model
+                    ↑                            ↓
+                    │                    findings? ──yes──┐
+                    │                            │        │
+                    └────────────────────────────┼────────┘
+                                                 no
+                                                 ↓
+                                    GATE: fresh parallel blind round
+                                                 ↓
+                                    findings? ──yes──→ back to the top
+                                                 ↓ no
+                                            ship it
+```
+
+**Rules that make it terminate rather than spin:**
+
+1. **Every finding gets a response before the next round** — FIXED, DISPUTED with reasoning, or ACCEPTED. Never silently drop one.
+2. **A dispute is a claim you owe evidence for.** If the reviewer rejects it and offers a concrete alternative, implement the alternative — you asked for an adversary, not an audience.
+3. **Any P0/P1 finding restarts the cycle from the top.** A gate round that surfaces a real defect was not a gate round, it was an iteration round. P2/P3-only findings do not need a full restart: fix them and re-run the gate. Either way the gate must eventually return *nothing new* — "findings?" in the diagram means any finding, and what differs is only whether you re-enter at iteration or at the gate.
+4. **Fixes need their own verification.** A fix shipped on the strength of "the reviewer suggested it" is unverified code — the reviewer proposed it, nobody has yet shown it works. A test that passes against broken code was never a test.
+
+   **TDD, applied to the fix: RED → GREEN.** Write the assertion, run it, watch **that specific assertion** fail, then implement and watch it pass. The common miss is observing red at the *suite* level — one assertion fails, the suite is red, you implement, the suite goes green, and any assertion that was green from birth is never noticed.
+
+   **Editing an existing test is the hard case, and the honest answer depends on what it guards.** If it guards a bug you are about to fix, RED is free — the bug exists, so the test fails for the right reason. If it guards behaviour that is **already correct**, **you cannot get RED**: correct code does not fail, and rewriting does not change that. Say so plainly rather than calling the assertion verified — an unverified regression test is exactly how this repo shipped eight that passed against broken code. When an assertion is load-bearing enough to justify it, breaking the behaviour once to watch the test go red is the only mechanism that validates that class; treat it as a deliberate exception, not the routine.
+
+   **Either way, prefer rewriting a suspect test over patching it.** Patching guesses which missing piece mattered; a rewrite from a known-good fixture with exactly one deliberate defect does not have to guess. Measured 2026-07-29/30: one test was found ineffective three separate times and patched twice — the rewrite worked first try.
+
+   **Rewrite rather than patch when:** the test passes where you would expect failure; its fixture is broken in more than one way, so you cannot tell which defect it detects; or it asserts on a substring present in both the pass and the fail message.
+
+   **Prefer executing the real thing over asserting on its source text.** A test that greps a script for the *words* proves the words are present, not that the behaviour works — the failure mode that produced every ineffective test in this repo's history. Run the script against a stub and check the exit code.
+
+5. **Verdict disagreement is expected — take the lower one.** Two reviewers can both be right and score differently: one weights a single unfixed P1 as disqualifying, the other weights overall structure. Do not average them, do not pick the friendlier one, and do not treat the gap as a reason to dismiss either. Ship only when *both* clear your bar.
+6. **Two stop conditions, and they are not the same — do not collapse them.** You are **done** when a fresh blind round returns **zero unresolved findings** — not merely "nothing new", because the same unfixed finding raised again is still an open finding. That is the only condition that permits shipping, and it is not reached on a schedule. You are **stuck** when rounds keep producing findings without converging; after 3 rechecks that is a non-convergence alarm, and it ends in escalation to the human with a summary of open findings — never in shipping. **Exception — a large migration may legitimately run past round 4** when each round is still surfacing real, previously-uninventoried surfaces (v1.84.0 ran 11 that way). Judge by whether the finding trend is genuinely converging, and state which of the two you are claiming. An agent that ships because it ran out of rounds has declared victory on a timer.
+
+**Anti-pattern: asking the human to adjudicate each round.** The human sets the bar and decides scope; the models find defects and you fix them. An agent that surfaces every finding for approval has converted an automated gate back into manual review, which is the cost the gate existed to remove.
 
 **If you only have one model available**, run it twice with genuinely different framings — for example once asked to find correctness defects and once asked to prove a specific safety property false — and treat the result as a single review, not two. It is meaningfully better than one pass and meaningfully worse than two models. Do not report it as dual review.
 
@@ -3137,7 +3198,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.89.0 -->
+<!-- SDLC Wizard Version: 1.90.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
@@ -4024,15 +4085,16 @@ codex exec \
    FIXED → verify the fix against the original certify condition. \
    DISPUTED → evaluate the justification (ACCEPT if sound, REJECT if not). \
    ACCEPTED → verify it was applied. \
-   Do NOT raise new findings unless P0 (critical/security). \
-   New observations go in 'Notes for next review' (non-blocking). \
+   Do NOT expand the review surface. A new P0, P1 or P2 must be reported and BLOCKS. Lesser observations go in 'Notes for next review' (non-blocking). \
    End with CERTIFIED or NOT CERTIFIED." \
   < /dev/null
 ```
 
-**The key constraint:** Rechecks are scoped to previous findings only. The reviewer cannot block certification with new P2 observations discovered during recheck. This prevents scope creep and ensures convergence.
+**The key constraint:** Rechecks are scoped to previous findings only — a reviewer should not go hunting for unrelated new material during a recheck round, which is how a 3-round review becomes an 11-round one.
 
-**Convergence:** Max 3 recheck rounds (4 total including initial review). If still NOT CERTIFIED after round 4, escalate to the user with a summary of all open findings. Don't spin indefinitely.
+**But scoped does not mean muzzled.** A recheck that uncovers a genuine P0, P1 or P2 reports it and it blocks — see the severity contract in "Parallel Blind Dual Review". Certification means *zero unresolved findings*, not *zero findings raised after round 1*. An earlier revision of this paragraph said new P2s could never block certification; that let a real defect through on the grounds of what round it was found in, which is not a property of the defect. What the scoping rule actually forbids is expanding the review's *surface*, not silencing what the reviewer sees.
+
+**Convergence:** Max 3 recheck rounds (4 total including initial review) as the default. If still NOT CERTIFIED after round 4, escalate to the user with a summary of all open findings — escalate, never ship. Don't spin indefinitely. **Exception:** a large migration may legitimately run longer when each round is still surfacing real, previously-uninventoried surfaces (v1.84.0 ran 11 that way). Judge by whether the finding trend is genuinely converging, and say which case you are claiming.
 
 ```
 Claude writes code → self-review passes → handoff.json (round 1)
@@ -4049,7 +4111,7 @@ Claude writes code → self-review passes → handoff.json (round 1)
     |                                FIXED / DISPUTED / ACCEPTED
     |                                          |
     |                              Reviewer: TARGETED RECHECK
-    |                              (previous findings only, no new P1/P2)
+    |                              (scoped surface; any new P0/P1/P2 blocks)
     |                                          |
     |                              All resolved? → YES → CERTIFIED (write commit_sha)
     |                                          |
@@ -4604,7 +4666,7 @@ The gap this closes: the advisor tool (API beta, `advisor-tool-2026-03-01`) ship
 | `/less-permission-prompts` | Scans transcripts for common read-only Bash/MCP calls and proposes a prioritized allowlist | After a few sessions — reduces permission friction without auto mode |
 | `/permissions` | Pre-allow specific commands and check them into `.claude/settings.json` | Anytime you want an auditable team allowlist |
 | `/insights` | Local analyzer of your CC session history. Generates HTML report at `~/.claude/usage-data/report.html` + per-session facet JSON at `~/.claude/usage-data/facets/<session>.json`. Surfaces `underlying_goal`, `outcome`, `friction_counts`, `user_satisfaction_counts`, `brief_summary`, recurring friction patterns, suggested CLAUDE.md additions | Monthly — **qualitative-only**; see caveat below |
-| `/goal <condition>` (v2.1.139+) | Set a completion condition; Claude keeps working across turns until a separate evaluator pass (Haiku default) says it's met. Survives `--resume` (counters reset), not `/clear`. No disk writes — session-state only. Bound it yourself: `/goal "tests pass + git status clean, or stop after 20 turns"`. The evaluator judges the transcript only — it cannot run tools, so don't use `/goal` for "doneness" that lives off-transcript. Requires v2.1.143+ for the subagent-race fix. Composes cleanly with wizard hooks (`UserPromptSubmit`/`SessionStart`/`PreCompact` fire per turn) | Long-running goal-bound work — refactors, migrations, anything where "are we there yet?" has a checkable answer in the transcript |
+| `/goal <condition>` (v2.1.139+) | Set a completion condition; Claude keeps working across turns until a separate evaluator pass says it's met. **The evaluator is your configured "small fast model" — Haiku by default on the Claude API.** It is swappable via `ANTHROPIC_DEFAULT_HAIKU_MODEL`, but read the blast radius first: that variable is **not scoped to `/goal`**. Claude Code uses it everywhere it needs a small fast model, so pointing it at a frontier model also moves conversation summarization and other background work onto that model. Evaluation tokens alone are negligible; the compaction bill is not. **Know what you are buying:** the evaluator cannot run tools and judges only what is already in the transcript, so it is grading the agent's *claims*. This repo has one recorded failure of exactly that (`SDLC.md`): a condition naming three specific tests was marked achieved because *enough* tests existed, while one tested the wrong scenario — caught only at post-merge self-review. Write conditions that demand verbatim, unfiltered evidence rather than conclusions. **`/goal` is a wrapper around a session-scoped prompt-based Stop hook**, so if you need real verification you can write that Stop hook yourself and skip `/goal` entirely. **And often you need neither:** if the work already produces background events — a review, a CI watch, a long test run — completing one re-invokes the agent automatically, which gives you turn-to-turn autonomy without any evaluator judging doneness. Survives `--resume` (counters reset), not `/clear`. No disk writes — session-state only. Bound it yourself: `/goal "tests pass + git status clean, or stop after 20 turns"`. The evaluator judges the transcript only — it cannot run tools, so don't use `/goal` for "doneness" that lives off-transcript. Requires v2.1.143+ for the subagent-race fix. Composes cleanly with wizard hooks (`UserPromptSubmit`/`SessionStart`/`PreCompact` fire per turn) | Long-running goal-bound work — refactors, migrations, anything where "are we there yet?" has a checkable answer in the transcript |
 | `/code-review [effort] [--comment]` (v2.1.147+, renamed from `/simplify`) | Reports correctness bugs at chosen effort level; `--comment` posts findings as inline GitHub PR comments. Our /sdlc skill already invokes `/code-review`; the `--comment` flag streamlines CI shepherd workflows | Self-review during SDLC; PR review when shepherding |
 | `/usage` (v2.1.149+) | Per-category breakdown of limits usage — skills, subagents, plugins, per-MCP-server cost. Complement to `/context all` which shows per-skill per-model token estimates | When investigating session bloat / quota burn — pairs with `scripts/audit-session-load.sh` (#236) |
 | `/context all` (v2.1.139+) | Rounded token estimates per-skill per-model, names the providing plugin for plugin-sourced skills | Same as `/usage` — diagnose what's eating your context |
@@ -4641,7 +4703,14 @@ Use the best tool for the job. If Claude Code builds it better, use theirs.
 
 **What's NOT ported and why** (CLI-specific, filesystem-dependent, or event-unavailable in Cowork): `instructions-loaded-check.sh`, `model-effort-check.sh`, `precompact-seam-check.sh`, the Setup/Update skills, cross-model review via `codex exec` (use ChatGPT/Codex web manually instead), and the CI shepherd (`gh pr`, `git push` — these happen outside a Cowork session).
 
-**Install:** as a plugin in Claude Desktop or claude.ai settings, pointing at `https://github.com/BaseInfinity/claude-sdlc-wizard/tree/main/cowork`. See [`cowork/README.md`](cowork/README.md) for full details, or `claude --plugin-dir ./cowork` for local testing.
+**Install:** add the whole repo as a marketplace, then install the Cowork-specific plugin from it:
+
+```
+/plugin marketplace add BaseInfinity/claude-sdlc-wizard
+/plugin install sdlc-wizard-cowork@sdlc-wizard-marketplace
+```
+
+A GitHub web-UI URL like `.../tree/main/cowork` is **not** a supported marketplace source — only `owner/repo` shorthand, full git URLs, local paths, or direct `marketplace.json` URLs are. (This doc recommended that URL through v1.89.0; it could not have worked. See issue #455.) The Cowork plugin is registered as a second entry in the root marketplace via a `git-subdir` source, which is why the repo-level add is what you want. See [`cowork/README.md`](cowork/README.md) for the Desktop UI walkthrough and the local-ZIP fallback, or `claude --plugin-dir ./cowork` for local testing.
 
 **Drift prevention:** the skills in `cowork/skills/` are copies of the canonical `skills/` — `tests/test-cowork-drift.sh` fails CI if they diverge, forcing this package to stay in sync whenever the canonical skills update.
 
