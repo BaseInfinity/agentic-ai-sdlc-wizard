@@ -140,10 +140,10 @@ Document which method worked.
    is the #477 failure mode: the agent cannot make a background job finish
    sooner, so the block is unsatisfiable. This is the case a static test CANNOT
    verify, which is why it is here.
-4. **Loop guard:** after any block, let Claude respond and try to finish again.
+5. **Loop guard:** after any block, let Claude respond and try to finish again.
    It must be able to end the turn — a second identical block is the #477
    infinite-loop regression and is a P0.
-5. Screenshot each.
+6. Screenshot each.
 
 ## Step 6: Document results
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Wrap `codex exec` with a heartbeat that surfaces elapsed time + output
 # growth so the user knows the review is running, not hung (#259). Reviews
-# at xhigh reasoning routinely take 1-5 minutes — without a progress signal
+# at `high` reasoning routinely take 1-5 minutes — without a progress signal
 # the user can't distinguish "still thinking" from "crashed silently".
 #
 # Usage:
@@ -17,7 +17,7 @@
 # Heartbeat format: [codex 2m13s elapsed, 4831 bytes written] still running...
 # On completion:    [codex finished in 187s with rc=0]
 #
-# The wrapper passes -c model_reasoning_effort="xhigh" -s danger-full-access
+# The wrapper passes -c model_reasoning_effort="high" -s danger-full-access
 # by default, matching the SDLC skill's recommended invocation. Pass extra
 # codex flags after the prompt — they're forwarded verbatim.
 
@@ -84,7 +84,7 @@ trap cleanup_codex EXIT
 # recommended invocation; extra args (passed after the prompt) are
 # appended so callers can override -c, --json, etc.
 "$CODEX_BIN" exec \
-    -c 'model_reasoning_effort="xhigh"' \
+    -c 'model_reasoning_effort="high"' \
     -s danger-full-access \
     -o "$OUTPUT" \
     "$@" \

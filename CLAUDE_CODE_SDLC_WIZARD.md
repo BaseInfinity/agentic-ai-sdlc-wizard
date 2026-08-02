@@ -256,9 +256,9 @@ Claude Code's **effort level** controls how much thinking the model does before 
 | Opus 5 (recommended default, trial) | `xhigh` | Anthropic's own recommendation for "difficult tasks and long-running asynchronous workflows" — Setup A's target use case, not `high`'s routine-work default. Effort tier is static per session, but adaptive reasoning modulates depth within it. Trial-flagged as of 2026-07-24 — see `AI_SETUP_LANES.md` |
 | Sonnet 5 (Simple/One-Off lane) | `medium`, escalate to `high`/`xhigh` for hard tasks | CodeRabbit testing: `medium` captures most of the upside at the lowest cost; blanket `xhigh`/`max` defaults add cost for marginal gains |
 | Opus 4.8 (escalation, pinned) | `xhigh` | `max` triggers excessive reasoning on 4.7/4.8 — documented 40-60x cache-token jump vs `high` (see "Opus 4.6" row below) |
-| Fable 5 (advisor / subagent fallback) | `high` (driver), `xhigh` (subagent fallback) | Adaptive thinking always on; server-side disabled as advisor currently — see "Advisor Model" below |
+| Fable 5 (advisor / subagent fallback) | `high` everywhere — driver, subagent fallback, and `advisor()` (which exposes no effort parameter at all) | Adaptive thinking always on; server-side disabled as advisor currently — see "Advisor Model" below |
 | Opus 4.6 (pinned, stability profile) | `max` | The one model where `max` doesn't overthink — no `xhigh` support at all (only low/medium/high/max) |
-| OpenAI/Codex (cross-model reviewer) | `xhigh` default, escalate to `max`/Pro for unusually risky PRs | Lower reasoning misses subtle bugs the reviewer exists to catch; see `AI_SETUP_LANES.md`'s Final Review Policy for when to escalate |
+| OpenAI/Codex (cross-model reviewer) | `high` default (maintainer decision 2026-08-01 — cost and review-noise, not capability); escalate to `xhigh` for unusually risky PRs | Lower reasoning misses subtle bugs the reviewer exists to catch; see `AI_SETUP_LANES.md`'s Final Review Policy for when to escalate |
 
 **Strict effort behavior (Opus 4.7+, carried forward in 4.8):**
 - **`xhigh` was introduced in 4.7** — sits between `high` and `max`, designed for coding and agentic work (30+ minute tasks with token budgets in the millions)
@@ -417,7 +417,7 @@ New built-in commands available to use alongside the wizard:
 
 **Settings precedence:** Managed > CLI flags > Local (`.claude/settings.local.json`) > Project (`.claude/settings.json`) > User (`~/.claude/settings.json`). The wizard writes project-level by default — never nukes global settings. Setup skill Step 9.5 asks if you also want global.
 
-**Important:** Fable does NOT appear in the `/advisor` interactive picker, and as of 2026-07-24 is **server-side disabled as an advisor entirely** — "Claude Code doesn't offer Fable 5 as the advisor," per `code.claude.com/docs/en/advisor`, pending an Anthropic-controlled rollout. This is not a transient incident; restarting the session doesn't fix it. Set `advisorModel: "fable"` anyway (it activates automatically once the rollout returns), and in the meantime fall back to a Fable subagent (`Agent({model: "fable", effort: "xhigh"})`) at every point you'd have called `advisor()`.
+**Important:** Fable does NOT appear in the `/advisor` interactive picker, and as of 2026-07-24 is **server-side disabled as an advisor entirely** — "Claude Code doesn't offer Fable 5 as the advisor," per `code.claude.com/docs/en/advisor`, pending an Anthropic-controlled rollout. This is not a transient incident; restarting the session doesn't fix it. Set `advisorModel: "fable"` anyway (it activates automatically once the rollout returns), and in the meantime fall back to a Fable subagent (`Agent({model: "fable", effort: "high"})`) at every point you'd have called `advisor()`.
 
 **Billing:** Advisor queries in interactive sessions are Max-bundled (same pool as the driver). The advisor does not trigger headless/credit-pool billing.
 
@@ -1091,7 +1091,7 @@ This is **Setup C (OpusPlan Hybrid/Saver)** in `AI_SETUP_LANES.md`. CC's native 
 |-------|--------------------|---------------------------|----------------------------|
 | Planner | Opus 5 `xhigh` (Plan Mode) | Opus 5 `xhigh` | Sonnet 5 `medium`→`high`→`xhigh` |
 | Driver | Sonnet 5 `medium` (execute mode) | Opus 5 `xhigh` | Sonnet 5 `medium`→`high`→`xhigh` |
-| Reviewer | GPT-5.6 Sol xhigh | GPT-5.6 Sol xhigh | GPT-5.6 Sol xhigh |
+| Reviewer | GPT-5.6 Sol high | GPT-5.6 Sol high | GPT-5.6 Sol high |
 
 **How to opt in:**
 ```json
@@ -2186,7 +2186,7 @@ cat << 'EOF'
 SDLC BASELINE:
 1. TodoWrite FIRST (plan tasks before coding)
 2. STATE CONFIDENCE: HIGH/MEDIUM/LOW
-3. LOW confidence or FAILED 2x? Ladder: Fable -> Codex xhigh -> human LAST
+3. LOW confidence or FAILED 2x? Ladder: Fable -> Codex high -> human LAST
 4. Never ask what a model can settle; confidence is not authorization
 5. 🛑 ALL TESTS MUST PASS BEFORE COMMIT - NO EXCEPTIONS
 
@@ -2394,8 +2394,8 @@ Before presenting approach, STATE your confidence:
 
 Low confidence does **not** mean "ask the user." It means "escalate," and the user is the third rung, not the first. Ask a human only for what no model can settle.
 
-1. **Fable** — `advisor()` before plans; if the advisor is unavailable, spawn a Fable subagent at `xhigh`.
-2. **Codex `xhigh`** — when Fable can't close the gap, or when a second, adversarially-framed opinion is what's needed.
+1. **Fable** — `advisor()` before plans; if the advisor is unavailable, spawn a Fable subagent at `high`.
+2. **Codex `high`** — when Fable can't close the gap, or when a second, adversarially-framed opinion is what's needed.
 3. **The human** — priority, risk appetite, scope, spend, or anything irreversible or outward-facing. A merge gate that demands explicit confirmation *is* this rung, invoked by design rather than by uncertainty.
 
 **A standing instruction stays in force until it is withdrawn.** Once the human has ruled — "fix findings yourself", "don't ask before X", "stop checking in each round" — re-asking is not caution. It hands back a decision they already made, and it costs them the same interruption twice. Treat "you may proceed without asking" as durable, not as permission for one turn.
@@ -2473,7 +2473,7 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 2. Run the independent reviewer:
    ```bash
    codex exec \
-     -c 'model_reasoning_effort="xhigh"' \
+     -c 'model_reasoning_effort="high"' \
      -s danger-full-access \
      -o .reviews/latest-review.md \
      "You are an independent code reviewer. Read .reviews/handoff.json, \
@@ -2488,7 +2488,7 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 
    > **Always launch codex via `run_in_background: true` on the Bash tool.** The Bash tool clamps `timeout` to 600000 ms (10 min) regardless of the value passed, and force-kills the foreground process at that wall. Multi-artifact bundle reviews (release reviews per the checklist below, multi-finding rechecks, etc.) routinely run 6–30 minutes — they need background mode to complete. The wrapper `scripts/codex-review.sh` already has a 30-min stall watchdog (`STALL_SECONDS=1800`) as the real timeout control. A foreground call killed mid-review plus the Stop-hook re-invocation loop can burn 60+ minutes of session compute on what should be a single 7-minute run (issue #364, 2026-05-27 incident). The general rule: **any long-running wrapper invoked through the CC Bash tool — codex, slow builds, long test suites — should use `run_in_background: true` unconditionally and let the wrapper's own stall watchdog be the timeout authority.**
 
-   > **Never also append a trailing `&` inside the command string when using `run_in_background: true`.** These are two different backgrounding mechanisms — the Bash tool's own `run_in_background` flag, and the shell's native job-control `&` — and combining them double-backgrounds the process: the "completed" notification fires for the outer wrapper shell exiting immediately, not for the actual `codex exec` process, which is still running detached and unmonitored. This produces a convincing but false "review complete" signal — the transcript looks done, but no verdict has actually been written yet. Confirm real completion independently (e.g. `ps aux | grep codex`) before trusting a background-task notification that arrived suspiciously fast for a multi-minute xhigh review. Use `run_in_background: true` alone; never both.
+   > **Never also append a trailing `&` inside the command string when using `run_in_background: true`.** These are two different backgrounding mechanisms — the Bash tool's own `run_in_background` flag, and the shell's native job-control `&` — and combining them double-backgrounds the process: the "completed" notification fires for the outer wrapper shell exiting immediately, not for the actual `codex exec` process, which is still running detached and unmonitored. This produces a convincing but false "review complete" signal — the transcript looks done, but no verdict has actually been written yet. Confirm real completion independently (e.g. `ps aux | grep codex`) before trusting a background-task notification that arrived suspiciously fast for a multi-minute review. Use `run_in_background: true` alone; never both.
 
 3. If CERTIFIED → **write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json` before proceeding to CI.** `hooks/codex-gate-check.sh` compares this SHA to current HEAD at commit time and treats a mismatch (or a missing field) as a stale certification (ROADMAP #437) — a CERTIFIED status string alone doesn't prove the certification still covers what's about to be committed. If NOT CERTIFIED → go to Round 2.
 
@@ -2518,7 +2518,7 @@ When the reviewer finds issues, respond per-finding instead of silently fixing e
 3. Run targeted recheck (NOT a full re-review):
    ```bash
    codex exec \
-     -c 'model_reasoning_effort="xhigh"' \
+     -c 'model_reasoning_effort="high"' \
      -s danger-full-access \
      -o .reviews/latest-review.md \
      "You are doing a TARGETED RECHECK. First read .reviews/handoff.json \
@@ -2720,7 +2720,7 @@ If tests fail:
 3. Fix appropriately (fix code, fix test, or delete dead test)
 4. Run specific test individually first
 5. Then run ALL tests
-6. Still failing? Escalate to Fable, then Codex `xhigh` — ask the user only if they still can't resolve it
+6. Still failing? Escalate to Fable, then Codex `high` — ask the user only if they still can't resolve it
 
 **Flaky tests are bugs, not mysteries:**
 - Sometimes the bug is in app code (race condition, timing issue)
@@ -2814,7 +2814,7 @@ Local tests pass -> Commit -> Push -> Watch CI
    - Read failure logs: `gh run view <RUN_ID> --log-failed`
    - Diagnose root cause (same philosophy as local test failures)
    - Fix and push again
-4. Max 2 fix attempts - if still failing, escalate (Fable → Codex `xhigh`) before asking the user
+4. Max 2 fix attempts - if still failing, escalate (Fable → Codex `high`) before asking the user
 5. **Read CI logs whether pass or fail — not just on failure.** A green checkmark hides warnings, skipped steps, and degraded scores (v1.24.0 shipped a degraded E2E score and a silently excluded test suite behind a passing check). Use `gh run view <RUN_ID> --log`, not just `--log-failed`.
 6. **Cross-model audit the CI logs** — same `codex exec` pattern as the Cross-Model Review Loop above. Prompt: *"Audit for silent failures, skipped tests, degraded metrics, warnings-that-should-be-errors."* Do this even when every check is green.
 7. Only after logs are read and audited — proceed to present final summary
@@ -2825,7 +2825,7 @@ Local tests pass -> Commit -> Push -> Watch CI
 - Your code broke it? Fix your code
 - CI config issue? Fix the config
 - Flaky? Investigate - flakiness is a bug
-- Stuck? Escalate — Fable, then Codex `xhigh`; the user last
+- Stuck? Escalate — Fable, then Codex `high`; the user last
 
 ## CI Review Feedback Loop — Local Shepherd (After CI Passes)
 
@@ -2863,7 +2863,7 @@ CI passes -> Read review suggestions
 
 **The default: explicit `gh pr merge --squash` always needs the user's confirmation, every PR.** `gh pr merge --auto` (GitHub's own auto-merge-on-green feature) stays permanently, unconditionally banned regardless of anything below — it fires before review feedback can even be read (PR #145 incident: auto-merged unreviewed, shipped a P1 bug).
 
-**A narrow, conditional exception (2026-07-21)** lets an agent skip that one confirmation click — never the ban above — ONLY if ALL hold: CI's `validate` check is green (verified, not inferred); Codex xhigh reached CERTIFIED via a full adversarial dialogue (not a round-1 rubber stamp); a **fresh, diff-only reviewer subagent** (no prior session context) independently found **zero unresolved findings after at least one dialogue round**; and the PR touches nothing in the **merge-evidence chain** — CI/release workflows, hooks, agent-config directories, or the merge wrapper itself. Those always need a human, no exception, because a PR editing them defines its own CI check, runs its own gate, and posts its own review evidence, so every leg of the evidence stack becomes self-produced at once. Note branch protection matches a required check by NAME, so *any* new workflow file can mint a green one. Policy prose that steers behaviour but does not decide whether the current PR may merge (the SDLC policy document, the SDLC skill) may instead be cleared by posted, SHA-bound cross-model evidence. A package-version bump always needs confirmation. **This distinction is not a security boundary** — a local gate never is against a determined agent — it bounds the blast radius of an honest agent that has degraded: a bad docs merge ships one bad doc, a bad control-plane merge silently degrades every later merge's evidence, including the check that would have caught it. Even when it fires, the agent must tell the user immediately afterward what merged and why — this is "skip the click," never a silent merge.
+**A narrow, conditional exception (2026-07-21)** lets an agent skip that one confirmation click — never the ban above — ONLY if ALL hold: CI's `validate` check is green (verified, not inferred); Codex `high` reached CERTIFIED via a full adversarial dialogue (not a round-1 rubber stamp); a **fresh, diff-only reviewer subagent** (no prior session context) independently found **zero unresolved findings after at least one dialogue round**; and the PR touches nothing in the **merge-evidence chain** — CI/release workflows, hooks, agent-config directories, or the merge wrapper itself. Those always need a human, no exception, because a PR editing them defines its own CI check, runs its own gate, and posts its own review evidence, so every leg of the evidence stack becomes self-produced at once. Note branch protection matches a required check by NAME, so *any* new workflow file can mint a green one. Policy prose that steers behaviour but does not decide whether the current PR may merge (the SDLC policy document, the SDLC skill) may instead be cleared by posted, SHA-bound cross-model evidence. A package-version bump always needs confirmation. **This distinction is not a security boundary** — a local gate never is against a determined agent — it bounds the blast radius of an honest agent that has degraded: a bad docs merge ships one bad doc, a bad control-plane merge silently degrades every later merge's evidence, including the check that would have caught it. Even when it fires, the agent must tell the user immediately afterward what merged and why — this is "skip the click," never a silent merge.
 
 **Be honest with yourself about what's actually enforced.** Some of this repo's own conditions are mechanically verified by local tooling — but that tooling is intentionally repo-local and does **not** ship as part of the wizard install. If you want the same fail-closed guarantee rather than self-certified prose, build the equivalent for your own repo: a wrapper script that independently re-checks CI status against the PR's remote head SHA, scans the diff against your own denylist (including the wrapper and any gate hook themselves — a PR editing the merge policy must not be able to exempt itself from it), and binds the merge atomically to that SHA (e.g. `gh pr merge --match-head-commit <sha>`) to close the race between checking and merging. Absent that, treat every condition above as something your own agent must reason about and self-report against, not something guaranteed.
 
@@ -3581,7 +3581,7 @@ All checks passed! Setup complete.
 |-------|---------------|
 | HIGH (90%+) | Proceed after approval |
 | MEDIUM (60-89%) | Highlight uncertainties |
-| LOW (<60%) | **Escalation ladder** — Fable → Codex xhigh → human last |
+| LOW (<60%) | **Escalation ladder** — Fable → Codex high → human last |
 | FAILED 2x | **Escalation ladder** — human is the last rung, not the first |
 
 ### Hook Summary
@@ -3975,7 +3975,13 @@ Use an independent AI model from a different company as a code reviewer. The aut
 
 **Why this works:** Two AI systems from different companies (e.g., Claude writes, GPT reviews) provide adversarial diversity. They have fundamentally different training, different failure modes, and different strengths. What one misses, the other catches.
 
-**Use the best model at the deepest reasoning.** This is your quality gate — don't economize on it. Always use the latest, most capable model available (**GPT-5.6 Sol if you have access**, otherwise Terra) at `xhigh` reasoning effort (non-negotiable — lower settings miss subtle errors; preserve this baseline rather than downgrading it on a model bump). Cheaper/faster models miss things. The whole point is catching what the authoring model couldn't. For unusually risky PRs, escalating to `max` or Pro mode is defensible — see `AI_SETUP_LANES.md`'s Final Review Policy — but `xhigh` is the default; no published data shows the higher tiers catching meaningfully more real bugs on ordinary PR review.
+**Use the best model, at an effort you can afford to run every time.** This is your quality gate — don't economize on the *model*. Always use the latest, most capable one available (**GPT-5.6 Sol if you have access**, otherwise Terra). Cheaper/faster models miss things; the whole point is catching what the authoring model couldn't.
+
+**Effort default: `high`** (changed from `xhigh` 2026-08-01). The reasoning is cost and review-noise, not capability: a reviewer you skip because it takes 30 minutes catches nothing, and a long tail of cosmetic findings crowds out the real ones. Escalate to `xhigh` for unusually risky PRs — auth, payments, data migrations, anything touching a merge or release gate — and to `max`/Pro above that; see `AI_SETUP_LANES.md`'s Final Review Policy.
+
+**Be honest about the evidence here, because we weren't.** This document previously asserted that "testing showed `xhigh` caught 3 findings that `high` missed on the same content", and framed that setting as beyond question. That line was written 2026-03-26 against **GPT-5.4** — two reviewer generations before GPT-5.6 Sol — with no measurement artifact behind it, and it survived unchallenged for four months. Neither the old default nor the new one rests on a controlled comparison in this repo. If you want the real answer, run both efforts on the same diff and count P0/P1 findings, not total findings.
+
+**Prompt the reviewer for everything, then filter yourself.** Asking a reviewer to "only report high-severity issues" makes it report less, including real defects. Ask for the full list and triage it: act on P0/P1, batch the rest into a note. Getting cosmetic findings back is a signal to filter harder, not to reduce reasoning effort.
 
 **Prerequisites:**
 - Codex CLI installed: `npm i -g @openai/codex`
@@ -4017,7 +4023,7 @@ The `mission/success/failure` fields give the reviewer context. Without them, yo
 
 ```bash
 codex exec \
-  -c 'model_reasoning_effort="xhigh"' \
+  -c 'model_reasoning_effort="high"' \
   -s danger-full-access \
   -o .reviews/latest-review.md \
   "You are an independent code reviewer. Read .reviews/handoff.json, \
@@ -4075,7 +4081,7 @@ Then update `handoff.json` to `"status": "PENDING_RECHECK"`, increment `round`, 
 
 ```bash
 codex exec \
-  -c 'model_reasoning_effort="xhigh"' \
+  -c 'model_reasoning_effort="high"' \
   -s danger-full-access \
   -o .reviews/latest-review.md \
   "You are doing a TARGETED RECHECK. First read .reviews/handoff.json \
@@ -4122,7 +4128,7 @@ Claude writes code → self-review passes → handoff.json (round 1)
 **Every CERTIFIED path above writes `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) treats a missing or mismatched SHA as a stale certification, so a bare `CERTIFIED` status string is never enough on its own.
 
 **Key flags:**
-- `-c 'model_reasoning_effort="xhigh"'` — Maximum reasoning depth. This is where you get the most value. Testing showed `xhigh` caught 3 findings that `high` missed on the same content.
+- `-c 'model_reasoning_effort="high"'` — the reviewer effort default as of 2026-08-01, chosen for cost and review-noise rather than capability. Escalate to `xhigh` for unusually risky PRs. This flag previously defaulted to `xhigh` on the strength of a claim that "testing showed `xhigh` caught 3 findings that `high` missed" — written 2026-03-26 against GPT-5.4, with no measurement artifact. Neither setting has a controlled comparison in this repo; see the effort discussion in the Cross-Model Review section.
 - `-s danger-full-access` — Full filesystem read/write so the reviewer can read your actual code.
 - `-o .reviews/latest-review.md` — Save the review output for Claude to read back.
 - **Claude Code sandbox bypass required:** Codex's Rust binary needs access to macOS system configuration APIs (`SCDynamicStore`) during initialization. Claude Code's sandbox blocks this, causing `codex exec` to crash with `panicked: Attempted to create a NULL object`. When running from within Claude Code, use `dangerouslyDisableSandbox: true` on the Bash tool call. This only bypasses CC's sandbox for the Codex process — Codex's own sandbox (`-s danger-full-access`) still applies. Known issue: [openai/codex#15640](https://github.com/openai/codex/issues/5914).

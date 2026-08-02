@@ -25,7 +25,7 @@ If this PR introduces a new component, tick the boxes. Skip this section for pur
 - [ ]
 - [ ]
 - [ ] Full regression suite green (see `CONTRIBUTING.md` for the command chain)
-- [ ] Cross-model review via Codex xhigh if change is substantial (security, auth, release, skill/workflow edits)
+- [ ] Cross-model review via Codex high if change is substantial (security, auth, release, skill/workflow edits)
 
 ## Follow-ups / known limitations
 

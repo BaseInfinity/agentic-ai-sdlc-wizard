@@ -213,7 +213,7 @@ The SDLC skill's CI feedback loops (`.claude/skills/sdlc/SKILL.md`) run during a
 - Triggers on PR open, ready_for_review, or `needs-review` label
 - Waits for CI to pass before reviewing (saves API costs)
 - Skips trivial PRs (docs-only, config-only)
-- Uses Claude Code action for AI review, pinned to `claude-opus-4-7`
+- Uses Claude Code action for AI review, pinned to `claude-opus-5` at `high` effort (2026-08-02)
 - Posts review as **sticky PR comment**
 - Checks E2E coverage for SDLC-affecting changes
 
@@ -241,7 +241,7 @@ The `review` job is **skipped on `BaseInfinity/claude-sdlc-wizard` self-PRs** �
 
 **Why**: the wizard maintainer keeps `ANTHROPIC_API_KEY` credit balance dead as an "API canary" — any unexpected API draw is detected by failed CI. `claude-code-action@v1` needs that key with positive balance, so self-PRs were failing every run with "Credit balance is too low". Seven PRs (v1.39.0–v1.42.0) shipped to main with the review job red, normalizing red CI and masking any real review failure that might have appeared.
 
-**Why this is safe**: the wizard uses Codex (`codex exec` with `model_reasoning_effort=xhigh`) for cross-model review during the SDLC skill's review phase. Claude PR review is redundant on self-repo. Consumers using `pr-review.yml` in their own projects WILL run this job normally — the skip only fires when the workflow runs on the wizard's own repo.
+**Why this is safe**: the wizard uses Codex (`codex exec` with `model_reasoning_effort=high`) for cross-model review during the SDLC skill's review phase. Claude PR review is redundant on self-repo. Consumers using `pr-review.yml` in their own projects WILL run this job normally — the skip only fires when the workflow runs on the wizard's own repo.
 
 **Recovery for new failures**: if claude-code-action ever has a real issue affecting consumers (not just our dead canary), the consumer projects' runs will surface it. We rely on consumer signal + Codex reviews on self-repo to catch problems.
 
@@ -252,12 +252,12 @@ The `review` job is **skipped on `BaseInfinity/claude-sdlc-wizard` self-PRs** �
 
 ## Local Codex Audit of CI Logs (Cross-Model)
 
-The GH `pr-review.yml` workflow uses whichever Claude model `claude-code-action@v1` defaults to (the action's upstream default — currently Opus 4.8, may change with action updates). For adversarial diversity, the local shepherd loop runs a **second pass with Codex xhigh** against the CI logs themselves — not just the code. A second model catches things the first missed (silent test exclusions, degraded E2E scores on a green checkmark, warnings promoted to errors in a later version). The wizard's local recommendation is Opus 5 (trial as of 2026-07-24, see `AI_SETUP_LANES.md` Setup A), but the CI action runs its own default independently.
+The GH `pr-review.yml` workflow uses whichever Claude model `claude-code-action@v1` defaults to (the action's upstream default — currently Opus 4.8, may change with action updates). For adversarial diversity, the local shepherd loop runs a **second pass with Codex high** against the CI logs themselves — not just the code. A second model catches things the first missed (silent test exclusions, degraded E2E scores on a green checkmark, warnings promoted to errors in a later version). The wizard's local recommendation is Opus 5 (trial as of 2026-07-24, see `AI_SETUP_LANES.md` Setup A), but the CI action runs its own default independently.
 
 ```bash
 # After CI reports pass/fail:
 gh run view <RUN_ID> --log > /tmp/ci.log
-codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access \
+codex exec -c 'model_reasoning_effort="high"' -s danger-full-access \
   "Audit /tmp/ci.log for silent failures, skipped tests, degraded metrics, \
    or warnings-that-should-be-errors. Green checkmark is necessary but not \
    sufficient. List findings with severity." < /dev/null

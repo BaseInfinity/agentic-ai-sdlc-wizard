@@ -3,7 +3,7 @@
 // Output: { tier: 'simple' | 'complex', score: <number>, signals: [...] }
 //   - 'simple' → setup wizard suggests Setup B (Sonnet 5 + Fable) or no pin
 //   - 'complex' → setup wizard suggests Setup A (Opus 5) or escalating to Opus 4.8
-// Cross-model review (Codex xhigh) always runs regardless of driver
+// Cross-model review (Codex, `high` effort as of 2026-08-01) always runs regardless of driver
 // selection — see CLAUDE_CODE_SDLC_WIZARD.md.
 //
 // Classification (matches CLAUDE_CODE_SDLC_WIZARD.md → "Mixed-Mode Tier"):

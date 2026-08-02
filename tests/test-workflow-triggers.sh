@@ -1343,25 +1343,38 @@ test_no_bare_weekly_simulations() {
     fi
 }
 
-# Test 122: pr-review.yml uses --effort xhigh for deep reasoning on reviews
-test_pr_review_effort_xhigh() {
+# Test 122: pr-review.yml runs the reviewer at `high` effort.
+# Changed from xhigh 2026-08-02 by maintainer decision, aligning the CI Claude
+# reviewer with the Codex/Fable reviewer change of 2026-08-01. Cost and
+# review-noise, not capability. CI_CD.md tells consumers to copy this workflow,
+# so it is a consumer-facing surface, not just ours.
+test_pr_review_effort_high() {
     local WORKFLOW="$REPO_ROOT/.github/workflows/pr-review.yml"
 
-    if grep -A4 'claude_args:' "$WORKFLOW" | grep -q '\-\-effort xhigh'; then
-        pass "pr-review.yml uses --effort xhigh in claude_args"
+    if grep -A4 'claude_args:' "$WORKFLOW" | grep -qE '\-\-effort high\b'; then
+        pass "pr-review.yml uses --effort high in claude_args"
+    elif grep -A4 'claude_args:' "$WORKFLOW" | grep -q '\-\-effort xhigh'; then
+        fail "pr-review.yml reverted to --effort xhigh — the reviewer default is high as of 2026-08-02"
     else
-        fail "pr-review.yml should use --effort xhigh for deeper review reasoning"
+        fail "pr-review.yml should pin --effort high explicitly"
     fi
 }
 
-# Test 123: pr-review.yml uses claude-opus-4-7 model
+# Test 123: pr-review.yml runs Opus 5, not a stale 4.x pin.
+# Maintainer 2026-08-02: "we should not be using opus 4 7 at all we should use
+# opus 5 and high effort." Asserts the CURRENT model by name and rejects any
+# 4.x pin, so a silent regression to an older model fails loudly.
 test_pr_review_opus_model() {
     local WORKFLOW="$REPO_ROOT/.github/workflows/pr-review.yml"
+    local args
+    args=$(grep -A4 'claude_args:' "$WORKFLOW")
 
-    if grep -A4 'claude_args:' "$WORKFLOW" | grep -q 'claude-opus-4-7'; then
-        pass "pr-review.yml uses claude-opus-4-7 model"
+    if printf '%s' "$args" | grep -qE 'claude-opus-4-[0-9]'; then
+        fail "pr-review.yml pins a stale Opus 4.x model — should be claude-opus-5"
+    elif printf '%s' "$args" | grep -q 'claude-opus-5'; then
+        pass "pr-review.yml uses claude-opus-5"
     else
-        fail "pr-review.yml should use claude-opus-4-7 for maximum review quality"
+        fail "pr-review.yml should pin --model claude-opus-5"
     fi
 }
 
@@ -1370,7 +1383,7 @@ test_bare_weekly_update_analysis
 test_bare_monthly_research
 test_no_bare_ci_simulations
 test_no_bare_weekly_simulations
-test_pr_review_effort_xhigh
+test_pr_review_effort_high
 test_pr_review_opus_model
 
 # --- Bug fix tests (weekly-update/monthly-research workflow issues) ---
