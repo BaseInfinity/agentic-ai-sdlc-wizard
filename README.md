@@ -128,7 +128,7 @@ That's it. Codex picks up your OpenAI account's best available model automatical
 **How to use it:** after Claude's self-review passes, write a one-file mission brief and run:
 
 ```bash
-codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access \
+codex exec -c 'model_reasoning_effort="high"' -s danger-full-access \
   -o .reviews/latest-review.md \
   "Read .reviews/handoff.json and review per the checklist. Output findings + CERTIFIED or NOT CERTIFIED." \
   < /dev/null
@@ -136,7 +136,7 @@ codex exec -c 'model_reasoning_effort="xhigh"' -s danger-full-access \
 
 **Always append `< /dev/null`** when running `codex exec` from a non-interactive parent (background, hooks, CI, Claude Code Bash tool). Without it, codex blocks on stdin reads even when the prompt is an argument — the process sits at S/0% CPU indefinitely with a 0-byte `-o` output file. Validated on codex-cli 0.130.0 / macOS 14, 2026-05-15.
 
-`xhigh` reasoning is **non-negotiable** — lower settings miss subtle bugs. See [CLAUDE_CODE_SDLC_WIZARD.md](CLAUDE_CODE_SDLC_WIZARD.md#cross-model-review-loop-required-for-high-stakes) for the full protocol (handoff format, round-2 dialogue loop, preflight docs). Real-world: this catches P0/P1 issues in 2-3 out of 10 reviews that Claude's self-review rated as clean.
+Reviewer effort is `high` (changed from `xhigh` 2026-08-01, for cost and review-noise — not capability); escalate to `xhigh` for unusually risky PRs. See [CLAUDE_CODE_SDLC_WIZARD.md](CLAUDE_CODE_SDLC_WIZARD.md#cross-model-review-loop-required-for-high-stakes) for the full protocol (handoff format, round-2 dialogue loop, preflight docs). Real-world: this catches P0/P1 issues in 2-3 out of 10 reviews that Claude's self-review rated as clean.
 
 ## Choosing Your Model
 
@@ -178,7 +178,7 @@ Or pin in `.claude/settings.json`:
 { "model": "opus", "advisorModel": "fable", "effortLevel": "xhigh" }
 ```
 
-**Effort is model-aware, not blanket `max`.** Opus 5: `xhigh` default for Setup A (Anthropic's own recommendation for difficult/long-running work) — effort tiers are static per session, but Opus 5 has documented adaptive reasoning *within* a fixed tier. Sonnet 5: `medium` default (CodeRabbit-tested), escalate `/effort high` → `xhigh` for hard tasks. Opus 4.8: `xhigh` (its own `max` overthinks). Opus 4.6: `max` (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc or settings env var — persisting effort that way silently overrides a later `/effort` change after you switch models (see `SDLC.md`'s Lessons Learned for a real incident this caused). Also check for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` env var in your shell rc files — it silently overrides `/model opus` picker choices. OpenAI/Codex reviewer: `xhigh` default — escalate to `max`/Pro mode only for unusually risky PRs (see `AI_SETUP_LANES.md`'s Final Review Policy).
+**Effort is model-aware, not blanket `max`.** Opus 5: `xhigh` default for Setup A (Anthropic's own recommendation for difficult/long-running work) — effort tiers are static per session, but Opus 5 has documented adaptive reasoning *within* a fixed tier. Sonnet 5: `medium` default (CodeRabbit-tested), escalate `/effort high` → `xhigh` for hard tasks. Opus 4.8: `xhigh` (its own `max` overthinks). Opus 4.6: `max` (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc or settings env var — persisting effort that way silently overrides a later `/effort` change after you switch models (see `SDLC.md`'s Lessons Learned for a real incident this caused). Also check for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` env var in your shell rc files — it silently overrides `/model opus` picker choices. OpenAI/Codex reviewer: `high` default (2026-08-01; cost and review-noise, not capability) — escalate to `xhigh` for unusually risky PRs, `max`/Pro above that (see `AI_SETUP_LANES.md`'s Final Review Policy).
 
 ### Four Setup Lanes
 
@@ -186,9 +186,9 @@ The wizard defines four AI coding setups in [`AI_SETUP_LANES.md`](AI_SETUP_LANES
 
 | Lane | Advisor | Driver | Reviewer | Escalation |
 |------|---------|--------|----------|------------|
-| **A — Recommended (trial)** | Fable 5 (advisorModel, fallback subagent) | Opus 5, `xhigh` | GPT-5.6 Sol xhigh | Opus 4.8 pinned or Fable review |
-| **B — Simple/One-Off** | Fable 5 (advisorModel, fallback subagent) | Sonnet 5, `medium`→`high`→`xhigh` | GPT-5.6 Sol xhigh | Opus 4.8 xhigh or Fable review |
-| **C — Saver** | Fable 5 or Opus 5 (advisorModel) | Opus 5 plans, Sonnet 5 executes | GPT-5.6 Sol xhigh | None |
+| **A — Recommended (trial)** | Fable 5 (advisorModel, fallback subagent) | Opus 5, `xhigh` | GPT-5.6 Sol high | Opus 4.8 pinned or Fable review |
+| **B — Simple/One-Off** | Fable 5 (advisorModel, fallback subagent) | Sonnet 5, `medium`→`high`→`xhigh` | GPT-5.6 Sol high | Opus 4.8 xhigh or Fable review |
+| **C — Saver** | Fable 5 or Opus 5 (advisorModel) | Opus 5 plans, Sonnet 5 executes | GPT-5.6 Sol high | None |
 | **D — Lite** | None | Sonnet 5, `medium` | None | None |
 
 Setup D's whole point: **the discipline of knowing when NOT to use discipline.** When blast radius is low and you just need fast cheap hands, skip the SDLC overhead.
@@ -199,7 +199,7 @@ Clarified 2026-07-13, updated 2026-07-24 for the Opus 5 swap — these exact poi
 
 - **Effort starts at `xhigh`, not `high`.** Opus 5's own documented default is `high` for general use, but Anthropic explicitly recommends "extra" (`xhigh`) "for difficult tasks and long-running asynchronous workflows" — Setup A's whole purpose. `max` is a last resort, not the default escalation step: marginal gains, doubles cost.
 - **Model escalation swaps the driver, not the tier.** After 2 failed attempts, LOW confidence, or on high-stakes changes with Setup A already exhausted, a pinned Opus 4.8 (`claude-opus-4-8`) takes over as driver for a genuinely independent second pass — Opus-5-driver plus an Opus-5 advisor fallback would otherwise be a same-family self-check. Why a swap and not more effort: the lane's policy treats repeated failure as a sign the *approach* needs different eyes, not deeper reasoning on the same track.
-- **Advisor failure has a fallback, not a shrug.** Fable 5 advises via `advisorModel: "fable"` — currently server-side disabled repo-wide pending an Anthropic rollout (confirmed 2026-07-24, not a transient incident — restarting the session doesn't fix it). spawn a Fable subagent at `xhigh` as the fallback reviewer immediately, exactly as the `/sdlc` skill prescribes. Why: the advisor's job is catching wrong approaches *before* they're built, so a transport failure changes how the advice is obtained — not whether the check happens.
+- **Advisor failure has a fallback, not a shrug.** Fable 5 advises via `advisorModel: "fable"` — currently server-side disabled repo-wide pending an Anthropic rollout (confirmed 2026-07-24, not a transient incident — restarting the session doesn't fix it). spawn a Fable subagent at `high` as the fallback reviewer immediately, exactly as the `/sdlc` skill prescribes. Why: the advisor's job is catching wrong approaches *before* they're built, so a transport failure changes how the advice is obtained — not whether the check happens.
 
 **A note on `[1m]` and billing.** Sonnet 5 always runs at its native 1M context — no `[1m]` suffix needed, no separate billing tier. For Opus, the `[1m]` suffix is the 1M-context alias; as of [March 2026](https://claude.com/blog/1m-context-ga), 1M context is GA at standard pricing — **no long-context surcharge, no premium tier, no API-only restriction.** Interactive Claude Code sessions on Max / Team / Enterprise plans include 1M context automatically. (Pro users need "Enable usage credits" turned on once.) The [June 15, 2026 billing split](https://codersera.com/blog/anthropic-june-2026-billing-change-claude-code/) moved *headless* surfaces — `claude -p`, Agent SDK, GitHub Actions, third-party apps — off the Max subscription onto a separate metered credit pool. Interactive Claude Code in your terminal stays on Max. Full details in [`AI_SETUP_LANES.md` § How Billing Works](AI_SETUP_LANES.md#how-billing-works--1m-context-max-plan-and-the-june-15-split).
 

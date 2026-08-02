@@ -27,6 +27,82 @@ fail() {
 echo "=== External Benchmark Fetcher Tests ==="
 echo ""
 
+# Remove ONLY the files this benchmark owns.
+#
+# These tests previously ran `rm -rf "$SCRIPT_DIR/e2e/.cache"` — deleting the
+# whole shared directory to verify one file they own. tests/e2e/.cache/ is
+# gitignored scratch space shared with the E2E runbook, so every full-suite run
+# silently destroyed anything else parked there. On 2026-08-01 that included a
+# Codex Cowork E2E result set and its screenshots, which could not be recovered
+# and which an investigation then depended on.
+#
+# The benchmark writes exactly two things (tests/e2e/lib/external-benchmark.sh:25,27):
+#   external-benchmark-<MODEL>.json
+#   scrape-fail-count.txt
+# Deletes EXACT paths, never a prefix glob. A glob of external-benchmark-*.json
+# would also eat an unrelated artifact someone parked here while diagnosing this
+# very benchmark — e.g. external-benchmark-investigation.json. Given that broad
+# deletion in this directory is precisely what destroyed the Cowork E2E evidence,
+# collateral damage from a namespace collision is inside the threat model, so the
+# list is explicit even though it must be kept in step with the models exercised
+# below.
+BENCHMARK_MODELS=(
+    claude-sonnet-4
+    claude-opus-4
+    claude-opus-4-7
+    nonexistent-model-xyz
+    force-fail-test-model
+    model-with-no-baseline
+    probe-model
+)
+clear_benchmark_cache() {
+    local cache_dir="$1"
+    [ -n "$cache_dir" ] || return 0
+    local m
+    for m in "${BENCHMARK_MODELS[@]}"; do
+        rm -f "$cache_dir/external-benchmark-${m}.json"
+    done
+    rm -f "$cache_dir/scrape-fail-count.txt"
+}
+
+# Guard: cleanup must not touch files it does not own.
+#
+# Runs against a THROWAWAY directory, not the real shared cache. Earlier versions
+# used the real one, which meant the guard wrote its sentinel over any file that
+# happened to share the name and then deleted it — destroying real data while
+# testing that real data is not destroyed. The save/restore workaround that
+# followed still left windows open (set -e abort mid-guard, interrupt, symlink,
+# directory-at-that-path). Since clear_benchmark_cache() takes the directory as a
+# parameter, pointing it at mktemp -d makes the entire class unreachable instead
+# of narrow. Fable's call, and it is the right one: eliminate, don't narrow.
+test_cache_cleanup_is_scoped() {
+    local cache_dir
+    cache_dir=$(mktemp -d "${TMPDIR:-/tmp}/benchmark-cache-guard-XXXXXX") || {
+        fail "could not create a temp dir for the cache-cleanup guard"; return; }
+    local sentinel="$cache_dir/DO-NOT-DELETE-unrelated-artifact.md"
+    # Second sentinel deliberately COLLIDES with the benchmark's filename prefix.
+    # A prefix glob would eat this; exact-path deletion must not. Codex found the
+    # first version of this guard could not catch that case, because its only
+    # sentinel sat outside the glob.
+    local collide="$cache_dir/external-benchmark-investigation.json"
+    printf 'unrelated E2E artifact\n' > "$sentinel"
+    printf '{"unrelated":true}\n' > "$collide"
+    : > "$cache_dir/external-benchmark-probe-model.json"
+
+    clear_benchmark_cache "$cache_dir"
+
+    if [ ! -f "$sentinel" ]; then
+        fail "cache cleanup DELETED an unrelated artifact — this is how the Cowork E2E results were lost"
+    elif [ ! -f "$collide" ]; then
+        fail "cache cleanup DELETED external-benchmark-investigation.json — a prefix glob is eating unrelated files"
+    elif [ -f "$cache_dir/external-benchmark-probe-model.json" ]; then
+        fail "cache cleanup left its own benchmark file behind"
+    else
+        pass "cache cleanup removes only benchmark-owned files, preserving unrelated and prefix-colliding artifacts"
+    fi
+    rm -rf "$cache_dir"
+}
+
 # Test 1: Script exists and is executable
 test_script_exists() {
     if [ -x "$BENCHMARK_SCRIPT" ]; then
@@ -59,12 +135,37 @@ test_default_model() {
 # Test 4: Cache file is created
 test_cache_created() {
     local cache_dir="$SCRIPT_DIR/e2e/.cache"
-    rm -rf "$cache_dir"
+    clear_benchmark_cache "$cache_dir"
     "$BENCHMARK_SCRIPT" claude-sonnet-4 >/dev/null 2>&1 || true
-    if [ -d "$cache_dir" ] && ls "$cache_dir"/*.json >/dev/null 2>&1; then
-        pass "Cache directory and files created"
+    # Assert the SPECIFIC file, not `ls *.json`. Scoping the cleanup to owned
+    # files means unrelated parked artifacts now survive by design — and a
+    # wildcard check would be satisfied by one of those with the benchmark
+    # having written nothing. Fable caught that this fix weakened this test.
+    if [ -f "$cache_dir/external-benchmark-claude-sonnet-4.json" ]; then
+        pass "Cache directory and the expected benchmark file were created"
     else
-        fail "Cache should be created in $cache_dir"
+        fail "expected $cache_dir/external-benchmark-claude-sonnet-4.json to be created"
+    fi
+}
+
+# The model list in clear_benchmark_cache is hand-maintained, so it can rot: a
+# future test that exercises a new model would leave 24h-stale cache behind and
+# could make a later assertion pass spuriously. This enforces the invariant.
+test_benchmark_models_list_is_complete() {
+    local invoked missing=""
+    # Capture only the first argument, and only when it looks like a model name
+    # (starts with a letter). Skips --help and bare/redirect-only invocations.
+    invoked=$(perl -ne 'print "$1\n" if /\$BENCHMARK_SCRIPT"\s+"?([a-z][a-z0-9.-]*)"?/' \
+              "$SCRIPT_DIR/test-external-benchmark.sh" | sort -u)
+    local m listed
+    listed=" ${BENCHMARK_MODELS[*]} "
+    for m in $invoked; do
+        case "$listed" in *" $m "*) ;; *) missing="$missing $m" ;; esac
+    done
+    if [ -z "$missing" ]; then
+        pass "BENCHMARK_MODELS covers every model this suite invokes (no stale-cache rot)"
+    else
+        fail "BENCHMARK_MODELS is missing model(s) this suite invokes:$missing — their cache would never be cleared"
     fi
 }
 
@@ -137,7 +238,7 @@ test_score_range() {
 # Cleanup
 cleanup() {
     local cache_dir="$SCRIPT_DIR/e2e/.cache"
-    rm -rf "$cache_dir"
+    clear_benchmark_cache "$cache_dir"
 }
 
 # Test 9: Opus model name mapping works
@@ -180,7 +281,7 @@ test_missing_baseline() {
 # Test 11: Multiple calls return consistent results (from cache)
 test_consistency() {
     local cache_dir="$SCRIPT_DIR/e2e/.cache"
-    rm -rf "$cache_dir"
+    clear_benchmark_cache "$cache_dir"
 
     local first second
     first=$("$BENCHMARK_SCRIPT" claude-sonnet-4 2>/dev/null) || true
@@ -235,6 +336,8 @@ test_aistupidlevel_in_cascade() {
 }
 
 # Run all tests
+test_cache_cleanup_is_scoped
+test_benchmark_models_list_is_complete
 test_script_exists
 test_help
 test_default_model

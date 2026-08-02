@@ -1487,7 +1487,14 @@ test_wizard_doc_reviewer_is_gpt56() {
     # 3855->3863->3865->3867 across three separate insertions in one day
     # (2026-07-21) before being switched to anchors, since any earlier-in-
     # file edit shifts hardcoded numbers for content further down.
-    bad="$bad$(_check_content_line_has_and_lacks "$F" "Use the best model at the deepest reasoning" "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    # Re-anchored 2026-08-01 (4th drift of this pair): the previous anchor was
+    # the sentence's rhetorical opener ("Use the best model at the deepest
+    # reasoning"), which was rewritten when the Codex reviewer effort moved from
+    # xhigh to high. Anchor on "This is your quality gate" instead — it states
+    # the paragraph's PURPOSE rather than its current recommendation, so it
+    # survives a change to the recommendation itself. That is the distinction
+    # that keeps breaking here: anchor on what the text is FOR, not what it says.
+    bad="$bad$(_check_content_line_has_and_lacks "$F" "This is your quality gate" "5\.6,Sol,Terra" "5\.5" "5\.4")"
     bad="$bad$(_check_content_line_has_and_lacks "$F" "Codex CLI picks up your OpenAI account" "5\.6,Sol,Terra" "5\.5" "5\.4")"
     if [ -z "$bad" ]; then
         pass "CLAUDE_CODE_SDLC_WIZARD.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
@@ -1972,6 +1979,410 @@ test_parallel_blind_dual_review() {
     fi
 }
 test_parallel_blind_dual_review
+
+# ────────────────────────────────────────────
+# E2E runbook: ordered lists must actually be ordered
+# ────────────────────────────────────────────
+# The runbook is not prose — it is a prompt pasted verbatim into another model,
+# which then executes each numbered item as a step. A duplicate number is a
+# skipped step. Found 2026-08-01: Step 5c ran 1,2,3,4,4,5, and the second "4"
+# was the in-flight case — the single check that v1.90.0's Stop-hook fix exists
+# to prove, and the one thing no static test can cover.
+#
+# Deliberately generic (every contiguous run of "N. " lines must count 1..N)
+# rather than pinned to Step 5c. Line-number and section-name anchors in this
+# file have drifted four times; a structural rule cannot drift.
+# The rule, factored out so it can be run against fixtures rather than only
+# against the real file. A rule that is only ever pointed at a passing document
+# is indistinguishable from one that always passes — see ROADMAP #490.
+#
+# A run of numbered items ends at a markdown heading and NOWHERE else. Indented
+# continuation lines, blank lines and blockquotes all sit INSIDE a list, so they
+# must not reset the counter — a first draft reset on every non-matching line
+# and reported 10 false positives.
+#
+# There is deliberately NO "restart at 1" branch. Codex xhigh found that an
+# unconditional `n == 1` restart silently certifies `1,2,1,2` under a single
+# heading, which is one malformed list in Markdown, not two lists. Since a run
+# only ever begins after a heading (where prev is already 0), `n == prev + 1`
+# covers the legitimate case on its own and the restart branch bought nothing
+# but the hole.
+#
+# SCOPE, deliberately narrow. This rule models ATX headings, backtick fences,
+# and top-level ordered lists — nothing else. It does NOT model blockquotes,
+# tilde fences, or setext headings. That is safe ONLY because
+# test_e2e_runbook_uses_only_modelled_constructs below fails LOUDLY the moment
+# the runbook contains one of them.
+#
+# Why it was cut back: across three review rounds, every new silent false green
+# was a direct child of the previous round's fix — blockquote support introduced
+# a fence/quote-ordering bug, whose fix introduced two more (fences don't carry a
+# depth). The rule was reimplementing CommonMark block structure to guard ONE
+# file whose structure this repo controls. Fable's call, adopted: an allowlist
+# converts every unknown parser gap from a silent pass into a loud failure,
+# permanently. Generality was the thing given up, and the runbook never needed it.
+#
+# CommonMark permits up to THREE leading spaces before a list marker, so a
+# column-1-only regex silently stops guarding an indented list. Codex found this
+# with the fixture "# H / '   1. first' / '   3. skipped'", which produced zero
+# output. Four leading spaces is an indented code block in CommonMark, not a
+# list, so 0-3 is the correct bound.
+#
+# Fence-aware. Fable found the decisive false green: a ```bash fence containing a
+# column-1 `#` comment made the heading rule fire, resetting the counter and
+# silently certifying a malformed restart across the fence. The E2E runbook is
+# precisely a document that interleaves numbered steps with bash fences, so that
+# was its native failure shape, not a corner case. Content inside a fence is not
+# Markdown structure and is skipped entirely.
+#
+# Both CommonMark ordered-list delimiters are recognised, `.` and `)`. A run is
+# keyed by its delimiter so "1." and "1)" are not treated as one sequence.
+misnumbered_ordered_items() {
+    awk '
+        # Track the OPENING fence character and length; close only on a matching
+        # run of the same character, at least as long. A blind toggle flips on a
+        # ~~~ that is merely CONTENT inside a ``` fence, and then swallows the
+        # real document — Fable demonstrated a misnumbered list going silent that
+        # way. Same length-matched-backreference lesson as the fence handling in
+        # scripts/merge-pr.sh.
+        /^ {0,3}(```+|~~~+)/ {
+            fl = $0; sub(/^ {0,3}/, "", fl)
+            fc = substr(fl, 1, 1); fn = 0
+            while (substr(fl, fn + 1, 1) == fc) fn++
+            rest = substr(fl, fn + 1)
+            # A CLOSING fence carries no info string. "```still-code" inside a
+            # fence is CONTENT, not a close — Codex found the blind version
+            # desyncing on exactly that and swallowing a misnumbered list.
+            has_info = (rest ~ /[^ \t]/)
+            if (!infence)                       { infence = 1; fchar = fc; flen = fn }
+            else if (fc == fchar && fn >= flen && !has_info) { infence = 0 }
+            next
+        }
+        infence { next }
+        /^#/ { prev = 0; delim = ""; next }             # a heading ends the list
+        # CommonMark separates the marker from content with a space OR a tab.
+        /^ {0,3}[0-9]+[.)][ \t]/ {
+            n = $1 + 0                                  # $1 ignores leading whitespace
+            d = ($1 ~ /\)/) ? ")" : "."
+            if (d != delim) { delim = d; prev = 0 }     # a different marker starts a new run
+            if (n == prev + 1) { prev = n; next }
+            printf "line %d: expected %d%s but found %d%s\n", NR, prev + 1, d, n, d
+            prev = n
+        }
+    ' "$1"
+}
+
+# The runbook is a paste-able PROMPT: every step lives inside one outer ```
+# envelope, so feeding the file straight to the rule made fence-skipping swallow
+# the whole document — vacuous for three review rounds, caught by Codex mutating
+# a real step. The rule stays generic; this knows the guarded file's shape.
+runbook_prompt_body() {
+    sed '1,/^```/d; /^```/,$d' "$1"
+}
+
+# Self-test the rule against fixtures BEFORE trusting its verdict on the runbook.
+test_ordered_list_rule_detects_defects() {
+    local tmp
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/ordered-list-rule-XXXXXX") || { fail "could not create a temp dir for the ordered-list rule fixtures"; return; }
+    # Never fall back to the working tree: a fixture that writes into the repo
+    # corrupts real files (this bit us once already).
+    case "$tmp" in
+        /*) ;;
+        *) fail "refusing to run ordered-list fixtures outside an absolute temp dir"; return ;;
+    esac
+
+    printf '# H\n1. a\n2. b\n3. c\n' > "$tmp/good.md"
+    printf '# H\n1. a\n2. b\n1. restart\n2. after\n' > "$tmp/restart.md"
+    printf '# H\n1. a\n2. b\n2. dupe\n' > "$tmp/dupe.md"
+    printf '# H\n1. a\n2. b\n# H2\n1. a\n2. b\n' > "$tmp/two-lists.md"
+    # Indented lists — CommonMark allows 0-3 leading spaces. Both fixtures added
+    # after Codex proved the column-1-only rule accepted the defective one silently.
+    printf '# H\n   1. first\n   3. skipped\n' > "$tmp/indented-bad.md"
+    printf '# H\n   1. first\n   2. second\n' > "$tmp/indented-good.md"
+    # Four spaces is an indented CODE BLOCK, not a list — must NOT be parsed.
+    printf '# H\n    1. code\n    9. code\n' > "$tmp/code-block.md"
+    # Fable's decisive fixture: a fenced bash comment must NOT reset the counter.
+    printf '# H\n1. a\n2. b\n```bash\n# a comment\n```\n1. restart\n2. x\n' > "$tmp/fence-restart.md"
+    # Numbered lines INSIDE a fence are code, not list items — must be ignored.
+    printf '# H\n```\n1. one\n7. seven\n```\n' > "$tmp/fence-contents.md"
+    # `)` is a valid CommonMark ordered-list delimiter.
+    printf '# H\n1) a\n3) skipped\n' > "$tmp/paren-bad.md"
+    printf '# H\n1) a\n2) b\n' > "$tmp/paren-good.md"
+    # Fable round 2: a ~~~ inside a ``` fence is CONTENT. A blind toggle would
+    # flip on it and then swallow the rest of the document, hiding real defects.
+    printf '# H\n```\ncode\n~~~\ncode\n```\n1. a\n3. skipped\n' > "$tmp/fence-mixed.md"
+    # Same class with a longer backtick run closing a shorter opener.
+    printf '# H\n````\ncode\n```\ncode\n````\n1. a\n3. skipped\n' > "$tmp/fence-len.md"
+    # Codex round 2: a fence line carrying an info string cannot be a CLOSE.
+    printf '# H\n```\ncode\n```still-code\ncode\n```\n1. a\n3. skipped\n' > "$tmp/fence-info.md"
+    # CommonMark allows a TAB between the marker and the content.
+    printf '# H\n1.\tfirst\n3.\tskipped\n' > "$tmp/tab-sep.md"
+    # Fable round 3: blockquoted lists were entirely invisible.
+
+    if [ -z "$(misnumbered_ordered_items "$tmp/good.md")" ]; then
+        pass "ordered-list rule: accepts a well-formed 1,2,3 list"
+    else
+        fail "ordered-list rule: false positive on a well-formed list"
+    fi
+
+    if [ -n "$(misnumbered_ordered_items "$tmp/restart.md")" ]; then
+        pass "ordered-list rule: rejects a 1,2,1,2 restart under one heading (the Codex P1)"
+    else
+        fail "ordered-list rule: FALSE GREEN — 1,2,1,2 under one heading was accepted"
+    fi
+
+    if [ -n "$(misnumbered_ordered_items "$tmp/dupe.md")" ]; then
+        pass "ordered-list rule: rejects a duplicated number (the original Step 5c defect)"
+    else
+        fail "ordered-list rule: FALSE GREEN — a duplicated number was accepted"
+    fi
+
+    if [ -z "$(misnumbered_ordered_items "$tmp/two-lists.md")" ]; then
+        pass "ordered-list rule: two separate lists split by a heading both start at 1"
+    else
+        fail "ordered-list rule: false positive on two legitimately separate lists"
+    fi
+
+    if [ -n "$(misnumbered_ordered_items "$tmp/indented-bad.md")" ]; then
+        pass "ordered-list rule: rejects a misnumbered list indented 3 spaces (the Codex P1)"
+    else
+        fail "ordered-list rule: FALSE GREEN — a misnumbered indented list was accepted"
+    fi
+
+    if [ -z "$(misnumbered_ordered_items "$tmp/indented-good.md")" ]; then
+        pass "ordered-list rule: accepts a well-formed list indented 3 spaces"
+    else
+        fail "ordered-list rule: false positive on a well-formed indented list"
+    fi
+
+    if [ -z "$(misnumbered_ordered_items "$tmp/code-block.md")" ]; then
+        pass "ordered-list rule: ignores 4-space indentation (a code block, not a list)"
+    else
+        fail "ordered-list rule: parsed an indented code block as a list"
+    fi
+
+    if [ -n "$(misnumbered_ordered_items "$tmp/fence-restart.md")" ]; then
+        pass "ordered-list rule: a fenced '#' comment does not reset the counter (the Fable P2)"
+    else
+        fail "ordered-list rule: FALSE GREEN — a fenced '#' comment reset the run and hid a restart"
+    fi
+
+    if [ -z "$(misnumbered_ordered_items "$tmp/fence-contents.md")" ]; then
+        pass "ordered-list rule: numbered lines inside a fence are code, not list items"
+    else
+        fail "ordered-list rule: linted numbered lines inside a fenced code block"
+    fi
+
+    if [ -n "$(misnumbered_ordered_items "$tmp/paren-bad.md")" ]; then
+        pass "ordered-list rule: rejects a misnumbered ')' -delimited list"
+    else
+        fail "ordered-list rule: FALSE GREEN — ')' -delimited lists were invisible"
+    fi
+
+    if [ -z "$(misnumbered_ordered_items "$tmp/paren-good.md")" ]; then
+        pass "ordered-list rule: accepts a well-formed ')' -delimited list"
+    else
+        fail "ordered-list rule: false positive on a well-formed ')' list"
+    fi
+
+    if [ -n "$(misnumbered_ordered_items "$tmp/fence-mixed.md")" ]; then
+        pass "ordered-list rule: a '~~~' inside a backtick fence is content, not a close"
+    else
+        fail "ordered-list rule: FALSE GREEN — mixed fence chars desynced the parser and hid a defect"
+    fi
+
+    if [ -n "$(misnumbered_ordered_items "$tmp/fence-len.md")" ]; then
+        pass "ordered-list rule: a SHORTER backtick run cannot close a longer fence"
+    else
+        fail "ordered-list rule: FALSE GREEN — a short run closed a longer fence and desynced the parser"
+    fi
+
+    if [ -n "$(misnumbered_ordered_items "$tmp/fence-info.md")" ]; then
+        pass "ordered-list rule: a fence line with an info string is not a close (the Codex R2 P1)"
+    else
+        fail "ordered-list rule: FALSE GREEN — an info-string line closed the fence and desynced the parser"
+    fi
+
+    if [ -n "$(misnumbered_ordered_items "$tmp/tab-sep.md")" ]; then
+        pass "ordered-list rule: tab-separated list markers are parsed (the Codex R2 P1)"
+    else
+        fail "ordered-list rule: FALSE GREEN — tab-separated markers were invisible"
+    fi
+
+    # Blockquote fixtures deliberately REMOVED, not fixed. The parser no longer
+    # models blockquotes at all; test_e2e_runbook_uses_only_modelled_constructs
+    # rejects them in the guarded document instead. Attempting to model them is
+    # what produced three consecutive rounds of silent false greens.
+
+    rm -rf "$tmp"
+}
+test_ordered_list_rule_detects_defects
+
+# ────────────────────────────────────────────
+# Codex reviewer effort — the value that actually controls the reviewer
+# ────────────────────────────────────────────
+# Maintainer decision 2026-08-01: run the Codex cross-model reviewer at `high`,
+# not `xhigh`. Rationale is cost and review-noise, not capability.
+#
+# Asserts on `model_reasoning_effort=` ONLY — the flag that actually reaches the
+# CLI. Deliberately NOT a prose sweep for the word "xhigh": the wizard doc also
+# records past audits that genuinely ran at xhigh (e.g. the GPT-5.4 benchmark
+# audit), and rewriting history to match a current default would be worse than
+# the drift this guards against.
+#
+# Note the guidance this replaces claimed "testing showed xhigh caught 3 findings
+# that high missed" — added 2026-03-26 against GPT-5.4, two reviewer generations
+# ago, with no measurement artifact. It was never evidence.
+# Two independent legs, because the first two designs both false-greened:
+#
+#   v1 checked `model_reasoning_effort=` in 4 .md files. Codex: five shipped
+#      surfaces still said xhigh and it passed anyway.
+#   v2 added a prose check with an `escalat` exclusion. Fable: README.md
+#      shipped "OpenAI/Codex reviewer: `xhigh` default — escalate to `max`" and
+#      the exclusion suppressed it. Same defect class, one round later. v2 also
+#      globbed only .md, so it could not see scripts/codex-review-with-progress.sh
+#      — the ONLY executable reviewer path — which still hardcoded xhigh.
+#
+# v3 stops trying to exclude legitimate MENTIONS of xhigh. Documenting the change
+# means nearly every relevant line now mentions it, so mention-based matching
+# cannot discriminate and any exclusion list becomes a hole. Instead:
+#
+#   Leg A — the executable truth. EVERY model_reasoning_effort= in the repo
+#           (any file type, tests and archives excluded) must be "high".
+#   Leg B — a denylist of DEFAULT-ASSERTING phrasings. These are the shapes a
+#           regression actually takes; "escalate to `xhigh` for risky PRs" is
+#           not among them, so the documented exception needs no exclusion.
+test_codex_reviewer_effort_is_high() {
+    local offenders=""
+
+    # Historical records by design — they describe what WAS run, and rewriting
+    # them would falsify the record. Same principle as the GPT-5.4 citations.
+    local _hist='/ROADMAP.md:|/ROADMAP_ARCHIVE.md:|/CHANGELOG.md:|/.reviews/|/tests/'
+
+    # Leg A: the executable truth. Any invocation, any file type, live surfaces only.
+    local flag_hits
+    flag_hits=$(grep -rn 'model_reasoning_effort=' \
+                    --include='*.md' --include='*.sh' --include='*.json' --include='*.yml' --include='*.yaml' --include='*.js' \
+                    "$REPO_ROOT" 2>/dev/null \
+                | grep -vE "$_hist" \
+                | grep -v 'model_reasoning_effort="\?high"\?' || true)
+    [ -n "$flag_hits" ] && offenders="$offenders
+INVOCATION at non-high effort:
+$flag_hits"
+
+    # Leg B: prose ASSERTING xhigh as the REVIEWER default. Reviewer keyword must
+    # be within 40 chars of the claim, and [^.|] keeps it inside one sentence and
+    # one table cell — driver-effort defaults (Opus 5 `xhigh`, Sonnet escalation)
+    # live in different sentences and cells and must not trip this.
+    # "escalate to `xhigh` for risky PRs" is not a default-assertion, so the
+    # documented exception needs no exclusion list — that list was itself the
+    # hole Fable found in v2.
+    local prose_hits
+    prose_hits=$(grep -rniE \
+        '(sol|codex|reviewer)[^.|]{0,40}`?xhigh`?[^.|]{0,20}(default|non-negotiable|reasoning effort)|always `?xhigh`?|`?xhigh`? (is|remains) the (evidence-based )?default|`?xhigh`?[^.|]{0,30}non-negotiable|non-negotiable[^.|]{0,30}`?xhigh`?|(sol|codex|reviewer)[^.|]{0,40}(default|standard|baseline|required|mandatory)[^.|]{0,15}`?xhigh`?' \
+        --include='*.md' --include='*.sh' --include='*.js' "$REPO_ROOT" 2>/dev/null \
+        | grep -vE "$_hist" || true)
+    [ -n "$prose_hits" ] && offenders="$offenders
+PROSE asserting xhigh as the reviewer default:
+$prose_hits"
+
+    if [ -z "$offenders" ]; then
+        pass "Codex reviewer runs at \"high\" in every invocation, and no shipped prose asserts xhigh as the default"
+    else
+        fail "reviewer effort regression:$offenders"
+    fi
+}
+test_codex_reviewer_effort_is_high
+
+# The allowlist that makes the narrow parser safe.
+#
+# Every silent false green in this guard's history came from a construct the
+# parser did not model: blockquoted lists, blockquoted fences, tilde fences,
+# info-string closes. Modelling each one in turn produced the next gap. This
+# inverts it — the runbook may only use constructs the parser handles, and
+# anything else fails LOUDLY here rather than passing silently there.
+#
+# If a future runbook edit legitimately needs one of these, that is a deliberate
+# decision to extend the parser AND its fixtures, not an accident.
+test_e2e_runbook_uses_only_modelled_constructs() {
+    local runbook="$REPO_ROOT/tests/e2e/codex-cowork-install.md"
+    [ -f "$runbook" ] || { fail "E2E runbook not found"; return; }
+
+    local bad=""
+    # Blockquoted list markers or fences — the source of rounds 3 and 4.
+    bad="$bad$(grep -nE '^ {0,3}> *([0-9]+[.)][ \t]|(\`\`\`|~~~))' "$runbook" || true)"
+    # Tilde fences — the parser tracks the opening char, but nothing exercises this.
+    bad="$bad$(grep -nE '^ {0,3}~~~' "$runbook" || true)"
+    # Setext underlines — would not reset the counter the way an ATX heading does.
+    bad="$bad$(grep -nE '^ {0,3}(=+|-{3,}) *$' "$runbook" || true)"
+    bad=$(printf '%s' "$bad" | sed '/^$/d')
+
+    if [ -z "$bad" ]; then
+        pass "E2E runbook uses only constructs the ordered-list rule models (no silent-gap surface)"
+    else
+        fail "E2E runbook uses a Markdown construct the ordered-list rule does NOT model — extend the parser and its fixtures, or rewrite these lines:
+$bad"
+    fi
+}
+test_e2e_runbook_uses_only_modelled_constructs
+
+# CANARY — the assertion whose absence let the rule go vacuous for three rounds.
+#
+# Every other assertion here runs against synthetic fixtures, so all of them
+# stayed green while the rule silently read NOTHING from the real runbook (its
+# steps live inside an outer ``` envelope that fence-skipping swallowed whole).
+# Fixtures prove the rule works on documents shaped like the fixtures. Only this
+# proves it works on the document it actually guards.
+test_e2e_runbook_rule_is_not_vacuous() {
+    local runbook="$REPO_ROOT/tests/e2e/codex-cowork-install.md"
+    [ -f "$runbook" ] || { fail "E2E runbook not found"; return; }
+
+    local tmp
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/runbook-canary-XXXXXX") || {
+        fail "could not create a temp dir for the runbook canary"; return; }
+    local mutant="$tmp/mutant.md"
+
+    # Duplicate the SECOND numbered item of the first real step — the same defect
+    # class as the original Step 5c bug, injected into the genuine document.
+    awk 'BEGIN{done=0} { if (!done && $0 ~ /^2\. /) { sub(/^2\. /, "1. "); done=1 } print }' \
+        "$runbook" > "$mutant"
+
+    if ! cmp -s "$runbook" "$mutant"; then
+        runbook_prompt_body "$mutant" > "$tmp/body.md"
+        if [ -n "$(misnumbered_ordered_items "$tmp/body.md")" ]; then
+            pass "ordered-list rule reads the REAL runbook: a mutated step is detected (non-vacuity canary)"
+        else
+            fail "VACUOUS — the rule reports nothing for a deliberately misnumbered step in the real runbook. It is not reading the document it guards."
+        fi
+    else
+        fail "runbook canary could not inject a mutation — the file shape changed; update this test"
+    fi
+    rm -rf "$tmp"
+}
+test_e2e_runbook_rule_is_not_vacuous
+
+test_e2e_runbook_lists_are_sequential() {
+    local runbook="$REPO_ROOT/tests/e2e/codex-cowork-install.md"
+
+    if [ ! -f "$runbook" ]; then
+        fail "E2E runbook not found at tests/e2e/codex-cowork-install.md"
+        return
+    fi
+
+    local bad body
+    body=$(mktemp "${TMPDIR:-/tmp}/runbook-body-XXXXXX") || { fail "temp file failed"; return; }
+    runbook_prompt_body "$runbook" > "$body"
+    bad=$(misnumbered_ordered_items "$body")
+    rm -f "$body"
+
+    if [ -z "$bad" ]; then
+        pass "E2E runbook: every ordered list is sequentially numbered (no step can be silently skipped)"
+    else
+        fail "E2E runbook has misnumbered steps — a model executing it may skip one:
+$bad"
+    fi
+}
+test_e2e_runbook_lists_are_sequential
 
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 

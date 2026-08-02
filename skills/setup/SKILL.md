@@ -306,7 +306,7 @@ This is project-scoped and shared with the team via git.
 
 Default No. If yes, read `~/.claude/settings.json`, add/update only the `advisorModel` key (do NOT touch other keys), write back. This is the only global settings mutation in setup besides Step 7.7's dead plugin cleanup.
 
-**Note:** All pin choices include an advisor that auto-consults at decision points — server-side disabled as of 2026-07-24 pending an Anthropic rollout (not transient; restarting won't fix it). Fall back to a Fable subagent at `xhigh`. Needs CC v2.1.170+ (v2.1.219+ for Opus 5).
+**Note:** All pin choices include an advisor that auto-consults at decision points — server-side disabled as of 2026-07-24 pending an Anthropic rollout (not transient; restarting won't fix it). Fall back to a Fable subagent at `high`. Needs CC v2.1.170+ (v2.1.219+ for Opus 5).
 
 ### Step 10: Customize Hooks
 
