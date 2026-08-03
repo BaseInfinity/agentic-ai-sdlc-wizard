@@ -2252,6 +2252,70 @@ test_ordered_list_rule_detects_defects
 #   Leg B — a denylist of DEFAULT-ASSERTING phrasings. These are the shapes a
 #           regression actually takes; "escalate to `xhigh` for risky PRs" is
 #           not among them, so the documented exception needs no exclusion.
+# DRIVER effort, which is a different decision from reviewer effort and had no
+# guard at all until now — `codex review --uncommitted` caught a ROADMAP row
+# claiming the driver default had changed when only the reviewer layer had.
+#
+# Maintainer decision 2026-08-02: "the shipped driver default should be high for
+# complex projects, medium for average WebDev stuff." Positive anchors on the two
+# lines that DEFINE the default, per Fable's recommendation — assert what the
+# defining lines say rather than denylisting phrasings, which is the arms race
+# ROADMAP #495 exists to end.
+test_driver_effort_default_is_high_not_xhigh() {
+    local bad=""
+    # Setup A's driver row in the lanes table.
+    # POSITIVE anchors only. An earlier version also required the line to LACK
+    # 'xhigh' and therefore rejected its own correct replacement, because the line
+    # legitimately names xhigh as the ESCALATION path. Denylisting a token that
+    # has a valid use is the same mistake ROADMAP #495 exists to end — assert what
+    # the defining line must SAY, and a revert to xhigh-as-default fails that.
+    bad="$bad$(_check_content_line_has_and_lacks "$REPO_ROOT/AI_SETUP_LANES.md" \
+        '| \*\*Driver\*\* | Opus 5' '\`high\` for complex,\`medium\`')"
+    bad="$bad$(_check_content_line_has_and_lacks "$REPO_ROOT/skills/sdlc/SKILL.md" \
+        'Recommended: Opus 5' 'Opus 5 \`high\`,\`medium\`')"
+
+    # Repo-wide backstop. Codex caught driver-default contradictions in THREE
+    # consecutive rounds — README, a lane table, a quota line, then two more in
+    # the wizard doc — every time because the guard checked only the anchors I
+    # had just edited. Positive anchors alone cannot see a surface nobody
+    # thought to list, so this scans every shipped file for the assertion shape
+    # itself: "Opus 5" and xhigh adjacent, inside one sentence or table cell,
+    # without an escalation qualifier.
+    # Per-CELL, not per-line. Four separate exclusion attempts created holes here
+    # because the match is cell-scoped while a `grep -v` is line-scoped: one lane's
+    # legitimate cell ("Plan Mode", "escalate to xhigh") suppressed the whole table
+    # row, hiding a contradiction in a different lane's cell. Awk splits on | and
+    # judges each cell on its own, so a qualifier can only exempt the cell it is in.
+    local f wide
+    for f in README.md AI_SETUP_LANES.md CLAUDE_CODE_SDLC_WIZARD.md SDLC.md CLAUDE.md \
+             skills/sdlc/SKILL.md skills/setup/SKILL.md skills/update/SKILL.md; do
+        [ -f "$REPO_ROOT/$f" ] || continue
+        wide=$(awk -F'|' '
+            {
+                n = (NF > 1) ? NF : 1
+                for (c = 1; c <= n; c++) {
+                    cell = (NF > 1) ? $c : $0
+                    if (cell !~ /Opus 5/ || cell !~ /xhigh/) continue
+                    lc = tolower(cell)
+                    if (lc ~ /escalat|only as|not the default|changed 2026|previously|historical|plan mode|opusplan|setup c/) continue
+                    printf "%d: %s\n", NR, cell
+                }
+            }' "$REPO_ROOT/$f" || true)
+        [ -n "$wide" ] && bad="$bad
+${f}: Opus 5 asserted at xhigh without an escalation qualifier:
+$wide"
+    done
+    bad=$(printf '%s' "$bad" | sed '/^$/d')
+
+    if [ -z "$bad" ]; then
+        pass "driver effort default is \`high\` (complex) / \`medium\` (routine), not xhigh"
+    else
+        fail "driver effort default regressed — the defining lines must say high/medium and not xhigh:
+$bad"
+    fi
+}
+test_driver_effort_default_is_high_not_xhigh
+
 test_codex_reviewer_effort_is_high() {
     local offenders=""
 

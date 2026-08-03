@@ -4,6 +4,25 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.91.0] - 2026-08-02
+
+### Fixed
+
+- **The TDD hook had been silently dead for monorepo consumers since Claude Code 2.1.214.** `hooks/hooks.json` gated it on `Write(src/**)`. CC 2.1.214 changed single-segment `dir/**` conditions to match only `<cwd>/dir`; any-depth matching now requires `**/src/**`. Because `hooks/` ships via npm, every consumer with source under a **nested** `src/` directory — `packages/*/src/`, `apps/web/src/` — lost TDD enforcement with **no error and no warning**. (Repos whose source lives only in `lib/` or `app/` were never matched by `src/**` and lost nothing here.). The gate simply stopped firing. This repo never noticed because its own paths genuinely sit at the root.
+
+  Fixed to `**/src/**`, with a regression test that builds a real monorepo-shaped tree and **executes glob semantics** against every `if:` pattern in the manifest rather than grepping for a string. RED confirmed before the fix (`src/** matched only ['src/widget.ts']`). That test would have caught 2.1.214 the week it landed.
+
+### Changed
+
+- **Driver effort default is now `high` for complex projects and `medium` for routine web/CRUD work**, with `xhigh` demoted to an escalation trigger rather than a standing default. Maintainer decision; consistent with Anthropic's Opus 5 prompting guidance to use lower effort liberally where quality holds. Guarded by a new positive-anchor assertion — there was previously no driver-effort guard at all.
+- **`AGENTS.md` gained a `## Code Review Rules` section.** Codex loads this heading automatically for `codex review`; the existing review guidance was invisible to it without one. The rules encode defects found repeatedly in this repo: a test that greps is not a test of behavior; fixtures only prove a rule works on fixture-shaped documents; prefer positive anchors to denylists; a guard must not be able to damage what it protects.
+- `AGENTS.md`'s blast-radius section previously listed only `.claude/` paths, which ship to nobody, and omitted `hooks/` and `skills/`, which ship to everyone. Rewritten against `package.json`'s `files` as the authority.
+- Claude Code baseline marker moved v2.1.210 → v2.1.220.
+
+### Note
+
+The E2E judge model in `tests/e2e/` remains pinned to `claude-opus-4-7` deliberately. Changing it would invalidate every historical score and read as quality drift in CUSUM, so it needs its own migration with a provenance field rather than a quiet bump.
+
 ## [1.90.0] - 2026-07-30
 
 ### Fixed — things that were broken for consumers

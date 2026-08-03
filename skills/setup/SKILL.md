@@ -245,7 +245,7 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 > How do you want to configure the model for this repo?
 >
 > - **[N] No pin (default):** Auto-mode. CC picks model per turn. Simplest, no advisor.
-> - **[o] Opus 5 + Fable** *(Setup A — recommended if you want a pin, trial as of 2026-07-24):* Pins `model: "opus"`, `advisorModel: "fable"`. Requires CC v2.1.219+. Anthropic's newest flagship — unreplicated by field data yet, accepted-risk adoption. Effort: `xhigh` (Anthropic's own recommendation for difficult/long-running work).
+> - **[o] Opus 5 + Fable** *(Setup A — recommended if you want a pin, trial as of 2026-07-24):* Pins `model: "opus"`, `advisorModel: "fable"`. Requires CC v2.1.219+. Anthropic's newest flagship — unreplicated by field data yet, accepted-risk adoption. Effort: `high` (complex) / `medium` (routine web/CRUD); `xhigh` escalation only.
 > - **[s] Sonnet 5 + Fable** *(Setup B — Simple/One-Off, lower cost):* Pins `model: "sonnet"`, `advisorModel: "fable"`. Native 1M context, no `[1m]` suffix needed. Effort: `medium`, escalate `high` → `xhigh` for hard tasks.
 > - **[p] OpusPlan Hybrid** *(Setup C — cost-conscious, still want Opus reasoning):* Pins `model: "opusplan"`. Opus 5 plans (Shift+Tab), Sonnet 5 executes. Max-bundled. No API credit drain (#390).
 >
@@ -259,11 +259,11 @@ The output is JSON: `{ tier: "simple" | "complex", score, signals }`. Use the re
 {
   "model": "opus",
   "advisorModel": "fable",
-  "effortLevel": "xhigh"
+  "effortLevel": "high"
 }
 ```
 
-Tell the user: "Opus 5 + Fable (Setup A, trial 2026-07-24). Effort `xhigh` — Anthropic's own pick for hard/long work. Needs CC v2.1.219+ (`! claude update`). Check shell rc for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` — it silently overrides this pin. No autocompact override: no Opus-5 proactive threshold is documented, so no percentage is supported (wizard doc → Autocompact Tuning)."
+Tell the user: "Opus 5 + Fable (Setup A, trial 2026-07-24). Effort `high` (complex) / `medium` (routine); `xhigh` escalation only. Needs CC v2.1.219+ (`! claude update`). Check shell rc for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` — it silently overrides this pin. No autocompact override: no Opus-5 proactive threshold is documented, so no percentage is supported (wizard doc → Autocompact Tuning)."
 
 **If the user answers `s` (Sonnet 5 + Fable):** Edit `.claude/settings.json` and add:
 

@@ -117,7 +117,7 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 ## Recommended Model
 
-**Recommended: Opus 5 `xhigh`** (trial as of 2026-07-24, see `AI_SETUP_LANES.md`) — Anthropic's own hard/long-task tier. Pin Opus 4.8 for a same-family-check escape. **Sonnet 5 `medium`** for simple/one-off work.
+**Recommended: Opus 5 `high`** for complex projects, `medium` for routine web/CRUD. Escalate `xhigh` only for genuinely hard/long runs — not the default. Pin Opus 4.8 for a same-family escape. **Sonnet 5 `medium`** for simple work.
 
 **Effort is model-aware, not blanket `max`** — `max` overthinks on Sonnet 5/Opus 4.8. Set via `/effort` per session, not a shell-rc env var (overrides post-switch — see SDLC.md). `/model` persists; picker `s` does not.
 

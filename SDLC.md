@@ -1,7 +1,7 @@
-<!-- SDLC Wizard Version: 1.90.0 -->
+<!-- SDLC Wizard Version: 1.91.0 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
-<!-- Claude Code Baseline: v2.1.210 -->
+<!-- Claude Code Baseline: v2.1.220 -->
 <!-- ROADMAP #350: this single-line anchor is the source of truth for cc-version-drift.yml. -->
 <!-- Update both this comment AND the "Claude Code Recommended" row when bumping CC support. -->
 # SDLC Configuration
@@ -10,10 +10,10 @@
 
 | Property | Value |
 |----------|-------|
-| Wizard Version | 1.90.0 |
+| Wizard Version | 1.91.0 |
 | Last Updated | 2026-07-04 |
 | Claude Code Minimum | v2.1.219+ (required for `opus` alias to resolve to Opus 5, the current default); v2.1.154+ for the older `opus[1m]` alias resolution; v2.1.105+ for `PreCompact` hook |
-| Claude Code Recommended | v2.1.210+ — `SessionStart`/`Setup`/`SubagentStart` hooks no longer hide stderr on exit 2 (v2.1.199, relevant to #436's exit-code semantics), hook events no longer silently dropped during `SessionStart` in headless sessions (v2.1.204, relevant to our hooks running under `claude -p`/CI), duplicate skill-instruction context bloat on re-invocation fixed (v2.1.202), hook-callback timeouts no longer misreported as user rejection in unattended sessions (v2.1.210), `$1`/`$2` positional placeholders in skills preserved verbatim (v2.1.210, wizard skills use `$ARGUMENTS` — unaffected) |
+| Claude Code Recommended | v2.1.220+ — **v2.1.214 changed single-segment `dir/**` hook `if:` conditions to match only `<cwd>/dir`; any-depth now needs `**/dir/**`. This silently disabled the shipped TDD hook for every consumer whose source is not at repo-root `src/` (fixed in v1.91.0).** Also in this range: exit-code-2 hooks now block even when their stdout JSON fails schema validation (v2.1.214 — we were never exposed, our exit-2 hooks write to stderr); plugin skills with a `name` frontmatter field keep their plugin prefix in slash-command autocomplete (v2.1.216, affects `sdlc-wizard-cowork:sdlc`); transcripts record reasoning effort per assistant message (v2.1.212); subagent nesting defaults changed twice (disabled v2.1.217, re-enabled at depth 3 in v2.1.219). Earlier baseline rationale: `SessionStart`/`Setup`/`SubagentStart` hooks no longer hide stderr on exit 2 (v2.1.199), hook events no longer dropped during `SessionStart` in headless sessions (v2.1.204), duplicate skill-instruction context bloat fixed (v2.1.202). |
 | Recommended Model | Opus 5 (default, trial as of 2026-07-24) — Anthropic's newest flagship, unreplicated by field data yet (~70% confidence, accepted-risk adoption). Sonnet 5 remains the evidence-backed pick for simple/one-off work. Pin Opus 4.8 explicitly as an escalation/same-family-check escape. See `AI_SETUP_LANES.md`. |
 | Recommended Effort | Model-aware — Opus 5: `xhigh` (Anthropic's own recommendation for difficult/long-running work, effort tier is static per session; adaptive reasoning happens within the tier). Sonnet 5: `medium` default (CodeRabbit-tested), escalate `high` → `xhigh`. Fable: `high`. Opus 4.8: `xhigh`. Opus 4.6: `max` only (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc env var. |
 

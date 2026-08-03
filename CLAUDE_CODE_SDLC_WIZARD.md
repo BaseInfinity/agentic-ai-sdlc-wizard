@@ -253,7 +253,7 @@ Claude Code's **effort level** controls how much thinking the model does before 
 
 | Model | Recommended Effort | Why |
 |-------|--------------------|-----|
-| Opus 5 (recommended default, trial) | `xhigh` | Anthropic's own recommendation for "difficult tasks and long-running asynchronous workflows" — Setup A's target use case, not `high`'s routine-work default. Effort tier is static per session, but adaptive reasoning modulates depth within it. Trial-flagged as of 2026-07-24 — see `AI_SETUP_LANES.md` |
+| Opus 5 (recommended default, trial) | `high` (complex) / `medium` (routine web/CRUD) | Changed 2026-08-02. Escalate to `xhigh` for genuinely hard or long-running agentic work — Anthropic's own framing for that tier — but not as a standing default; their Opus 5 prompting guide advises using lower effort liberally wherever quality holds. Original rationale: Anthropic's recommendation for "difficult tasks and long-running asynchronous workflows" — Setup A's target use case, not `high`'s routine-work default. Effort tier is static per session, but adaptive reasoning modulates depth within it. Trial-flagged as of 2026-07-24 — see `AI_SETUP_LANES.md` |
 | Sonnet 5 (Simple/One-Off lane) | `medium`, escalate to `high`/`xhigh` for hard tasks | CodeRabbit testing: `medium` captures most of the upside at the lowest cost; blanket `xhigh`/`max` defaults add cost for marginal gains |
 | Opus 4.8 (escalation, pinned) | `xhigh` | `max` triggers excessive reasoning on 4.7/4.8 — documented 40-60x cache-token jump vs `high` (see "Opus 4.6" row below) |
 | Fable 5 (advisor / subagent fallback) | `high` everywhere — driver, subagent fallback, and `advisor()` (which exposes no effort parameter at all) | Adaptive thinking always on; server-side disabled as advisor currently — see "Advisor Model" below |
@@ -511,7 +511,7 @@ When a cached prompt prefix is re-served after idle pruning, downstream thinking
 
 **Workaround**: if you hit suspicious shallow reasoning mid-session — especially after a long idle gap — start a fresh session with `claude --continue` to reset cache state. The wizard's PreCompact hook gates manual `/compact` precisely because compacting at bad seams can also pull thinking blocks out of context.
 
-**Detection signal**: the wizard's `model-effort-check.sh` loud-warns below `medium` — the hook's real cross-model floor, since it can't tell which model is active and `medium` is a valid, intended default for Setup B's Sonnet 5. Above that floor, match effort to your actual lane: Opus 5 (Setup A) starts at `xhigh`, Sonnet 5 (Setup B) starts at `medium` and escalates only when a task proves harder (see "Recommended Effort Level" above). Combine with token-spike anomaly detection (ROADMAP #220) once shipped.
+**Detection signal**: the wizard's `model-effort-check.sh` loud-warns below `medium` — the hook's real cross-model floor, since it can't tell which model is active and `medium` is a valid, intended default for Setup B's Sonnet 5. Above that floor, match effort to your actual lane: Opus 5 (Setup A) starts at `high` (`medium` for routine web/CRUD), Sonnet 5 (Setup B) starts at `medium` and escalates only when a task proves harder (see "Recommended Effort Level" above). Combine with token-spike anomaly detection (ROADMAP #220) once shipped.
 
 ### Prompt brevity caps can compound across turns (post-mortem 2026-04-23)
 
@@ -1011,7 +1011,7 @@ To opt in by hand, edit `.claude/settings.json` (Opus 5 example — the recommen
 {
   "model": "opus",
   "advisorModel": "fable",
-  "effortLevel": "xhigh"
+  "effortLevel": "high"
 }
 ```
 
@@ -1089,8 +1089,8 @@ This is **Setup C (OpusPlan Hybrid/Saver)** in `AI_SETUP_LANES.md`. CC's native 
 
 | Layer | Setup C (OpusPlan) | Setup A (default, trial) | Setup B (Simple/One-Off) |
 |-------|--------------------|---------------------------|----------------------------|
-| Planner | Opus 5 `xhigh` (Plan Mode) | Opus 5 `xhigh` | Sonnet 5 `medium`→`high`→`xhigh` |
-| Driver | Sonnet 5 `medium` (execute mode) | Opus 5 `xhigh` | Sonnet 5 `medium`→`high`→`xhigh` |
+| Planner | Opus 5 `xhigh` (Plan Mode) | Opus 5 `high` (`medium` routine) | Sonnet 5 `medium`→`high`→`xhigh` |
+| Driver | Sonnet 5 `medium` (execute mode) | Opus 5 `high` (`medium` routine) | Sonnet 5 `medium`→`high`→`xhigh` |
 | Reviewer | GPT-5.6 Sol high | GPT-5.6 Sol high | GPT-5.6 Sol high |
 
 **How to opt in:**
@@ -2386,7 +2386,7 @@ Before presenting approach, STATE your confidence:
 | FAILED 2x | Something's wrong | Run the **Escalation Ladder** below | **Escalate effort now** — you're burning cycles at lower effort |
 | CONFUSED | Can't diagnose why something is failing | Run the **Escalation Ladder** below | **Escalate effort now** — stop spinning |
 
-"Model default" and "escalate" are model-aware, not a blanket `max` — see "Recommended Effort Level" above for the per-model table (Opus 5: `xhigh`; Sonnet 5: `medium`→`high`→`xhigh`; Opus 4.8: `xhigh`; Opus 4.6: `max`; Fable: `high`).
+"Model default" and "escalate" are model-aware, not a blanket `max` — see "Recommended Effort Level" above for the per-model table (Opus 5: `high`, `medium` for routine work, `xhigh` only as an escalation; Sonnet 5: `medium`→`high`→`xhigh`; Opus 4.8: `xhigh`; Opus 4.6: `max`; Fable: `high`).
 
 **Dynamic bumping is NOT optional.** "Consider higher effort" is the same as "ignore this" in practice. If your confidence drops or tests fail twice, bump effort BEFORE the next attempt — spinning at low effort is an SDLC failure mode.
 
@@ -3198,7 +3198,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.90.0 -->
+<!-- SDLC Wizard Version: 1.91.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
