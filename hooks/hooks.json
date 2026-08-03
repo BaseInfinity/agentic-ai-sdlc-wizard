@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Write(src/**) Edit(src/**) MultiEdit(src/**)",
+            "if": "Write(**/src/**) Edit(**/src/**) MultiEdit(**/src/**)",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/tdd-pretool-check.sh"
           }
         ]

@@ -41,14 +41,42 @@ The lanes are guidance, not a hard rule — maintainer override is always allowe
 - Testing diamond: integration > unit with mocks
 - Test scripts use `set -e`, `pass()`/`fail()` helpers, exit 1 on failure
 
-### 5. E2E Coverage Awareness
-- Changes to `.claude/hooks/` → SDLC enforcement affected
-- Changes to `.claude/skills/` → SDLC guidance affected
-- Changes to `CLAUDE_CODE_SDLC_WIZARD.md` → Wizard behavior affected
-- Changes to `.github/workflows/` → CI/auto-update behavior affected
-- Changes to `tests/e2e/` → E2E test infrastructure affected
+### 5. Blast Radius — know what SHIPS before weighting a finding
 
-If changes affect SDLC behavior, check if relevant E2E scenarios exist in `tests/e2e/scenarios/`.
+`package.json`'s `files` lists: `cli/`, `skills/`, `hooks/`, `.claude-plugin/`, `CLAUDE_CODE_SDLC_WIZARD.md`, `AI_SETUP_LANES.md`, `CHANGELOG.md`.
+
+**`files` is NOT the whole answer — npm always includes `README.md` and `package.json` regardless.** Verify with `npm pack --dry-run` rather than reading `files`; that is the authority. This exact omission caused a real miss: stale effort guidance in `README.md` was treated as repo-local and shipped anyway.
+
+**Ships to every consumer — weight findings here highest:**
+- `hooks/` → SDLC enforcement in every installed repo. A silently-inert hook here is a P0-class defect: it looks installed and does nothing.
+- `skills/` → SDLC guidance everywhere. Must stay byte-identical to `cowork/skills/` (see `tests/test-cowork-drift.sh`) and under the 20,000-byte ceiling (`tests/test-audit-session-load.sh`).
+- `cli/` → the installer. A defect here breaks setup for new users.
+- `CLAUDE_CODE_SDLC_WIZARD.md`, `AI_SETUP_LANES.md`, **`README.md`** → the shipped guidance consumers act on. README ships despite its absence from `files`.
+
+**Repo-local, ships to nobody — real, but lower stakes:**
+- `.claude/hooks/`, `.claude/skills/`, `.claude/settings.json`, `scripts/`, `tests/`, `ROADMAP.md`, `AGENTS.md`
+
+An earlier version of this section listed only the `.claude/` paths and omitted the shipping ones entirely, which inverted the priority. Do not restore that.
+
+If a change affects SDLC behavior, check whether a relevant scenario exists in `tests/e2e/scenarios/`.
+
+## Code Review Rules
+
+Durable standards for `codex review`. Codex loads this section automatically — everything above applies too, this is what has bitten us repeatedly and is worth stating as rules.
+
+1. **A test that greps for text is not a test of behavior.** This repo has shipped guards that assert on a script's source rather than executing it. Across one 2026-08 session, reviewers found nine assertions passing against broken code, a rule that accepted `1,2,1,2` silently, and a guard that read *nothing* from the file it guarded while all 15 of its fixture assertions stayed green. Flag any new assertion that greps where it could execute.
+
+2. **Fixtures prove a rule works on documents shaped like the fixtures.** Require at least one assertion against the real artifact — mutate it and confirm the rule reports it. Absence of that canary is what let the vacuous guard above survive three review rounds.
+
+3. **Prefer positive anchors to denylists.** Asserting "the defining line says X" is winnable. Asserting "no bad phrasing appears anywhere" is not — the synonym space is unbounded, and three rounds of adding alternations each ended with a reviewer naming another. Flag new denylists that guard an open-ended vocabulary.
+
+4. **A guard must not be able to damage what it protects.** One cleanup guard deleted a real artifact while testing that real artifacts are not deleted. Prefer a temp directory over narrowing the blast radius of an operation on live paths.
+
+5. **Docs are code.** `.md` changes break tests, and shipped docs are the product. A claim in shipped guidance about a mechanism that does not exist is a defect, not a typo — verify cited scripts, flags, and env vars actually exist.
+
+6. **No unbacked recommendations.** If a shipped doc states a default, an effort level, or a performance claim, it needs a source or an explicit "not measured." This repo has shipped confident claims traced to commits with zero supporting measurement.
+
+7. **Match effort to blast radius.** Do not demand release-gate rigor on a repo-local test fixture, and do not wave through a one-word change to `hooks/`.
 
 ## Review Exceptions
 

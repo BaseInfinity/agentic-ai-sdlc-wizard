@@ -3193,6 +3193,60 @@ test_stop_hook_ignores_reviews_dir_changes
 test_stop_hook_delivers_via_stdout_json_not_stderr
 test_stop_hook_fires_once_per_session
 
+# GH #475 — the TDD hook shipped SILENTLY DEAD for monorepo consumers.
+#
+# Claude Code 2.1.214 changed single-segment `dir/**` hook `if:` conditions to
+# match only <cwd>/dir; any-depth matching now needs `**/dir/**`. hooks/hooks.json
+# gated the TDD hook on `Write(src/**)`, and hooks/ is in package.json's `files`,
+# so every consumer whose source is not at repo-root src/ — every monorepo,
+# packages/*/src/, apps/web/src/ — lost the gate with no error. This repo did not
+# notice because its own paths genuinely sit at the root.
+#
+# EXECUTES glob semantics against a real monorepo-shaped tree rather than
+# grepping hooks.json for a string, per AGENTS.md Code Review Rule 1.
+test_tdd_hook_matcher_covers_nested_src() {
+    local manifest="$SCRIPT_DIR/../hooks/hooks.json"
+    [ -f "$manifest" ] || { fail "hooks/hooks.json not found"; return; }
+
+    local result
+    result=$(python3 - "$manifest" <<'PYEOF'
+import glob, json, os, sys, tempfile, re
+manifest = json.load(open(sys.argv[1]))
+conds = []
+def walk(o):
+    if isinstance(o, dict):
+        if "if" in o and isinstance(o["if"], str): conds.append(o["if"])
+        for v in o.values(): walk(v)
+    elif isinstance(o, list):
+        for v in o: walk(v)
+walk(manifest)
+pats = sorted({m for c in conds for m in re.findall(r"\((.*?)\)", c)})
+if not pats:
+    print("NO_PATTERNS"); sys.exit()
+
+root = tempfile.mkdtemp()
+for d in ["src", "packages/api/src", "apps/web/src"]:
+    os.makedirs(os.path.join(root, d), exist_ok=True)
+    open(os.path.join(root, d, "widget.ts"), "w").close()
+os.chdir(root)
+
+bad = []
+for pat in pats:
+    hits = [h for h in glob.glob(pat, recursive=True) if h.endswith("widget.ts")]
+    nested = [h for h in hits if "/" in h.rstrip("widget.ts").rstrip("/").replace("src", "", 1)]
+    if not any(h.startswith(("packages/", "apps/")) for h in hits):
+        bad.append(f"{pat} matched only {sorted(hits)}")
+print("OK" if not bad else "BAD:" + "; ".join(bad))
+PYEOF
+)
+    case "$result" in
+        OK) pass "TDD hook if: patterns match nested source dirs (monorepo consumers keep the gate)" ;;
+        NO_PATTERNS) fail "no if: patterns found in hooks/hooks.json — the extractor broke, not the manifest" ;;
+        *) fail "GH #475: a shipped hook if: pattern does NOT match nested source — the gate is silently dead for monorepo consumers. $result" ;;
+    esac
+}
+test_tdd_hook_matcher_covers_nested_src
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
