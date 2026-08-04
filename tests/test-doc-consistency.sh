@@ -2324,6 +2324,151 @@ $bad"
 }
 test_driver_effort_default_is_high_not_xhigh
 
+# GH #483 — the shipped context guidance must name a WORKING CEILING and must
+# require external verification past it. Both are cheap to state and both are
+# backed by published work, so shipping neither was the actual defect.
+#
+# The rule this guards hardest is the external-review one, because it is the
+# best-evidenced and the least intuitive: arXiv:2606.09863 measured agents
+# asserting completion while environment state showed failure in 75.8% of
+# FAILURES THAT CARRIED AN EXPLICIT STATUS CLAIM across two self-assessing
+# AppWorld architectures — not of trajectories generally. LLM judges peaked at
+# AUROC 0.65 on tau2-bench and ~0.54 on AppWorld, so a second model is a poor
+# detector on its own; the paper points at environment-grounded checks AND
+# calibrated detectors for triage. Operationally: run the test.
+# The predicate, factored out so a COUNTERFEIT document can be run through the
+# identical code path. The first version of this test only checked that certain
+# tokens appeared somewhere; Codex demonstrated it passing against a document
+# that said "Never work below 40%; external review is forbidden" and declared
+# every cited paper false. Token presence is not meaning.
+# SCOPE, STATED HONESTLY — this guards FIGURES, not MEANING.
+#
+# Two rounds of review broke the previous attempt in both directions at once: a
+# token-complete document asserting the reverse of every rule still passed, and
+# an honest paraphrase of a rule was rejected. That is not a bug in the regexes;
+# it is what grep is. A text matcher cannot decide whether prose means what it
+# says, and pretending otherwise produces a guard that blocks real edits while
+# waving through reversed ones — the worst of both.
+#
+# So this now checks only what a matcher can decide reliably: that each CITED
+# FIGURE is the corrected one. Those are exact, factual, and were wrong four
+# times in one review round, which makes them worth pinning. Whether the
+# surrounding prose still argues the right thing is a REVIEW question, and is
+# left to review rather than faked here.
+_context_guidance_defects() {   # $1=skill file  $2=wizard file
+    local skill="$1" wiz="$2" bad=""
+
+    # The two rules must exist in some form, matched loosely enough that
+    # rewording does not break the build. Deliberately NOT anchored to exact
+    # prose: an honest paraphrase must survive.
+    # Loose enough that a rewording survives: any of several equivalent terms
+    # satisfies each rule. Codex round 3 showed the previous version rejecting
+    # honest paraphrases that said "context utilization" or "verify by running".
+    grep -qiE '350K|occupancy|utilization|context (size|budget|window)' "$skill" \
+        || bad="$bad skill:no-context-ceiling-rule"
+    grep -qiE 'external review|external verification|run the test|verify by running' "$skill" \
+        || bad="$bad skill:no-verification-rule"
+
+    # Citations must carry the CORRECTED figures. Every one of these was wrong
+    # in the first draft and found by cross-model review; pinning the numbers is
+    # what stops a future edit from silently reintroducing a misquote.
+    grep -q '11 of the 13 models evaluated' "$wiz" || bad="$bad wiz:NoLiMa-denominator"
+    grep -q '99.3% → 69.7%' "$wiz" || bad="$bad wiz:NoLiMa-gpt4o"
+    grep -q 'four families: Claude, GPT-3.5, MPT, LongChat' "$wiz" || bad="$bad wiz:LitM-families"
+    grep -q '40-60% utilization depending on task complexity' "$wiz" || bad="$bad wiz:HumanLayer-range"
+    # Check the FIGURES and the qualifier, not the sentence around them — the
+    # previous version pinned prose and then false-rejected the very rewrite it
+    # was guarding. The guarantee is "these numbers, correctly conditioned",
+    # not "these words in this order".
+    grep -q '45%' "$wiz" && grep -q '48%' "$wiz" || bad="$bad wiz:tau2-figures"
+    grep -qiE 'failures?' "$wiz" || bad="$bad wiz:tau2-conditioning"
+    grep -qi 'telecom' "$wiz" && grep -q '3%' "$wiz" || bad="$bad wiz:tau2-telecom-counterexample"
+    grep -q 'carried an explicit status claim' "$wiz" || bad="$bad wiz:appworld-denominator"
+
+    # DELIBERATELY NOT CHECKED: whether the doc frames the remedy correctly.
+    # Two predicates here used to grep for "environment-grounded checks" and
+    # "not a validated detector" — policing MEANING, which the scope note above
+    # says this guard does not do. They promptly false-rejected an honest
+    # rewrite of the very section they guarded. Framing is a review question.
+    # What IS pinned: the AUROC figures, so the judge-reliability numbers
+    # cannot silently drift.
+    grep -q '0.65' "$wiz" && grep -q '0.54' "$wiz" || bad="$bad wiz:auroc-figures"
+
+    # Provenance: ~350K is practitioner-reported, NOT benchmarked.
+    grep -q 'practitioner-reported, not benchmarked' "$wiz" || bad="$bad wiz:no-provenance-caveat"
+
+    printf '%s' "$bad"
+}
+
+test_context_ceiling_and_external_review_are_shipped() {
+    local bad
+    bad=$(_context_guidance_defects "$REPO_ROOT/skills/sdlc/SKILL.md" \
+                                    "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md")
+    if [ -z "$bad" ]; then
+        pass "context guidance: rules anchored, citation figures pinned, provenance honest"
+    else
+        fail "GH #483 guidance defective:$bad"
+    fi
+}
+
+# NON-VACUITY CANARY, scoped to what the predicate actually claims to guard.
+#
+# An earlier version of this canary fed the predicate a document asserting the
+# REVERSE of every rule and required rejection. It passed — but only because
+# that counterfeit was crude. A reviewer then built a token-complete reversal
+# that sailed through, proving the canary was testing its own clumsiness rather
+# than the guard's strength. Claiming to detect reversed meaning was the error.
+#
+# This version tests the guarantee that is actually made: a document whose
+# CITED FIGURES are wrong must be rejected. That is checkable, and it is the
+# failure that actually occurred — four misquoted figures in one review round.
+test_context_guidance_rule_is_not_vacuous() {
+    local d; d=$(mktemp -d "${TMPDIR:-/tmp}/ctxguard.XXXXXX")
+    # Rules present and correctly worded; only the FIGURES are wrong — the
+    # regression this guard exists to catch, and the hardest to spot by eye.
+    cat > "$d/skill.md" <<'FAKE'
+- **Work under ~40-60% occupancy.** Compact at ~60%; autocompact (~95%) is too late.
+- **Past ~50%, self-reported "fixed" needs external review** — agents assert done while state disagrees.
+FAKE
+    cat > "$d/wiz.md" <<'FAKE'
+NoLiMa: 11 of 12 models fall below 50%. GPT-4o: 99.3% → 69.7%.
+Lost in the Middle: six model families. HumanLayer: a dumb zone beginning at 40%.
+45-48% on tau2-bench and 75.8% of self-assessing trajectories.
+The ~350K figure is practitioner-reported, not benchmarked. Use environment-grounded checks.
+This is **not** a validated detector.
+FAKE
+    local bad; bad=$(_context_guidance_defects "$d/skill.md" "$d/wiz.md")
+    rm -rf "$d"
+    if [ -n "$bad" ]; then
+        pass "canary: a document carrying the ORIGINAL misquoted figures is rejected"
+    else
+        fail "VACUOUS — the guard accepts the exact wrong figures cross-model review caught"
+    fi
+}
+
+# The other direction: an honest REWORDING of the rules, with correct figures,
+# must NOT be rejected. A guard that blocks legitimate edits is a maintenance
+# trap, and the previous version was one — it demanded exact prose.
+test_context_guidance_allows_honest_rewording() {
+    local d; d=$(mktemp -d "${TMPDIR:-/tmp}/ctxok.XXXXXX")
+    cat > "$d/skill.md" <<'REAL'
+- Keep sessions under ~350K tokens; compact well before autocompact fires.
+- Verify by running the tests; a completion claim is not a test result.
+REAL
+    sed -n '/### Working context ceiling/,/^## /p' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" > "$d/wiz.md"
+    local bad; bad=$(_context_guidance_defects "$d/skill.md" "$d/wiz.md")
+    rm -rf "$d"
+    if [ -z "$bad" ]; then
+        pass "reworded rules with correct figures are accepted (guard is not a prose lock)"
+    else
+        fail "FALSE REJECT — honest rewording refused:$bad"
+    fi
+}
+
+test_context_ceiling_and_external_review_are_shipped
+test_context_guidance_rule_is_not_vacuous
+test_context_guidance_allows_honest_rewording
+
 test_codex_reviewer_effort_is_high() {
     local offenders=""
 

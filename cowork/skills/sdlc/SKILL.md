@@ -101,7 +101,7 @@ State your confidence before presenting an approach:
 | FAILED 2x | Something's wrong | Escalate, don't ask ↓ | **escalate now** |
 | CONFUSED | Can't diagnose | Escalate, don't ask ↓ | **escalate now** |
 
-**Effort bumping is NOT optional.** Bump BEFORE the next attempt, not after a third failure.
+**Effort bumping is NOT optional** — bump BEFORE the next attempt.
 
 **Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex.
 
@@ -109,7 +109,7 @@ State your confidence before presenting an approach:
 
 ## Plan Mode
 
-Use plan mode for: multi-file changes, new features, LOW confidence, bugs needing investigation. **Skip plan approval step** (auto-approval) when confidence HIGH (95%+) AND single-file/trivial AND no new patterns AND no architectural decisions — still announce approach, don't wait. When in doubt, wait.
+Use plan mode for: multi-file changes, new features, LOW confidence, bug investigation. **Skip plan approval step** (auto-approval) when confidence HIGH (95%+) AND single-file/trivial AND no new patterns AND no architectural decisions — still announce approach, don't wait. When in doubt, wait.
 
 ## Long-Running Goals (`/goal`)
 
@@ -263,11 +263,11 @@ Don't fix only the symptom. Add a gate so it can't happen again. Example: PR #14
 ## Context Management & Subagents
 
 - `/compact` between planning and implementation (plan preserved in summary)
-- `/clear` between unrelated tasks; after 2+ failed corrections (context polluted)
-- Auto-compact fires at ~95%; `/usage` shows what's driving token spend
-- After committing a PR, `/clear` before next feature
-- `--bare` mode (v2.1.81+) skips ALL hooks/skills/LSP/plugins. Scripted headless only — never normal development.
-- Custom subagents (`.claude/agents/`) run autonomously and return results. Skills guide behavior; agents do work. Use for parallel tasks or fresh context.
+- `/clear` between unrelated tasks, after a PR, or after 2+ failed corrections
+- **Work under ~350K tokens** (~35% of a 1M window). Compact well before autocompact (~95%). `/usage` = spend.
+- **Run the test — a completion claim is not a test result.** Applies at any context size, not past a threshold
+- `--bare` (v2.1.81+) skips ALL hooks/skills/LSP/plugins. Headless scripts only.
+- Custom subagents (`.claude/agents/`) run autonomously. Skills guide; agents do. Use for parallel work or fresh context.
 
 ## Design System Check (UI Changes Only)
 
