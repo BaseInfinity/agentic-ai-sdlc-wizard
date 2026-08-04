@@ -322,20 +322,24 @@ else
 fi
 
 # Test 13: hooks.json has Stop confidence check hook
+# GH #484: the Stop prompt hook was REMOVED, so this now asserts its ABSENCE.
+# It fired 12 times in one session and was wrong 11 of them — blocking turns
+# that changed no files, turns already verified, and five times quoting its own
+# in-flight exemption before overriding it. A Stop hook fires at the end of
+# EVERY turn, which is why hooks/codex-review-stop-check.sh's header says one
+# "must never prevent the user from getting their response."
 if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
   if python3 -c "
 import json
 d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-stops=d.get('Stop',[])
-assert len(stops)>0, 'no Stop hooks'
-assert any(hk.get('type')=='prompt' for h in stops for hk in h.get('hooks',[])), 'no prompt type'
+assert not d.get('Stop'), 'Stop hook is back'
 " 2>/dev/null; then
-    pass "hooks.json has Stop confidence check prompt hook"
+    pass "hooks.json has NO Stop hook (GH #484 — a blocking Stop hook fires every turn)"
   else
-    fail "hooks.json missing Stop confidence check prompt hook"
+    fail "a Stop hook returned to cowork/hooks.json — GH #484 removed it after 11 false positives in 12 firings"
   fi
 else
-  fail "hooks.json not found (skipping Stop check)"
+  fail "hooks.json not found"
 fi
 
 # Test 14: All hooks are prompt type (no command type — Cowork has no shell)
@@ -460,42 +464,14 @@ else
   fail "hooks.json not found (skipping UserPromptSubmit scope check)"
 fi
 
-# Test 14f (#456 Codex round-1 finding 4): Stop must require tests to actually
-# PASS, not merely run — Codex demonstrated "HIGH confidence; pytest ran with 3
-# failures" satisfied the prior (broken) criteria. Must also restore the
-# self-review requirement the README promises but the prior rewrite dropped.
-if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
-  if python3 -c "
-import json
-d = json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-prompt = next((hk.get('prompt','') for m in d.get('Stop',[]) for hk in m.get('hooks',[]) if hk.get('type')=='prompt'), '')
-p = prompt.lower()
-# CONTRACT CHANGED 2026-07-27 (issue #477). This previously asserted that the
-# judge REQUIRE a passing suite and narrated self-review. Both were removed
-# deliberately, not weakened by accident:
-#   - The judge sees response text, not tool calls. It cannot verify a test
-#     OUTCOME, only whether prose claims one. Demanding a green suite made the
-#     hook unusable in any repo with known pre-existing failures — it blocked a
-#     consumer 9 consecutive times until the harness force-broke the loop, on a
-#     turn whose only action was a read-only git-status check.
-#   - The wizard installs everywhere, so a gate that assumes a green suite
-#     assumes something most real repos cannot provide.
-# The judge now blocks on ONE thing it can actually see: code changed with no
-# verification attempted at all. These assertions pin the replacement contract
-# so it cannot be silently re-tightened or further loosened.
-assert 'no attempt to test it' in p, 'lost the single blocking condition (unverified work)'
-assert 'failing tests are information' in p, 'test OUTCOMES are being judged again — unverifiable'
-assert 'stop_hook_active' in p, 'repeat-suppression missing — the hook can loop forever'
-assert 'this turn only' in p, 'turn scoping missing — prior work re-triggers the block'
-assert 'when uncertain' in p, 'no fail-open rule — the judge will block on ambiguity'
-" 2>/dev/null; then
-    pass "Stop blocks only on unverified work, fails open, and cannot loop"
-  else
-    fail "Stop hook contract broken: see the comment above for what each assertion pins"
-  fi
-else
-  fail "hooks.json not found (skipping Stop pass/self-review check)"
-fi
+# GH #484: the Stop prompt hook is GONE, so its contract assertions are gone
+# with it. ~90 lines here pinned properties of that prompt's TEXT — which
+# exemptions it named, what it must not demand. All passed while the hook was
+# wrong 11 times in 12 firings, because a prompt containing the right words
+# tells you nothing about whether the evaluator follows them. Deleted rather
+# than ported: that is the ROADMAP #490 defect class, and the #477 rewrite these
+# lines protected is what produced the prompt that then had to be removed.
+
 
 echo ""
 echo "--- ROADMAP Tracking Tests ---"

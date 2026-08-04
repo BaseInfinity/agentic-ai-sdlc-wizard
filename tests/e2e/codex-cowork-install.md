@@ -117,33 +117,30 @@ Document which method worked.
    test was actually written first. It is a filename heuristic by design.
 5. Screenshot each.
 
-### Test 5c: Completion hook (Stop)
-> **Rewritten for the v1.89.0 contract (#477).** This hook previously blocked on
-> missing confidence, missing self-review, and tests not shown passing. It no
-> longer does, deliberately — those produced false blocks and an infinite loop.
-> Scoring against the old expectations would FAIL the plugin for behaving
-> correctly, so do not restore them.
->
-> It now blocks on exactly ONE condition: code changed this turn and no
-> verification of any kind was attempted or explained.
+### Test 5c: NO Completion hook — the Stop hook was REMOVED
 
-1. **Negative case (should be DENIED):** ask Claude to change code and finish
-   without running or mentioning any test. Expect the stop to be blocked.
-2. **Positive case (should PASS):** ask Claude to change code, run tests, and
-   let some FAIL — with an explanation that they are pre-existing or unrelated.
-   Expect the turn to end normally. A block here is a BUG.
-3. **Positive case (should PASS):** a read-only turn with no code change, and a
-   turn with no stated confidence level. Both must end normally.
-4. **In-flight work must NOT block (should PASS).** Ask Claude to start something
-   that runs in the background — a long test run, a build — and then finish the
-   turn while it is still running. Expect the turn to end normally. A block here
-   is the #477 failure mode: the agent cannot make a background job finish
-   sooner, so the block is unsatisfiable. This is the case a static test CANNOT
-   verify, which is why it is here.
-5. **Loop guard:** after any block, let Claude respond and try to finish again.
-   It must be able to end the turn — a second identical block is the #477
-   infinite-loop regression and is a P0.
-6. Screenshot each.
+> **Changed in v1.92.0 (GH #484).** The `Stop` hook is gone. It fired 12 times in
+> one session and was wrong 11 — blocking turns that changed no files, turns whose
+> verification was already stated, and repeatedly overriding its own exemptions.
+> A `Stop` hook fires at the end of EVERY turn, so a blocking one interrupts
+> constantly.
+>
+> The previous version of this step told you to expect a DENIED stop. Running that
+> today would score the plugin as broken for behaving exactly as designed — the
+> failure this runbook's own header warns about.
+
+1. Ask Claude to change code and finish **without** running or mentioning any test.
+   Expect the turn to **end normally**. A block here means a Stop hook has returned
+   and is a P0.
+2. Ask Claude to change code, run tests, and let some FAIL with an explanation.
+   Expect the turn to end normally.
+3. A read-only turn with no code change: expect it to end normally.
+4. Start background work and finish the turn while it is still running: expect it to
+   end normally. This was the #477 failure mode and must never block again.
+5. Screenshot each.
+
+**There is no completion enforcement in Cowork.** That is deliberate and documented
+in `cowork/README.md`. Do not score its absence as a defect.
 
 ## Step 6: Document results
 
@@ -163,9 +160,7 @@ Create a summary with:
 - [ ] /sdlc-wizard-cowork:feedback skill invokes correctly
 - [ ] UserPromptSubmit DENIES a skip-the-process prompt, and passes a normal one
 - [ ] PreToolUse DENIES a brand-new non-test file, and silently allows a test file
-- [ ] Stop DENIES a code change with no verification attempted
-- [ ] Stop ALLOWS a turn with failing-but-explained tests
-- [ ] Stop can be satisfied on retry after a block (no repeat-block loop — #477)
+- [ ] NO Stop hook fires — every turn ends normally, including a code change with no test run (removed in v1.92.0, GH #484; a block here is a P0)
 - [ ] Marketplace install via `BaseInfinity/claude-sdlc-wizard` succeeded (#455)
 - [ ] No entries in plugin Errors tab
 ```
