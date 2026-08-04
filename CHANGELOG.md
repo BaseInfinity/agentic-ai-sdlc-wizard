@@ -4,6 +4,32 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.93.0] - 2026-08-03
+
+### Fixed
+
+- **The merge gate never read a verdict.** `scripts/merge-pr.sh`'s cross-model clearance parser required reviewer, confidence and SHA — and merged on those alone. Two reviewers posting `verdict: "NO"` at confidence 97 and 99 merged a PR. Proven by a test that failed before the fix.
+
+  It survived because the function already had 49 assertions covering confidence bounds, SHA binding, authorship and payload visibility. Every fixture omitted a verdict, so the suite tested the *shape* of the evidence and never the *answer inside it*.
+
+  `verdict` is now required and anything but an exact `YES` fails closed. Payloads are pinned to exactly four keys with no backslash permitted, after two rounds of counting forbidden key text lost to unicode escaping — the check now states what is allowed rather than chasing what is banned. A sub-threshold `YES` prescribes the next action instead of dead-ending: v1.92.0 got YES/97 and YES/93, both reviewers agreeing it was safe, and the gate simply refused, so a human ran that merge by hand.
+
+### Added
+
+- **A working context ceiling: keep sessions under ~350K tokens** (~35% of a 1M window). Adopted as a practitioner heuristic to be validated by use, not derived from a study. It sits at the conservative end of reported practice — community numbers cluster at 80-200K for 200K-window models and 200-500K for 1M-window models. **No specific cliff has been benchmarked and this repo does not claim one.**
+
+- **"Run the test — a completion claim is not a test result."** A test result is evidence; an assertion that something is fixed is not. The rule needs no statistics and is not conditioned on context size.
+
+  Research cited only to establish the failure mode is common enough to warrant a rule: among runs that had *already failed*, agents still asserted success in 45% and 48% of two tau2-bench domains, 3% in a third, and 75.8% of AppWorld failures carrying an explicit status claim ([arXiv:2606.09863](https://arxiv.org/html/2606.09863)). LLM judges detect this poorly — AUROC ≤0.65 and ~0.54 — so a second model is not a validated detector.
+
+  **Explicitly not claimed:** how much a completion claim should shift confidence (those percentages are conditioned on failure), that the effect worsens with context length, or that cross-model review catches it.
+
+- Degradation below advertised context windows, with figures pinned by tests so a future edit cannot silently misquote them: [Chroma context rot](https://www.trychroma.com/research/context-rot), [NoLiMa](https://arxiv.org/abs/2502.05167), [RULER](https://arxiv.org/abs/2404.06654), [Lost in the Middle](https://cs.stanford.edu/~nfliu/papers/lost-in-the-middle.arxiv2023.pdf).
+
+### Notes
+
+Five cross-model review rounds found and fixed, in this section alone: four misquoted citations, a fabricated "dumb zone" attribution, a fabricated context threshold, three phrasings of one unsupported inference, and a caveat that misdescribed which measurement was missing. The consistency guard was rewritten twice after it both accepted a reversed counterfeit and rejected honest paraphrase; it now pins citation figures only and documents that limit rather than implying it can judge meaning.
+
 ## [1.92.0] - 2026-08-03
 
 ### Removed

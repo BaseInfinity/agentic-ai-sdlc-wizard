@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "SDLC enforcement plugins for AI-assisted development",
-    "version": "1.92.0"
+    "version": "1.93.0"
   },
   "plugins": [
     {
@@ -16,7 +16,7 @@
         "repo": "BaseInfinity/claude-sdlc-wizard"
       },
       "description": "SDLC enforcement for AI agents — TDD, planning, self-review, CI shepherd",
-      "version": "1.92.0",
+      "version": "1.93.0",
       "author": {
         "name": "Stefan Ayala"
       },
@@ -31,7 +31,7 @@
         "path": "cowork"
       },
       "description": "SDLC enforcement for Claude Cowork — TDD, planning, self-review via prompt-based hooks and skills",
-      "version": "1.92.0",
+      "version": "1.93.0",
       "author": {
         "name": "Stefan Ayala"
       },
