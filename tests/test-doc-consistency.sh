@@ -1407,15 +1407,23 @@ _check_content_line_has_and_lacks() {
         echo "${file}:(anchor '$anchor_pattern' not found)"
         return
     fi
+    # PORTABILITY: match required/forbidden tokens as FIXED STRINGS (-F).
+    # These patterns are written with escaped backticks (\`high\`), and in a
+    # single-quoted shell argument the backslash survives into the pattern. BSD
+    # grep reads \` as a literal backtick; GNU grep reads it as a start-of-buffer
+    # ANCHOR (a GNU extension), so the same assertion passed on macOS and could
+    # never match on Linux. CI caught this on a file the local suite had just
+    # certified 104/104. Strip the escapes and compare literally — none of these
+    # tokens are regexes, so -F is what was meant all along.
     local required
     for required in ${must_have_csv//,/ }; do
-        if ! printf '%s' "$content" | grep -qi "$required"; then
+        if ! printf '%s' "$content" | grep -qiF "${required//\\/}"; then
             echo "${file}:(anchor '$anchor_pattern' missing '$required')"
             return
         fi
     done
     for forbidden in "$@"; do
-        if printf '%s' "$content" | grep -qi "$forbidden"; then
+        if printf '%s' "$content" | grep -qiF "${forbidden//\\/}"; then
             echo "${file}:(anchor '$anchor_pattern' stale '$forbidden')"
             return
         fi
