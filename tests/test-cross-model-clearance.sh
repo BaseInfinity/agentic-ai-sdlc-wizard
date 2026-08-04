@@ -104,12 +104,18 @@ elif [ "$1" = "api" ]; then
             printf '['
             first=1
             if [ -n "${CLEARANCE_COMMENTS:-}" ]; then
-                while IFS='|' read -r who conf sha; do
+                # GH #478 added a required `verdict` field: confidence was
+                # standing in for a decision the parser never read, so two
+                # reviewers posting MERGE_SAFE: NO at 97 and 99 merged. A 4th
+                # pipe-delimited field sets it; existing 3-field rows default to
+                # YES so they keep testing what they were written to test
+                # (confidence bounds, SHA binding, visibility, authorship).
+                while IFS='|' read -r who conf sha verdict; do
                     [ -z "$who" ] && continue
                     [ "$first" = 0 ] && printf ','
                     first=0
-                    printf '{"user":{"login":"%s"},"author_association":"%s","body":"**CROSS-MODEL-CLEARANCE**\\n```json\\n{\\"reviewer\\":\\"%s\\",\\"confidence\\":%s,\\"sha\\":\\"%s\\"}\\n```"}' \
-                        "${AUTHOR:-maintainer}" "${ASSOC:-OWNER}" "$who" "$conf" "$sha"
+                    printf '{"user":{"login":"%s"},"author_association":"%s","body":"**CROSS-MODEL-CLEARANCE**\\n```json\\n{\\"reviewer\\":\\"%s\\",\\"verdict\\":\\"%s\\",\\"confidence\\":%s,\\"sha\\":\\"%s\\"}\\n```"}' \
+                        "${AUTHOR:-maintainer}" "${ASSOC:-OWNER}" "$who" "${verdict:-YES}" "$conf" "$sha"
                 done <<EOF
 $CLEARANCE_COMMENTS
 EOF
@@ -757,7 +763,10 @@ mk_comments() {  # $1=tmpdir  $2=python expression building each body from `rev`
 import json, sys
 path, sha, tmpl = sys.argv[1], sys.argv[2], sys.argv[3]
 def body(rev):
-    payload = json.dumps({"reviewer": rev, "confidence": 100, "sha": sha})
+    # `verdict` is required as of GH #478 — see the CLEARANCE_COMMENTS builder
+    # above. These N4/N5 fixtures test VISIBILITY, so they carry a valid YES;
+    # verdict enforcement itself is tested in tests/test-merge-gate.sh.
+    payload = json.dumps({"reviewer": rev, "verdict": "YES", "confidence": 100, "sha": sha})
     return eval(tmpl, {"rev": rev, "payload": payload})
 json.dump([{"user": {"login": "m"}, "author_association": "OWNER", "body": body("codex")},
            {"user": {"login": "m"}, "author_association": "OWNER", "body": body("fable")}],

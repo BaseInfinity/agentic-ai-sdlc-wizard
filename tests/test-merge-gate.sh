@@ -333,6 +333,7 @@ DELETED_TEST_FILES=
 RENAMED_TEST_FILES=
 PACKAGE_JSON_VERSION_CHANGED=
 BEYOND_FIRST_PAGE=
+CLEARANCE_PAYLOADS=
 CONFIG
 
     cat > "$tmpdir/bin/gh" <<'STUB'
@@ -361,6 +362,27 @@ elif [ "$1" = "api" ]; then
     case "$*" in
         *check-runs*)
             echo "{\"conclusion\":\"$VALIDATE_CONCLUSION\",\"name\":\"validate\"}"
+            ;;
+        *issues*comments*)
+            # Cross-model clearance comments. CLEARANCE_PAYLOADS holds one
+            # compact JSON object per line; each becomes a PR comment wrapping
+            # that object in the required marker + fenced json block.
+            printf '['
+            _first=1
+            while IFS= read -r payload; do
+                [ -z "$payload" ] && continue
+                [ "$_first" -eq 0 ] && printf ','
+                _first=0
+                # Escape BACKSLASHES before quotes. Without this a payload
+                # containing v was decoded by jq while parsing the comment
+                # body, so it reached the parser as a plain literal and the
+                # unicode-escape test silently tested nothing. GitHub's API
+                # returns a real comment's backslash as \\, which is what this
+                # now reproduces.
+                printf '{"user":{"login":"maintainer"},"author_association":"OWNER","body":"**CROSS-MODEL-CLEARANCE**\\n\\n```json\\n%s\\n```"}' \
+                    "$(printf '%s' "$payload" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+            done <<< "${CLEARANCE_PAYLOADS:-}"
+            printf ']'
             ;;
         *pulls*files*)
             # Tier classification now reads THIS endpoint, not `gh pr diff`
@@ -777,6 +799,139 @@ test_wrapper_blocks_wizard_doc_touch
 test_wrapper_merges_when_all_conditions_met
 test_wrapper_fail_fast_ordering
 test_wrapper_has_no_env_bypass
+
+# --- Cross-model clearance payloads (GH #478) --------------------------------
+#
+# A missing VERDICT field survived here despite verify_cross_model_clearance
+# being well covered — 49 assertions in tests/test-cross-model-clearance.sh over
+# confidence bounds, SHA binding, authorship and payload visibility. Every one
+# fed a fixture that omitted a verdict, so the suite tested the SHAPE of the
+# evidence and never the ANSWER inside it: a payload asserting MERGE_SAFE: NO in
+# its prose while carrying confidence 97 satisfied every check and merged.
+# Confidence was standing in for a decision nobody had modelled.
+#
+# Helper: run the wrapper against a fixture whose PR comments carry $1 (one
+# compact JSON payload per line), touching an ACKABLE_DENY path so clearance
+# is actually consulted, and echo "exit=<n> <output>".
+run_with_clearance() {
+    local payloads="$1" tmpdir out code
+    tmpdir=$(setup_wrapper_fixture)
+    printf 'DIFF_FILES=CLAUDE_CODE_SDLC_WIZARD.md\n' >> "$tmpdir/.gh-stub-config"
+    printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' "$payloads")" >> "$tmpdir/.gh-stub-config"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    echo "review body" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 --cross-model-cleared 2>&1) && code=0 || code=$?
+    rm -rf "$tmpdir"
+    printf 'exit=%s %s' "$code" "$out"
+}
+
+# Assert the merge DID NOT HAPPEN, not merely that the exit code was nonzero.
+# Codex found the first version of these tests checking exit status and message
+# text — the SHAPE of the refusal — while the stub's GH_MERGE_INVOKED line proved
+# the merge had actually fired in some cases. That is the identical defect this
+# whole change exists to fix: 49 assertions checked the shape of the clearance
+# evidence and never the answer inside it. The side effect is the ground truth.
+refute_merge() {  # $1=result  $2=what was being attempted
+    if printf '%s' "$1" | grep -q "GH_MERGE_INVOKED"; then
+        fail "$2 — the merge ACTUALLY FIRED: $1"
+    elif printf '%s' "$1" | grep -q "^exit=0"; then
+        fail "$2 — wrapper exited 0: $1"
+    else
+        pass "$2"
+    fi
+}
+
+test_clearance_requires_verdict_field() {
+    # Two reviewers, both >=95, both bound to the head SHA, NEITHER declaring a
+    # verdict. Confidence alone must not clear a merge.
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","confidence":97,"sha":"abc123"}
+{"reviewer":"fable-5","confidence":96,"sha":"abc123"}')" \
+        "clearance with no verdict field does not merge"
+}
+
+test_clearance_rejects_negative_verdict() {
+    # THE DEFECT, stated as a test: a reviewer who says NO, at high confidence,
+    # must never clear. Before the fix this merged.
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"NO","confidence":97,"sha":"abc123"}
+{"reviewer":"fable-5","verdict":"NO","confidence":99,"sha":"abc123"}')" \
+        "two confident NO verdicts do not merge"
+}
+
+test_clearance_rejects_lowercase_verdict() {
+    # Codex: `ascii_upcase` in the jq projection normalised 'yes' and 'YeS' into
+    # YES, so the exact-match check I had documented as strict was not strict.
+    # A verdict is a machine-written field in a machine-written payload; a
+    # reviewer that cannot emit the exact token has not cleared anything.
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"yes","confidence":97,"sha":"abc123"}
+{"reviewer":"fable-5","verdict":"YeS","confidence":96,"sha":"abc123"}')" \
+        "case-variant verdicts (yes / YeS) do not merge"
+}
+
+test_clearance_rejects_duplicate_verdict_keys() {
+    # Codex: a payload carrying `verdict` TWICE — NO first, YES last — merged,
+    # because JSON parsers keep the last duplicate key. The rendered comment can
+    # be made to read as a refusal while the parsed object says YES.
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"NO","confidence":97,"sha":"abc123","verdict":"YES"}
+{"reviewer":"fable-5","verdict":"NO","confidence":96,"sha":"abc123","verdict":"YES"}')" \
+        "a duplicated verdict key (NO then YES) does not merge"
+}
+
+test_clearance_rejects_unicode_escaped_duplicate_key() {
+    # Codex round 2: `verdict` and `verdict` decode to `verdict`, so
+    # the raw-text duplicate scan never saw a second key while the JSON parser
+    # did — and kept the last one, YES. Counting literal text cannot win against
+    # escaping, which is why the fix stopped counting text and instead pins the
+    # payload to an exact key set with no escapes permitted anywhere.
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"NO","confidence":97,"sha":"abc123","\u0076erdict":"YES"}
+{"reviewer":"fable-5","verdict":"NO","confidence":96,"sha":"abc123","ver\u0064ict":"YES"}')" \
+        "unicode-escaped duplicate keys do not merge"
+}
+
+test_clearance_rejects_unknown_extra_key() {
+    # Consequence of the positive anchor: the payload carries exactly the four
+    # decision-bearing keys. An unrecognised field is refused rather than
+    # ignored, so nothing can ride along unexamined.
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123","note":"x"}
+{"reviewer":"fable-5","verdict":"YES","confidence":96,"sha":"abc123","note":"x"}')" \
+        "a payload with an unexpected extra key does not merge"
+}
+
+test_clearance_accepts_two_yes_verdicts() {
+    # Non-vacuity control. If this fails, the two tests above prove nothing —
+    # they would pass against a gate that rejects everything.
+    local r
+    r=$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}
+{"reviewer":"fable-5","verdict":"YES","confidence":96,"sha":"abc123"}')
+    if printf '%s' "$r" | grep -q "GH_MERGE_INVOKED"; then
+        pass "two YES verdicts at >=95 bound to the head SHA do clear the merge"
+    else
+        fail "valid clearance failed to merge — the negative tests above are vacuous without this: $r"
+    fi
+}
+
+test_sub_threshold_message_prescribes_next_action() {
+    # A YES under 95 means a named residual concern, not a dead end. The gate
+    # must say what to do next; tonight it just refused and the human ran the
+    # merge by hand (GH #478).
+    local r
+    r=$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}
+{"reviewer":"fable-5","verdict":"YES","confidence":93,"sha":"abc123"}')
+    if printf '%s' "$r" | grep -qi "focused merge-safety round"; then
+        pass "a sub-threshold YES prescribes the next action instead of dead-ending"
+    else
+        fail "sub-95 rejection gave no next action: $r"
+    fi
+}
+
+
+test_clearance_requires_verdict_field
+test_clearance_rejects_negative_verdict
+test_clearance_rejects_lowercase_verdict
+test_clearance_rejects_duplicate_verdict_keys
+test_clearance_rejects_unicode_escaped_duplicate_key
+test_clearance_rejects_unknown_extra_key
+test_clearance_accepts_two_yes_verdicts
+test_sub_threshold_message_prescribes_next_action
 
 echo ""
 echo "=== Results ==="
