@@ -4,6 +4,28 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.92.0] - 2026-08-03
+
+### Removed
+
+- **The Cowork `Stop` hook is gone.** It fired 12 times in a single session and was wrong 11 of them: blocking turns that modified zero files, turns whose verification was already stated in the response, and five separate times quoting its own in-flight exemption before overriding it — once with a reason reading "This is in-flight work, not unverified work." It fired **zero** times during the v1.91.0 release work, which contained ten real defects.
+
+  Three prior prompt rewrites each added exemption language the evaluator then ignored, so a fourth rewrite was not the fix. The governing constraint was already written in this repo's other Stop hook: *"Stop fires at the end of every turn, not just at true session end, and it must never prevent the user from getting their response."* A blocking Stop hook violates that by construction.
+
+  **Cowork now has no completion enforcement.** `PreToolUse` (new-file heuristic) and `UserPromptSubmit` (explicit bypass denial) remain. `hooks/codex-review-stop-check.sh` covers the CLI only — different condition, non-blocking, and it cannot run in Cowork. `cowork/README.md`, the wizard doc, and E2E Test 5c are corrected to say so; previously they promised a hook that no longer exists.
+
+- **~190 lines of tests asserting that hook's prompt TEXT.** They pinned which exemptions it named and what it must not demand. All passed continuously while the hook was wrong 11 times in 12 — a prompt containing the right words says nothing about whether the evaluator follows them. Replaced with assertions that the hook stays absent.
+
+### Fixed
+
+- `tests/test-stop-hook-terminates.sh` had lost its `[ "$FAIL" -eq 0 ] || exit 1` tail during the edit above, leaving a suite that printed failures and exited 0 — CI would have stayed green with a blocking hook reintroduced. Caught in review, restored, and watched fail before being accepted. A missing shipped `hooks.json` is a failure again rather than a silent skip.
+
+- The same file carried a **vacuous control assertion**: it accepted "hook produced output" OR "hook was silent", which is every possible outcome, so nothing ever executed the script behind the allowlisted path. It now asserts the hook exits 0 on a normal stop, since exit 2 blocks the user's response. This sat directly beneath a comment condemning that exact defect class — the one this release deletes ~190 lines for committing.
+
+- The guard that keeps the hook absent no longer enumerates load paths. It asserts one rule: the only `Stop` hook anywhere in the repo is the three exact command strings invoking `codex-review-stop-check.sh`. Scans `.json`, `.yaml`/`.yml`, and `.md` YAML frontmatter; skips only `.git`.
+
+  **Accepted risk, logged so it is not re-litigated:** this guards *accident*, not an adversary. It cannot stop someone who deliberately re-adds a hook, because that person can also edit the guard. Six review rounds each found a new way to defeat it under an insider-adversary model; that model is unsatisfiable for a repo-local test, and further hardening is out of scope. A repo-file scan also cannot see a hook registered at install or runtime that no repo file expresses.
+
 ## [1.91.0] - 2026-08-02
 
 ### Fixed

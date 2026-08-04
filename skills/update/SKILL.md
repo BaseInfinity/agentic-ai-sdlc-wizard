@@ -95,9 +95,10 @@ Parse CHANGELOG entries between the user's installed version and the resolved la
 
 ```
 Installed: 1.42.0
-Latest:    1.91.0
+Latest:    1.92.0
 
 What changed:
+- [1.92.0] Cowork `Stop` hook REMOVED — it fired 12 times in one session and was wrong 11; Cowork now has no completion enforcement (documented in cowork/README.md).
 - [1.91.0] TDD hook fixed for monorepos — it had been silently dead since Claude Code 2.1.214 for any repo whose source is not at root `src/`; driver effort default is now `high` (complex) / `medium` (routine web/CRUD).
 - [1.90.0] Stop hook no longer blocks on in-flight background work; the documented Cowork install URL is corrected (it could not have worked); review-loop, convergence and TDD RED-per-assertion guidance added
 - [1.89.0] Stop hook can no longer block a turn forever — it honours stop_hook_active, judges the current turn only, and blocks solely on code changed with no verification attempted; a suite with known explained failures no longer blocks. Merge approval no longer means merge bypass: the all-or-nothing escape is deleted, the denylist is tiered, and cross-model clearance satisfies the denylist finding only. Parallel blind dual review documented.

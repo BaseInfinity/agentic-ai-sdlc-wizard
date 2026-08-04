@@ -12,19 +12,19 @@ SDLC enforcement for Claude Cowork sessions. Provides methodology guidance via s
 | Feedback skill | `/sdlc-wizard-cowork:feedback` | Privacy-first community feedback and pattern sharing |
 | TDD hook | `PreToolUse` (Write/Edit) | Denies creating a new non-test file that doesn't look like a test (filename heuristic — see limits below) |
 | SDLC baseline hook | `UserPromptSubmit` | Denies prompts that explicitly ask to skip planning/testing/review |
-| Completion hook | `Stop` | Denies stopping on **one** condition: code changed this turn and no verification of any kind was attempted or explained. Failing-but-explained tests, scoped runs, and infrastructure-blocked suites all pass. Missing confidence or self-review narration does **not** block. |
+| ~~Completion hook~~ | ~~`Stop`~~ | **REMOVED in v1.92.0 (GH #484).** It fired 12 times in one session and was wrong 11 — blocking turns that changed no files, turns already verified, and repeatedly overriding its own stated exemptions. A `Stop` hook fires at the end of *every* turn, so a blocking one interrupts constantly. There is now **no completion enforcement in Cowork**; see the honesty note below. |
 
 ## Hooks — Prompt-Based Enforcement
 
-This plugin ships 3 **prompt-based hooks** (`"type": "prompt"`) that enforce SDLC discipline without shell access. These are the Cowork equivalents of Claude Code's bash hooks:
+This plugin ships 2 **prompt-based hooks** (`"type": "prompt"`) — a narrow slice of SDLC discipline, without shell access. The `Stop` (completion) hook was removed in v1.92.0; see GH #484.
 
 | Cowork Hook | Claude Code Equivalent | Event |
 |-------------|----------------------|-------|
 | TDD check | `tdd-pretool-check.sh` | `PreToolUse` (Write/Edit/MultiEdit) |
 | SDLC baseline | `sdlc-prompt-check.sh` | `UserPromptSubmit` |
-| Completion check | _(new — no CC equivalent)_ | `Stop` |
 
-**Prompt hooks do not inject text into the main conversation.** Per Anthropic's documented `prompt` hook contract (`code.claude.com/docs/en/hooks`), each hook sends its `prompt` field to a separate, single-turn evaluator model (Haiku by default), with the hook's JSON input either substituted at `$ARGUMENTS` or auto-appended if `$ARGUMENTS` is omitted. The evaluator must respond `{"ok": true}` to allow, or `{"ok": false, "reason": "..."}` to deny — no shell, no filesystem access needed, but also no soft reminders: it's a real gate, not a nudge. Blocking semantics differ per event — `Stop`'s reason is fed back to Claude and the turn continues (it can actually fix things and retry); `UserPromptSubmit`'s block ends the turn outright with no retry, so it's scoped narrowly (see the hook's own prompt in `hooks/hooks.json`).
+
+**Prompt hooks do not inject text into the main conversation.** Per Anthropic's documented `prompt` hook contract (`code.claude.com/docs/en/hooks`), each hook sends its `prompt` field to a separate, single-turn evaluator model (Haiku by default), with the hook's JSON input either substituted at `$ARGUMENTS` or auto-appended if `$ARGUMENTS` is omitted. The evaluator must respond `{"ok": true}` to allow, or `{"ok": false, "reason": "..."}` to deny — no shell, no filesystem access needed, but also no soft reminders: it's a real gate, not a nudge. `UserPromptSubmit`'s block ends the turn outright with no retry, so it's scoped narrowly (see the hook's own prompt in `hooks/hooks.json`).
 
 **Known limit:** the `PreToolUse` TDD check can only see the current file write, not prior turns or the filesystem — it's a best-effort filename heuristic (denies creating a new non-test file), not proof a failing test was actually run first. A `type: "agent"` hook (multi-turn, with Read/Grep/Glob access) would be the mechanically correct fix for real TDD-order verification; that's a larger, separate change, tracked as a follow-up rather than attempted here.
 
@@ -48,7 +48,7 @@ This plugin ships 3 **prompt-based hooks** (`"type": "prompt"`) that enforce SDL
 - **CI shepherd** (`gh pr`, `git push`) — these steps happen outside your Cowork session
 - **`/code-review`** — works in Cowork if the plugin is loaded
 
-The methodology (plan → TDD → self-review → confidence check) is universal, and the skills describe all of it. **The hooks enforce only a narrow slice of it** — do not read the table above as full enforcement. `UserPromptSubmit` denies prompts that explicitly ask to skip process; `PreToolUse` applies a filename heuristic to brand-new non-test files; `Stop` blocks only when code changed with no verification attempted, and deliberately does NOT require a stated confidence level or a self-review narration. Everything else is guidance you follow, not a gate that stops you.
+The methodology (plan → TDD → self-review → confidence check) is universal, and the skills describe all of it. **The hooks enforce only a narrow slice of it** — do not read the table above as full enforcement. `UserPromptSubmit` denies prompts that explicitly ask to skip process; `PreToolUse` applies a filename heuristic to brand-new non-test files. **There is no completion gate** — the `Stop` hook was removed in v1.92.0 (GH #484) after scoring 11 false positives in 12 firings. Everything else is guidance you follow, not a gate that stops you.
 
 ## Installation
 
@@ -80,7 +80,7 @@ This is a **subset** of the [SDLC Wizard](https://github.com/BaseInfinity/claude
 - CLI installer (`npx agentic-sdlc-wizard init`)
 - npm package distribution
 
-This Cowork plugin provides 2 portable skills + 3 prompt-based hooks — enforcement without shell access.
+This Cowork plugin provides 2 portable skills + 2 prompt-based hooks — a narrow slice of enforcement without shell access.
 
 ### Drift Prevention
 
@@ -103,4 +103,4 @@ This plugin is for Cowork-only users who want methodology guidance without the f
 
 ## Version
 
-Tracks the main wizard version: **1.91.0**
+Tracks the main wizard version: **1.92.0**
