@@ -169,11 +169,59 @@ verify_cross_model_clearance() {
         | ($visible | [scan("(?s)```json\\s*(\\{.*?\\})\\s*```")] ) as $payloads
         | select(($payloads | length) == 1)
         | ($payloads[0][0] | fromjson? // empty) as $p
+        # GH #478: `verdict` is REQUIRED. Until it existed, this parser read
+        # reviewer/confidence/sha and never asked whether the reviewer actually
+        # said the PR was safe to merge — confidence was standing in for a
+        # verdict that was never modelled. A payload declaring MERGE_SAFE: NO in
+        # its prose, carrying confidence 97, cleared every check and merged.
+        # Proven by tests/test-merge-gate.sh: two NO verdicts at 97 and 99 merged.
+        #
+        # Note on how this survived: this function WAS well covered — 49
+        # assertions in tests/test-cross-model-clearance.sh, spanning confidence
+        # bounds, SHA binding, authorship and payload visibility. Every one of
+        # them fed a fixture that omitted any verdict, so the whole suite tested
+        # the shape of the evidence and never the answer inside it. Coverage
+        # count is not coverage of the thing that matters.
+        # DUPLICATE-KEY SHADOWING — two rounds, two shapes, one lesson.
+        #
+        # Round 1 (Codex): JSON parsers keep the LAST duplicate key, so a payload
+        # carrying `verdict` twice — NO first, YES last — parsed as YES and
+        # merged while the rendered comment read as a refusal. I answered by
+        # counting `"verdict":` in the raw text.
+        # Round 2 (Codex): `verdict` and `verdict` decode to `verdict`,
+        # so the raw-text count saw one key and the parser saw two. Counting
+        # literal text cannot win against escaping — every escape form I block,
+        # another encodes around.
+        #
+        # So this stops counting and pins the payload instead: EXACTLY the four
+        # decision-bearing keys, and no backslash anywhere. A clearance payload
+        # is machine-written and every value is a constrained token (an exact
+        # verdict, a hex sha, a number, a [A-Za-z0-9._-] reviewer), so no
+        # legitimate one needs an escape. Duplicates, escaped keys, and
+        # unexamined extra fields all fail by construction rather than by
+        # enumeration — the difference between naming what is allowed and
+        # chasing what is forbidden.
+        | select($payloads[0][0] | test("\\\\") | not)
+        | select(($p | keys) == ["confidence", "reviewer", "sha", "verdict"])
+        # Raw-text counting is only sound BECAUSE the line above bans
+        # backslashes: with no escapes possible, a key in the text is the key
+        # the parser sees. It is still needed, since `keys` runs after the
+        # decoder has already collapsed a plain duplicate down to one.
+        | select([$payloads[0][0] | scan("\"verdict\"[[:space:]]*:")] | length == 1)
+        | select([$payloads[0][0] | scan("\"sha\"[[:space:]]*:")] | length == 1)
+        | select([$payloads[0][0] | scan("\"confidence\"[[:space:]]*:")] | length == 1)
+        | select([$payloads[0][0] | scan("\"reviewer\"[[:space:]]*:")] | length == 1)
         | select($p.reviewer != null and $p.confidence != null and $p.sha != null)
+        | select($p.verdict != null)
+        | select($p.verdict | type == "string")
         | select($p.confidence | type == "number")
         | select($p.reviewer | type == "string")
         | select($p.sha | type == "string")
-        | [($c.user.login // "unknown"), $p.reviewer, ($p.confidence|tostring), $p.sha]
+        # NO ascii_upcase. It normalised 'yes' and 'YeS' into YES, so the
+        # exact-match check below — documented as strict — was not strict. A
+        # verdict is a machine-written field; a reviewer that cannot emit the
+        # exact token has not cleared anything.
+        | [($c.user.login // "unknown"), $p.reviewer, ($p.confidence|tostring), $p.sha, $p.verdict]
         | @tsv
     ' 2>/dev/null)
 
@@ -182,8 +230,14 @@ verify_cross_model_clearance() {
         return 1
     fi
 
-    while IFS=$'\t' read -r author who conf sha; do
+    while IFS=$'\t' read -r author who conf sha verdict; do
         [ -z "$who" ] && continue
+        # GH #478: the verdict decides; confidence only qualifies a YES. Anything
+        # that is not an explicit YES is refused, so a malformed or novel verdict
+        # value fails closed rather than being treated as assent.
+        if [ "$verdict" != "YES" ]; then
+            echo "  ignored: $who returned verdict '$verdict', not YES" >&2; continue
+        fi
         # F1: the reviewer identity must be a single safe token. The previous
         # version later ran `set -- $reviewers`, which word-splits on IFS, so a
         # reviewer value of "alice bob" satisfied the two-reviewer threshold
@@ -203,7 +257,17 @@ verify_cross_model_clearance() {
             echo "  ignored: $who gave a non-integer confidence '$conf'" >&2; continue ;;
         esac
         if [ "$conf" -lt 95 ] || [ "$conf" -gt 100 ]; then
-            echo "  ignored: $who gave confidence $conf, outside the 95..100 range" >&2; continue
+            # GH #478: a YES under the bar means a NAMED RESIDUAL, not a dead
+            # end. v1.92.0 got YES/97 and YES/93 — both reviewers agreed it was
+            # safe — and the gate simply refused, so the maintainer ran the
+            # merge by hand. That is the failure this message exists to stop:
+            # say what closes the gap. Re-reviewing until a number improves is
+            # NOT the remedy; resolving the reviewer's stated residual is.
+            echo "  ignored: $who returned YES at confidence $conf, below the 95 bar" >&2
+            echo "    next: run a focused merge-safety round on the residual $who named," >&2
+            echo "    fix or refute it, and have $who re-post. Do not re-ask for a higher" >&2
+            echo "    number without changing anything — that is shopping, not review." >&2
+            continue
         fi
         case " $reviewers " in *" $who "*) continue ;; esac
         reviewers="$reviewers $who"

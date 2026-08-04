@@ -7,12 +7,12 @@ argument-hint: "[task description]"
 
 ## Skill source & precedence
 
-Loaded from repo-local **`.claude/skills/sdlc/SKILL.md`**, which wins over global `~/.claude/skills/` — it's the project's authoritative contract. Use global only for cross-repo personal tooling. Unsure which is active? `head -5` both; don't mix.
+Loaded from repo-local **`.claude/skills/sdlc/SKILL.md`**, which wins over global `~/.claude/skills/` — the project's authoritative contract. Global is for cross-repo tooling only. Unsure which is active? `head -5` both.
 
 ## Task
 $ARGUMENTS
 
-Operational checklist. Full protocol lives in `CLAUDE_CODE_SDLC_WIZARD.md` — read it for depth.
+Operational checklist. Full protocol: `CLAUDE_CODE_SDLC_WIZARD.md`.
 
 **If the user requests /sdlc, ALWAYS run the full workflow — even for mechanical tasks.** Never silently skip; if overkill, say so and ask.
 
@@ -103,9 +103,9 @@ State your confidence before presenting an approach:
 
 **Effort bumping is NOT optional.** Bump BEFORE the next attempt, not after a third failure.
 
-**Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex check.
+**Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex.
 
-**Uncertainty ≠ a human question.** Use judgement and the model/tool evidence available to you before interrupting a human — escalate to Fable (`advisor()`; if down, spawn a Fable subagent at `high` — that's the current fallback), then Codex `high`, and reserve the user for priority/risk/scope/spend or irreversible calls. **Confidence is not authorization**: a high score never grants permission — it never overrides approval, external-effect, production, release/merge, or policy gates, and merge protections are non-overridable. **Standing instructions stay in force** (wizard doc).
+**Uncertainty ≠ a human question.** Use the model/tool evidence available before interrupting a human — escalate to Fable (`advisor()`; if down, a Fable subagent at `high`), then Codex `high`; reserve the user for priority/risk/scope/spend or irreversible calls. **Confidence is not authorization**: a high score never overrides approval, external-effect, production, release/merge, or policy gates, and merge protections are non-overridable. **Standing instructions stay in force** (wizard doc).
 
 ## Plan Mode
 
@@ -113,7 +113,7 @@ Use plan mode for: multi-file changes, new features, LOW confidence, bugs needin
 
 ## Long-Running Goals (`/goal`)
 
-Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript per turn. **NEVER invoke below HIGH 95%** — below that it rubber-stamps flailing as progress. **Condition MUST name the DLC** (`/sdlc`, `/gdlc`, etc.) so the evaluator anchors on "doing it right." **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` off. **Condition = contract:** end state + check + constraints + hard turn/time bound; e.g. `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. Evaluator can't call tools — transcript-only. `--resume` resets counters.
+Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript per turn. **NEVER invoke below HIGH 95%** — below that it rubber-stamps flailing as progress. **Condition MUST name the DLC** (`/sdlc`, `/gdlc`, etc.) so the evaluator anchors on "doing it right." **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` off. **Condition = contract:** end state + check + constraints + hard turn/time bound; e.g. `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. Evaluator can't call tools. `--resume` resets counters.
 
 ## Recommended Model
 
@@ -141,8 +141,8 @@ PROTOCOL is universal across domains; only `review_instructions` and `verificati
 
 1. **Preflight** (`.reviews/preflight-{review_id}.md`) — what you already checked: `/code-review` passed, tests passing, manual verifications, known limits. Reduces reviewer findings to 0-1/round.
 2. **Mission-first handoff** (`.reviews/handoff.json`) — required keys: `"review_id"`, `"status": "PENDING_REVIEW"`, `"round": 1`, `"mission"`/`"success"`/`"failure"` (without them you get "looks good"), `"files_changed"`, `"verification_checklist"` (verification checklist with file:line refs — NOT generic), `"review_instructions"`, `"preflight_path"`. Optional `"pr_number":` opts into PreCompact self-heal (#209: MERGED → implicit CERTIFIED).
-3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; `run_in_background: true` avoids the Bash 10-min (`600000` ms) `timeout` cap that force-kills foreground codex (multi-artifact bundles take 5–30 min). high 1–30 min; wrapper's `STALL_SECONDS=1800` controls it. Foreground burned 70 min on a 7-min review (#364).
-4. **Dialogue loop:** per-finding response (`{"finding": "1", "action": "FIXED|DISPUTED|ACCEPTED", "summary": "..."}` in `.reviews/response.json`). Bump round, set status `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Do NOT expand the surface; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — always run the recheck. It's a conversation: the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED, write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
+3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; background avoids the Bash 10-min `timeout` cap that force-kills foreground codex (bundles take 5–30 min; `STALL_SECONDS=1800`). Foreground burned 70 min on a 7-min review (#364).
+4. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Do NOT expand the surface; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — always run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
 
 **Convergence:** judge by max severity per round. Escalate, never ship.
 
@@ -179,9 +179,10 @@ Mandatory steps:
 5. CI fails → fix, push (max 2 attempts)
 6. CI passes → `gh api .../pulls/PR/comments` for review feedback
 7. Implement valid suggestions (bugs, perf, dedup). Skip opinions. Max 3 iterations
-8. Explicit `gh pr merge --squash` — needs confirmation. **Exception:** skip only if ALL hold: CI `validate` green; Codex `high` CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) found **zero unresolved findings** after **≥1 dialogue round**; the PR touches no **merge-evidence** path (workflows, `hooks/`, `.claude/`, merge script — they define their own CI check, human decides) and no `package.json` version bump. Policy prose is clearable on cross-model evidence. Via `scripts/merge-pr.sh`. Tell the user after — never silent.
+8. **Clearance, once CI green.** Ask reviewers *"safe to merge?"* — NOT "can you break this" (unsatisfiable; #478). Each posts `**CROSS-MODEL-CLEARANCE**` + one fenced json `{"reviewer","verdict":"YES","confidence","sha"}`. **`verdict` decides; confidence only qualifies it.** YES <95 names a residual → one focused round, never a human ask; re-asking unchanged is shopping.
+9. Explicit merge via `scripts/merge-pr.sh <PR#>` — never auto-merge. Needs 2 YES ≥95 on head SHA AND: CI `validate` green; Codex `high` CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) with **zero unresolved findings** after **≥1 dialogue round**. Merge-evidence paths (workflows, `hooks/`, `.claude/`, merge script) + `package.json` version bumps need a human. Tell the user after — never silent.
 
-**Evidence:** PR #145 auto-merged, shipped a P1 bug.
+**Evidence:** PR #145 auto-merged, shipped a P1 bug. v1.92.0: two YES (97/93) dead-ended (#478).
 
 ## Scope, DRY, Patterns, Legacy
 
