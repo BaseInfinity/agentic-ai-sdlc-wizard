@@ -968,6 +968,52 @@ Two tools for managing context — use the right one:
 
 **Auto-compact** fires automatically at ~95% context capacity. Claude Code handles this by default — but the default threshold may not be ideal for all use cases (see "Autocompact Tuning" below). The SDLC skill suggests `/compact` during CI idle time as a "context GC" opportunity.
 
+### Working context ceiling — why ~40-60%, not "the window is 1M so use 1M"
+
+A large advertised context window is not a large *usable* one. Model quality degrades well below the stated limit, this is measured rather than folklore, and it is **not** specific to any one vendor.
+
+| Evidence | What it found |
+|---|---|
+| [Chroma, "Context Rot"](https://www.trychroma.com/research/context-rot) | 18 models (Claude Opus/Sonnet 4, GPT-4.1, Gemini 2.5): performance becomes "increasingly unreliable as input length grows" — non-uniformly, on even trivial tasks, and worse with distractors present |
+| [NoLiMa](https://arxiv.org/abs/2502.05167) | At **32K**, 11 of the 13 models evaluated fall below **50%** of their own short-context baseline. GPT-4o: 99.3% → 69.7% |
+| [RULER](https://arxiv.org/abs/2404.06654) | Only about half of models claiming ≥32K actually sustain performance there; "effective" length is routinely a fraction of the advertised one |
+| [Lost in the Middle](https://cs.stanford.edu/~nfliu/papers/lost-in-the-middle.arxiv2023.pdf) | A pronounced U-shaped curve across six model variants (four families: Claude, GPT-3.5, MPT, LongChat) — accuracy is worst when the needed fact sits mid-context. The paper reports a >20-point drop for GPT-3.5 specifically |
+
+Anthropic's own [context-engineering guidance](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) points the same way: it frames attention as a finite "attention budget," advises finding the *smallest* high-signal token set, and calls compaction the first lever.
+
+**The rules this repo ships:**
+
+1. **Work under ~350K tokens** — about 35% of a 1M window. This is the maintainer's working number, adopted deliberately as a practitioner heuristic to be validated by use rather than derived from a study. It sits at the conservative end of reported practice: [HumanLayer's ace-fca.md](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents/blob/main/ace-fca.md) recommends 40-60% utilization depending on task complexity, and community numbers cluster at 80-200K for 200K-window models and 200-500K for 1M-window models. **Nobody has benchmarked a specific cliff, and this repo is not claiming one.**
+2. **Compact deliberately at ~60%.** Autocompact fires near the hard limit (~95%), which leaves no room to choose what survives the summary — practitioner-reported, and consistent with Anthropic's advice to treat compaction as a deliberate lever rather than a backstop.
+3. **Run the test — a completion claim is not a test result.** Not conditioned on occupancy: the research behind it concerns self-assessment and says nothing about context length. Always-on, not a threshold that switches in.
+
+### Rule 3: run the test — a completion claim is not a test result
+
+This rule needs no inference and no statistics. **A test result is evidence. A claim that something
+is fixed is not a test result.** Run the thing.
+
+What the research adds is only that the failure mode is common enough to be worth a rule.
+[arXiv:2606.09863](https://arxiv.org/html/2606.09863) (June 2026) measured, **among runs that had
+already failed**, how often the agent nonetheless asserted success: **45% and 48%** of failures in
+tau2-bench's airline and retail single-control domains, **3%** in telecom, and **75.8%** of AppWorld
+failures that carried an explicit status claim. It also found LLM judges detect this poorly —
+AUROC ≤0.65 on tau2-bench, ~0.54 on AppWorld — while reporting that calibrated detectors are
+useful for triage.
+
+**What those numbers do NOT establish**, because they are conditioned on failure: how much a
+success claim should shift your confidence. Inverting that conditional would additionally require
+knowing how often *successful* runs assert completion — a different measurement. Five review rounds
+of this section tried to phrase such an inference — "evidence of nothing", then "weak evidence",
+then "little diagnostic weight", and then a caveat that misdescribed which quantity was missing —
+and every version was the same unsupported step. There is no need for it: *run the test* stands on
+its own.
+
+**Observed here.** During the v1.92.0 release one agent declared a defect class closed **six
+consecutive times** while an external reviewer produced a working bypass each round. That is one
+uncontrolled anecdote, not evidence of a rate — recorded because it is what prompted the rule.
+
+**Provenance, stated honestly:** the degradation itself is benchmarked (above). The specific **~350K** figure sometimes quoted for 1M-context models is **practitioner-reported, not benchmarked** — practitioner numbers cluster at 80-200K for 200K-window models and 200-500K for 1M-window models. The percentages in rules 1-2 are practitioner-reported; rule 3's 75.8% is measured.
+
 **What survives `/compact`:** Key decisions, code changes, task state (as a summary). What can be lost: detailed early-conversation instructions not in CLAUDE.md, specific file contents read long ago.
 
 **Best practice:** Put persistent instructions in CLAUDE.md (survives both `/compact` and `/clear`), not in conversation.
