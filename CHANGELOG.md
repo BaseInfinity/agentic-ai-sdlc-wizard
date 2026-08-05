@@ -4,6 +4,30 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.94.0] - 2026-08-05
+
+### Fixed
+
+- **Six shipped hooks could block forever on stdin** (plus the repo-local merge gate, which does not ship). Three — `codex-gate-check.sh`, `codex-review-stop-check.sh`, `tdd-pretool-check.sh` — read with a bare `$(cat)` and no guard at all. The other three had `[ ! -t 0 ]`, "is stdin not a terminal," which does not help: a unix socket is not a terminal, so the guard passes and the read waits for an EOF that never arrives. Five captured with `$(cat)`; `token-spike-check.sh` merely drained with `cat > /dev/null`, which blocks just the same. Observed live: `sdlc-prompt-check.sh` alive **10h19m against a 10-second hook timeout**, with stdin bound to a unix socket. The documented timeout did not reap it. If you installed the wizard, you have this. Nothing to do but update — the fix is in the hooks themselves.
+
+- **Gates now fail closed when they cannot read their input.** A gate that cannot see the command it is judging cannot judge it safely, so `codex-gate-check.sh`, `tdd-pretool-check.sh` and the repo-local merge gate deny rather than allow. Advisory hooks (prompt check, stop check, precompact, token spike) degrade quietly instead — they must never block your prompt over a stdin hiccup.
+
+- **`CLAUDE.md` misdescribed what this repo ships.** Its inventory listed `.claude/` and `tests/` but omitted `cli/`, `skills/`, `hooks/` and `.claude-plugin/` — every directory in `package.json`'s `files` list, i.e. exactly what consumers receive. A new guard reads `files` directly, so adding a shipped path now forces documenting it.
+
+### Notes
+
+The stdin fix took five iterations. Four were wrong, and **every one of them passed a green test**:
+
+1. `read -d '' -t 5` stopped the hang and silently returned 0 bytes on a 45-byte payload — bash 3.2 discards partial input on timeout with `-d`.
+2. A line accumulator turned the hang into a **silent gate bypass**: complete payload, stalled pipe, all three gates allowed. Found by cross-model review.
+3. Failing closed on `rc > 128` was dead code — on bash 3.2 a timeout and a clean EOF **both return 1**. The `>128` convention is bash 4+.
+4. `set -e` killed the merge gate before it could capture the read's exit code, so it exited 1: a script error wearing the costume of a policy decision.
+5. Integer `$SECONDS` false-blocked benign payloads 4 times in 15. bash 3.2 has no sub-second clock, so the budget is now `limit + 1` — guaranteeing the configured timeout is a floor that is actually honoured.
+
+The regression test for (5) was itself vacuous at first: an instant-EOF fixture scored **0/15 against deliberately reverted code**. It needed a 0.20s delay before EOF to reproduce the bug at all.
+
+Four of those five were caught by an independent model or by deliberately breaking the fix to see whether the test noticed — none by a test passing.
+
 ## [1.93.0] - 2026-08-03
 
 ### Fixed

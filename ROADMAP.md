@@ -9,11 +9,15 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 1. Every bullet under **Open PRs** must be written as ``- **PR #N** …``. A bullet in any other form fails the test, so a stale entry cannot be spelled around.
 2. `PR #N` anywhere in this section must name a PR that is **not yet merged**. Reference already-merged work in prose as a bare `#N`.
 
-**Last release: v1.90.0, published to npm 2026-08-01** (`agentic-sdlc-wizard`, `dist-tags.latest = 1.90.0`). `main` is clean and matches npm. That release carried three consumer-visible fixes — the Cowork Stop hook blocking turns while background work was still in flight (unsatisfiable: an agent cannot make a background job finish sooner, the same shape as the #477 loop it was built to prevent); install instructions that pointed at a `.../tree/main/cowork` URL which is not a supported marketplace source and cannot ever have worked (#455); and `cowork/README.md` contradicting itself twice — plus the review loop, severity contract, and the TDD RED/GREEN + Testing Diamond sections in `TESTING.md`. **Deliberately NOT in it:** row #485 (still uncertified on its own branch) and the shellcheck CI gate (pulled on unanimous cross-model recommendation, tracked as #492 with the work preserved as a 362-line patch).
+**Last release: v1.94.0, 2026-08-05** (`agentic-sdlc-wizard`). Carries the stdin-hang fix for six shipped hooks — each could block forever on a stdin that never reaches EOF, observed at 10h19m against a 10-second timeout — plus fail-closed gate semantics and a `CLAUDE.md` shipped-surface guard. See `CHANGELOG.md`, including the five-iteration history of the fix itself.
+
+**This marker was stale and is worth noting as a defect, not just correcting.** It read "Last release: v1.90.0" through the v1.92.0 and v1.93.0 releases; a version sweep grepping for the *outgoing* version can never find a marker frozen at an older one. Caught by cross-model release review 2026-08-05, not by any test. A guard belongs in `tests/test-doc-consistency.sh` — cross-ref GH #493 (the guard itself) and #491 (the wider CI/CD audit).
+
+**Historical, retained — v1.90.0, published to npm 2026-08-01** (`dist-tags.latest = 1.90.0` at that time). That release carried three consumer-visible fixes — the Cowork Stop hook blocking turns while background work was still in flight (unsatisfiable: an agent cannot make a background job finish sooner, the same shape as the #477 loop it was built to prevent); install instructions that pointed at a `.../tree/main/cowork` URL which is not a supported marketplace source and cannot ever have worked (#455); and `cowork/README.md` contradicting itself twice — plus the review loop, severity contract, and the TDD RED/GREEN + Testing Diamond sections in `TESTING.md`. **Deliberately NOT in it:** row #485 (still uncertified on its own branch) and the shellcheck CI gate (pulled on unanimous cross-model recommendation, tracked as #492 with the work preserved as a 362-line patch).
 
 **Note on how it was merged, recorded because it matters more than the release did.** #479 touched `.claude/` and `hooks/`, both in `merge-pr.sh`'s HARD tier, so no agent path existed — by design, "a human decides." The maintainer said to merge, and it was ultimately done by driving the GitHub UI through browser automation. **That bypassed the Claude Code Bash/PreToolUse harness entirely — the `merge-gate-check.sh` hook and `merge-pr.sh` wrapper only ever see shell commands issued through that harness, so a browser route never meets them.** State it that narrowly: an in-harness shell command *is* intercepted, which is the whole point of the hook; a browser click is not. **Evidenced:** `validate` was green before the merge and `main` currently requires that context. **NOT evidenced, and previously overclaimed here:** that the merge "could not have landed without it." The branch-protection API currently reports `enforce_admins.enabled=false`, and GitHub documents that protection rules do not apply to administrators unless admin enforcement is on — so a repo admin could have merged regardless ([GitHub docs](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)). Nor does current state prove the rule was unchanged at merge time. **Separate defect this exposed:** `CLAUDE.md` claims "Admin enforcement is on — no bypassing, even for repo owners." The API says otherwise. Either the setting or the sentence is wrong, and the same API call shows `required_pull_request_reviews: null`, contradicting CLAUDE.md's "PRs require 1 approving review" as well. This is the third time in one session the maintainer hit a wall the gate had no way for him to clear, which is precisely what row #479's remaining `--user-approved "<reason>"` scope is for — it is now the highest-value unbuilt item in this file, and it should be built before the next PR that touches a control-plane path.
 
-The prior release, v1.89.0 (2026-07-29), carried #479 (the merge gate's approval/bypass split — `MERGE_CLEARANCE_SKIP` deleted, `--cross-model-cleared` now satisfies *only* the denylist finding while every other check stays unconditional, and the denylist split into a HARD merge-evidence tier and an ACKABLE tier), #477 (three Stop-hook defects: no `stop_hook_active` guard, no turn scoping, and blocking on outcomes the judge cannot observe), and the Parallel Blind Dual Review protocol in `CLAUDE_CODE_SDLC_WIZARD.md`.
+Before that, v1.89.0 (2026-07-29) carried #479 (the merge gate's approval/bypass split — `MERGE_CLEARANCE_SKIP` deleted, `--cross-model-cleared` now satisfies *only* the denylist finding while every other check stays unconditional, and the denylist split into a HARD merge-evidence tier and an ACKABLE tier), #477 (three Stop-hook defects: no `stop_hook_active` guard, no turn scoping, and blocking on outcomes the judge cannot observe), and the Parallel Blind Dual Review protocol in `CLAUDE_CODE_SDLC_WIZARD.md`.
 
 The previous release, v1.88.0 (2026-07-24), carried #468 (Opus 5 becomes the Setup A default driver, plus the stale `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` that `skills/setup/SKILL.md` had been writing into *every consumer's* settings), #470 (the escalation ladder — Fable → Codex → human LAST — propagated to every shipped surface, including the runtime prompt hook that was still emitting the old "ASK USER" rule), and #469's ROADMAP rows.
 
@@ -42,8 +46,12 @@ maintainer's explicit direction — recorded so the dissent is not lost.
    one no static test can cover, sitting where a model executing the list would most
    likely skip it. Fixed, and `tests/test-doc-consistency.sh` now asserts every ordered
    list in the runbook counts 1..N (generic rule, not a line anchor — anchors in that
-   file have drifted four times). **`main` is at v1.90.0 in `cowork/.claude-plugin/plugin.json`
-   and `sdlc-wizard-cowork` is a live marketplace entry, so the install is ready to test.**
+   file have drifted four times). **`cowork/.claude-plugin/plugin.json` tracks the wizard
+   version and `sdlc-wizard-cowork` is a live marketplace entry, so the install is ready to
+   test.** Carries no version literal by design: this line sat at v1.90.0 through three
+   releases, the third of three such markers found in one release review. The authoritative
+   value is `package.json`. A guard asserting every live marker equals it is deferred to
+   GH #493 — three attempts were each proven vacuous by review and pulled from v1.94.0.
 2. **Row #477 `/doctor`** — folding in GH #476's native-install note, per both
    reviewers. Cheap, and its output is evidence for #476.
 3. **Row #476** — context-engineering realignment, with row #471 and GH #463
@@ -169,7 +177,7 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 
 | Project | Repo | Status |
 |---------|------|--------|
-| SDLC Wizard itself | BaseInfinity/claude-sdlc-wizard | Dogfooded, v1.90.0 |
+| SDLC Wizard itself | BaseInfinity/claude-sdlc-wizard | Dogfooded, v1.94.0 (living tracker — bump every release) |
 | Codex SDLC Adapter | BaseInfinity/codex-sdlc-wizard | v0.7.x, shipped with SDLC workflow |
 | GDLC Wizard (games sibling) | BaseInfinity/claude-gdlc-wizard | v0.2.x, persona-driven playtest cycles |
 | _(add as projects are marked)_ | | |
