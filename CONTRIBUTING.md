@@ -192,6 +192,7 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 ./tests/test-cusum.sh
 ./tests/test-stats.sh
 ./tests/test-hooks.sh
+./tests/test-hook-stdin-bounded.sh
 ./tests/test-token-spike.sh
 ./tests/test-codex-progress-wrapper.sh
 ./tests/test-audit-session-load.sh
