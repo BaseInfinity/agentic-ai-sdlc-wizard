@@ -18,9 +18,10 @@ HOOK_DIR="${BASH_SOURCE[0]%/*}"
 [ "$HOOK_DIR" = "${BASH_SOURCE[0]}" ] && HOOK_DIR="."
 # shellcheck disable=SC1091
 source "$HOOK_DIR/_find-sdlc-root.sh"
-dedupe_plugin_or_project "${BASH_SOURCE[0]}" || { cat > /dev/null; exit 0; }
+dedupe_plugin_or_project "${BASH_SOURCE[0]}" || { read_stdin_bounded > /dev/null || true; exit 0; }
 
-STDIN_JSON=$(cat)
+# Non-blocking hook: degrade to empty rather than stall the response.
+STDIN_JSON=$(read_stdin_bounded) || STDIN_JSON=""
 
 git rev-parse --is-inside-work-tree > /dev/null 2>&1 || exit 0
 

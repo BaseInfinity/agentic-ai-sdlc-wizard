@@ -10,10 +10,22 @@
 
 set -e
 
+HOOK_DIR="${BASH_SOURCE[0]%/*}"
+[ "$HOOK_DIR" = "${BASH_SOURCE[0]}" ] && HOOK_DIR="."
+# shellcheck disable=SC1091
+# Sourced only for read_stdin_bounded (#491 Class 2). The helper defines
+# functions and has no top-level side effects, so this gate's behaviour is
+# unchanged apart from no longer being able to block forever on stdin.
+source "$HOOK_DIR/_find-sdlc-root.sh"
+
 # Skip gate if explicitly overridden (emergency bypass with logged justification)
 [ "${CODEX_GATE_SKIP:-}" = "1" ] && exit 0
 
-TOOL_INPUT=$(cat)
+TOOL_INPUT=$(read_stdin_bounded) || {
+    # Fail CLOSED: unreadable stdin must not become an allow (#491 P0).
+    echo "CROSS-MODEL REVIEW GATE: could not read hook input within ${SDLC_HOOK_STDIN_TIMEOUT:-5}s. Refusing to allow an unverified command. Set CODEX_GATE_SKIP=1 to bypass with justification." >&2
+    exit 2
+}
 
 # Codex review findings (hook-enforcement-436):
 # Round 1: extracting the "command" field's value via grep/sed with

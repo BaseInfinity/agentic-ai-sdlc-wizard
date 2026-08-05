@@ -25,9 +25,9 @@ HOOK_DIR="${BASH_SOURCE[0]%/*}"
 [ "$HOOK_DIR" = "${BASH_SOURCE[0]}" ] && HOOK_DIR="."
 # shellcheck disable=SC1091
 source "$HOOK_DIR/_find-sdlc-root.sh"
-dedupe_plugin_or_project "${BASH_SOURCE[0]}" || { [ ! -t 0 ] && cat > /dev/null; exit 0; }
+dedupe_plugin_or_project "${BASH_SOURCE[0]}" || { read_stdin_bounded > /dev/null || true; exit 0; }
 
-[ ! -t 0 ] && INPUT=$(cat) || INPUT=""
+INPUT=$(read_stdin_bounded) || INPUT=""
 
 # Determine project root: prefer $CLAUDE_PROJECT_DIR, fall back to cwd
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"

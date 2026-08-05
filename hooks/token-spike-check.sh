@@ -18,10 +18,10 @@ HOOK_DIR="${BASH_SOURCE[0]%/*}"
 [ "$HOOK_DIR" = "${BASH_SOURCE[0]}" ] && HOOK_DIR="."
 # shellcheck disable=SC1091
 source "$HOOK_DIR/_find-sdlc-root.sh"
-dedupe_plugin_or_project "${BASH_SOURCE[0]}" || { [ ! -t 0 ] && cat > /dev/null; exit 0; }
+dedupe_plugin_or_project "${BASH_SOURCE[0]}" || { read_stdin_bounded > /dev/null || true; exit 0; }
 
 # Drain stdin (SessionStart sends JSON; we don't need any of it)
-[ ! -t 0 ] && cat > /dev/null
+read_stdin_bounded > /dev/null || true
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 

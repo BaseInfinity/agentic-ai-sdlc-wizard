@@ -21,7 +21,11 @@ source "$HOOK_DIR/_find-sdlc-root.sh"
 dedupe_plugin_or_project "${BASH_SOURCE[0]}" || exit 0
 
 # Read the tool input (JSON with file_path, content, etc.)
-TOOL_INPUT=$(cat)
+TOOL_INPUT=$(read_stdin_bounded) || {
+    # Fail CLOSED: unreadable stdin must not become an allow (#491 P0).
+    echo "TDD GATE: could not read hook input within ${SDLC_HOOK_STDIN_TIMEOUT:-5}s. Refusing to allow an unchecked edit." >&2
+    exit 2
+}
 
 # Extract the file path being edited (requires jq)
 FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.tool_input.file_path // empty')
