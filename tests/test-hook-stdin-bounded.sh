@@ -96,6 +96,48 @@ HOOKS="$(printf '%s' "$EXTRACT_HOOKS" | python3 - "$REPO_ROOT/hooks/hooks.json")
 # hang test into a no-op that passes loudly — the exact vacuous-test shape this
 # repo keeps rediscovering. Assert the roster is non-trivial AND covers every
 # .sh the manifest names.
+# Executing the extracted script only equals executing the registered command
+# if the command IS the script. Claude Code runs the whole string through a
+# shell, so `cat > /dev/null; ${CLAUDE_PLUGIN_ROOT}/hooks/x.sh` is an
+# indefinitely blocking shipped hook whose blocking half we would never run.
+#
+# Rather than simulate a shell — which invites quoting bugs in the test itself
+# — assert the property that makes the simpler execution valid: every command
+# is a bare script invocation. If that ever stops being true, this fails and
+# says the harness must be extended before the new shape can ship.
+test_manifest_commands_are_bare_script_invocations() {
+    local offenders
+    offenders=$(python3 - "$REPO_ROOT/hooks/hooks.json" <<'PY'
+import json, re, sys
+def commands(node):
+    if isinstance(node, dict):
+        if isinstance(node.get("command"), str):
+            yield node["command"]
+        for v in node.values():
+            yield from commands(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from commands(v)
+with open(sys.argv[1]) as fh:
+    manifest = json.load(fh)
+bad = []
+bare = re.compile(r'^\s*(?:\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT)?/?(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.sh\s*$')
+for cmd in commands(manifest):
+    if not bare.match(cmd):
+        bad.append(cmd)
+if bad:
+    print("\n".join(bad))
+PY
+)
+    if [ -z "$offenders" ]; then
+        pass "every hooks.json command is a bare script invocation (so running the script == running the command)"
+    else
+        fail "a hooks.json command is not a bare script path — the stdin harness runs the script alone and would miss the rest of the command:
+$offenders"
+    fi
+}
+test_manifest_commands_are_bare_script_invocations
+
 test_hook_roster_is_derived_and_complete() {
     local declared one missing="" count
     # Compare against the SEMANTIC set of commands in the manifest, not a flat
