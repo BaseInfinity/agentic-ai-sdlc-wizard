@@ -1511,15 +1511,24 @@ test_wizard_doc_reviewer_is_gpt56() {
     fi
 }
 
-# L113 is a historical audit citation (the E2E benchmark critique actually
-# ran on GPT-5.4 at the time) — must NOT be rewritten.
+# The E2E benchmark critique is a historical audit citation — it really did run
+# on GPT-5.4 — so a repo-wide model-name sweep must NOT "modernise" it.
+#
+# Anchored on content, not a line number. This was pinned to `sed -n '113p'` and
+# broke the moment an unrelated five-line edit landed earlier in the file, which
+# says nothing about the citation and everything about the anchor. A line number
+# is not a property of the thing being asserted (GH #491, line-pinned assertions).
 test_wizard_doc_e2e_audit_citation_untouched() {
     local F="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local line
     if [ ! -f "$F" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
-    if sed -n '113p' "$F" | grep -q "GPT-5\.4"; then
-        pass "CLAUDE_CODE_SDLC_WIZARD.md L113 E2E-audit citation still names GPT-5.4 (historical, untouched)"
+    line=$(grep -h 'rated the benchmark methodology' "$F" 2>/dev/null)
+    if [ -z "$line" ]; then
+        fail "the E2E-benchmark audit citation is gone entirely — re-anchor this assertion, do not delete it"
+    elif printf '%s' "$line" | grep -q "GPT-5\.4"; then
+        pass "wizard doc E2E-audit citation still names GPT-5.4 (historical, untouched)"
     else
-        fail "CLAUDE_CODE_SDLC_WIZARD.md L113 E2E-audit citation no longer names GPT-5.4 — historical citation was rewritten"
+        fail "wizard doc E2E-audit citation no longer names GPT-5.4 — a historical citation was rewritten"
     fi
 }
 
@@ -2778,6 +2787,99 @@ test_review_prompts_do_not_suppress_findings() {
     fi
 }
 test_review_prompts_do_not_suppress_findings
+
+# ---- GH #491 Class 1: phantom script paths in docs ----
+#
+# CLAUDE_CODE_SDLC_WIZARD.md told every consumer that "the wrapper
+# scripts/codex-review.sh already has a 30-min stall watchdog." That file has
+# never existed under any name but codex-review-with-progress.sh, so a reader
+# following the sentence finds nothing and the stated safety property is
+# unverifiable. A named path either resolves or it is a false assurance;
+# checking existence is mechanical, so no reviewer should have to catch this.
+#
+# Scoped to scripts/ deliberately. A generic any-path check would drown in
+# consumer-side example paths (src/, tests/foo) that correctly do not exist here.
+test_doc_script_references_exist() {
+    local bad=""
+    local doc ref base line
+    # Existence on the maintainer's disk is the WRONG question, and asking it
+    # was the first version of this test. `scripts/` is absent from
+    # package.json's "files" list, so `npm pack` ships none of it: a path can
+    # resolve perfectly here and be a phantom for every consumer. That is the
+    # same defect class one level out — which is why a shipped doc naming a
+    # repo-local script must say so on the same line.
+    for doc in "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" "$REPO_ROOT/AI_SETUP_LANES.md" \
+               "$REPO_ROOT/skills/sdlc/SKILL.md" "$REPO_ROOT/skills/setup/SKILL.md" \
+               "$REPO_ROOT/cowork/skills/sdlc/SKILL.md"; do
+        [ -f "$doc" ] || continue
+        base=$(basename "$doc")
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            ref=$(printf '%s' "$line" | grep -ohE '\bscripts/[A-Za-z0-9_./-]+' | head -1)
+            [ -n "$ref" ] || continue
+            if [ ! -e "$REPO_ROOT/$ref" ]; then
+                bad="$bad\n  $base names $ref — no such file anywhere"
+            elif ! printf '%s' "$line" | grep -qiE 'NOT installed|repo-local|maintainer tooling'; then
+                # scripts/ does not ship. Naming one to a consumer without
+                # saying so hands them an instruction they cannot follow.
+                bad="$bad\n  $base names $ref with no repo-local qualifier — scripts/ is not in package.json files, so consumers never receive it"
+            fi
+        done <<< "$(grep -hnE '\bscripts/[A-Za-z0-9_./-]+' "$doc" 2>/dev/null)"
+    done
+    if [ -z "$bad" ]; then
+        pass "#491: no shipped doc points a consumer at a script they do not receive"
+    else
+        fail "#491: shipped doc names a script the consumer never gets:$(printf '%b' "$bad")"
+    fi
+}
+test_doc_script_references_exist
+
+# ---- GH #491 Class 1, second half: named mechanisms must be real ----
+#
+# The path check above is necessary but NOT sufficient, and this test exists
+# because fixing the path alone was the wrong fix. The wizard doc promised a
+# 30-minute stall watchdog governed by STALL_SECONDS=1800. That variable has
+# never existed; scripts/codex-review-with-progress.sh loops on `kill -0` until
+# codex exits and enforces no timeout whatsoever. Repointing the sentence at
+# the wrapper that DOES exist would have satisfied the path check while leaving
+# the operational promise just as false — and harder to spot, because the path
+# now resolves. A consumer with a hung review had no protection and no knob.
+#
+# So: if a doc names a control variable, that variable must exist in code.
+test_doc_named_control_vars_exist_in_code() {
+    local bad="" para
+    # This started as "no doc may name a control variable that does not exist,"
+    # seeded with the one variable that had burned us. Both reviewers rejected
+    # it independently and they were right: it is the unwinnable denylist of
+    # ROADMAP #495(a). Rename the phantom (REVIEW_STALL_TIMEOUT), or drop the
+    # variable name entirely — "already has a built-in 30-minute stall
+    # watchdog" — and the check never fires. It also accepted ANY occurrence in
+    # scripts/, so `# TODO: add STALL_SECONDS` would "prove" implementation.
+    #
+    # Inverted to a positive assertion on the paragraph that DEFINES the
+    # behaviour, which is a fixed target rather than an open-ended space of
+    # wrong spellings. This is the shape #495(a) recommends.
+    para=$(grep -h 'Always launch codex via' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" 2>/dev/null)
+
+    if [ -z "$para" ]; then
+        fail "#491: the codex-launch paragraph is gone — this assertion is now vacuous, re-anchor it"
+        return
+    fi
+    printf '%s' "$para" | grep -qiE 'no stall watchdog and no timeout' \
+        || bad="$bad\n  it no longer states plainly that the wrapper has no stall watchdog and no timeout"
+    printf '%s' "$para" | grep -qiE 'kill -0' \
+        || bad="$bad\n  it no longer names the actual mechanism (it loops on kill -0 until codex exits)"
+    # The failure mode that shipped for months: asserting a bounded review.
+    printf '%s' "$para" | grep -qiE '(has|have|with) an? [0-9]+-?(minute|min| )?[a-z ]*(stall )?watchdog' \
+        && bad="$bad\n  it claims a watchdog exists again — no such mechanism is implemented"
+
+    if [ -z "$bad" ]; then
+        pass "#491: the codex-timeout paragraph states the real behaviour (no watchdog, no timeout)"
+    else
+        fail "#491: the codex-timeout paragraph misdescribes what the wrapper does:$(printf '%b' "$bad")"
+    fi
+}
+test_doc_named_control_vars_exist_in_code
 
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
