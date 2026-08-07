@@ -2793,6 +2793,72 @@ test_review_prompts_do_not_suppress_findings
 # it is listed. Verified against `npm pack --dry-run` (8 .md files). Derived
 # rather than hand-listed for the same reason the hook roster is: a hand-listed
 # set silently stops covering whatever nobody remembered to add.
+# Sentence-level judge for both #491 doc guards. Line-level was wrong in BOTH
+# directions: an affirmative claim appended to the canonical line inherited that
+# line's denial credit, while an unrelated systemd watchdog sentence was blocked.
+_doc_claim_report() {
+    python3 - "$1" "$2" <<'PY'
+import re, sys
+mode, path = sys.argv[1], sys.argv[2]
+text = open(path, encoding="utf-8").read()
+base = path.rsplit("/", 1)[-1]
+problems = []
+
+# Split into sentence-ish units. Clause boundaries matter: a maintainer-tooling
+# qualifier before a semicolon must not bless a consumer instruction after it.
+def units(blob):
+    for raw_line in blob.splitlines():
+        for piece in re.split(r'(?<=[.;:])\s+|\s+—\s+', raw_line):
+            if piece.strip():
+                yield raw_line, piece.strip()
+
+if mode == "watchdog":
+    if re.search(r'STALL_SECONDS', text, re.I):
+        problems.append(f"{base} names STALL_SECONDS, a tunable that has never existed")
+    # Only sentences about THIS review wrapper are in scope. A consumer's
+    # systemd watchdog is none of our business.
+    scope = re.compile(r'codex|review|wrapper|stall', re.I)
+    affirm = re.compile(r'\b(has|have|with|supplies|supply|provides|provide|adds|add|includes|include|contains|carries|bounds|bounded|enforces)\b', re.I)
+    negate = re.compile(r'\b(no|not|never|without|nothing|none)\b', re.I)
+    for _line, unit in units(text):
+        if not re.search(r'watchdog', unit, re.I):
+            continue
+        if not scope.search(unit):
+            continue          # unrelated watchdog — legitimately none of ours
+        if affirm.search(unit) and not negate.search(unit):
+            problems.append(f"{base} asserts the wrapper HAS a watchdog: {unit[:100]}")
+elif mode == "scripts":
+    qualifier = re.compile(r'NOT installed|repo-local|maintainer tooling', re.I)
+    for _line, unit in units(text):
+        for ref in sorted(set(re.findall(r'\bscripts/[A-Za-z0-9_./-]+', unit))):
+            ref = ref.rstrip('.,;:)')
+            problems.append(("MISSING", base, ref) if not ref.endswith((".sh", ".py"))
+                            else ("OK", base, ref) if qualifier.search(unit)
+                            else ("UNQUALIFIED", base, ref))
+    problems = [f"{b} names {r} with no repo-local qualifier in its own clause — scripts/ is not packed, so consumers never receive it"
+                for (k, b, r) in problems if k == "UNQUALIFIED"]
+
+if problems:
+    print("\n".join(problems))
+PY
+}
+
+_watchdog_claims_in() { _doc_claim_report watchdog "$1"; }
+
+# Sentinel membership, not a bare non-empty check. Both #491 doc guards iterate
+# this list, so a helper that silently returns nothing turns BOTH into no-ops
+# that pass loudly — the same vacuity the hook roster was guarded against in the
+# very commit that shipped this helper unguarded. Membership also catches a
+# partial derivation, which a non-empty check would wave through.
+_assert_packed_surfaces_sane() {
+    local list
+    list=$(_packed_markdown_surfaces)
+    printf '%s' "$list" | grep -q 'CLAUDE_CODE_SDLC_WIZARD.md' || return 1
+    printf '%s' "$list" | grep -q 'README.md' || return 1
+    printf '%s' "$list" | grep -q 'skills/sdlc/SKILL.md' || return 1
+    return 0
+}
+
 _packed_markdown_surfaces() {
     python3 - "$REPO_ROOT" <<'PY'
 import json, os, sys
@@ -2845,24 +2911,18 @@ test_doc_script_references_exist() {
     # copy, which does not ship at all. CHANGELOG.md is excluded deliberately:
     # it is release history, and history is allowed to name things that were
     # true then.
+    _assert_packed_surfaces_sane || { fail "#491: the packed-surface list is broken — both #491 doc guards would pass vacuously"; return; }
     for doc in $(_packed_markdown_surfaces); do
         [ -f "$doc" ] || continue
         base=$(basename "$doc")
-        while IFS= read -r line; do
-            [ -n "$line" ] || continue
-            # EVERY ref on the line, not just the first. Checking only the head
-            # let a qualified real path shield a phantom later on the same line.
-            while IFS= read -r ref; do
-                [ -n "$ref" ] || continue
-                if [ ! -e "$REPO_ROOT/$ref" ]; then
-                    bad="$bad\n  $base names $ref — no such file anywhere"
-                elif ! printf '%s' "$line" | grep -qiE 'NOT installed|repo-local|maintainer tooling'; then
-                    # scripts/ does not ship. Naming one to a consumer without
-                    # saying so hands them an instruction they cannot follow.
-                    bad="$bad\n  $base names $ref with no repo-local qualifier — scripts/ is not in package.json files, so consumers never receive it"
-                fi
-            done <<< "$(printf '%s' "$line" | grep -ohE '\bscripts/[A-Za-z0-9_./-]+' | sed 's/[.,;:)]*$//' | sort -u)"
-        done <<< "$(grep -hnE '\bscripts/[A-Za-z0-9_./-]+' "$doc" 2>/dev/null)"
+        # Phantom paths: judged per reference, anywhere in the file.
+        while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            [ -e "$REPO_ROOT/$ref" ] || bad="$bad\n  $base names $ref — no such file anywhere"
+        done <<< "$(grep -ohE '\bscripts/[A-Za-z0-9_./-]+' "$doc" 2>/dev/null | sed 's/[.,;:)]*$//' | sort -u)"
+        # Availability qualifiers: judged per CLAUSE, so a maintainer-tooling
+        # note before a semicolon cannot bless a consumer instruction after it.
+        _rep=$(_doc_claim_report scripts "$doc"); [ -n "$_rep" ] && bad="$bad\n  $_rep"
     done
     if [ -z "$bad" ]; then
         pass "#491: no shipped doc points a consumer at a script they do not receive"
@@ -2931,19 +2991,21 @@ test_doc_named_control_vars_exist_in_code
 # a regression pin on a known defect, which is what regression tests are for.
 # No watchdog exists, so every legitimate mention is a denial or a history note.
 test_no_shipped_doc_reasserts_the_phantom_watchdog() {
-    local bad="" doc base hits line
+    local bad="" doc
+    # Judged per SENTENCE, and only for sentences actually about this review
+    # wrapper. Line-level judging was wrong in both directions at once:
+    #
+    #   - Too permissive: "Despite that denial, the wrapper has a built-in
+    #     thirty-minute stall watchdog" appended to the canonical line PASSED,
+    #     because the denial tokens elsewhere on that same line blessed it.
+    #   - Too strict: "configure systemd's watchdog to restart a crashed
+    #     daemon" in README FAILED, though it has nothing to do with this
+    #     wrapper. An over-broad guard that blocks honest future prose is its
+    #     own defect, not extra safety.
+    _assert_packed_surfaces_sane || { fail "#491: the packed-surface list is broken — this watchdog pin would pass vacuously"; return; }
     for doc in $(_packed_markdown_surfaces); do
         [ -f "$doc" ] || continue
-        base=$(basename "$doc")
-        # The dead tunable has no legitimate use in a shipped doc at all.
-        hits=$(grep -n 'STALL_SECONDS' "$doc" 2>/dev/null || true)
-        [ -n "$hits" ] && bad="$bad\n  $base names STALL_SECONDS, a tunable that has never existed: $(printf '%s' "$hits" | head -2 | tr '\n' ' ')"
-        # Any 'watchdog' mention must be a denial or a historical note.
-        while IFS= read -r line; do
-            [ -n "$line" ] || continue
-            printf '%s' "$line" | grep -qiE 'no stall watchdog|no watchdog|never existed|claimed|does not|do not|no timeout|NOT installed' \
-                || bad="$bad\n  $base asserts a watchdog exists — none is implemented: $(printf '%s' "$line" | cut -c1-90)"
-        done <<< "$(grep -niE 'watchdog' "$doc" 2>/dev/null)"
+        _rep=$(_watchdog_claims_in "$doc"); [ -n "$_rep" ] && bad="$bad\n  $_rep"
     done
     if [ -z "$bad" ]; then
         pass "#491: no shipped doc re-asserts the stall watchdog or its phantom tunable"
