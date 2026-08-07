@@ -1511,15 +1511,24 @@ test_wizard_doc_reviewer_is_gpt56() {
     fi
 }
 
-# L113 is a historical audit citation (the E2E benchmark critique actually
-# ran on GPT-5.4 at the time) — must NOT be rewritten.
+# The E2E benchmark critique is a historical audit citation — it really did run
+# on GPT-5.4 — so a repo-wide model-name sweep must NOT "modernise" it.
+#
+# Anchored on content, not a line number. This was pinned to `sed -n '113p'` and
+# broke the moment an unrelated five-line edit landed earlier in the file, which
+# says nothing about the citation and everything about the anchor. A line number
+# is not a property of the thing being asserted (GH #491, line-pinned assertions).
 test_wizard_doc_e2e_audit_citation_untouched() {
     local F="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local line
     if [ ! -f "$F" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
-    if sed -n '113p' "$F" | grep -q "GPT-5\.4"; then
-        pass "CLAUDE_CODE_SDLC_WIZARD.md L113 E2E-audit citation still names GPT-5.4 (historical, untouched)"
+    line=$(grep -h 'rated the benchmark methodology' "$F" 2>/dev/null)
+    if [ -z "$line" ]; then
+        fail "the E2E-benchmark audit citation is gone entirely — re-anchor this assertion, do not delete it"
+    elif printf '%s' "$line" | grep -q "GPT-5\.4"; then
+        pass "wizard doc E2E-audit citation still names GPT-5.4 (historical, untouched)"
     else
-        fail "CLAUDE_CODE_SDLC_WIZARD.md L113 E2E-audit citation no longer names GPT-5.4 — historical citation was rewritten"
+        fail "wizard doc E2E-audit citation no longer names GPT-5.4 — a historical citation was rewritten"
     fi
 }
 
@@ -2778,6 +2787,245 @@ test_review_prompts_do_not_suppress_findings() {
     fi
 }
 test_review_prompts_do_not_suppress_findings
+
+# Every Markdown surface a consumer actually receives, derived from
+# package.json's "files" plus README.md, which npm always packs whether or not
+# it is listed. Verified against `npm pack --dry-run` (8 .md files). Derived
+# rather than hand-listed for the same reason the hook roster is: a hand-listed
+# set silently stops covering whatever nobody remembered to add.
+# Sentence-level judge for both #491 doc guards. Line-level was wrong in BOTH
+# directions: an affirmative claim appended to the canonical line inherited that
+# line's denial credit, while an unrelated systemd watchdog sentence was blocked.
+_doc_claim_report() {
+    python3 - "$1" "$2" <<'PY'
+import re, sys
+mode, path = sys.argv[1], sys.argv[2]
+text = open(path, encoding="utf-8").read()
+base = path.rsplit("/", 1)[-1]
+problems = []
+
+# Split into sentence-ish units. Clause boundaries matter: a maintainer-tooling
+# qualifier before a semicolon must not bless a consumer instruction after it.
+def units(blob, boundary=r'[.;:!?]'):
+    # Markdown markup must not weld two sentences together. The splitter used
+    # to require punctuation followed by WHITESPACE, so a bold sentence ending
+    # `...on your behalf.**` never split, and an affirmative claim appended
+    # after it inherited the earlier sentence's denial credit. Same hole let
+    # `scripts/audit-session-load.sh;**` shield a later consumer instruction.
+    # Emphasis markers are formatting, not meaning: drop them before splitting.
+    for raw_line in blob.splitlines():
+        flat = re.sub(r'[*_`]+', '', raw_line)
+        for piece in re.split(r'(?<=' + boundary + r')[\s)\]"\u2019]*\s+|\s+\u2014\s+', flat):
+            if piece.strip():
+                yield raw_line, piece.strip()
+
+if mode == "watchdog":
+    if re.search(r'STALL_SECONDS', text, re.I):
+        problems.append(f"{base} names STALL_SECONDS, a tunable that has never existed")
+    # Only sentences about THIS review wrapper are in scope. A consumer's
+    # systemd watchdog is none of our business.
+    scope = re.compile(r'codex|wrapper|stall watchdog|reviews?\s+(?:are|is)\s+bounded|bounds?\s+(?:every|each|all)\s+reviews?', re.I)
+    affirm = re.compile(r'\b(has|have|with|supplies|supply|provides|provide|adds|add|includes|include|contains|carries|bounds|bounded|enforces)\b', re.I)
+    negate = re.compile(r'\b(no|not|never|without|nothing|none|false|falsely|wrongly|incorrect|untrue)\b', re.I)
+    # Sentence-level here, not clause-level: a semicolon joins related
+    # independent clauses, so a correction after it governs the whole
+    # sentence — "...includes a stall watchdog; that claim was false" is one
+    # honest statement, and splitting it severed the correction. The scripts
+    # guard below keeps clause-level splitting, because a qualifier must be
+    # local to its reference.
+    for _line, unit in units(text, boundary=r'[.!?]'):
+        if not re.search(r'watchdog', unit, re.I):
+            continue
+        if not scope.search(unit):
+            continue          # unrelated watchdog — legitimately none of ours
+        if affirm.search(unit) and not negate.search(unit):
+            problems.append(f"{base} asserts the wrapper HAS a watchdog: {unit[:100]}")
+elif mode == "scripts":
+    qualifier = re.compile(r'NOT installed|repo-local|maintainer tooling', re.I)
+    for _line, unit in units(text):
+        for ref in sorted(set(re.findall(r'\bscripts/[A-Za-z0-9_./-]+', unit))):
+            ref = ref.rstrip('.,;:)')
+            problems.append(("OK", base, ref) if qualifier.search(unit)
+                            else ("UNQUALIFIED", base, ref))
+    problems = [f"{b} names {r} with no repo-local qualifier in its own clause — scripts/ is not packed, so consumers never receive it"
+                for (k, b, r) in problems if k == "UNQUALIFIED"]
+
+if problems:
+    print("\n".join(problems))
+PY
+}
+
+_watchdog_claims_in() { _doc_claim_report watchdog "$1"; }
+
+# Sentinel membership, not a bare non-empty check. Both #491 doc guards iterate
+# this list, so a helper that silently returns nothing turns BOTH into no-ops
+# that pass loudly — the same vacuity the hook roster was guarded against in the
+# very commit that shipped this helper unguarded. Membership also catches a
+# partial derivation, which a non-empty check would wave through.
+_assert_packed_surfaces_sane() {
+    local list
+    list=$(_packed_markdown_surfaces)
+    printf '%s' "$list" | grep -q 'CLAUDE_CODE_SDLC_WIZARD.md' || return 1
+    printf '%s' "$list" | grep -q 'README.md' || return 1
+    printf '%s' "$list" | grep -q 'skills/sdlc/SKILL.md' || return 1
+    return 0
+}
+
+_packed_markdown_surfaces() {
+    python3 - "$REPO_ROOT" <<'PY'
+import json, os, sys
+root = sys.argv[1]
+with open(os.path.join(root, "package.json")) as fh:
+    entries = json.load(fh).get("files", [])
+out = []
+def add(rel):
+    if rel.endswith(".md") and os.path.isfile(os.path.join(root, rel)):
+        out.append(rel)
+for entry in entries:
+    path = os.path.join(root, entry)
+    if os.path.isdir(path):
+        for dirpath, _dirs, names in os.walk(path):
+            for name in names:
+                add(os.path.relpath(os.path.join(dirpath, name), root))
+    else:
+        add(entry)
+add("README.md")  # npm packs README.md implicitly
+# Release history may legitimately name things that were true at the time.
+print("\n".join(os.path.join(root, p) for p in sorted(set(out))
+                if os.path.basename(p) != "CHANGELOG.md"))
+PY
+}
+
+# ---- GH #491 Class 1: phantom script paths in docs ----
+#
+# CLAUDE_CODE_SDLC_WIZARD.md told every consumer that "the wrapper
+# scripts/codex-review.sh already has a 30-min stall watchdog." That file has
+# never existed under any name but codex-review-with-progress.sh, so a reader
+# following the sentence finds nothing and the stated safety property is
+# unverifiable. A named path either resolves or it is a false assurance;
+# checking existence is mechanical, so no reviewer should have to catch this.
+#
+# Scoped to scripts/ deliberately. A generic any-path check would drown in
+# consumer-side example paths (src/, tests/foo) that correctly do not exist here.
+test_doc_script_references_exist() {
+    local bad=""
+    local doc ref base line
+    # Existence on the maintainer's disk is the WRONG question, and asking it
+    # was the first version of this test. `scripts/` is absent from
+    # package.json's "files" list, so `npm pack` ships none of it: a path can
+    # resolve perfectly here and be a phantom for every consumer. That is the
+    # same defect class one level out — which is why a shipped doc naming a
+    # repo-local script must say so on the same line.
+    # The doc list is the packed set, not a hand-picked one. A hand-picked list
+    # omitted README.md (npm ships it implicitly, regardless of "files"),
+    # skills/feedback/SKILL.md and skills/update/SKILL.md — a phantom path in
+    # README.md passed the whole suite — while wasting effort on the cowork
+    # copy, which does not ship at all. CHANGELOG.md is excluded deliberately:
+    # it is release history, and history is allowed to name things that were
+    # true then.
+    _assert_packed_surfaces_sane || { fail "#491: the packed-surface list is broken — both #491 doc guards would pass vacuously"; return; }
+    for doc in $(_packed_markdown_surfaces); do
+        [ -f "$doc" ] || continue
+        base=$(basename "$doc")
+        # Phantom paths: judged per reference, anywhere in the file.
+        while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            [ -e "$REPO_ROOT/$ref" ] || bad="$bad\n  $base names $ref — no such file anywhere"
+        done <<< "$(grep -ohE '\bscripts/[A-Za-z0-9_./-]+' "$doc" 2>/dev/null | sed 's/[.,;:)]*$//' | sort -u)"
+        # Availability qualifiers: judged per CLAUSE, so a maintainer-tooling
+        # note before a semicolon cannot bless a consumer instruction after it.
+        _rep=$(_doc_claim_report scripts "$doc"); [ -n "$_rep" ] && bad="$bad\n  $_rep"
+    done
+    if [ -z "$bad" ]; then
+        pass "#491: no shipped doc points a consumer at a script they do not receive"
+    else
+        fail "#491: shipped doc names a script the consumer never gets:$(printf '%b' "$bad")"
+    fi
+}
+test_doc_script_references_exist
+
+# ---- GH #491 Class 1, second half: named mechanisms must be real ----
+#
+# The path check above is necessary but NOT sufficient, and this test exists
+# because fixing the path alone was the wrong fix. The wizard doc promised a
+# 30-minute stall watchdog governed by STALL_SECONDS=1800. That variable has
+# never existed; scripts/codex-review-with-progress.sh loops on `kill -0` until
+# codex exits and enforces no timeout whatsoever. Repointing the sentence at
+# the wrapper that DOES exist would have satisfied the path check while leaving
+# the operational promise just as false — and harder to spot, because the path
+# now resolves. A consumer with a hung review had no protection and no knob.
+#
+# So: if a doc names a control variable, that variable must exist in code.
+test_doc_named_control_vars_exist_in_code() {
+    local bad="" para
+    # This started as "no doc may name a control variable that does not exist,"
+    # seeded with the one variable that had burned us. Both reviewers rejected
+    # it independently and they were right: it is the unwinnable denylist of
+    # ROADMAP #495(a). Rename the phantom (REVIEW_STALL_TIMEOUT), or drop the
+    # variable name entirely — "already has a built-in 30-minute stall
+    # watchdog" — and the check never fires. It also accepted ANY occurrence in
+    # scripts/, so `# TODO: add STALL_SECONDS` would "prove" implementation.
+    #
+    # Inverted to a positive assertion on the paragraph that DEFINES the
+    # behaviour, which is a fixed target rather than an open-ended space of
+    # wrong spellings. This is the shape #495(a) recommends.
+    para=$(grep -h 'Always launch codex via' "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" 2>/dev/null)
+
+    if [ -z "$para" ]; then
+        fail "#491: the codex-launch paragraph is gone — this assertion is now vacuous, re-anchor it"
+        return
+    fi
+    printf '%s' "$para" | grep -qiE 'no stall watchdog and no timeout' \
+        || bad="$bad\n  it no longer states plainly that the wrapper has no stall watchdog and no timeout"
+    printf '%s' "$para" | grep -qiE 'kill -0' \
+        || bad="$bad\n  it no longer names the actual mechanism (it loops on kill -0 until codex exits)"
+    # The failure mode that shipped for months: asserting a bounded review.
+    printf '%s' "$para" | grep -qiE '(has|have|with) an? [0-9]+-?(minute|min| )?[a-z ]*(stall )?watchdog' \
+        && bad="$bad\n  it claims a watchdog exists again — no such mechanism is implemented"
+
+    if [ -z "$bad" ]; then
+        pass "#491: the codex-timeout paragraph states the real behaviour (no watchdog, no timeout)"
+    else
+        fail "#491: the codex-timeout paragraph misdescribes what the wrapper does:$(printf '%b' "$bad")"
+    fi
+}
+test_doc_named_control_vars_exist_in_code
+
+# ---- GH #491: the burned tokens, pinned across every shipped surface ----
+#
+# The paragraph assertion above proves ONE paragraph is honest. Both reviewers
+# then walked around it: the verbatim original sentence pasted into the parallel
+# codex callout passed, as did re-adding STALL_SECONDS to skills/sdlc/SKILL.md,
+# and "a built-in thirty-minute stall watchdog" defeated a digit-based regex.
+#
+# This is NOT the #495(a) arms race. That failure mode is enumerating unknown
+# future spellings. This pins two tokens that have already shipped as lies —
+# a regression pin on a known defect, which is what regression tests are for.
+# No watchdog exists, so every legitimate mention is a denial or a history note.
+test_no_shipped_doc_reasserts_the_phantom_watchdog() {
+    local bad="" doc
+    # Judged per SENTENCE, and only for sentences actually about this review
+    # wrapper. Line-level judging was wrong in both directions at once:
+    #
+    #   - Too permissive: "Despite that denial, the wrapper has a built-in
+    #     thirty-minute stall watchdog" appended to the canonical line PASSED,
+    #     because the denial tokens elsewhere on that same line blessed it.
+    #   - Too strict: "configure systemd's watchdog to restart a crashed
+    #     daemon" in README FAILED, though it has nothing to do with this
+    #     wrapper. An over-broad guard that blocks honest future prose is its
+    #     own defect, not extra safety.
+    _assert_packed_surfaces_sane || { fail "#491: the packed-surface list is broken — this watchdog pin would pass vacuously"; return; }
+    for doc in $(_packed_markdown_surfaces); do
+        [ -f "$doc" ] || continue
+        _rep=$(_watchdog_claims_in "$doc"); [ -n "$_rep" ] && bad="$bad\n  $_rep"
+    done
+    if [ -z "$bad" ]; then
+        pass "#491: no shipped doc re-asserts the stall watchdog or its phantom tunable"
+    else
+        fail "#491: a shipped surface promises the watchdog again:$(printf '%b' "$bad")"
+    fi
+}
+test_no_shipped_doc_reasserts_the_phantom_watchdog
 
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 

@@ -283,7 +283,18 @@ if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && command -v claude > /dev/null 2>&1 && com
         fi
 
         if [ -n "$CC_LATEST" ] && semver_lt "$CC_LOCAL" "$CC_LATEST"; then
-            echo "Claude Code update available: ${CC_LOCAL} → ${CC_LATEST} (run: npm install -g @anthropic-ai/claude-code)"
+            # Do NOT name a single install channel here (GH #476). The old text
+            # named the global npm install unconditionally.
+            # Stated precisely, because the earlier fix overstated it: the docs
+            # do NOT ban a non-sudo global npm install — they mark the native
+            # install "Recommended", warn specifically against `sudo npm -g`
+            # (it creates the ownership problems that break later updates), and
+            # this hook cannot tell which channel installed the running binary.
+            # Naming npm therefore risks telling a Homebrew/apt/WinGet user to
+            # switch channels, which is its own breakage. `claude update` covers
+            # native and npm; package-managed installs must go through their
+            # manager, which `claude update` reports as already current.
+            echo "Claude Code update available: ${CC_LOCAL} → ${CC_LATEST} (native or npm: run 'claude update'; installed via a package manager such as brew/apt/dnf/apk/winget: update through that manager)"
         fi
     fi
 fi

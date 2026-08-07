@@ -48,16 +48,120 @@ trap cleanup EXIT
 echo "=== Hook stdin boundedness (#491 Class 2) ==="
 echo ""
 
-# Every hook that reads stdin. Paths relative to REPO_ROOT.
-HOOKS="
-hooks/sdlc-prompt-check.sh
-hooks/codex-gate-check.sh
-hooks/tdd-pretool-check.sh
-hooks/codex-review-stop-check.sh
-hooks/precompact-seam-check.sh
-hooks/token-spike-check.sh
+# Every shipped hook, DERIVED from the manifest — never hand-listed.
+#
+# This list used to be hardcoded, and that is precisely how the v1.94.0
+# regression shipped: model-effort-check.sh was never in it, so the suite
+# reported the hang class fixed while one hook still drained stdin with a bare
+# `cat`. A hand-maintained roster of things-to-check silently stops covering
+# whatever nobody remembered to add. Deriving from hooks/hooks.json means a
+# newly registered hook is in scope the moment it is registered.
+#
+# .claude/hooks/merge-gate-check.sh is appended separately: it is repo-local by
+# design (never shipped) so it cannot appear in the shipped manifest.
+# Walk the manifest's actual "command" fields rather than regexing the blob for
+# a flat hooks/<name>.sh shape. The flat pattern missed any hook registered in a
+# subdirectory: a blocking hooks/nested/hang.sh was reported as covered while
+# never being executed, and the coverage guard repeated the same blind spot, so
+# the pair agreed on an answer that was wrong.
+#
+# Defined as a variable, not inlined into $( ... ): bash cannot parse a heredoc
+# containing unbalanced parentheses inside a command substitution.
+read -r -d '' EXTRACT_HOOKS <<'PY' || true
+import json, re, sys
+def commands(node):
+    if isinstance(node, dict):
+        if isinstance(node.get("command"), str):
+            yield node["command"]
+        for v in node.values():
+            yield from commands(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from commands(v)
+with open(sys.argv[1]) as fh:
+    manifest = json.load(fh)
+seen = set()
+for cmd in commands(manifest):
+    m = re.search(r'((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+[.]sh)', cmd)
+    if m:
+        seen.add(m.group(1))
+print("\n".join(sorted(seen)))
+PY
+
+HOOKS="$(printf '%s' "$EXTRACT_HOOKS" | python3 - "$REPO_ROOT/hooks/hooks.json")
 .claude/hooks/merge-gate-check.sh
 "
+
+# Guard the derivation itself. An extractor that returns nothing turns the
+# hang test into a no-op that passes loudly — the exact vacuous-test shape this
+# repo keeps rediscovering. Assert the roster is non-trivial AND covers every
+# .sh the manifest names.
+# Executing the extracted script only equals executing the registered command
+# if the command IS the script. Claude Code runs the whole string through a
+# shell, so `cat > /dev/null; ${CLAUDE_PLUGIN_ROOT}/hooks/x.sh` is an
+# indefinitely blocking shipped hook whose blocking half we would never run.
+#
+# Rather than simulate a shell — which invites quoting bugs in the test itself
+# — assert the property that makes the simpler execution valid: every command
+# is a bare script invocation. If that ever stops being true, this fails and
+# says the harness must be extended before the new shape can ship.
+test_manifest_commands_are_bare_script_invocations() {
+    local offenders
+    offenders=$(python3 - "$REPO_ROOT/hooks/hooks.json" <<'PY'
+import json, re, sys
+def commands(node):
+    if isinstance(node, dict):
+        if isinstance(node.get("command"), str):
+            yield node["command"]
+        for v in node.values():
+            yield from commands(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from commands(v)
+with open(sys.argv[1]) as fh:
+    manifest = json.load(fh)
+bad = []
+bare = re.compile(r'^\s*(?:\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT)?/?(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.sh\s*$')
+for cmd in commands(manifest):
+    if not bare.match(cmd):
+        bad.append(cmd)
+if bad:
+    print("\n".join(bad))
+PY
+)
+    if [ -z "$offenders" ]; then
+        pass "every hooks.json command is a bare script invocation (so running the script == running the command)"
+    else
+        fail "a hooks.json command is not a bare script path — the stdin harness runs the script alone and would miss the rest of the command:
+$offenders"
+    fi
+}
+test_manifest_commands_are_bare_script_invocations
+
+test_hook_roster_is_derived_and_complete() {
+    local declared one missing="" count
+    # Compare against the SEMANTIC set of commands in the manifest, not a flat
+    # basename grep. The guard previously repeated the extractor's own blind
+    # spot, so a nested hook was invisible to both and the pair agreed on an
+    # answer that was wrong.
+    declared=$(printf '%s' "$EXTRACT_HOOKS" | python3 - "$REPO_ROOT/hooks/hooks.json")
+    if [ -z "$declared" ]; then
+        fail "hooks.json names no .sh command — the extractor or the manifest broke"
+        return
+    fi
+    for one in $declared; do
+        printf '%s' "$HOOKS" | grep -qx "[[:space:]]*$one[[:space:]]*" \
+            || printf '%s' "$HOOKS" | tr ' ' '\n' | grep -qx "$one" \
+            || missing="$missing $one"
+    done
+    count=$(printf '%s\n' $declared | wc -l | tr -d ' ')
+    if [ -n "$missing" ]; then
+        fail "hook roster does not cover every manifest command — untested hooks:$missing"
+    else
+        pass "hook roster derived from hooks.json covers all $count registered hooks (any depth)"
+    fi
+}
+test_hook_roster_is_derived_and_complete
 
 # Run a hook with stdin attached to a pipe that never closes.
 # Returns 0 if the hook exited on its own within $limit seconds, 1 if it had
@@ -102,15 +206,26 @@ run_with_open_stdin() {
 # 15s is generous — the hooks' own read timeout should fire well before it.
 # ────────────────────────────────────────────
 test_hooks_do_not_hang_on_open_stdin() {
-    local hook hung=""
+    local hook hung="" absent="" checked=0
     for hook in $HOOKS; do
-        [ -f "$REPO_ROOT/$hook" ] || continue
+        # Do NOT silently `continue` on a missing file: a roster entry that
+        # does not resolve is an untested hook, which is the failure being
+        # guarded against, not a reason to score a pass.
+        if [ ! -f "$REPO_ROOT/$hook" ]; then
+            absent="$absent $hook"
+            continue
+        fi
+        checked=$((checked + 1))
         if ! run_with_open_stdin "$hook" 15; then
             hung="$hung $hook"
         fi
     done
 
-    if [ -z "$hung" ]; then
+    if [ -n "$absent" ]; then
+        fail "rostered hook file does not exist — it was never exercised:$absent"
+    elif [ "$checked" -eq 0 ]; then
+        fail "zero hooks exercised — the roster is empty and this test proves nothing"
+    elif [ -z "$hung" ]; then
         pass "no shipped hook hangs when stdin never reaches EOF"
     else
         fail "hooks blocked forever on an open stdin — this is the 10h19m hang:
