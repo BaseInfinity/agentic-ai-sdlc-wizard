@@ -294,7 +294,7 @@ if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && command -v claude > /dev/null 2>&1 && com
             # switch channels, which is its own breakage. `claude update` covers
             # native and npm; package-managed installs must go through their
             # manager, which `claude update` reports as already current.
-            echo "Claude Code update available: ${CC_LOCAL} → ${CC_LATEST} (native/npm: run 'claude update'; brew/apt/winget: update via that package manager)"
+            echo "Claude Code update available: ${CC_LOCAL} → ${CC_LATEST} (native or npm: run 'claude update'; installed via a package manager such as brew/apt/dnf/apk/winget: update through that manager)"
         fi
     fi
 fi

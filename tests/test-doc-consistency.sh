@@ -2788,6 +2788,36 @@ test_review_prompts_do_not_suppress_findings() {
 }
 test_review_prompts_do_not_suppress_findings
 
+# Every Markdown surface a consumer actually receives, derived from
+# package.json's "files" plus README.md, which npm always packs whether or not
+# it is listed. Verified against `npm pack --dry-run` (8 .md files). Derived
+# rather than hand-listed for the same reason the hook roster is: a hand-listed
+# set silently stops covering whatever nobody remembered to add.
+_packed_markdown_surfaces() {
+    python3 - "$REPO_ROOT" <<'PY'
+import json, os, sys
+root = sys.argv[1]
+with open(os.path.join(root, "package.json")) as fh:
+    entries = json.load(fh).get("files", [])
+out = []
+def add(rel):
+    if rel.endswith(".md") and os.path.isfile(os.path.join(root, rel)):
+        out.append(rel)
+for entry in entries:
+    path = os.path.join(root, entry)
+    if os.path.isdir(path):
+        for dirpath, _dirs, names in os.walk(path):
+            for name in names:
+                add(os.path.relpath(os.path.join(dirpath, name), root))
+    else:
+        add(entry)
+add("README.md")  # npm packs README.md implicitly
+# Release history may legitimately name things that were true at the time.
+print("\n".join(os.path.join(root, p) for p in sorted(set(out))
+                if os.path.basename(p) != "CHANGELOG.md"))
+PY
+}
+
 # ---- GH #491 Class 1: phantom script paths in docs ----
 #
 # CLAUDE_CODE_SDLC_WIZARD.md told every consumer that "the wrapper
@@ -2808,22 +2838,30 @@ test_doc_script_references_exist() {
     # resolve perfectly here and be a phantom for every consumer. That is the
     # same defect class one level out — which is why a shipped doc naming a
     # repo-local script must say so on the same line.
-    for doc in "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" "$REPO_ROOT/AI_SETUP_LANES.md" \
-               "$REPO_ROOT/skills/sdlc/SKILL.md" "$REPO_ROOT/skills/setup/SKILL.md" \
-               "$REPO_ROOT/cowork/skills/sdlc/SKILL.md"; do
+    # The doc list is the packed set, not a hand-picked one. A hand-picked list
+    # omitted README.md (npm ships it implicitly, regardless of "files"),
+    # skills/feedback/SKILL.md and skills/update/SKILL.md — a phantom path in
+    # README.md passed the whole suite — while wasting effort on the cowork
+    # copy, which does not ship at all. CHANGELOG.md is excluded deliberately:
+    # it is release history, and history is allowed to name things that were
+    # true then.
+    for doc in $(_packed_markdown_surfaces); do
         [ -f "$doc" ] || continue
         base=$(basename "$doc")
         while IFS= read -r line; do
             [ -n "$line" ] || continue
-            ref=$(printf '%s' "$line" | grep -ohE '\bscripts/[A-Za-z0-9_./-]+' | head -1)
-            [ -n "$ref" ] || continue
-            if [ ! -e "$REPO_ROOT/$ref" ]; then
-                bad="$bad\n  $base names $ref — no such file anywhere"
-            elif ! printf '%s' "$line" | grep -qiE 'NOT installed|repo-local|maintainer tooling'; then
-                # scripts/ does not ship. Naming one to a consumer without
-                # saying so hands them an instruction they cannot follow.
-                bad="$bad\n  $base names $ref with no repo-local qualifier — scripts/ is not in package.json files, so consumers never receive it"
-            fi
+            # EVERY ref on the line, not just the first. Checking only the head
+            # let a qualified real path shield a phantom later on the same line.
+            while IFS= read -r ref; do
+                [ -n "$ref" ] || continue
+                if [ ! -e "$REPO_ROOT/$ref" ]; then
+                    bad="$bad\n  $base names $ref — no such file anywhere"
+                elif ! printf '%s' "$line" | grep -qiE 'NOT installed|repo-local|maintainer tooling'; then
+                    # scripts/ does not ship. Naming one to a consumer without
+                    # saying so hands them an instruction they cannot follow.
+                    bad="$bad\n  $base names $ref with no repo-local qualifier — scripts/ is not in package.json files, so consumers never receive it"
+                fi
+            done <<< "$(printf '%s' "$line" | grep -ohE '\bscripts/[A-Za-z0-9_./-]+' | sed 's/[.,;:)]*$//' | sort -u)"
         done <<< "$(grep -hnE '\bscripts/[A-Za-z0-9_./-]+' "$doc" 2>/dev/null)"
     done
     if [ -z "$bad" ]; then
@@ -2880,6 +2918,40 @@ test_doc_named_control_vars_exist_in_code() {
     fi
 }
 test_doc_named_control_vars_exist_in_code
+
+# ---- GH #491: the burned tokens, pinned across every shipped surface ----
+#
+# The paragraph assertion above proves ONE paragraph is honest. Both reviewers
+# then walked around it: the verbatim original sentence pasted into the parallel
+# codex callout passed, as did re-adding STALL_SECONDS to skills/sdlc/SKILL.md,
+# and "a built-in thirty-minute stall watchdog" defeated a digit-based regex.
+#
+# This is NOT the #495(a) arms race. That failure mode is enumerating unknown
+# future spellings. This pins two tokens that have already shipped as lies —
+# a regression pin on a known defect, which is what regression tests are for.
+# No watchdog exists, so every legitimate mention is a denial or a history note.
+test_no_shipped_doc_reasserts_the_phantom_watchdog() {
+    local bad="" doc base hits line
+    for doc in $(_packed_markdown_surfaces); do
+        [ -f "$doc" ] || continue
+        base=$(basename "$doc")
+        # The dead tunable has no legitimate use in a shipped doc at all.
+        hits=$(grep -n 'STALL_SECONDS' "$doc" 2>/dev/null || true)
+        [ -n "$hits" ] && bad="$bad\n  $base names STALL_SECONDS, a tunable that has never existed: $(printf '%s' "$hits" | head -2 | tr '\n' ' ')"
+        # Any 'watchdog' mention must be a denial or a historical note.
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            printf '%s' "$line" | grep -qiE 'no stall watchdog|no watchdog|never existed|claimed|does not|do not|no timeout|NOT installed' \
+                || bad="$bad\n  $base asserts a watchdog exists — none is implemented: $(printf '%s' "$line" | cut -c1-90)"
+        done <<< "$(grep -niE 'watchdog' "$doc" 2>/dev/null)"
+    done
+    if [ -z "$bad" ]; then
+        pass "#491: no shipped doc re-asserts the stall watchdog or its phantom tunable"
+    else
+        fail "#491: a shipped surface promises the watchdog again:$(printf '%b' "$bad")"
+    fi
+}
+test_no_shipped_doc_reasserts_the_phantom_watchdog
 
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
