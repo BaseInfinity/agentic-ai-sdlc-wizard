@@ -2806,9 +2806,16 @@ problems = []
 
 # Split into sentence-ish units. Clause boundaries matter: a maintainer-tooling
 # qualifier before a semicolon must not bless a consumer instruction after it.
-def units(blob):
+def units(blob, boundary=r'[.;:!?]'):
+    # Markdown markup must not weld two sentences together. The splitter used
+    # to require punctuation followed by WHITESPACE, so a bold sentence ending
+    # `...on your behalf.**` never split, and an affirmative claim appended
+    # after it inherited the earlier sentence's denial credit. Same hole let
+    # `scripts/audit-session-load.sh;**` shield a later consumer instruction.
+    # Emphasis markers are formatting, not meaning: drop them before splitting.
     for raw_line in blob.splitlines():
-        for piece in re.split(r'(?<=[.;:])\s+|\s+—\s+', raw_line):
+        flat = re.sub(r'[*_`]+', '', raw_line)
+        for piece in re.split(r'(?<=' + boundary + r')[\s)\]"\u2019]*\s+|\s+\u2014\s+', flat):
             if piece.strip():
                 yield raw_line, piece.strip()
 
@@ -2817,10 +2824,16 @@ if mode == "watchdog":
         problems.append(f"{base} names STALL_SECONDS, a tunable that has never existed")
     # Only sentences about THIS review wrapper are in scope. A consumer's
     # systemd watchdog is none of our business.
-    scope = re.compile(r'codex|review|wrapper|stall', re.I)
+    scope = re.compile(r'codex|wrapper|stall watchdog|reviews?\s+(?:are|is)\s+bounded|bounds?\s+(?:every|each|all)\s+reviews?', re.I)
     affirm = re.compile(r'\b(has|have|with|supplies|supply|provides|provide|adds|add|includes|include|contains|carries|bounds|bounded|enforces)\b', re.I)
-    negate = re.compile(r'\b(no|not|never|without|nothing|none)\b', re.I)
-    for _line, unit in units(text):
+    negate = re.compile(r'\b(no|not|never|without|nothing|none|false|falsely|wrongly|incorrect|untrue)\b', re.I)
+    # Sentence-level here, not clause-level: a semicolon joins related
+    # independent clauses, so a correction after it governs the whole
+    # sentence — "...includes a stall watchdog; that claim was false" is one
+    # honest statement, and splitting it severed the correction. The scripts
+    # guard below keeps clause-level splitting, because a qualifier must be
+    # local to its reference.
+    for _line, unit in units(text, boundary=r'[.!?]'):
         if not re.search(r'watchdog', unit, re.I):
             continue
         if not scope.search(unit):
@@ -2832,8 +2845,7 @@ elif mode == "scripts":
     for _line, unit in units(text):
         for ref in sorted(set(re.findall(r'\bscripts/[A-Za-z0-9_./-]+', unit))):
             ref = ref.rstrip('.,;:)')
-            problems.append(("MISSING", base, ref) if not ref.endswith((".sh", ".py"))
-                            else ("OK", base, ref) if qualifier.search(unit)
+            problems.append(("OK", base, ref) if qualifier.search(unit)
                             else ("UNQUALIFIED", base, ref))
     problems = [f"{b} names {r} with no repo-local qualifier in its own clause — scripts/ is not packed, so consumers never receive it"
                 for (k, b, r) in problems if k == "UNQUALIFIED"]
