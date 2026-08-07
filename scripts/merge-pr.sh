@@ -291,10 +291,38 @@ fi
 PR_NUM="$1"
 shift
 CROSS_MODEL_CLEARED=0
+USER_APPROVED_REASON=""
+WAIVED_PATHS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --cross-model-cleared) CROSS_MODEL_CLEARED=1 ;;
-        *) echo "Usage: scripts/merge-pr.sh <PR_NUMBER> [--cross-model-cleared]" >&2; exit 1 ;;
+        --user-approved)
+            # The reason is REQUIRED. A bare flag would be a silent bypass
+            # wearing an audit trail's clothes (ROADMAP #479).
+            shift
+            if [ $# -eq 0 ] || [ -z "$1" ]; then
+                echo "BLOCKED: --user-approved requires a non-empty reason, e.g. --user-approved \"maintainer decision: shipping the hook fix, certified round 3\". An override with no stated reason is unauditable." >&2
+                exit 1
+            fi
+            # A flag is not a reason. `--user-approved --cross-model-cleared`
+            # otherwise consumed the NEXT FLAG as the justification and fired a
+            # full override whose recorded reason was the literal string
+            # "--cross-model-cleared". Found by probing argument shapes before
+            # review reported; the two happy-path assertions did not cover it.
+            case "$1" in
+                -*)
+                    echo "BLOCKED: --user-approved's reason cannot start with '-' (got '$1'). That is a flag, not a decision — quote a real reason: --user-approved \"why you are overriding\"." >&2
+                    exit 1
+                    ;;
+            esac
+            # Whitespace is not a reason either.
+            if [ -z "$(printf '%s' "$1" | tr -d '[:space:]')" ]; then
+                echo "BLOCKED: --user-approved's reason is only whitespace. An override recorded with a blank reason is unauditable." >&2
+                exit 1
+            fi
+            USER_APPROVED_REASON="$1"
+            ;;
+        *) echo "Usage: scripts/merge-pr.sh <PR_NUMBER> [--cross-model-cleared] [--user-approved \"<reason>\"]" >&2; exit 1 ;;
     esac
     shift
 done
@@ -393,7 +421,23 @@ fi
         [ -z "$f" ] && continue
         for pattern in "${HARD_DENY[@]}"; do
             if printf '%s' "$f" | grep -qiE "$pattern"; then
-                echo "BLOCKED: PR #$PR_NUM touches '$f', part of the merge-evidence chain ($pattern). --cross-model-cleared does NOT apply here: on these paths the PR defines its own CI check, runs its own gate, and posts its own clearance, so every leg of the evidence would be self-produced. A human decides this one." >&2
+                if [ -n "$USER_APPROVED_REASON" ]; then
+                    # HARD_DENY's own message says "a human decides this one",
+                    # and until now offered no way to say so — the maintainer's
+                    # only route was the GitHub UI, which bypasses this harness
+                    # entirely and leaves NO record in the repo.
+                    #
+                    # Stated honestly: this does NOT prove a human typed it.
+                    # Nothing available to a local script can. What it changes
+                    # is that an override becomes explicit, reasoned and logged
+                    # instead of silent and out-of-band. Do not describe it as
+                    # proof of human authorship.
+                    echo "USER-APPROVED OVERRIDE: PR #$PR_NUM touches '$f' ($pattern), a merge-evidence path where self-produced clearance cannot apply. Proceeding on the stated human decision:" >&2
+                    echo "  reason:   $USER_APPROVED_REASON" >&2
+                    WAIVED_PATHS="$WAIVED_PATHS$f (merge-evidence path)\n"
+                    continue
+                fi
+                echo "BLOCKED: PR #$PR_NUM touches '$f', part of the merge-evidence chain ($pattern). --cross-model-cleared does NOT apply here: on these paths the PR defines its own CI check, runs its own gate, and posts its own clearance, so every leg of the evidence would be self-produced. A human decides this one. If you ARE the human and have decided, re-run with --user-approved \"<reason>\" — it merges and records the reason." >&2
                 exit 1
             fi
         done
@@ -404,11 +448,22 @@ fi
         [ -z "$f" ] && continue
         for pattern in "${ACKABLE_DENY[@]}"; do
             if printf '%s' "$f" | grep -qiE "$pattern"; then
+                if [ -n "$USER_APPROVED_REASON" ]; then
+                    # A human authorised to override the tier that DECIDES
+                    # whether a merge is allowed is necessarily authorised to
+                    # override the tier that merely steers behaviour. Requiring
+                    # a second, different flag for the lesser bar is incoherent
+                    # — found live merging PR #494, where --user-approved
+                    # cleared six hooks/ paths and then blocked on a doc.
+                    echo "USER-APPROVED OVERRIDE: '$f' is guidance this PR changes, normally cleared by posted review. Proceeding on the stated human decision." >&2
+                    WAIVED_PATHS="$WAIVED_PATHS$f (guidance path)\n"
+                    continue
+                fi
                 if [ "$CROSS_MODEL_CLEARED" -eq 1 ] && verify_cross_model_clearance; then
                     echo "DENYLIST ACKNOWLEDGED: '$f' matches $pattern, cleared by $CLEARED_BY. Every other check still ran." >&2
                     continue
                 fi
-                echo "BLOCKED: PR #$PR_NUM touches '$f' ($pattern). Post cross-model clearance to the PR and re-run with --cross-model-cleared." >&2
+                echo "BLOCKED: PR #$PR_NUM changes '$f', a file that steers how future work is done. Clear it either way: post cross-model review to the PR and re-run with --cross-model-cleared, or decide it yourself with --user-approved \"<reason>\"." >&2
                 exit 1
             fi
         done
@@ -423,8 +478,17 @@ fi
         if [ "$f" = "package.json" ]; then
             PKG_PATCH=$(printf '%s' "$PR_FILES" | grep -oE '"filename"[[:space:]]*:[[:space:]]*"package\.json"[^}]*"patch"[[:space:]]*:.*')
             if printf '%s' "$PKG_PATCH" | grep -qE '[+-][[:space:]]*\\"version\\"'; then
-                echo "BLOCKED: PR #$PR_NUM changes package.json's version field — release-adjacent. Explicit user confirmation is required." >&2
-                exit 1
+                if [ -n "$USER_APPROVED_REASON" ]; then
+                    # This check demands "explicit user confirmation", and
+                    # --user-approved with a stated reason IS that confirmation.
+                    # Third instance of the same gap: a gate asking for a human
+                    # decision while providing no way to express one.
+                    echo "USER-APPROVED OVERRIDE: version bump in package.json is release-adjacent and requires explicit confirmation — given, on the stated reason." >&2
+                    WAIVED_PATHS="$WAIVED_PATHS package.json version bump (release-adjacent confirmation)\n"
+                else
+                    echo "BLOCKED: PR #$PR_NUM changes package.json's version field — release-adjacent. Explicit user confirmation is required: re-run with --user-approved \"<reason>\"." >&2
+                    exit 1
+                fi
             fi
         fi
     done <<< "$CLASSIFY_PATHS"
@@ -443,7 +507,7 @@ fi
         | sed 's/.*"previous_filename"[[:space:]]*:[[:space:]]*"//; s/"$//' || true)
     ALL_REMOVED_TESTS=$(printf '%s\n%s' "$DELETED_TESTS" "$RENAMED_OUT_OF_TESTS" | grep -v '^$' || true)
     if [ -n "$ALL_REMOVED_TESTS" ]; then
-        echo "BLOCKED: PR #$PR_NUM net-removes test file(s) (deleted or renamed out of tests/): $ALL_REMOVED_TESTS. Explicit user confirmation is required." >&2
+        echo "BLOCKED: PR #$PR_NUM net-removes test file(s) (deleted or renamed out of tests/): $ALL_REMOVED_TESTS. NOT WAIVABLE — --user-approved cannot clear this. Restore the tests, or merge in the GitHub UI and own it." >&2
         exit 1
     fi
 
@@ -463,36 +527,76 @@ fi
             | head -1)
     fi
     if [ "$VALIDATE_CONCLUSION" != "success" ]; then
-        echo "BLOCKED: CI 'validate' check is '${VALIDATE_CONCLUSION:-missing}', not green (must be exactly 'success' — pending/skipped/neutral/failure all block). Explicit user confirmation is required." >&2
+        echo "BLOCKED: CI 'validate' check is '${VALIDATE_CONCLUSION:-missing}', not green (must be exactly 'success' — pending/skipped/neutral/failure all block). Explicit user confirmation is required. NOT WAIVABLE — --user-approved cannot clear this. Fix CI." >&2
         exit 1
     fi
 
     # --- Clearance artifact check ---
+    #
+    # WHAT --user-approved MAY AND MAY NOT WAIVE. Every message in this block
+    # already says "explicit user confirmation is required" — they are process
+    # requirements, and a human is the thing they are asking for. So the flag
+    # waives them.
+    #
+    # It does NOT waive the two checks above: a red CI 'validate' and a
+    # net-removal of test files. Those are not paperwork, they are objective
+    # statements about whether the code works and whether the evidence that it
+    # works still exists. "The tests are failing" and "the tests are gone" are
+    # not decisions a human gets to override from a shell flag; fix them or
+    # merge in the browser and own it. Keep that split when adding gates.
     CLEARANCE_FILE=".reviews/merge-clearance-$PR_NUM.json"
-    if [ ! -f "$CLEARANCE_FILE" ]; then
-        echo "BLOCKED: no clearance artifact found at $CLEARANCE_FILE. Run the full cross-model review protocol and write this file before merging without explicit confirmation." >&2
+    if [ -n "$USER_APPROVED_REASON" ]; then
+        WAIVED_PATHS="$WAIVED_PATHS clearance-artifact checks (.reviews/merge-clearance-$PR_NUM.json)\n"
+        echo "USER-APPROVED OVERRIDE: skipping the clearance-artifact checks — they exist to demand a human decision, and one was given. The CI-green and test-removal checks above still ran and passed; those are NOT waivable." >&2
+    else
+        if [ ! -f "$CLEARANCE_FILE" ]; then
+            echo "BLOCKED: no clearance artifact found at $CLEARANCE_FILE. Run the full cross-model review protocol and write this file, or decide it yourself with --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        CL_STATUS=$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        if [ "$CL_STATUS" != "CERTIFIED" ]; then
+            echo "BLOCKED: $CLEARANCE_FILE status is '${CL_STATUS:-missing}', not CERTIFIED. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        CL_ROUND=$(grep -o '"round"[[:space:]]*:[[:space:]]*[0-9]*' "$CLEARANCE_FILE" | head -1 | sed 's/.*"round"[[:space:]]*:[[:space:]]*//')
+        if [ -z "$CL_ROUND" ] || [ "$CL_ROUND" -lt 2 ]; then
+            echo "BLOCKED: $CLEARANCE_FILE shows round=${CL_ROUND:-missing} — a round-1-only CERTIFIED is treated as an insufficient dialogue (real adversarial review takes at least one recheck round). Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        CL_SHA=$(grep -o '"sha"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"sha"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        if [ "$CL_SHA" != "$HEAD_SHA" ]; then
+            echo "BLOCKED: $CLEARANCE_FILE is stale — its sha ($CL_SHA) does not match the current remote head ($HEAD_SHA). New commits landed since certification. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        CL_REVIEW_FILE=$(grep -o '"review_file"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"review_file"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        if [ -z "$CL_REVIEW_FILE" ] || [ ! -s "$CL_REVIEW_FILE" ]; then
+            echo "BLOCKED: $CLEARANCE_FILE's referenced review artifact ('$CL_REVIEW_FILE') is missing or empty — can't verify the dialogue was substantive. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+    fi
+
+# --- Durable override record, BEFORE the merge ---
+#
+# The reason used to go to stderr only, so it evaporated with the session. That
+# made the flag's entire justification false: it was sold as replacing a
+# browser click that "leaves no record in the repo" with a logged override, and
+# PR #494 was merged with it leaving exactly zero durable trace — no comment, no
+# artifact, indistinguishable from any token merge. Found by cross-model review.
+#
+# Posted BEFORE the merge deliberately: if the comment fails, the merge does not
+# happen. An unrecorded override is the thing this exists to prevent, so failing
+# to record it must block rather than proceed silently.
+if [ -n "$USER_APPROVED_REASON" ]; then
+    OVERRIDE_BODY=$(printf '**USER-APPROVED MERGE OVERRIDE**\n\n**Reason:** %s\n\n**Waived** (would otherwise have blocked):\n%s\n\n**Still verified, not waivable:** CI `validate` green, no net-removed test files.\n\nHead: `%s`\n\n_Posted by `scripts/merge-pr.sh --user-approved` before merging. This flag does not prove a human authored it; it makes an override explicit and durable instead of silent._' \
+        "$USER_APPROVED_REASON" \
+        "$(printf '%s\n' "$WAIVED_PATHS" | sed '/^$/d' | sed 's/^/- `/; s/$/`/')" \
+        "$HEAD_SHA")
+    if ! gh pr comment "$PR_NUM" --body "$OVERRIDE_BODY" >/dev/null 2>&1; then
+        echo "BLOCKED: could not post the override record to PR #$PR_NUM. Refusing to merge — an unrecorded override is precisely what --user-approved exists to prevent." >&2
         exit 1
     fi
-    CL_STATUS=$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//; s/"$//')
-    if [ "$CL_STATUS" != "CERTIFIED" ]; then
-        echo "BLOCKED: $CLEARANCE_FILE status is '${CL_STATUS:-missing}', not CERTIFIED. Explicit user confirmation is required." >&2
-        exit 1
-    fi
-    CL_ROUND=$(grep -o '"round"[[:space:]]*:[[:space:]]*[0-9]*' "$CLEARANCE_FILE" | head -1 | sed 's/.*"round"[[:space:]]*:[[:space:]]*//')
-    if [ -z "$CL_ROUND" ] || [ "$CL_ROUND" -lt 2 ]; then
-        echo "BLOCKED: $CLEARANCE_FILE shows round=${CL_ROUND:-missing} — a round-1-only CERTIFIED is treated as an insufficient dialogue (real adversarial review takes at least one recheck round). Explicit user confirmation is required." >&2
-        exit 1
-    fi
-    CL_SHA=$(grep -o '"sha"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"sha"[[:space:]]*:[[:space:]]*"//; s/"$//')
-    if [ "$CL_SHA" != "$HEAD_SHA" ]; then
-        echo "BLOCKED: $CLEARANCE_FILE is stale — its sha ($CL_SHA) does not match the current remote head ($HEAD_SHA). New commits landed since certification. Explicit user confirmation is required." >&2
-        exit 1
-    fi
-    CL_REVIEW_FILE=$(grep -o '"review_file"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"review_file"[[:space:]]*:[[:space:]]*"//; s/"$//')
-    if [ -z "$CL_REVIEW_FILE" ] || [ ! -s "$CL_REVIEW_FILE" ]; then
-        echo "BLOCKED: $CLEARANCE_FILE's referenced review artifact ('$CL_REVIEW_FILE') is missing or empty — can't verify the dialogue was substantive. Explicit user confirmation is required." >&2
-        exit 1
-    fi
+    echo "Override recorded on PR #$PR_NUM." >&2
+fi
 
 # --- Execute: always squash, no passthrough flags, atomically bound to the
 # checked SHA. Only the PR number is accepted as input, closing the
@@ -505,5 +609,20 @@ if [ "$MERGE_EXIT" -ne 0 ]; then
 fi
 
 echo "$MERGE_OUTPUT"
-echo "MERGED: PR #$PR_NUM at $HEAD_SHA (squash, match-head-commit). Verified: no test deletions, CI validate green, clearance CERTIFIED round>=2 fresh, and $([ "$CROSS_MODEL_CLEARED" -eq 1 ] && echo "denylist acknowledged by $CLEARED_BY" || echo 'denylist clear')."
+
+# The success line must state what ACTUALLY happened. The first version printed
+# "clearance CERTIFIED round>=2 fresh, denylist clear" unconditionally — so an
+# override that skipped clearance and waived every denylist hit still produced
+# an audit record claiming both were verified. A false claim in the audit trail
+# is worse than no audit trail: it is the same defect class as a gate that reads
+# evidence structure and never the verdict inside it. Found by cross-model
+# review, 2026-08-05.
+if [ -n "$USER_APPROVED_REASON" ]; then
+    echo "MERGED: PR #$PR_NUM at $HEAD_SHA (squash, match-head-commit)."
+    echo "  VERIFIED (not waivable): no test deletions, CI validate green."
+    echo "  OVERRIDDEN by --user-approved: denylist tiers, version-bump confirmation, and the clearance-artifact checks were NOT verified — they were waived on the stated human decision."
+    echo "  reason: $USER_APPROVED_REASON"
+else
+    echo "MERGED: PR #$PR_NUM at $HEAD_SHA (squash, match-head-commit). Verified: no test deletions, CI validate green, clearance CERTIFIED round>=2 fresh, and $([ "$CROSS_MODEL_CLEARED" -eq 1 ] && echo "denylist acknowledged by $CLEARED_BY" || echo 'denylist clear')."
+fi
 exit 0
