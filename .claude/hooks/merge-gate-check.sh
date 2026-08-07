@@ -28,7 +28,51 @@ set -e
 # variable name. Redirection to the wrapper is now unconditional; the wrapper
 # is where a denylist finding gets acknowledged, on evidence.
 
-TOOL_INPUT=$(cat)
+# Bounded stdin read (#491). Inlined rather than sourced: this gate is
+# repo-local and deliberately standalone, so it must not depend on a path under
+# hooks/ resolving. Canonical version is read_stdin_bounded() in
+# hooks/_find-sdlc-root.sh — keep the two in step.
+#
+# FAILS CLOSED. Codex review 2026-08-05 (P0) proved that degrading to empty
+# input made this gate exit 0 on a complete payload whose pipe stayed open —
+# a silent merge-gate bypass, strictly worse than the hang being fixed.
+# The deadline is OVERALL, not per-read (same review, P1).
+# NEVER use timeout(1): absent on macOS.
+TOOL_INPUT=""
+if [ ! -t 0 ]; then
+    _limit="${SDLC_HOOK_STDIN_TIMEOUT:-5}"
+    [ "$_limit" -ge 1 ] 2>/dev/null || _limit=5
+    # budget = limit+1: $SECONDS is integer and unaligned, so it can
+    # overstate elapsed time by up to 1s. See read_stdin_bounded().
+    _budget=$(( _limit + 1 ))
+    _start=$SECONDS
+    _complete=0
+    while :; do
+        _remaining=$(( _budget - (SECONDS - _start) ))
+        [ "$_remaining" -le 0 ] && break
+        # `|| _rc=$?` — under `set -e` a non-zero read would otherwise kill
+        # the script before _rc is captured (observed: gate exited 1).
+        _rc=0
+        IFS= read -r -t "$_remaining" _line || _rc=$?
+        if [ "$_rc" -eq 0 ]; then
+            TOOL_INPUT="$TOOL_INPUT$_line
+"
+            continue
+        fi
+        # bash 3.2 returns 1 for BOTH timeout and EOF, so elapsed time is the
+        # only reliable discriminator. See read_stdin_bounded() for the
+        # measurements.
+        [ -n "$_line" ] && TOOL_INPUT="$TOOL_INPUT$_line"
+        if [ "$_rc" -le 128 ] && [ $(( SECONDS - _start )) -lt "$_budget" ]; then
+            _complete=1                # returned early — clean EOF
+        fi
+        break
+    done
+    if [ "$_complete" -ne 1 ]; then
+        echo "MERGE GATE: could not read hook input within ${_limit}s. Refusing to allow an unverified merge." >&2
+        exit 2
+    fi
+fi
 
 COMMAND_FIELD=$(printf '%s' "$TOOL_INPUT" \
     | grep -oE '"command"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' || true)

@@ -93,3 +93,96 @@ dedupe_plugin_or_project() {
     esac
     return 0  # proceed
 }
+
+# Read stdin without ever blocking forever.
+#
+# #491 Class 2: every hook slurped stdin with `$(cat)`, guarded only by
+# `[ ! -t 0 ]` — "is stdin not a terminal". A unix socket is not a terminal,
+# so the guard passes and `cat` waits for an EOF that never arrives. Observed
+# live: hooks/sdlc-prompt-check.sh alive 10h19m against a 10-second hook
+# timeout, `lsof` showing `0u unix`. The documented timeout did not reap it.
+#
+# Usage:  STDIN_JSON=$(read_stdin_bounded)
+# Drain:  read_stdin_bounded > /dev/null
+#
+# NEVER use `timeout(1)` here: it does not exist on macOS, and this repo has
+# already shipped two "0 failing" reports from suites that ran zero tests
+# because of it. bash's builtin `read -t` is portable to bash 3.2.
+#
+# RETURN CODE IS LOAD-BEARING — callers MUST check it:
+#   0 = stdin was read to EOF. The payload is complete.
+#   1 = the deadline expired first. The payload is INCOMPLETE, and on bash 3.2
+#       an unterminated final line was discarded entirely, so "incomplete" can
+#       mean "empty" even though the writer sent a full payload.
+#
+# A GATE MUST FAIL CLOSED ON 1. Codex review of the first version of this
+# helper (2026-08-05, P0) proved why: a complete single-line payload with no
+# trailing newline, on a pipe held open, produced empty input, and
+# codex-gate-check.sh, tdd-pretool-check.sh and merge-gate-check.sh all fell
+# through to exit 0 — a silent policy bypass. That is strictly worse than the
+# hang this helper exists to fix. A gate that cannot read its input cannot
+# make a safe decision; it must deny.
+#
+# The deadline is OVERALL, not per-read. The first version passed `-t` to each
+# `read`, so every newline restarted the clock and a slow trickle could keep a
+# hook alive indefinitely (same review, P1).
+#
+# CLOCK PRECISION, and why the budget is limit+1:
+# bash 3.2 has no sub-second clock — `read -t` rejects fractional timeouts and
+# EPOCHREALTIME does not exist — so elapsed time is measured with $SECONDS,
+# which is integer and NOT aligned to when this function started. A payload
+# that EOFs 0.2s in can therefore read as "1 second elapsed". Round-2 review
+# measured the consequence directly: with the deadline at `limit`, a clean EOF
+# at 0.20s against SDLC_HOOK_STDIN_TIMEOUT=1 falsely blocked 4 of 15 runs, and
+# a clean EOF at 4.20s against the 5s default falsely blocked 1 of 5.
+#
+# Fix: compare against limit+1. Since $SECONDS can overstate true elapsed time
+# by at most one second, requiring limit+1 guarantees at least `limit` real
+# seconds passed before anything is declared incomplete — the configured
+# contract is now a floor that is always honoured. The cost is that a genuine
+# stall is detected somewhere in [limit, limit+1) rather than exactly at limit,
+# which is immaterial: the purpose is bounding an unbounded hang, not precision.
+read_stdin_bounded() {
+    local limit="${SDLC_HOOK_STDIN_TIMEOUT:-5}"
+    local line acc="" rc remaining budget
+    local start=$SECONDS
+
+    [ "$limit" -ge 1 ] 2>/dev/null || limit=5
+    budget=$(( limit + 1 ))
+
+    [ -t 0 ] && return 0
+
+    while :; do
+        remaining=$(( budget - (SECONDS - start) ))
+        if [ "$remaining" -le 0 ]; then
+            printf '%s' "$acc"
+            return 1            # overall deadline hit — INCOMPLETE
+        fi
+
+        # `|| rc=$?` not `read; rc=$?` — under `set -e` a non-zero read
+        # terminates the script before the next line ever runs.
+        rc=0
+        IFS= read -r -t "$remaining" line || rc=$?
+
+        if [ "$rc" -eq 0 ]; then
+            acc="$acc$line
+"
+            continue
+        fi
+
+        # Non-zero. On bash 4+ a timeout returns >128, but on bash 3.2 (the
+        # macOS default) BOTH timeout and clean EOF return 1 — measured:
+        #   timeout w/ partial data : rc=1, line=""            (data lost)
+        #   clean EOF w/ partial data: rc=1, line="partial..."  (data kept)
+        # So the return code cannot discriminate, and an earlier version of
+        # this helper that branched on `rc > 128` never fail-closed on macOS
+        # at all. Elapsed time is the only reliable discriminator.
+        [ -n "$line" ] && acc="$acc$line"
+        printf '%s' "$acc"
+
+        if [ "$rc" -gt 128 ] || [ $(( SECONDS - start )) -ge "$budget" ]; then
+            return 1            # deadline consumed — INCOMPLETE
+        fi
+        return 0                # returned early — clean EOF, COMPLETE
+    done
+}

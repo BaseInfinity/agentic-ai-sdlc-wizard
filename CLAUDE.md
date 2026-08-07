@@ -9,16 +9,30 @@
 This is a **meta-repository** - it contains the SDLC Wizard documentation and automation, not traditional application code.
 
 ### What This Repo Contains
+
+Ships to consumers (the `files` list in `package.json` — keep these in sync):
 - `CLAUDE_CODE_SDLC_WIZARD.md` - The main wizard document
+- `AI_SETUP_LANES.md` - Setup lane guidance
+- `CHANGELOG.md` - Release history (ships; consumers read it on `/update`)
+- `cli/` - The zero-dependency `sdlc-wizard` installer CLI (`bin` entrypoint)
+- `skills/` - Skills installed into consumer repos
+- `hooks/` - Executable bash hooks installed into consumer repos
+- `.claude-plugin/` - Plugin + marketplace manifests
+
+Repo-local only (never shipped):
 - `.github/workflows/` - Automation for self-updating
 - `.github/prompts/` - Claude analysis prompts
-- `.claude/` - Hooks, skills, settings for this repo
+- `.claude/` - Hooks, skills, settings for *this* repo
+- `scripts/` - Repo-local enforcement (`merge-pr.sh`) that deliberately
+  does not ship, so consumers never inherit a gate wired to our stack
+- `cowork/` - Cowork-flavored copies, byte-parity enforced against `skills/`
 - `tests/` - Test scripts and fixtures
 
 ### What This Repo Does NOT Have
-- No `/src/` directory (no source code)
-- No build commands
-- No package dependencies to install
+- No `/src/` directory. The package's CLI entrypoint lives under `cli/`;
+  `hooks/` also ships executable bash. Neither is "no source code"
+- No build step
+- No runtime or dev dependencies (`npm install` installs nothing)
 - No traditional unit tests (bash scripts only)
 
 ### Test Dependencies
@@ -28,12 +42,20 @@ This is a **meta-repository** - it contains the SDLC Wizard documentation and au
 
 ## Commands
 
+There is no runner script and no `npm test`. `.github/workflows/ci.yml` invokes
+each suite as its own step — **it is the authority on what must pass**, not this
+table. Run any suite directly; a few common ones:
+
 | Command | Purpose |
 |---------|---------|
 | `./tests/test-version-logic.sh` | Run version comparison tests |
 | `./tests/test-analysis-schema.sh` | Run schema validation tests |
+| `./tests/test-doc-consistency.sh` | Guard docs against drifting from reality |
 | `./tests/e2e/test-json-extraction.sh` | Run JSON extraction tests |
 | `./tests/e2e/run-simulation.sh` | Run E2E simulation (needs API key) |
+
+Run the whole suite before any release. It takes minutes, not seconds, and
+some fixtures need `dangerouslyDisableSandbox` to create their temp dirs.
 
 ## Code Style
 
