@@ -3247,6 +3247,79 @@ PYEOF
 }
 test_tdd_hook_matcher_covers_nested_src
 
+# NOTE: an unbounded-stdin-drain detector lived here briefly and was deleted on
+# both reviewers' certify conditions. It pattern-matched the source text for
+# bare `cat`, and independent review constructed a dozen real drains it missed
+# — `$(cat 2>/dev/null)`, `/bin/cat`, `cat <&0`, `mapfile`, `IFS= read` without
+# `-t`, `exec 0<`, `head -c`, `jq .` — while it false-positived on the string
+# "cat > /dev/null" inside a comment or heredoc. Widening it is the unwinnable
+# denylist shape ROADMAP #495(a) describes: every new spelling is discovered
+# only after it escapes.
+#
+# The real guarantee is behavioural and lives in tests/test-hook-stdin-bounded.sh,
+# which runs every hook against a stdin that never reaches EOF and fails if it
+# outlives its bound — independent of how the read is spelled. That roster is now
+# derived from hooks/hooks.json rather than hand-listed, which is what let
+# model-effort-check.sh escape v1.94.0 in the first place.
+
+# ---- GH #476: shipped hooks must not push the sudo-npm footgun ----
+#
+# Official setup docs mark the native install "Recommended" and explicitly warn
+# against `sudo npm install -g`, which breaks future updates and uninstalls.
+# instructions-loaded-check.sh nudged every consumer toward the global npm
+# install on every session start, so the wizard did not merely omit the advice
+# in #476 — it shipped the opposite. `claude update` is correct for both
+# install kinds.
+test_no_shipped_hook_recommends_global_npm_cc_install() {
+    local hits
+    # Order-independent and flag-tolerant: matches `install -g`, `i -g`,
+    # `--global`, `-g install`, extra flags, and a quoted package name. A pure
+    # syntax denylist is still losable (see the positive test below, which is
+    # the real anchor) — this is the cheap tripwire, not the guarantee.
+    hits=$(grep -rnE "npm([[:space:]]+[^[:space:]]+)*[[:space:]]+(-g|--global)([[:space:]]+[^[:space:]]+)*[[:space:]]+[\"']?@anthropic-ai/claude-code" "$HOOKS_DIR" 2>/dev/null || true)
+    if [ -z "$hits" ]; then
+        pass "#476: no shipped hook recommends a global npm install of Claude Code"
+    else
+        fail "#476: a shipped hook tells consumers to switch install channels:
+$hits"
+    fi
+}
+test_no_shipped_hook_recommends_global_npm_cc_install
+
+# The positive anchor. Absence tests are losable — any unlisted spelling of the
+# wrong advice passes one. This asserts what the hook actually EMITS, by running
+# it, which is a fixed target rather than an open-ended syntax space (the
+# defining-output shape ROADMAP #495(a) recommends over a denylist).
+test_cc_update_nudge_is_install_method_aware() {
+    local hook="$HOOKS_DIR/instructions-loaded-check.sh"
+    local cache_dir out
+    cache_dir=$(mktemp -d "${TMPDIR:-/tmp}/cc-nudge.XXXXXX") || {
+        fail "#476: could not create temp cache dir"; return
+    }
+    # Force the drift branch: a cached "latest" far above any real local version.
+    # CLAUDE_PROJECT_DIR is required — the nudge is deliberately gated on it so
+    # it stays silent under Codex/OpenCode (#375).
+    printf '%s' '99.99.99' > "$cache_dir/latest-cc-version"
+    out=$(CLAUDE_PROJECT_DIR="$SCRIPT_DIR/.." SDLC_WIZARD_CACHE_DIR="$cache_dir" \
+          "$hook" < /dev/null 2>&1 || true)
+    rm -rf "$cache_dir"
+
+    if ! printf '%s' "$out" | grep -q 'Claude Code update available'; then
+        fail "#476: could not exercise the update nudge — fixture no longer triggers it, so the assertion below would be vacuous. Output was: $(printf '%s' "$out" | head -c 200)"
+        return
+    fi
+    if printf '%s' "$out" | grep -qE 'npm[[:space:]]+(install|i)|--global'; then
+        fail "#476: the emitted nudge still names npm as the update channel:
+$(printf '%s' "$out" | grep 'Claude Code update available')"
+    elif printf '%s' "$out" | grep -q 'claude update'; then
+        pass "#476: the emitted update nudge is install-method-aware ('claude update', no npm channel switch)"
+    else
+        fail "#476: the update nudge names no usable update command:
+$(printf '%s' "$out" | grep 'Claude Code update available')"
+    fi
+}
+test_cc_update_nudge_is_install_method_aware
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"

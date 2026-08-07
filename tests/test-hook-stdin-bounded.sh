@@ -48,16 +48,50 @@ trap cleanup EXIT
 echo "=== Hook stdin boundedness (#491 Class 2) ==="
 echo ""
 
-# Every hook that reads stdin. Paths relative to REPO_ROOT.
-HOOKS="
-hooks/sdlc-prompt-check.sh
-hooks/codex-gate-check.sh
-hooks/tdd-pretool-check.sh
-hooks/codex-review-stop-check.sh
-hooks/precompact-seam-check.sh
-hooks/token-spike-check.sh
+# Every shipped hook, DERIVED from the manifest — never hand-listed.
+#
+# This list used to be hardcoded, and that is precisely how the v1.94.0
+# regression shipped: model-effort-check.sh was never in it, so the suite
+# reported the hang class fixed while one hook still drained stdin with a bare
+# `cat`. A hand-maintained roster of things-to-check silently stops covering
+# whatever nobody remembered to add. Deriving from hooks/hooks.json means a
+# newly registered hook is in scope the moment it is registered.
+#
+# .claude/hooks/merge-gate-check.sh is appended separately: it is repo-local by
+# design (never shipped) so it cannot appear in the shipped manifest.
+HOOKS="$(python3 - "$REPO_ROOT/hooks/hooks.json" <<'PY'
+import json, re, sys
+with open(sys.argv[1]) as fh:
+    blob = json.dumps(json.load(fh))
+for name in sorted(set(re.findall(r'hooks/([A-Za-z0-9_.-]+\.sh)', blob))):
+    print("hooks/" + name)
+PY
+)
 .claude/hooks/merge-gate-check.sh
 "
+
+# Guard the derivation itself. An extractor that returns nothing turns the
+# hang test into a no-op that passes loudly — the exact vacuous-test shape this
+# repo keeps rediscovering. Assert the roster is non-trivial AND covers every
+# .sh the manifest names.
+test_hook_roster_is_derived_and_complete() {
+    local declared found missing=""
+    declared=$(grep -oE 'hooks/[A-Za-z0-9_.-]+\.sh' "$REPO_ROOT/hooks/hooks.json" \
+               | sed 's|.*/||' | sort -u)
+    if [ -z "$declared" ]; then
+        fail "hooks.json names no .sh hooks — the extractor or the manifest broke"
+        return
+    fi
+    for found in $declared; do
+        printf '%s' "$HOOKS" | grep -q "hooks/$found" || missing="$missing $found"
+    done
+    if [ -n "$missing" ]; then
+        fail "hook roster does not cover every manifest hook — untested hooks:$missing"
+    else
+        pass "hook roster derived from hooks.json covers all $(printf '%s\n' $declared | wc -l | tr -d ' ') shipped hooks"
+    fi
+}
+test_hook_roster_is_derived_and_complete
 
 # Run a hook with stdin attached to a pipe that never closes.
 # Returns 0 if the hook exited on its own within $limit seconds, 1 if it had
@@ -102,15 +136,26 @@ run_with_open_stdin() {
 # 15s is generous — the hooks' own read timeout should fire well before it.
 # ────────────────────────────────────────────
 test_hooks_do_not_hang_on_open_stdin() {
-    local hook hung=""
+    local hook hung="" absent="" checked=0
     for hook in $HOOKS; do
-        [ -f "$REPO_ROOT/$hook" ] || continue
+        # Do NOT silently `continue` on a missing file: a roster entry that
+        # does not resolve is an untested hook, which is the failure being
+        # guarded against, not a reason to score a pass.
+        if [ ! -f "$REPO_ROOT/$hook" ]; then
+            absent="$absent $hook"
+            continue
+        fi
+        checked=$((checked + 1))
         if ! run_with_open_stdin "$hook" 15; then
             hung="$hung $hook"
         fi
     done
 
-    if [ -z "$hung" ]; then
+    if [ -n "$absent" ]; then
+        fail "rostered hook file does not exist — it was never exercised:$absent"
+    elif [ "$checked" -eq 0 ]; then
+        fail "zero hooks exercised — the roster is empty and this test proves nothing"
+    elif [ -z "$hung" ]; then
         pass "no shipped hook hangs when stdin never reaches EOF"
     else
         fail "hooks blocked forever on an open stdin — this is the 10h19m hang:
