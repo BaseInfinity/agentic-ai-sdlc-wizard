@@ -1551,7 +1551,12 @@ test_agents_md_reviewer_is_gpt56() {
 
 test_claude_md_reviewer_is_gpt56() {
     local bad=""
-    bad="$bad$(_check_line_has_and_lacks "$REPO_ROOT/CLAUDE.md" 75 "5\.6,Sol" "5\.5")"
+    # Content-anchored, not line-anchored. A hardcoded line number here
+    # false-PASSES: Codex demonstrated it by inserting a decoy line carrying
+    # "GPT-5.6 Sol" at the pinned line and downgrading the real rule to 5.5 —
+    # the assertion stayed green while guarding nothing. Anchor on the unique
+    # phrase that identifies the rule itself.
+    bad="$bad$(_check_content_line_has_and_lacks "$REPO_ROOT/CLAUDE.md" "cross-model safety check" "5\.6,Sol" "5\.5")"
     if [ -z "$bad" ]; then
         pass "CLAUDE.md: cross-model safety check references GPT-5.6 Sol reviewer"
     else
@@ -2600,6 +2605,89 @@ $bad"
     fi
 }
 test_e2e_runbook_lists_are_sequential
+
+# ────────────────────────────────────────────
+# CLAUDE.md must document every directory the package actually ships
+#
+# Found by /doctor cross-model review 2026-08-04: CLAUDE.md's "What This Repo
+# Contains" listed `.claude/` and `tests/` but omitted `cli/`, `hooks/`, and
+# `skills/` — the three directories in package.json's "files" list, i.e. the
+# ones consumers actually receive. An agent reading CLAUDE.md would conclude
+# the shipping surface was something other than what ships.
+#
+# Predicate is filesystem-driven, not a hardcoded list: add a directory to
+# package.json "files" and this guard demands CLAUDE.md document it.
+# ────────────────────────────────────────────
+
+# The "Ships to consumers" block only. Scoping matters: an earlier version
+# searched the WHOLE document, so moving `hooks/` into the "Repo-local only"
+# list still satisfied it — a false PASS that inverted the very claim being
+# guarded. Codex proved that with a fixture; do not widen this back out.
+_ships_section() {
+    awk '/^Ships to consumers/ {f=1; next} /^Repo-local only/ {f=0} f' "$1"
+}
+
+# Emits one line per package.json "files" entry absent from that block.
+# Covers FILE entries too, not just directories — CLAUDE.md claims to mirror
+# the files list, and an earlier dirs-only predicate could not see that
+# CHANGELOG.md was missing. Match is on the backticked form (`cli/`) so
+# incidental prose ("**Skills**: provide detailed guidance") does not count.
+_shipped_entries_missing_from() {
+    local claude_md="$1" pkg="$2" entry section
+    [ -f "$claude_md" ] && [ -f "$pkg" ] || return 0
+
+    section=$(_ships_section "$claude_md")
+    if [ -z "$section" ]; then
+        echo "(no 'Ships to consumers' section found)"
+        return
+    fi
+
+    while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+        printf '%s\n' "$section" | grep -qF -- "\`$entry\`" || echo "$entry"
+    done < <(jq -r '.files[]?' "$pkg")
+}
+
+test_claude_md_documents_shipped_entries() {
+    local missing
+    missing=$(_shipped_entries_missing_from "$REPO_ROOT/CLAUDE.md" "$REPO_ROOT/package.json")
+
+    if [ -z "$missing" ]; then
+        pass "CLAUDE.md's ships-to-consumers list matches package.json \"files\""
+    else
+        fail "CLAUDE.md omits shipped entries — agents will misread what this repo delivers:
+$(echo "$missing" | sed 's/^/  missing: /')"
+    fi
+}
+test_claude_md_documents_shipped_entries
+
+# Non-vacuity canary against the REAL artifact, not a synthetic fixture.
+# Mutation: relocate `hooks/` out of the ships block and into the repo-local
+# block. The string is still present in the document, so a whole-document
+# search would still pass — only correct section scoping catches this.
+test_shipped_entries_predicate_is_not_vacuous() {
+    local tmpdir mutated detected clean
+    tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/shipped-entries-XXXXXX") || { fail "temp dir failed"; return; }
+    mutated="$tmpdir/CLAUDE.md"
+
+    clean=$(_shipped_entries_missing_from "$REPO_ROOT/CLAUDE.md" "$REPO_ROOT/package.json")
+
+    awk '
+        /^- `hooks\/`/            { held = $0; next }
+        /^Repo-local only/        { print; if (held != "") { print held; held = "" } next }
+                                  { print }
+    ' "$REPO_ROOT/CLAUDE.md" > "$mutated"
+
+    detected=$(_shipped_entries_missing_from "$mutated" "$REPO_ROOT/package.json")
+    rm -rf "$tmpdir"
+
+    if [ -z "$clean" ] && [ "$detected" = "hooks/" ]; then
+        pass "ships-list predicate is section-scoped: relocating a shipped entry to the repo-local list is detected"
+    else
+        fail "ships-list predicate is vacuous or mis-scoped — real file returned '$clean' (want empty), relocated-hooks mutation returned '$detected' (want 'hooks/')"
+    fi
+}
+test_shipped_entries_predicate_is_not_vacuous
 
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 

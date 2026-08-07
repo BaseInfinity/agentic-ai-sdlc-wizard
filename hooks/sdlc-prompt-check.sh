@@ -42,7 +42,8 @@ fi
 # for the BASELINE fires-once sentinel, so stdin is still read for it.
 SESSION_ID=""
 if [ ! -t 0 ]; then
-    STDIN_JSON=$(cat)
+    # Advisory hook, not a gate: degrade to empty rather than block a prompt.
+    STDIN_JSON=$(read_stdin_bounded) || STDIN_JSON=""
     if [ -n "$STDIN_JSON" ]; then
         # session_id is a UUID-shaped string with no escapable content
         # in CC's stdin contract — regex extraction is sufficient.
