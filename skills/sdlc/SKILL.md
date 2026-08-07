@@ -180,7 +180,7 @@ Mandatory steps:
 6. CI passes → `gh api .../pulls/PR/comments` for review feedback
 7. Implement valid suggestions (bugs, perf, dedup). Skip opinions. Max 3 iterations
 8. **Clearance, once CI green.** Ask reviewers *"safe to merge?"* — NOT "can you break this" (unsatisfiable; #478). Each posts `**CROSS-MODEL-CLEARANCE**` + one fenced json `{"reviewer","verdict":"YES","confidence","sha"}`. **`verdict` decides; confidence only qualifies it.** YES <95 names a residual → one focused round, never a human ask; re-asking unchanged is shopping.
-9. Explicit merge via your repo's merge wrapper — never auto-merge. Needs 2 YES ≥95 on head SHA AND: CI `validate` green; Codex `high` CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) with **zero unresolved findings** after **≥1 dialogue round**. Merge-evidence paths (workflows, `hooks/`, `.claude/`, merge script) + `package.json` version bumps need a human. Tell the user after — never silent.
+9. Explicit `gh pr merge --squash` (repo wrapper if any) — never auto-merge. Needs 2 YES ≥95 on head SHA AND: CI `validate` green; Codex `high` CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) with **zero unresolved findings** after **≥1 dialogue round**. Merge-evidence paths (workflows, `hooks/`, `.claude/`, merge script) + `package.json` version bumps need a human. Tell the user after — never silent.
 
 **Evidence:** PR #145 auto-merged, shipped a P1 bug. v1.92.0: two YES (97/93) dead-ended (#478).
 

@@ -59,14 +59,36 @@ echo ""
 #
 # .claude/hooks/merge-gate-check.sh is appended separately: it is repo-local by
 # design (never shipped) so it cannot appear in the shipped manifest.
-HOOKS="$(python3 - "$REPO_ROOT/hooks/hooks.json" <<'PY'
+# Walk the manifest's actual "command" fields rather than regexing the blob for
+# a flat hooks/<name>.sh shape. The flat pattern missed any hook registered in a
+# subdirectory: a blocking hooks/nested/hang.sh was reported as covered while
+# never being executed, and the coverage guard repeated the same blind spot, so
+# the pair agreed on an answer that was wrong.
+#
+# Defined as a variable, not inlined into $( ... ): bash cannot parse a heredoc
+# containing unbalanced parentheses inside a command substitution.
+read -r -d '' EXTRACT_HOOKS <<'PY' || true
 import json, re, sys
+def commands(node):
+    if isinstance(node, dict):
+        if isinstance(node.get("command"), str):
+            yield node["command"]
+        for v in node.values():
+            yield from commands(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from commands(v)
 with open(sys.argv[1]) as fh:
-    blob = json.dumps(json.load(fh))
-for name in sorted(set(re.findall(r'hooks/([A-Za-z0-9_.-]+\.sh)', blob))):
-    print("hooks/" + name)
+    manifest = json.load(fh)
+seen = set()
+for cmd in commands(manifest):
+    m = re.search(r'((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+[.]sh)', cmd)
+    if m:
+        seen.add(m.group(1))
+print("\n".join(sorted(seen)))
 PY
-)
+
+HOOKS="$(printf '%s' "$EXTRACT_HOOKS" | python3 - "$REPO_ROOT/hooks/hooks.json")
 .claude/hooks/merge-gate-check.sh
 "
 
@@ -75,20 +97,26 @@ PY
 # repo keeps rediscovering. Assert the roster is non-trivial AND covers every
 # .sh the manifest names.
 test_hook_roster_is_derived_and_complete() {
-    local declared found missing=""
-    declared=$(grep -oE 'hooks/[A-Za-z0-9_.-]+\.sh' "$REPO_ROOT/hooks/hooks.json" \
-               | sed 's|.*/||' | sort -u)
+    local declared one missing="" count
+    # Compare against the SEMANTIC set of commands in the manifest, not a flat
+    # basename grep. The guard previously repeated the extractor's own blind
+    # spot, so a nested hook was invisible to both and the pair agreed on an
+    # answer that was wrong.
+    declared=$(printf '%s' "$EXTRACT_HOOKS" | python3 - "$REPO_ROOT/hooks/hooks.json")
     if [ -z "$declared" ]; then
-        fail "hooks.json names no .sh hooks — the extractor or the manifest broke"
+        fail "hooks.json names no .sh command — the extractor or the manifest broke"
         return
     fi
-    for found in $declared; do
-        printf '%s' "$HOOKS" | grep -q "hooks/$found" || missing="$missing $found"
+    for one in $declared; do
+        printf '%s' "$HOOKS" | grep -qx "[[:space:]]*$one[[:space:]]*" \
+            || printf '%s' "$HOOKS" | tr ' ' '\n' | grep -qx "$one" \
+            || missing="$missing $one"
     done
+    count=$(printf '%s\n' $declared | wc -l | tr -d ' ')
     if [ -n "$missing" ]; then
-        fail "hook roster does not cover every manifest hook — untested hooks:$missing"
+        fail "hook roster does not cover every manifest command — untested hooks:$missing"
     else
-        pass "hook roster derived from hooks.json covers all $(printf '%s\n' $declared | wc -l | tr -d ' ') shipped hooks"
+        pass "hook roster derived from hooks.json covers all $count registered hooks (any depth)"
     fi
 }
 test_hook_roster_is_derived_and_complete
