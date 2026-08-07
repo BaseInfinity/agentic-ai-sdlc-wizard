@@ -139,10 +139,10 @@ The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confi
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
-1. **Preflight** (`.reviews/preflight-{review_id}.md`) — what you already checked: `/code-review` passed, tests passing, manual verifications, known limits. Reduces reviewer findings to 0-1/round.
+1. **Preflight** (`.reviews/preflight-{review_id}.md`) — what you already checked: `/code-review` passed, tests passing, manual verifications, known limits. Avoids re-litigating verified ground.
 2. **Mission-first handoff** (`.reviews/handoff.json`) — required keys: `"review_id"`, `"status": "PENDING_REVIEW"`, `"round": 1`, `"mission"`/`"success"`/`"failure"` (without them you get "looks good"), `"files_changed"`, `"verification_checklist"` (verification checklist with file:line refs — NOT generic), `"review_instructions"`, `"preflight_path"`. Optional `"pr_number":` opts into PreCompact self-heal (#209: MERGED → implicit CERTIFIED).
 3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; background avoids the Bash 10-min `timeout` cap that force-kills foreground codex (bundles take 5–30 min; `STALL_SECONDS=1800`). Foreground burned 70 min on a 7-min review (#364).
-4. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Do NOT expand the surface; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — always run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
+4. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Don't hunt new surfaces, but report every defect; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — always run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
 
 **Convergence:** judge by max severity per round. Escalate, never ship.
 
@@ -175,7 +175,7 @@ Mandatory steps:
 1. Push to remote
 2. `gh pr checks --watch`
 3. **Read CI logs even on pass** (`gh run view <RUN_ID> --log`) — green can hide warnings
-4. **Cross-model audit the CI logs** — same `codex exec` pattern (Cross-Model Review §3): audit for silent failures, skipped tests, degraded metrics
+4. **Cross-model audit the CI logs** — release/workflow/control-plane PRs only: silent failures, skipped tests, degraded metrics
 5. CI fails → fix, push (max 2 attempts)
 6. CI passes → `gh api .../pulls/PR/comments` for review feedback
 7. Implement valid suggestions (bugs, perf, dedup). Skip opinions. Max 3 iterations

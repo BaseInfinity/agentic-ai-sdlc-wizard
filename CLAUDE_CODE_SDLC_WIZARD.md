@@ -1976,6 +1976,43 @@ This setting affects:
 
 Stored in `.claude/settings.json` as `"verbosity": "small|medium|large"`.
 
+#### Response length on Opus 5 — state it once, in CLAUDE.md
+
+Opus 5's user-facing responses run longer than prior Opus models by default, and
+**effort does not control this**. Anthropic's guide is explicit: effort governs how
+much the model *thinks*, not how much it *says* — "lowering effort can reduce
+thinking volume without reliably shortening the visible response. To control
+response length, prompt for it explicitly."
+
+Put one instruction in your root `CLAUDE.md`. Something like:
+
+```
+Lead with the outcome. Your first sentence should answer "what happened" or
+"what did you find" — the thing someone would ask for if they said "just give
+me the TLDR". Supporting detail comes after. Keep responses focused; spend most
+of the response on the main answer, not caveats.
+```
+
+**Put it at CLAUDE.md level, not in skills or hook output.** Two different
+things, stated separately so neither is overclaimed:
+
+- **Anthropic's guidance** is that a short conciseness instruction works, and
+  that *in a long system prompt* you may pair it with a brief reminder near the
+  end (`<tone_preference>Keep outputs reasonably concise.</tone_preference>`).
+  So a single reminder is endorsed, not discouraged.
+- **This repo additionally bans brevity caps in `SKILL.md` and hook stdout**,
+  enforced by CI. That is a narrower claim about a different situation: those
+  surfaces are injected repeatedly across many turns and many components, which
+  is not the same as one reminder in one system prompt. The evidence behind it
+  is a repo-local postmortem on Opus 4.6/4.7 where a strict length-limit prompt
+  contributed to degraded output — it does not establish a general Opus 5
+  repetition effect, and should not be cited as if it does.
+
+Separately, files Claude *writes* to disk (reports, summaries) also run long. If
+your workflow produces documents, add: "Match the length of written documents to
+what the task needs — cover the substance, don't pad with filler sections,
+redundant summaries, or boilerplate."
+
 ### Testing Philosophy
 
 **Testing approach** (infer from existing test patterns — test-first files, coverage config)

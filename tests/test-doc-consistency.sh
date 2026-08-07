@@ -2689,6 +2689,96 @@ test_shipped_entries_predicate_is_not_vacuous() {
 }
 test_shipped_entries_predicate_is_not_vacuous
 
+# ────────────────────────────────────────────
+# GH #486 — align shipped guidance with Anthropic's Opus 5 prompting guide.
+#
+# Three low-risk items. The fourth (deleting the same-model self-review layer)
+# is coupled to the E2E scorer's must-pass list and five other suites, so it
+# ships separately.
+# ────────────────────────────────────────────
+
+# (1) Concision must be stated ONCE, at CLAUDE.md level — never in SKILL.md or
+# hook stdout. tests/test-postmortem-lessons.sh Test 4 already fails CI on
+# brevity caps in those surfaces, because per-injection repetition compounds.
+# The Opus 5 guide is the reason it belongs somewhere: "Claude Opus 5's default
+# user-facing responses run longer than prior Opus models'... To control
+# response length, prompt for it explicitly."
+test_concision_guidance_shipped_once_at_the_right_level() {
+    local doc="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    local bad=""
+
+    grep -qiE 'lead with the outcome|response length|keep responses' "$doc" \
+        || bad="$bad\n  wizard doc has no response-length guidance (Opus 5 defaults long; the guide says prompt for it explicitly)"
+
+    # And it must NOT have leaked into the compounding surfaces.
+    grep -qiE 'keep (responses|outputs) (focused|brief|concise)' "$REPO_ROOT/skills/sdlc/SKILL.md" 2>/dev/null \
+        && bad="$bad\n  brevity cap leaked into skills/sdlc/SKILL.md — compounds per injection (test-postmortem-lessons.sh Test 4)"
+
+    if [ -z "$bad" ]; then
+        pass "#486: response-length guidance shipped once at CLAUDE.md level, not in SKILL.md"
+    else
+        fail "#486 concision guidance misplaced or missing:$(printf '%b' "$bad")"
+    fi
+}
+test_concision_guidance_shipped_once_at_the_right_level
+
+# (2) The per-push cross-model CI-log audit has exactly ONE recorded catch in
+# the repo's history (PR #206, pre-existing CI infra). Running it on every push
+# stacks a verification layer regardless of risk — the pattern the Opus 5 guide
+# names. Scope it; keep the unconditional "read CI logs even on pass", which
+# has independent evidence (v1.84.0: 3 real bugs found post-CERTIFIED).
+test_ci_log_audit_is_risk_scoped_not_universal() {
+    local skill="$REPO_ROOT/skills/sdlc/SKILL.md" line
+    line=$(grep -n 'Cross-model audit the CI logs' "$skill" | head -1 | cut -d: -f2-)
+
+    if [ -z "$line" ]; then
+        fail "#486: the CI-log audit step vanished entirely — it should be SCOPED, not deleted"
+        return
+    fi
+
+    if printf '%s' "$line" | grep -qiE 'release|workflow|control-plane|high-stakes'; then
+        pass "#486: cross-model CI-log audit is scoped to risk, not run on every push"
+    else
+        fail "#486: cross-model CI-log audit still applies to every push — one recorded catch does not justify a per-push verification layer"
+    fi
+}
+test_ci_log_audit_is_risk_scoped_not_universal
+
+# (3) Two prompt tightens. The Opus 5 guide: a review prompt saying "only
+# report high-severity issues" or "be conservative" makes the model report
+# LESS, including real defects. Neither shipped line should read that way.
+test_review_prompts_do_not_suppress_findings() {
+    local skill="$REPO_ROOT/skills/sdlc/SKILL.md" bad=""
+
+    # Preflight framed FEWER FINDINGS as the goal.
+    grep -q 'Reduces reviewer findings to 0-1/round' "$skill" \
+        && bad="$bad\n  preflight still frames fewer findings as the goal ('Reduces reviewer findings to 0-1/round')"
+
+    # POSITIVE ANCHOR, not a search for removed wording. The first version
+    # grepped for 'Do NOT expand the surface' — the exact phrase the fix
+    # DELETES — so after the fix the grep found nothing, `recheck` was empty,
+    # and the whole check was skipped. Cross-model review removed 'report every
+    # defect' and the test still passed. It guarded nothing.
+    #
+    # Anchor on the recheck prompt itself (which must exist), then assert the
+    # report-everything clause is IN it.
+    local recheck
+    recheck=$(grep -n 'TARGETED RECHECK' "$skill" | head -1 | cut -d: -f2-)
+    if [ -z "$recheck" ]; then
+        bad="$bad\n  the TARGETED RECHECK prompt is missing entirely — cannot verify it does not suppress findings"
+    else
+        printf '%s' "$recheck" | grep -qiE 'report every defect|every defect you see|report all findings' \
+            || bad="$bad\n  the recheck prompt has no explicit report-everything clause — a scope limiter alone reads as severity suppression"
+    fi
+
+    if [ -z "$bad" ]; then
+        pass "#486: no shipped review prompt frames fewer findings as success"
+    else
+        fail "#486 review prompts can suppress findings:$(printf '%b' "$bad")"
+    fi
+}
+test_review_prompts_do_not_suppress_findings
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then

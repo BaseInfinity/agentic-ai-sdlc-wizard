@@ -416,6 +416,16 @@ elif [ "$1" = "api" ]; then
             ;;
     esac
     exit 0
+elif [ "$1" = "pr" ] && [ "$2" = "comment" ]; then
+    # The override record. COMMENT_FAILS=1 simulates the post failing, which
+    # must block the merge — an unrecorded override is exactly what
+    # --user-approved exists to prevent.
+    if [ "${COMMENT_FAILS:-0}" = "1" ]; then
+        echo "stub: comment post failed" >&2
+        exit 1
+    fi
+    echo "GH_COMMENT_POSTED: $*"
+    exit 0
 elif [ "$1" = "pr" ] && [ "$2" = "merge" ]; then
     echo "GH_MERGE_INVOKED: $*"
     exit 0
@@ -934,6 +944,209 @@ test_clearance_accepts_two_yes_verdicts
 test_sub_threshold_message_prescribes_next_action
 
 echo ""
+# --- --user-approved: the human decision HARD_DENY demands (ROADMAP #479) -----
+#
+# HARD_DENY says "a human decides this one" and then provides no way for the
+# human to say so. The maintainer hit this three times in one session; the last
+# time the only route left was clicking merge in a browser, which bypasses the
+# hook harness entirely and leaves no record in the repo.
+#
+# This flag does NOT prove a human typed it — nothing available here can. What
+# it changes is that an override becomes EXPLICIT, REASONED and LOGGED instead
+# of silent and out-of-band. That is the honest claim; the header comment in
+# merge-pr.sh must not overstate it.
+
+# Args are passed through as SEPARATE PARAMETERS, never as one string. An
+# earlier version took a single string and word-split it unquoted, so
+# `--user-approved ""` arrived as the literal two-character token `""` (which
+# is non-empty, and merged) and a multi-word reason split into a usage error.
+# Both failures were the harness, not the wrapper.
+run_hard_deny() {   # "$@" = extra args, already separated
+    local tmpdir out code
+    tmpdir=$(setup_wrapper_fixture)
+    printf 'DIFF_FILES=hooks/codex-gate-check.sh\n' >> "$tmpdir/.gh-stub-config"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    echo "review body" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 "$@" 2>&1) && code=0 || code=$?
+    printf 'exit=%s %s' "$code" "$out"
+    rm -rf "$tmpdir"
+}
+
+test_hard_deny_still_blocks_without_the_flag() {
+    refute_merge "$(run_hard_deny)" \
+        "HARD_DENY path still blocks with no --user-approved"
+}
+test_hard_deny_still_blocks_without_the_flag
+
+test_hard_deny_blocks_when_reason_is_missing() {
+    # A bare flag is not a decision. If the reason can be omitted, the flag
+    # becomes a silent bypass wearing an audit trail's clothes.
+    refute_merge "$(run_hard_deny --user-approved)" \
+        "--user-approved with no reason does not merge"
+}
+test_hard_deny_blocks_when_reason_is_missing
+
+test_hard_deny_blocks_when_reason_is_blank() {
+    refute_merge "$(run_hard_deny --user-approved "")" \
+        "--user-approved with an empty reason does not merge"
+}
+test_hard_deny_blocks_when_reason_is_blank
+
+test_cross_model_cleared_still_cannot_clear_hard_deny() {
+    # The whole point of the tier: self-produced evidence never clears it.
+    refute_merge "$(run_hard_deny --cross-model-cleared)" \
+        "--cross-model-cleared still cannot clear a HARD_DENY path"
+}
+test_cross_model_cleared_still_cannot_clear_hard_deny
+
+test_user_approved_with_reason_merges_and_logs() {
+    local result
+    result=$(run_hard_deny --user-approved "maintainer decision: gate fix, certified round 3")
+
+    if ! printf '%s' "$result" | grep -q "GH_MERGE_INVOKED"; then
+        fail "--user-approved with a reason did not merge: $result"
+    elif ! printf '%s' "$result" | grep -qi "USER-APPROVED OVERRIDE"; then
+        fail "--user-approved merged but logged no override record — a silent bypass: $result"
+    elif ! printf '%s' "$result" | grep -q "maintainer decision: gate fix"; then
+        fail "--user-approved merged but did not record the stated reason: $result"
+    else
+        pass "--user-approved with a reason merges AND logs an auditable override"
+    fi
+}
+test_user_approved_with_reason_merges_and_logs
+
+test_user_approved_records_the_path_it_overrode() {
+    # The record has to name WHAT was overridden. "Approved" without the path
+    # is unauditable after the fact.
+    local result
+    result=$(run_hard_deny --user-approved "shipping the hook fix")
+    if printf '%s' "$result" | grep -q "hooks/codex-gate-check.sh"; then
+        pass "--user-approved names the HARD_DENY path it overrode"
+    else
+        fail "override record does not name the path it cleared: $result"
+    fi
+}
+test_user_approved_records_the_path_it_overrode
+
+test_user_approved_also_clears_the_weaker_ackable_tier() {
+    # Design gap found live merging PR #494: --user-approved cleared HARD_DENY
+    # (the STRICTER tier) and then blocked on ACKABLE_DENY (the WEAKER one).
+    # A human authorised to override the merge-evidence chain is necessarily
+    # authorised to override the tier that only steers behaviour. Requiring a
+    # second, different flag for the lesser bar is incoherent.
+    local tmpdir out code
+    tmpdir=$(setup_wrapper_fixture)
+    # Both tiers at once: a hooks/ path (HARD) and the wizard doc (ACKABLE).
+    # Quoted multi-line value: the stub does `printf '%s\n' "$DIFF_FILES"`, so
+    # two separate config lines would leave the second as a bare token the
+    # sourced file cannot assign — which fails closed on a truncated file set.
+    printf 'DIFF_FILES=%s\n' "'hooks/codex-gate-check.sh
+CLAUDE_CODE_SDLC_WIZARD.md'" >> "$tmpdir/.gh-stub-config"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    echo "review body" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 --user-approved "maintainer decision" 2>&1) && code=0 || code=$?
+    rm -rf "$tmpdir"
+
+    if printf '%s' "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "--user-approved clears BOTH tiers, not just the stricter one"
+    else
+        fail "--user-approved cleared HARD_DENY but still blocked on the weaker ACKABLE tier (exit=$code): $out"
+    fi
+}
+test_user_approved_also_clears_the_weaker_ackable_tier
+
+# The two things --user-approved must NEVER waive. These are not paperwork:
+# they are objective statements about whether the code works and whether the
+# evidence that it works still exists. If a human can wave those away from a
+# shell flag, the gate is decoration.
+test_user_approved_cannot_waive_red_ci() {
+    local tmpdir out code
+    tmpdir=$(setup_wrapper_fixture)
+    sed -i.bak 's#VALIDATE_CONCLUSION=success#VALIDATE_CONCLUSION=failure#' "$tmpdir/.gh-stub-config"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 --user-approved "ship it anyway" 2>&1) && code=0 || code=$?
+    rm -rf "$tmpdir"
+    refute_merge "$(printf 'exit=%s %s' "$code" "$out")" \
+        "--user-approved cannot merge over a red CI validate check"
+}
+test_user_approved_cannot_waive_red_ci
+
+test_user_approved_cannot_waive_deleted_tests() {
+    local tmpdir out code
+    tmpdir=$(setup_wrapper_fixture)
+    sed -i.bak 's#DELETED_TEST_FILES=#DELETED_TEST_FILES=tests/test-merge-gate.sh#' "$tmpdir/.gh-stub-config"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 --user-approved "removing a flaky suite" 2>&1) && code=0 || code=$?
+    rm -rf "$tmpdir"
+    refute_merge "$(printf 'exit=%s %s' "$code" "$out")" \
+        "--user-approved cannot merge a PR that net-removes test files"
+}
+test_user_approved_cannot_waive_deleted_tests
+
+# Argument shaping. Found by probing before the reviewers reported:
+# `--user-approved --cross-model-cleared` made the NEXT FLAG the reason, firing
+# a full override whose stated justification was the string "--cross-model-cleared".
+# A reason that is actually a flag is not a reason.
+test_user_approved_rejects_a_flag_as_its_reason() {
+    refute_merge "$(run_hard_deny --user-approved --cross-model-cleared)" \
+        "--user-approved does not accept the next flag as its reason"
+}
+test_user_approved_rejects_a_flag_as_its_reason
+
+test_user_approved_rejects_whitespace_only_reason() {
+    refute_merge "$(run_hard_deny --user-approved "   ")" \
+        "--user-approved does not accept a whitespace-only reason"
+}
+test_user_approved_rejects_whitespace_only_reason
+
+# The audit record must not claim verification that did not happen. The first
+# version printed "clearance CERTIFIED round>=2 fresh ... denylist clear"
+# unconditionally, so an override that skipped both still produced a record
+# saying both were checked. Cross-model review reproduced the contradiction.
+test_override_audit_record_does_not_claim_false_verification() {
+    local result
+    result=$(run_hard_deny --user-approved "maintainer decision")
+
+    if ! printf '%s' "$result" | grep -q "GH_MERGE_INVOKED"; then
+        fail "fixture did not merge, cannot check the audit line: $result"
+    elif printf '%s' "$result" | grep -q "clearance CERTIFIED round>=2 fresh"; then
+        fail "audit record claims clearance was verified when the override SKIPPED it: $result"
+    elif printf '%s' "$result" | grep -q "denylist clear"; then
+        fail "audit record claims the denylist was clear when the override WAIVED it: $result"
+    elif ! printf '%s' "$result" | grep -q "OVERRIDDEN by --user-approved"; then
+        fail "audit record does not say which checks were waived: $result"
+    elif ! printf '%s' "$result" | grep -q "VERIFIED (not waivable)"; then
+        fail "audit record does not separate what WAS verified from what was waived: $result"
+    else
+        pass "override audit record states what was verified vs what was waived"
+    fi
+}
+test_override_audit_record_does_not_claim_false_verification
+
+test_override_posts_a_durable_record_to_the_pr() {
+    local result
+    result=$(run_hard_deny --user-approved "maintainer decision")
+    # The wrapper suppresses gh's own output, so assert on its confirmation.
+    # That line only prints when the post succeeded — proven by the
+    # COMMENT_FAILS test below, which shows a failed post blocks the merge.
+    if printf '%s' "$result" | grep -q "Override recorded on PR"; then
+        pass "override posts a durable record to the PR, not just stderr"
+    else
+        fail "override merged with no durable record — the reason evaporates with the session: $result"
+    fi
+}
+test_override_posts_a_durable_record_to_the_pr
+
+test_override_refuses_to_merge_if_the_record_cannot_be_posted() {
+    local tmpdir out code
+    tmpdir=$(setup_wrapper_fixture)
+    printf 'DIFF_FILES=hooks/codex-gate-check.sh\n' >> "$tmpdir/.gh-stub-config"
+    printf 'COMMENT_FAILS=1\n' >> "$tmpdir/.gh-stub-config"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 --user-approved "maintainer decision" 2>&1) && code=0 || code=$?
+    rm -rf "$tmpdir"
+    refute_merge "$(printf 'exit=%s %s' "$code" "$out")" \
+        "an override that cannot be recorded does not merge"
+}
+test_override_refuses_to_merge_if_the_record_cannot_be_posted
+
 echo "=== Results ==="
 echo "Passed: $PASSED"
 echo "Failed: $FAILED"
@@ -941,6 +1154,7 @@ echo "Failed: $FAILED"
 if [ $FAILED -gt 0 ]; then
     exit 1
 fi
+
 
 echo ""
 echo "All merge gate tests passed!"
