@@ -24,9 +24,12 @@ HOOK_DIR="${BASH_SOURCE[0]%/*}"
 [ "$HOOK_DIR" = "${BASH_SOURCE[0]}" ] && HOOK_DIR="."
 # shellcheck disable=SC1091
 source "$HOOK_DIR/_find-sdlc-root.sh"
-dedupe_plugin_or_project "${BASH_SOURCE[0]}" || { cat > /dev/null; exit 0; }
+dedupe_plugin_or_project "${BASH_SOURCE[0]}" || { read_stdin_bounded > /dev/null || true; exit 0; }
 
-cat > /dev/null
+# Bounded, not `cat`: a plain read-to-EOF never returns while the harness holds
+# the pipe open. This hook is advisory and always exits 0, so a timeout degrades
+# rather than blocks — same shape as token-spike-check.sh, its SessionStart twin.
+read_stdin_bounded > /dev/null || true
 
 if ! command -v jq > /dev/null 2>&1; then
     exit 0

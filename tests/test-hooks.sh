@@ -3247,6 +3247,105 @@ PYEOF
 }
 test_tdd_hook_matcher_covers_nested_src
 
+# NOTE: an unbounded-stdin-drain detector lived here briefly and was deleted on
+# both reviewers' certify conditions. It pattern-matched the source text for
+# bare `cat`, and independent review constructed a dozen real drains it missed
+# — `$(cat 2>/dev/null)`, `/bin/cat`, `cat <&0`, `mapfile`, `IFS= read` without
+# `-t`, `exec 0<`, `head -c`, `jq .` — while it false-positived on the string
+# "cat > /dev/null" inside a comment or heredoc. Widening it is the unwinnable
+# denylist shape ROADMAP #495(a) describes: every new spelling is discovered
+# only after it escapes.
+#
+# The real guarantee is behavioural and lives in tests/test-hook-stdin-bounded.sh,
+# which runs every hook against a stdin that never reaches EOF and fails if it
+# outlives its bound — independent of how the read is spelled. That roster is now
+# derived from hooks/hooks.json rather than hand-listed, which is what let
+# model-effort-check.sh escape v1.94.0 in the first place.
+
+# ---- GH #476: shipped hooks must not push the sudo-npm footgun ----
+#
+# Official setup docs mark the native install "Recommended" and explicitly warn
+# against `sudo npm install -g`, which breaks future updates and uninstalls.
+# instructions-loaded-check.sh nudged every consumer toward the global npm
+# install on every session start, so the wizard did not merely omit the advice
+# in #476 — it shipped the opposite. `claude update` is correct for both
+# install kinds.
+test_no_shipped_hook_recommends_global_npm_cc_install() {
+    local hits
+    # Order-independent and flag-tolerant: matches `install -g`, `i -g`,
+    # `--global`, `-g install`, extra flags, and a quoted package name. A pure
+    # syntax denylist is still losable (see the positive test below, which is
+    # the real anchor) — this is the cheap tripwire, not the guarantee.
+    hits=$(grep -rnE "npm([[:space:]]+[^[:space:]]+)*[[:space:]]+(-g|--global)([[:space:]]+[^[:space:]]+)*[[:space:]]+[\"']?@anthropic-ai/claude-code" "$HOOKS_DIR" 2>/dev/null || true)
+    if [ -z "$hits" ]; then
+        pass "#476: no shipped hook recommends a global npm install of Claude Code"
+    else
+        fail "#476: a shipped hook tells consumers to switch install channels:
+$hits"
+    fi
+}
+test_no_shipped_hook_recommends_global_npm_cc_install
+
+# The positive anchor. Absence tests are losable — any unlisted spelling of the
+# wrong advice passes one. This asserts what the hook actually EMITS, by running
+# it, which is a fixed target rather than an open-ended syntax space (the
+# defining-output shape ROADMAP #495(a) recommends over a denylist).
+test_cc_update_nudge_is_install_method_aware() {
+    local hook="$HOOKS_DIR/instructions-loaded-check.sh"
+    local cache_dir out
+    cache_dir=$(mktemp -d "${TMPDIR:-/tmp}/cc-nudge.XXXXXX") || {
+        fail "#476: could not create temp cache dir"; return
+    }
+    # Stub `claude` rather than depending on the real binary. The nudge branch
+    # is gated on `command -v claude` (hooks/instructions-loaded-check.sh), and
+    # CI's ubuntu-latest runner has no Claude Code installed — so without this
+    # the test would fail in CI for an environmental reason while passing on a
+    # maintainer laptop. It also pins the "local" version, so the assertion no
+    # longer depends on whatever version happens to be installed here.
+    mkdir -p "$cache_dir/bin"
+    printf '#!/bin/sh\necho "1.0.0 (Claude Code)"\n' > "$cache_dir/bin/claude"
+    chmod +x "$cache_dir/bin/claude"
+    # npm is stubbed too: the branch is gated on it, and a real `npm view`
+    # would make this test depend on the network and on the live published
+    # version. The cached latest-cc-version below is what should be consulted.
+    printf '#!/bin/sh\nexit 1\n' > "$cache_dir/bin/npm"
+    chmod +x "$cache_dir/bin/npm"
+
+    # Force the drift branch: a cached "latest" far above the stubbed local.
+    # CLAUDE_PROJECT_DIR is required — the nudge is deliberately gated on it so
+    # it stays silent under Codex/OpenCode (#375).
+    printf '%s' '99.99.99' > "$cache_dir/latest-cc-version"
+    out=$(PATH="$cache_dir/bin:$PATH" CLAUDE_PROJECT_DIR="$SCRIPT_DIR/.." \
+          SDLC_WIZARD_CACHE_DIR="$cache_dir" \
+          "$hook" < /dev/null 2>&1 || true)
+    rm -rf "$cache_dir"
+
+    if ! printf '%s' "$out" | grep -q 'Claude Code update available'; then
+        fail "#476: could not exercise the update nudge — fixture no longer triggers it, so the assertion below would be vacuous. Output was: $(printf '%s' "$out" | head -c 200)"
+        return
+    fi
+    local nudge
+    nudge=$(printf '%s' "$out" | grep 'Claude Code update available')
+
+    # BOTH halves are asserted. Requiring only `claude update` accepted a
+    # regression to a bare `(run 'claude update')`, which is wrong for
+    # brew/apt/dnf/apk/winget installs — those need their own package manager,
+    # and `claude update` reports them as already current.
+    if printf '%s' "$nudge" | grep -qE 'npm[[:space:]]+(install|i)|--global'; then
+        fail "#476: the emitted nudge still names npm as the update channel:
+$nudge"
+    elif ! printf '%s' "$nudge" | grep -q 'claude update'; then
+        fail "#476: the update nudge names no usable update command:
+$nudge"
+    elif ! printf '%s' "$nudge" | grep -qiE 'package manager'; then
+        fail "#476: the nudge gives only 'claude update' and never mentions package-manager installs, which it cannot update:
+$nudge"
+    else
+        pass "#476: the emitted update nudge covers both halves (claude update + package-manager installs)"
+    fi
+}
+test_cc_update_nudge_is_install_method_aware
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
