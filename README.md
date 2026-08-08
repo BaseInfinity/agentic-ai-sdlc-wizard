@@ -71,7 +71,7 @@ You want Claude Code to follow engineering discipline automatically:
 - **Write tests first** (TDD enforced via hooks)
 - **State confidence** (LOW = escalate to a model first, don't guess)
 - **Track work visibly** (TaskCreate)
-- **Self-review before presenting**
+- **Cross-model review before shipping** (a *different* model checks the work — same-model self-review was removed in #486 after it reported all-green while an independent model found real P1s)
 - **Prove it's better** (use native features unless you prove custom wins)
 
 The wizard auto-detects your stack (package.json, test framework, deployment targets) and generates bespoke hooks + skills + docs. CI validates the generated assets; cross-stack setup-path E2E is on the [roadmap](ROADMAP.md).
@@ -125,7 +125,7 @@ codex --version   # confirm ready
 
 That's it. Codex picks up your OpenAI account's best available model automatically — **if you have GPT-5.6 Sol, it uses Sol; otherwise it falls back to Terra**. No model config needed.
 
-**How to use it:** after Claude's self-review passes, write a one-file mission brief and run:
+**How to use it:** when the change is high-stakes, write a one-file mission brief and run:
 
 ```bash
 codex exec -c 'model_reasoning_effort="high"' -s danger-full-access \
@@ -291,7 +291,7 @@ Tests aren't just validation - they're the foundation everything else builds on.
 |--------|---------|-------|
 | `claude-md-management` | **Required** - CLAUDE.md maintenance | CLAUDE.md only |
 | `claude-code-setup` | Recommends automations | Recommendations |
-| `code-review` | Local self-review and PR review (optional) | Local + PRs |
+| `code-review` | Optional preflight input to cross-model review; PR review | Local + PRs |
 
 ## Prove It's Better
 
@@ -343,7 +343,7 @@ This wizard is one of three published siblings. Same enforcement philosophy, dif
 
 | Package | Agent / Domain | What It Does |
 |---------|----------------|--------------|
-| [`agentic-sdlc-wizard`](https://www.npmjs.com/package/agentic-sdlc-wizard) ([repo](https://github.com/BaseInfinity/claude-sdlc-harness)) | Claude Code / SDLC | This repo. Plan → TDD → self-review for code, with hooks + skills + CI scoring |
+| [`agentic-sdlc-wizard`](https://www.npmjs.com/package/agentic-sdlc-wizard) ([repo](https://github.com/BaseInfinity/claude-sdlc-harness)) | Claude Code / SDLC | This repo. Plan → TDD → cross-model review for code, with hooks + skills + CI scoring |
 | [`codex-sdlc-wizard`](https://www.npmjs.com/package/codex-sdlc-wizard) ([repo](https://github.com/BaseInfinity/codex-sdlc-wizard)) | OpenAI Codex / SDLC | Same SDLC enforcement, ported to Codex CLI (writes `.codex/` + `AGENTS.md`) |
 | [`opencode-sdlc-wizard`](https://www.npmjs.com/package/opencode-sdlc-wizard) ([repo](https://github.com/BaseInfinity/opencode-sdlc-wizard)) | OpenCode / privacy-first | Same SDLC enforcement against ANY backend OpenCode supports — local Ollama, Azure OpenAI, Together, Groq, OpenRouter. Writes `.opencode/` + `AGENTS.md`. |
 | [`claude-gdlc-wizard`](https://www.npmjs.com/package/claude-gdlc-wizard) ([repo](https://github.com/BaseInfinity/claude-gdlc-wizard)) | Claude Code / GDLC | Game Development Life Cycle — persona-driven playtest cycles, triangulated findings, ratchet-only-tightens |

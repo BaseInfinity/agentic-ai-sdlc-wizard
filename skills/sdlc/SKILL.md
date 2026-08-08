@@ -12,13 +12,13 @@ Loaded from repo-local **`.claude/skills/sdlc/SKILL.md`**, which wins over globa
 ## Task
 $ARGUMENTS
 
-Operational checklist. Full protocol: `CLAUDE_CODE_SDLC_WIZARD.md`.
+Operational checklist — **complete on its own**. Full protocol (optional depth, Claude Code installs only): `CLAUDE_CODE_SDLC_WIZARD.md`; if absent, do not hunt for it.
 
 **If the user requests /sdlc, ALWAYS run the full workflow — even for mechanical tasks.** Never silently skip; if overkill, say so and ask.
 
 ## Full SDLC Checklist
 
-Your FIRST action must be a TodoWrite covering every phase below. Compact form (omit `activeForm` to use the subject as the spinner label):
+Your FIRST action must be a task list covering every phase below — `TodoWrite`, or `TaskCreate` where that is what your harness exposes (they are not both present everywhere). Compact form (omit `activeForm` to use the subject as the spinner label):
 
 ```
 TodoWrite([
@@ -44,7 +44,6 @@ TodoWrite([
   // REVIEW
   { content: "DRY check: Is logic duplicated elsewhere?", status: "pending" },
   { content: "Visual consistency check (if UI change)", status: "pending" },
-  { content: "Self-review: run /code-review", status: "pending" },
   { content: "Security review (if warranted)", status: "pending" },
   { content: "Cross-model review (high-stakes)", status: "pending" },
   { content: "Scope guard: only changes related to task? No legacy/fallback code left?", status: "pending" },
@@ -72,10 +71,10 @@ TodoWrite([
 | plan_mode_tool | 1 | | Use TodoWrite/TaskCreate/EnterPlanMode |
 | tdd_green_ran | 1 | | Run tests, show runner output |
 | tdd_green_pass | 1 | | All tests pass in final run |
-| self_review | 1 | **YES** | Read back files/diffs you modified |
+| self_review | 1 | | Read back files/diffs you modified |
 | clean_code | 1 | | One coherent approach, no dead code |
 
-**Total: 10 points** (11 for UI tasks, +1 for design_system check). Critical miss on `tdd_red` or `self_review` = process failure regardless of total score.
+**Total: 10 points** (11 for UI tasks, +1 for design_system check). Critical miss on `tdd_red` = process failure regardless of total score.
 
 ## Test Failure Recovery
 
@@ -123,34 +122,21 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 **Pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (1M) — do not set this for `opusplan` (200K, too aggressive). **Advisor (v2.1.170+):** `advisorModel: "fable"` works with all drivers above; set in `/claude-setup-wizard` Step 9.5.
 
-## Self-Review Loop
-
-```
-PLANNING → DOCS → TDD RED → GREEN → Tests Pass → Self-Review
-    ^                                                  |
-    +--- Ask user: fix in new plan? ←- Issues found? YES (NO → Present)
-```
-
-The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confidence ≥ 80 are real, < 80 are likely false positives. Found issues → ask "Want a plan to fix?" → new plan → docs → TDD → review.
-
 ## Cross-Model Review (REQUIRED for High-Stakes)
 
 **When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI + OpenAI API key. **Reviewer:** `gpt-5.6-sol` `high` — adversarial diversity. **Cadence:** Fable during design, Codex once before commit — don't stack both per task unless the decision itself needs two independent reviewers.
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
-1. **Preflight** (`.reviews/preflight-{review_id}.md`) — what you already checked: `/code-review` passed, tests passing, manual verifications, known limits. Avoids re-litigating verified ground.
-2. **Mission-first handoff** (`.reviews/handoff.json`) — required keys: `"review_id"`, `"status": "PENDING_REVIEW"`, `"round": 1`, `"mission"`/`"success"`/`"failure"` (without them you get "looks good"), `"files_changed"`, `"verification_checklist"` (verification checklist with file:line refs — NOT generic), `"review_instructions"`, `"preflight_path"`. Optional `"pr_number":` opts into PreCompact self-heal (#209: MERGED → implicit CERTIFIED).
-3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; background avoids the Bash 10-min `timeout` cap that force-kills foreground codex (bundles take 5–30 min; no wrapper timeout). Foreground burned 70 min on a 7-min review (#364).
-4. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Don't hunt new surfaces, but report every defect; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — always run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
+**Handoff/preflight file mechanics live in the wizard doc.** These two steps stay here because improvising them has cost this repo real time: the codex flags below prevent a stdin hang and a 70-minute foreground kill (#364), and the `commit_sha` rule is what the merge gate checks for staleness (#437).
+
+1. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; background avoids the Bash 10-min `timeout` cap that force-kills foreground codex (bundles take 5–30 min; no wrapper timeout). Foreground burned 70 min on a 7-min review (#364).
+2. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Don't hunt new surfaces, but report every defect; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — always run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
 
 **Convergence:** judge by max severity per round. Escalate, never ship.
+**Loop autonomy — no per-round check-ins.** While findings are landing, the loop is WORKING — fix, push, launch the next reviewer round in the SAME turn. Mid-loop, every turn ends with the next round already running in background; ending a turn with no pending work IS a stop decision and must cite one of: **CONVERGED** (required verdicts in on head SHA, zero unresolved findings), **DEADLOCK** (same finding unmoved after 2 rechecks, or a non-waivable gate after 2 fix attempts), **BOUND** (context ceiling near, or a gate that mechanically requires a human). Every round must carry a delta — new commits or a new per-finding response; resubmitting an unchanged round is reviewer-shopping. No fixed round cap: rounds still finding real defects are the system working (#497: five rounds, all real). A one-line status between rounds is fine; handing the turn back is not.
 
 **Multi-reviewer:** respond to each independently. **Non-code domains:** add `"audience"`/`"stakes"` keys.
-
-### Release Review Focus
-
-Before any release/publish, add to `verification_checklist`: **CHANGELOG consistency** (sections present, no lost entries), **Version parity** (package.json + SDLC.md + CHANGELOG + wizard metadata), **Stale examples** (hardcoded version strings), **Docs accuracy** (README + ARCHITECTURE reflect current features), **CLI-distributed file parity** (live skills/hooks match CLI templates).
 
 **Full protocol** (rationale, full JSON example, anti-patterns like "find at least N", convergence diagrams): `CLAUDE_CODE_SDLC_WIZARD.md` → "Cross-Model Review Loop".
 
@@ -164,6 +150,7 @@ Standard pattern: `*_DOCS.md` — living documents that grow with the feature (`
 2. Code change contradicts or extends what the doc describes → MUST update the feature doc
 3. No `*_DOCS.md` exists and feature touches 3+ files → create one
 4. Project has `ROADMAP.md` → mark items done, add new items (ROADMAP feeds CHANGELOG)
+5. **Change alters behaviour README describes → update README.** It ships and is the most-read doc; a deleted behaviour still advertised there is a lie to every consumer
 
 `/claude-md-improver` audits CLAUDE.md structure periodically. Does NOT cover feature docs.
 
@@ -240,17 +227,7 @@ If you can't write a quality test for it, you can't prove it works.
 
 ### Memory Audit Protocol
 
-Per-user memory at `~/.claude/projects/<proj>/memory/` accumulates private learnings. Some are portable lessons (tool quirks, platform gotchas) worth promoting to wizard docs.
-
-**When to run:** end-of-release, after debugging-heavy sessions, or on explicit "audit my memory" request.
-
-**Rule-based denylist** (deterministic, no LLM): `type: user` / `type: reference` → keep private, never promote. `type: project` / `type: feedback` → manual review (mixed private state + portable rule).
-
-**Destinations** (no new files): gotchas → `SDLC.md`. Testing → `TESTING.md`. Skill quirks → that `SKILL.md`. Process rules → `/sdlc` via `/feedback`. **A process rule saved only to memory is a /sdlc gap — codify it so every consumer inherits it. Memory changes one agent; docs change everyone.**
-
-**Tracking:** `promoted_to: <path>` in the memory frontmatter; later audits skip promoted entries.
-
-**Human gate is MANDATORY.** Protocol produces diffs; user approves chunk-by-chunk. Never auto-apply. Prove-It: build a `/memory-audit` slash command only after running 4+ times manually. (Full protocol: wizard doc.)
+End of release: audit `~/.claude/projects/<proj>/memory/` and promote portable lessons into shared docs. **A process rule saved only to memory is a /sdlc gap** — memory changes one agent, docs change everyone. Type-based denylist, destinations and the MANDATORY human gate: `CLAUDE_CODE_SDLC_WIZARD.md`.
 
 ## Post-Mortem: Process Failures Become Rules
 

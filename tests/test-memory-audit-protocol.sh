@@ -1,6 +1,13 @@
 #!/bin/bash
 # Memory Audit Protocol tests
-# Validates the "Memory Audit Protocol" section in skills/sdlc/SKILL.md
+# Validates the "Memory Audit Protocol" — now in CLAUDE_CODE_SDLC_WIZARD.md.
+#
+# GH #489: the protocol moved out of the byte-capped always-loaded skill into
+# the on-demand doc. It was ALREADY supposed to live there — the skill said
+# "Full protocol: CLAUDE_CODE_SDLC_WIZARD.md" while the wizard doc said "the
+# /sdlc skill's Memory Audit Protocol section defines...". A circular pointer,
+# with the protocol existing in exactly one of the two. This test now checks
+# the doc that actually claims to hold it.
 # and the classifier behavior against tests/fixtures/memory-audit-corpus/.
 #
 # Test groups:
@@ -17,7 +24,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+SKILL="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
 CORPUS="$REPO_ROOT/tests/fixtures/memory-audit-corpus"
 
 RED='\033[0;31m'
@@ -37,17 +44,29 @@ skip() { echo -e "${YELLOW}SKIP${NC}: $1"; }
 # ────────────────────────────────────────────
 
 test_protocol_section_exists() {
-    if grep -q '^### Memory Audit Protocol' "$SKILL"; then
-        pass "Memory Audit Protocol section present in skills/sdlc/SKILL.md"
+    if grep -qE '^#{2,3} Memory Audit Protocol' "$SKILL"; then
+        pass "Memory Audit Protocol section present in CLAUDE_CODE_SDLC_WIZARD.md"
     else
-        fail "skills/sdlc/SKILL.md is missing '### Memory Audit Protocol' heading"
+        fail "CLAUDE_CODE_SDLC_WIZARD.md is missing the Memory Audit Protocol heading — the skill points here for it"
     fi
 }
 
+# Slice the Memory Audit section BEFORE checking its contents. Grepping the whole
+# 291KB doc passes vacuously: "When to run" also appears in the Cross-Model Review
+# section, so removing it from THIS protocol still passed. Verified by review.
+_memory_audit_section() {
+    awk '/^#{2,3} Memory Audit Protocol/{f=1} f{print} f && /^#{2,3} [^M]/ && !/Memory Audit/{if(++n>1)exit}' "$SKILL"
+}
+
 test_protocol_subsections_present() {
-    local missing=""
+    local missing="" section
+    section=$(_memory_audit_section)
+    if [ -z "$section" ]; then
+        fail "Memory Audit section could not be sliced — this assertion would be vacuous"
+        return
+    fi
     for keyword in "When to run" "Rule-based denylist" "Destinations" "Tracking" "Human gate"; do
-        if ! grep -qF "$keyword" "$SKILL"; then
+        if ! printf '%s' "$section" | grep -qF "$keyword"; then
             missing="${missing:+${missing}, }$keyword"
         fi
     done

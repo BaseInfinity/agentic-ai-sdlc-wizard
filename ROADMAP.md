@@ -23,6 +23,18 @@ The previous release, v1.88.0 (2026-07-24), carried #468 (Opus 5 becomes the Set
 
 **Open PRs: see [the PR list](https://github.com/BaseInfinity/claude-sdlc-harness/pulls).** This line used to restate the count and said "none" while a PR was open — the tracker is the source, and restating it here only creates something to go stale. #474 merged 2026-07-29; #471 was closed the same day as superseded by it (that branch was CONFLICTING and carried 5 unresolved Codex findings, the worst a newline-injection bypass introduced by its own fix — it tiered the denylist to reduce how *often* the gate fires, and frequency was never the actual defect).
 
+**Shipped since this list was written (2026-08-07/08).** v1.95.0 published to npm:
+the repo renamed to `claude-sdlc-harness` (npm package, plugin IDs, CLI bin and slash
+commands deliberately unchanged), three defects that were reaching every consumer, and
+`--user-approved` on the merge gate. Then GH #486 and #489 landed together on
+`fix/486-self-review-reshape`: same-model self-review instructions deleted (the rubric row
+kept, so the 10-point baselines stay valid), the Memory Audit Protocol and cross-model file
+mechanics moved to the wizard doc, and Cowork scoped explicitly to guidance-not-enforcement.
+`skills/sdlc/SKILL.md` gained real headroom against its 20,000-byte ceiling, so edits are no
+longer forced trades. (No byte figure here on purpose: it was written wrong three times in
+one branch. `wc -c skills/sdlc/SKILL.md` is the authority.) Milestones now exist (v1.96–v1.99) and are the source of order;
+this list is being superseded by them per GH #482.
+
 **Start here next, in this order:**
 
 **Row #485 was NOT implemented, despite this section claiming otherwise for

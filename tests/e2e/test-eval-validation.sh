@@ -851,10 +851,12 @@ test_critical_criteria_self_review_fail() {
     local miss failures
     miss=$(echo "$result" | jq -r '.critical_miss')
     failures=$(echo "$result" | jq -r '.critical_failures | join(",")')
-    if [ "$miss" = "true" ] && [ "$failures" = "self_review" ]; then
-        pass "self_review=0 → critical_miss=true, failures=[self_review]"
+    # GH #486: self_review is scored but NO LONGER critical. tdd_red is the sole
+    # must-pass. A missing read-back costs a point; it does not fail the run.
+    if [ "$miss" = "false" ] && [ -z "$failures" ]; then
+        pass "#486: self_review=0 alone is NOT a critical miss (scored, not gating)"
     else
-        fail "Expected critical_miss=true + self_review failure, got miss=$miss failures=$failures"
+        fail "self_review=0 should no longer be critical, got miss=$miss failures=$failures"
     fi
 }
 
@@ -899,10 +901,12 @@ test_critical_criteria_both_fail() {
     local miss count
     miss=$(echo "$result" | jq -r '.critical_miss')
     count=$(echo "$result" | jq '.critical_failures | length')
-    if [ "$miss" = "true" ] && [ "$count" = "2" ]; then
-        pass "Both critical criteria fail → critical_miss=true, 2 failures"
+    # GH #486: with self_review demoted from critical, tdd_red is the only
+    # criterion that can produce a critical failure — so this yields exactly one.
+    if [ "$miss" = "true" ] && [ "$count" = "1" ]; then
+        pass "#486: tdd_red=0 with self_review=0 → critical_miss=true, exactly 1 failure"
     else
-        fail "Expected critical_miss=true + 2 failures, got miss=$miss count=$count"
+        fail "Expected critical_miss=true + exactly 1 failure (tdd_red only), got miss=$miss count=$count"
     fi
 }
 
