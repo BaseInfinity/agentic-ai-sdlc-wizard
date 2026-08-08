@@ -34,14 +34,24 @@ if [ ! -f "$WORKFLOW" ]; then
     exit 1
 fi
 
-# Test 1: Workflow has the EXACT NEGATIVE comparison `github.repository != 'BaseInfinity/claude-sdlc-wizard'`.
-# A literal `==` would invert the semantics (skip consumers, run on self) — must catch that.
-# Use single-line grep with the actual operator embedded in the pattern.
-if grep -qE "github\.repository[[:space:]]*!=[[:space:]]*['\"]BaseInfinity/claude-sdlc-wizard['\"]" "$WORKFLOW"; then
-    pass "Workflow uses exact negative comparison: github.repository != 'BaseInfinity/claude-sdlc-wizard'"
-else
-    fail "Workflow must use exact: github.repository != 'BaseInfinity/claude-sdlc-wizard' — verify operator and string both"
-fi
+# Test 1: Workflow has the EXACT NEGATIVE comparison for EVERY slug this repo
+# answers to. A literal `==` would invert the semantics (skip consumers, run on
+# self) — must catch that.
+#
+# Both the current and the planned slug are required, because a GitHub rename
+# does NOT rewrite this string. The condition would silently start matching, and
+# the paid self-review this skip exists to prevent would begin running on our own
+# PRs — costing quota with no signal that anything changed. GitHub redirects web
+# and git operations; it does not redirect a literal comparison inside a
+# workflow. Listing both slugs makes the rename a no-op for this gate, in either
+# direction, so it can be flipped without a flag day.
+for slug in "BaseInfinity/claude-sdlc-wizard" "BaseInfinity/claude-sdlc-harness"; do
+    if grep -qE "github\.repository[[:space:]]*!=[[:space:]]*['\"]${slug}['\"]" "$WORKFLOW"; then
+        pass "Workflow uses exact negative comparison: github.repository != '$slug'"
+    else
+        fail "Workflow must use exact: github.repository != '$slug' — verify operator and string both"
+    fi
+done
 
 # Test 1b: Negative control — explicitly fail if `==` operator is used (would skip consumers).
 if grep -qE "github\.repository[[:space:]]*==[[:space:]]*['\"]BaseInfinity/claude-sdlc-wizard['\"]" "$WORKFLOW"; then

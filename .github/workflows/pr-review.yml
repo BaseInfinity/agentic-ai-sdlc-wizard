@@ -31,8 +31,15 @@ jobs:
     # PRs (see SDLC skill), so the Claude PR review is redundant on self-repo.
     # Consumers using pr-review.yml in their own projects WILL run this normally —
     # the skip only fires when github.repository matches the wizard repo exactly.
+    # Both slugs are listed on purpose. A GitHub rename does not rewrite this
+    # string: the redirect covers web and git, not a literal comparison inside a
+    # workflow. With only the old slug here, renaming the repo would silently
+    # flip this condition true and start running the paid self-review on our own
+    # PRs — burning quota with nothing to indicate anything had changed. Listing
+    # both makes the rename a no-op for this gate, in either direction.
     if: |
       github.repository != 'BaseInfinity/claude-sdlc-wizard' &&
+      github.repository != 'BaseInfinity/claude-sdlc-harness' &&
       ((github.event.action == 'opened' && github.event.pull_request.draft != true) ||
        github.event.action == 'synchronize' ||
        github.event.action == 'ready_for_review' ||
