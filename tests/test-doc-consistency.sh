@@ -3114,6 +3114,64 @@ test_doc_sync_rule_names_readme() {
 }
 test_doc_sync_rule_names_readme
 
+# ---- the first-action mandate must name a tool the harness actually has ----
+#
+# The skill opens with "Your FIRST action must be a TodoWrite". TodoWrite is a
+# standard Claude Code tool but is NOT exposed in every configuration — this
+# session has TaskCreate/TaskUpdate/TaskList and no TodoWrite. A driver reading
+# a mandate for a tool it cannot call either ignores rule 1 or invents a
+# substitute, and neither is what the rule wants.
+#
+# The rubric row already hedges correctly ("Use TodoWrite or TaskCreate"). The
+# mandate did not, so the two disagreed about the same requirement.
+test_first_action_mandate_names_available_tool() {
+    local f="$REPO_ROOT/skills/sdlc/SKILL.md" line
+    line=$(grep -m1 "FIRST action must be" "$f")
+    if [ -z "$line" ]; then
+        fail "the first-action mandate is gone from the skill — this assertion is now vacuous"
+    elif printf '%s' "$line" | grep -q "TaskCreate"; then
+        pass "first-action mandate names TaskCreate as well as TodoWrite (harnesses differ)"
+    else
+        fail "the first-action mandate names only TodoWrite, which is not exposed in every harness — a driver without it cannot follow rule 1"
+    fi
+}
+test_first_action_mandate_names_available_tool
+
+# ---- the skill's exempted landmines must stay pinned ----
+#
+# GH #489 moved the cross-model file mechanics to the wizard doc but EXEMPTED two
+# things from the move: the codex invocation flags (#364 — `< /dev/null` and
+# background, which prevent a stdin hang and a 70-minute foreground kill) and the
+# commit_sha-on-CERTIFIED rule (#437 — what the merge gate checks for staleness).
+#
+# The exemption was granted on the reasoning that improvising these costs real
+# incidents. But the reviewer that granted it noted its own spec was incomplete:
+# an exemption justified by "byte pressure deletes exactly the prose no test
+# protects" needs a pin test in the same change, or the next trim round deletes
+# the very lines the exemption exists to keep.
+#
+# Before #489 these were partially covered by assertions that have since been
+# retargeted to the wizard doc. The multi-line codex-stdin check does not match
+# the skill's single-line inline command, so it is silently exempt there. Today
+# nothing fails if steps 1-2 disappear. This closes that.
+test_skill_keeps_exempted_landmines() {
+    local f="$REPO_ROOT/skills/sdlc/SKILL.md" missing=""
+    [ -f "$f" ] || { fail "skills/sdlc/SKILL.md missing"; return; }
+    grep -q -- '< /dev/null' "$f" || missing="$missing codex-stdin-guard(#364)"
+    grep -qi 'run_in_background' "$f"  || missing="$missing background-flag(#364)"
+    grep -q  'commit_sha' "$f"         || missing="$missing commit_sha-on-CERTIFIED(#437)"
+    # The Memory Audit pointer is the only route from the always-loaded skill to
+    # the protocol that now lives in the wizard doc. Trim it and the protocol
+    # becomes undiscoverable from the surface a driver actually reads.
+    grep -qi 'Memory Audit Protocol' "$f" || missing="$missing memory-audit-pointer"
+    if [ -z "$missing" ]; then
+        pass "skill retains its #489-exempted landmines and the memory-audit pointer"
+    else
+        fail "the skill lost content #489 explicitly exempted from the move — improvising these is what #364 and #437 memorialise:$missing"
+    fi
+}
+test_skill_keeps_exempted_landmines
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then

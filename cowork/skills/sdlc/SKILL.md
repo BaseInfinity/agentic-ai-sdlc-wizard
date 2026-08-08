@@ -18,7 +18,7 @@ Operational checklist — **complete on its own**. Full protocol (optional depth
 
 ## Full SDLC Checklist
 
-Your FIRST action must be a TodoWrite covering every phase below. Compact form (omit `activeForm` to use the subject as the spinner label):
+Your FIRST action must be a task list covering every phase below — `TodoWrite`, or `TaskCreate` where that is what your harness exposes (they are not both present everywhere). Compact form (omit `activeForm` to use the subject as the spinner label):
 
 ```
 TodoWrite([

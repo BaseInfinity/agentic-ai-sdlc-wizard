@@ -1640,7 +1640,10 @@ test_preflight_doc_mentioned() {
 
 # Test: Review prompt includes verification checklist pattern
 test_verification_checklist() {
-    if grep -qi "verification checklist\|VERIFICATION CHECKLIST\|specific.*verification\|verify.*checklist" "$WIZARD"; then
+    # Anchored on the literal JSON key, not a loose phrase: the loose pattern
+    # matched 4+ unrelated places in a 291KB doc, so deleting the handoff
+    # schema would not have failed it. Near-vacuous.
+    if grep -q '"verification_checklist"' "$WIZARD"; then
         pass "Review prompt includes verification checklist pattern"
     else
         fail "Review prompt should include verification checklist pattern (not generic 'review this')"

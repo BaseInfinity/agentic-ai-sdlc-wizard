@@ -1348,7 +1348,7 @@ Here's what a typical task looks like with this system:
 │                                                                         │
 │ Claude:                                                                 │
 │ 1. DRY check - no duplicated logic                                     │
-│ 2. Self-review with /code-review                                       │
+│ 2. Cross-model review (a DIFFERENT model checks the work)             │
 │ 3. Security review (auth change = yes)                                 │
 │    - ✅ Token properly hashed                                          │
 │    - ✅ Rate limiting on endpoint                                       │
@@ -1506,7 +1506,7 @@ Create `.github/CODEOWNERS`:
 | Easy rollback (revert PR) | ✓ | ✓ |
 | Human review required | — | ✓ |
 
-**Not required, but good practice.** The SDLC workflow includes a self-review step using `/code-review` (native Claude Code plugin). It launches parallel review agents for CLAUDE.md compliance, bug detection, and logic/security checks. You always have final say — the review just catches things you might miss.
+**Not required, but good practice.** The SDLC workflow's review step is cross-model; `/code-review` remains available as optional preflight input, using `/code-review` (native Claude Code plugin). It launches parallel review agents for CLAUDE.md compliance, bug detection, and logic/security checks. You always have final say — the review just catches things you might miss.
 
 **Code review workflows:**
 
@@ -2272,7 +2272,7 @@ Create `.claude/hooks/sdlc-prompt-check.sh`:
 
 cat << 'EOF'
 SDLC BASELINE:
-1. TodoWrite FIRST (plan tasks before coding)
+1. Task list FIRST (TodoWrite or TaskCreate) (plan tasks before coding)
 2. STATE CONFIDENCE: HIGH/MEDIUM/LOW
 3. LOW confidence or FAILED 2x? Ladder: Fable -> Codex high -> human LAST
 4. Never ask what a model can settle; confidence is not authorization
@@ -2287,7 +2287,6 @@ Workflow phases:
 1. Plan Mode (research) → Present approach + confidence
 2. Transition (update docs) → Request /compact
 3. Implementation (TDD after compact)
-4. SELF-REVIEW (/code-review) → BEFORE presenting to user
 
 Quick refs: SDLC.md | TESTING.md | *_DOCS.md for feature
 EOF
@@ -2571,7 +2570,7 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 
 ### Round 1: Initial Review
 
-1. After self-review passes, write `.reviews/handoff.json`:
+1. When the change is high-stakes, write `.reviews/handoff.json` (optionally run `/code-review` first as preflight input — it reduces what the reviewer has to find, but is no longer a gate):
    ```jsonc
    {
      "review_id": "feature-xyz-001",
