@@ -111,7 +111,7 @@ fi
 if [ "$SHOULD_EMIT_BASELINE" -eq 1 ]; then
     cat << 'EOF'
 SDLC BASELINE:
-1. TodoWrite FIRST (plan tasks before coding)
+1. Task list FIRST (TodoWrite or TaskCreate) (plan tasks before coding)
 2. STATE CONFIDENCE: HIGH/MEDIUM/LOW
 3. LOW confidence or FAILED 2x? Ladder: Fable -> Codex high -> human LAST
 4. Never ask what a model can settle; confidence is not authorization
@@ -127,7 +127,7 @@ Workflow phases:
 2. Transition (update docs) → Request /compact
 3. Implementation (TDD after compact)
 
-Quick refs: SDLC.md | TESTING.md | *_PLAN.md for feature
+Quick refs: SDLC.md | TESTING.md | *_DOCS.md for feature
 EOF
     # Prune sentinels older than 7d so cache doesn't grow forever.
     # Best-effort: errors silently swallowed.

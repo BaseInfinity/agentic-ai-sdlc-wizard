@@ -3157,13 +3157,34 @@ test_first_action_mandate_names_available_tool
 test_skill_keeps_exempted_landmines() {
     local f="$REPO_ROOT/skills/sdlc/SKILL.md" missing=""
     [ -f "$f" ] || { fail "skills/sdlc/SKILL.md missing"; return; }
-    grep -q -- '< /dev/null' "$f" || missing="$missing codex-stdin-guard(#364)"
-    grep -qi 'run_in_background' "$f"  || missing="$missing background-flag(#364)"
-    grep -q  'commit_sha' "$f"         || missing="$missing commit_sha-on-CERTIFIED(#437)"
+    # Anchor on the FUNCTIONAL line, not on any mention. Codex broke the first
+    # version of this test by deleting `< /dev/null` from the actual command
+    # while leaving the explanatory prose — it still passed, because a loose
+    # grep cannot tell a working invocation from a sentence about one. My own
+    # mutation proof missed it: I deleted every occurrence at once, so the test
+    # went red for the wrong reason.
+    local codex_cmd
+    codex_cmd=$(grep -m1 'codex exec' "$f")
+    if [ -z "$codex_cmd" ]; then
+        missing="$missing codex-invocation-line(#364)"
+    else
+        printf '%s' "$codex_cmd" | grep -q -- '< /dev/null' \
+            || missing="$missing codex-stdin-guard-ON-THE-COMMAND(#364)"
+        printf '%s' "$codex_cmd" | grep -q -- '-s danger-full-access' \
+            || missing="$missing danger-full-access-flag(#364)"
+    fi
+    grep -qi 'run_in_background' "$f" || missing="$missing background-flag(#364)"
+    # The RULE, not a passing mention: it must say to WRITE commit_sha on CERTIFIED.
+    grep -qiE 'commit_sha.*(CERTIFIED|rev-parse)|(CERTIFIED|write).*commit_sha' "$f" \
+        || missing="$missing commit_sha-WRITE-RULE(#437)"
     # The Memory Audit pointer is the only route from the always-loaded skill to
     # the protocol that now lives in the wizard doc. Trim it and the protocol
     # becomes undiscoverable from the surface a driver actually reads.
-    grep -qi 'Memory Audit Protocol' "$f" || missing="$missing memory-audit-pointer"
+    # Heading alone is not a pointer. The pointer is the DESTINATION — without it
+    # the protocol is undiscoverable from the always-loaded surface.
+    grep -qiE 'Memory Audit Protocol' "$f" || missing="$missing memory-audit-heading"
+    grep -A4 -i 'Memory Audit Protocol' "$f" | grep -q 'CLAUDE_CODE_SDLC_WIZARD.md' \
+        || missing="$missing memory-audit-DESTINATION-pointer"
     if [ -z "$missing" ]; then
         pass "skill retains its #489-exempted landmines and the memory-audit pointer"
     else
@@ -3205,6 +3226,64 @@ test_no_shipped_surface_gates_on_self_review() {
     fi
 }
 test_no_shipped_surface_gates_on_self_review
+
+# ---- the tutorial hook template must not drift from the shipped hook ----
+#
+# CLAUDE_CODE_SDLC_WIZARD.md:2655 documents this exact defect from v1.84.0:
+# "tutorial hook code silently drifted from the real shipped hook". It recurred
+# twice on this branch — the template still emitted a self-review line the hook
+# had dropped, and a fix to the template's task-list wording was not applied to
+# the hook, so they disagreed about which tool to name and which doc to cite.
+#
+# Doc-lane consumers copy the template; CLI consumers get the hook. When they
+# disagree, one group is following instructions the other group's tooling does
+# not implement.
+test_hook_template_matches_shipped_hook() {
+    local doc="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" hook="$REPO_ROOT/hooks/sdlc-prompt-check.sh"
+    local bad="" line
+    [ -f "$doc" ] && [ -f "$hook" ] || { fail "template or shipped hook missing"; return; }
+    # Lines the template teaches that the hook must actually emit.
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        grep -qF "$line" "$hook" || bad="$bad\n  template teaches, hook does not emit: $line"
+    done <<'TEMPLATE_LINES'
+1. Task list FIRST (TodoWrite or TaskCreate) (plan tasks before coding)
+Quick refs: SDLC.md | TESTING.md | *_DOCS.md for feature
+TEMPLATE_LINES
+    if [ -z "$bad" ]; then
+        pass "tutorial hook template matches the shipped hook (v1.84.0 drift class)"
+    else
+        fail "tutorial hook template drifted from hooks/sdlc-prompt-check.sh:$(printf '%b' "$bad")"
+    fi
+}
+test_hook_template_matches_shipped_hook
+
+# ---- the review loop must not hand the turn back per round ----
+#
+# Observed 2026-08-08 on PR #509: three review rounds, and after EACH one the
+# driver fixed the findings then stopped and reported — while findings were
+# still landing and the loop had obviously not converged. The maintainer had to
+# say "continue" three times.
+#
+# The mechanism was never missing: a backgrounded reviewer completing re-invokes
+# the driver automatically. What was missing was the rule saying that a turn
+# ending with no pending work IS a stop decision requiring a stated reason.
+test_skill_states_loop_autonomy_rule() {
+    local f="$REPO_ROOT/skills/sdlc/SKILL.md" missing=""
+    [ -f "$f" ] || { fail "skills/sdlc/SKILL.md missing"; return; }
+    grep -qi 'CONVERGED' "$f" || missing="$missing CONVERGED"
+    grep -qi 'DEADLOCK'  "$f" || missing="$missing DEADLOCK"
+    grep -qi 'BOUND'     "$f" || missing="$missing BOUND"
+    # The anti-shopping invariant is the load-bearing half: without it,
+    # "always continue" becomes resubmitting until a tired YES.
+    grep -qi 'reviewer-shopping' "$f" || missing="$missing anti-shopping-invariant"
+    if [ -z "$missing" ]; then
+        pass "skill states the loop-autonomy rule (stop only on CONVERGED/DEADLOCK/BOUND)"
+    else
+        fail "the skill does not state when the review loop may stop, so the driver hands the turn back every round:$missing"
+    fi
+}
+test_skill_states_loop_autonomy_rule
 
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
