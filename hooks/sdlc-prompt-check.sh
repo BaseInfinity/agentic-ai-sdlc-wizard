@@ -126,7 +126,6 @@ Workflow phases:
 1. Plan Mode (research) → Present approach + confidence
 2. Transition (update docs) → Request /compact
 3. Implementation (TDD after compact)
-4. SELF-REVIEW (/code-review) → BEFORE presenting to user
 
 Quick refs: SDLC.md | TESTING.md | *_PLAN.md for feature
 EOF

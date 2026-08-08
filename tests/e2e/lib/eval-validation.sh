@@ -154,11 +154,19 @@ clamp_criteria_bounds() {
     '
 }
 
-# Check critical criteria — self_review and tdd_red are must-pass
-# Failing either means the SDLC process was fundamentally violated.
+# Check critical criteria — tdd_red is the sole must-pass.
+# Failing it means the SDLC process was fundamentally violated.
+#
+# GH #486: self_review was dropped from critical. It is still SCORED (1 point,
+# "read back the files you modified") because every longitudinal baseline is
+# calibrated on a 10-point total — deleting the row would invalidate
+# baselines.json, the golden scores and the CUSUM history to save ~80 bytes.
+# What changed is that a same-model read-back no longer FAILS a run on its own:
+# it has zero recorded unique catches here, while cross-model review caught real
+# P1s in the same sessions where self-review reported 64/64 green.
 #
 # Args:
-#   $1 - JSON string with .criteria object (must include tdd_red and self_review)
+#   $1 - JSON string with .criteria object (must include tdd_red)
 #
 # Returns:
 #   JSON string: {"critical_miss": bool, "critical_failures": [...]}
@@ -167,12 +175,10 @@ check_critical_criteria() {
     echo "$json" | jq '
         {
             critical_miss: (
-                ((.criteria.self_review.points // 0) == 0) or
                 ((.criteria.tdd_red.points // 0) == 0)
             ),
             critical_failures: [
-                (if (.criteria.tdd_red.points // 0) == 0 then "tdd_red" else empty end),
-                (if (.criteria.self_review.points // 0) == 0 then "self_review" else empty end)
+                (if (.criteria.tdd_red.points // 0) == 0 then "tdd_red" else empty end)
             ]
         }
     '
