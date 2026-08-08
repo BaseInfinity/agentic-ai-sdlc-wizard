@@ -30,8 +30,9 @@ commands deliberately unchanged), three defects that were reaching every consume
 `fix/486-self-review-reshape`: same-model self-review instructions deleted (the rubric row
 kept, so the 10-point baselines stay valid), the Memory Audit Protocol and cross-model file
 mechanics moved to the wizard doc, and Cowork scoped explicitly to guidance-not-enforcement.
-`skills/sdlc/SKILL.md` went 19,993 → 18,259 bytes — headroom 7 → 1,741, so edits are no
-longer forced trades. Milestones now exist (v1.96–v1.99) and are the source of order;
+`skills/sdlc/SKILL.md` gained real headroom against its 20,000-byte ceiling, so edits are no
+longer forced trades. (No byte figure here on purpose: it was written wrong three times in
+one branch. `wc -c skills/sdlc/SKILL.md` is the authority.) Milestones now exist (v1.96–v1.99) and are the source of order;
 this list is being superseded by them per GH #482.
 
 **Start here next, in this order:**

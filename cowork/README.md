@@ -70,7 +70,7 @@ This plugin ships 2 **prompt-based hooks** (`"type": "prompt"`) — a narrow sli
 - **CI shepherd** (`gh pr`, `git push`) — these steps happen outside your Cowork session
 - **`/code-review`** — works in Cowork if the plugin is loaded
 
-The methodology (plan → TDD → self-review → confidence check) is universal, and the skills describe all of it. **The hooks enforce only a narrow slice of it** — do not read the table above as full enforcement. `UserPromptSubmit` denies prompts that explicitly ask to skip process; `PreToolUse` applies a filename heuristic to brand-new non-test files. **There is no completion gate** — the `Stop` hook was removed in v1.92.0 (GH #484) after scoring 11 false positives in 12 firings. Everything else is guidance you follow, not a gate that stops you.
+The methodology (plan → TDD → cross-model review → confidence check) is universal, and the skills describe all of it. **The hooks enforce only a narrow slice of it** — do not read the table above as full enforcement. `UserPromptSubmit` denies prompts that explicitly ask to skip process; `PreToolUse` applies a filename heuristic to brand-new non-test files. **There is no completion gate** — the `Stop` hook was removed in v1.92.0 (GH #484) after scoring 11 false positives in 12 firings. Everything else is guidance you follow, not a gate that stops you.
 
 ## Installation
 
