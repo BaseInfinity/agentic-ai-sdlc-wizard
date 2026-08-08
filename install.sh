@@ -21,7 +21,7 @@ info()  { echo -e "${BOLD}$*${RESET}"; }
 
 # --- Help ---
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-    echo "SDLC Wizard Installer"
+    echo "SDLC Harness Installer"
     echo ""
     echo "Usage:"
     echo "  curl -fsSL <url> | bash              Install to current project"
@@ -74,7 +74,7 @@ if [ "${1:-}" = "--global" ]; then
         error "Installation completed but sdlc-wizard not found on PATH"
     fi
 else
-    info "Installing SDLC Wizard to current project..."
+    info "Installing SDLC Harness to current project..."
     npx -y agentic-sdlc-wizard init
 
     if [ -f ".claude/hooks/sdlc-prompt-check.sh" ]; then

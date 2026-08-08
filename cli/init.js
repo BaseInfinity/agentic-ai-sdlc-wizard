@@ -429,7 +429,7 @@ function init(targetDir, { force = false, dryRun = false, preserveCustomized = f
   }
 
   console.log(`
-${GREEN}SDLC Wizard installed successfully!${RESET}
+${GREEN}SDLC Harness installed successfully!${RESET}
 
 ${YELLOW}Restart Claude Code${RESET} to load new hooks and skills:
   ${CYAN}/exit${RESET} then ${CYAN}claude --continue${RESET}  (keeps conversation history)

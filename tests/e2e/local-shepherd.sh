@@ -651,7 +651,7 @@ fi
 # Use a dedicated check name (`e2e-local-shepherd`) — don't collide with CI's
 # `e2e-quick-check`. Branch protection can opt-in by adding this name to its
 # required-checks list.
-REPO_NWO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo "BaseInfinity/claude-sdlc-wizard")
+REPO_NWO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo "BaseInfinity/claude-sdlc-harness")
 HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid 2>/dev/null || echo "")
 
 CONCLUSION="success"

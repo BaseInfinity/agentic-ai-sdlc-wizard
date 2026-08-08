@@ -206,7 +206,7 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.pr.outputs.pr_number }}
 
-            You are reviewing a pull request for the SDLC Wizard repository.
+            You are reviewing a pull request for the SDLC Harness repository.
 
             ## Existing PR Comments to Address
 

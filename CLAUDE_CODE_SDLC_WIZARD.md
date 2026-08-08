@@ -1,6 +1,6 @@
 # Claude Code SDLC Setup Wizard
 
-> **Contribute**: This wizard is community-driven. PRs welcome at [github.com/BaseInfinity/claude-sdlc-wizard](https://github.com/BaseInfinity/claude-sdlc-wizard) - your discoveries help everyone.
+> **Contribute**: This wizard is community-driven. PRs welcome at [github.com/BaseInfinity/claude-sdlc-harness](https://github.com/BaseInfinity/claude-sdlc-harness) - your discoveries help everyone.
 
 > **For Humans**: This wizard helps you implement a battle-tested SDLC enforcement system for Claude Code. It will scan your project, ask questions, and walk you through setup step-by-step. Works for solo developers, teams, and organizations alike.
 
@@ -1054,7 +1054,7 @@ Override the default auto-compact threshold with environment variables. Per offi
 
 > **`env` is global, not per-model.** `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in `.claude/settings.json` applies to whichever model runs under that file — and, per the same doc row, "to both main conversations and subagents". Switching drivers does **not** switch its value: a file carrying Setup B's `75` keeps supplying `75` after you switch to Opus. No static `env` object can express "75 for Sonnet, none for Opus" — if you want per-model tuning, edit the key when you change persistent pins, or keep separate settings profiles.
 
-**Opt-in (issue #198):** The SDLC Wizard CLI ships `.claude/settings.json` with **no** `model`, `advisorModel`, or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 offers four choices: no pin (default, auto-mode), Opus 5 + Fable advisor (recommended if pinning at all, Setup A, trial as of 2026-07-24), OpusPlan Hybrid with a Fable advisor (Setup C), and Sonnet 5 Simple/One-Off + Fable advisor (Setup B). Opus 4.8 itself is a pinned escalation model, not a persistent Step 9.5 pin — reach for it per-session via `/model claude-opus-4-8` when the driver gets stuck (see "Latest tier" below). Default is **No pin**. Pinning the model turns off per-turn auto-selection — a real tradeoff, so we ask.
+**Opt-in (issue #198):** The SDLC Harness CLI ships `.claude/settings.json` with **no** `model`, `advisorModel`, or `env` pin so Claude Code's auto-mode stays enabled. The setup skill's Step 9.5 offers four choices: no pin (default, auto-mode), Opus 5 + Fable advisor (recommended if pinning at all, Setup A, trial as of 2026-07-24), OpusPlan Hybrid with a Fable advisor (Setup C), and Sonnet 5 Simple/One-Off + Fable advisor (Setup B). Opus 4.8 itself is a pinned escalation model, not a persistent Step 9.5 pin — reach for it per-session via `/model claude-opus-4-8` when the driver gets stuck (see "Latest tier" below). Default is **No pin**. Pinning the model turns off per-turn auto-selection — a real tradeoff, so we ask.
 
 To opt in by hand, edit `.claude/settings.json` (Opus 5 example — the recommended default, trial as of 2026-07-24):
 
@@ -3286,7 +3286,7 @@ If deployment fails or post-deploy verification catches issues:
 
 **SDLC.md:**
 ```markdown
-<!-- SDLC Wizard Version: 1.94.0 -->
+<!-- SDLC Harness Version: 1.94.0 -->
 <!-- Setup Date: [DATE] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-0.4, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: [PRs or Solo] -->
@@ -4340,14 +4340,14 @@ Claude fetches from these URLs (via WebFetch):
 
 | Resource | URL |
 |----------|-----|
-| CHANGELOG | `https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/CHANGELOG.md` |
-| Wizard | `https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/CLAUDE_CODE_SDLC_WIZARD.md` |
+| CHANGELOG | `https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/CHANGELOG.md` |
+| Wizard | `https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/CLAUDE_CODE_SDLC_WIZARD.md` |
 
 ### What Claude Does (4 Phases)
 
 **Step 1: Read installed version** from `SDLC.md` metadata:
 ```
-<!-- SDLC Wizard Version: X.X.X -->
+<!-- SDLC Harness Version: X.X.X -->
 ```
 If no version comment exists, treat as `0.0.0`.
 
@@ -4364,7 +4364,7 @@ If no version comment exists, treat as `0.0.0`.
 | CLAUDE.md | Does it exist? | Create from template | Never modify (fully custom) |
 | Questions | Were answers recorded in SDLC.md? | Ask them | Skip |
 
-**Step 4: Apply changes and bump version.** Walk through only missing/changed pieces (opt-in each). Update `<!-- SDLC Wizard Version: X.X.X -->` in SDLC.md to the latest version.
+**Step 4: Apply changes and bump version.** Walk through only missing/changed pieces (opt-in each). Update `<!-- SDLC Harness Version: X.X.X -->` in SDLC.md to the latest version.
 
 ### CHANGELOG Drives the Update Flow
 
@@ -4406,7 +4406,7 @@ Walk through updates? (y/n)
 Store wizard state in `SDLC.md` as metadata comments (invisible to readers, parseable by Claude):
 
 ```markdown
-<!-- SDLC Wizard Version: 1.75.1 -->
+<!-- SDLC Harness Version: 1.75.1 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Git Workflow: PRs -->
@@ -4496,7 +4496,7 @@ Want to be notified when a new wizard version is available? Add this lightweight
 1. Create `.github/workflows/wizard-update-check.yml`:
 
 ```yaml
-name: SDLC Wizard Update Check
+name: SDLC Harness Update Check
 
 on:
   schedule:
@@ -4519,11 +4519,11 @@ jobs:
         id: check
         run: |
           # Read installed version from SDLC.md metadata
-          INSTALLED=$(grep -o 'SDLC Wizard Version: [0-9.]*' SDLC.md | grep -o '[0-9.]*' || echo "0.0.0")
+          INSTALLED=$(grep -o 'SDLC Harness Version: [0-9.]*' SDLC.md | grep -o '[0-9.]*' || echo "0.0.0")
           echo "Installed wizard version: $INSTALLED"
 
           # Fetch latest CHANGELOG
-          curl -sL https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/CHANGELOG.md -o /tmp/changelog.md
+          curl -sL https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/CHANGELOG.md -o /tmp/changelog.md
 
           # Extract latest version (first ## [X.X.X] line)
           LATEST=$(grep -m1 -oE '\[[0-9]+\.[0-9]+\.[0-9]+\]' /tmp/changelog.md | tr -d '[]')
@@ -4568,7 +4568,7 @@ jobs:
           LATEST: ${{ steps.check.outputs.latest }}
         run: |
           # Ensure wizard-update label exists
-          gh label create "wizard-update" --color "0E8A16" --description "SDLC Wizard update available" 2>/dev/null || true
+          gh label create "wizard-update" --color "0E8A16" --description "SDLC Harness update available" 2>/dev/null || true
 
           # Skip if open wizard-update issue already exists
           EXISTING=$(gh issue list --label "wizard-update" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
@@ -4584,10 +4584,10 @@ jobs:
           # Note: ISSUE_EOF terminator indentation is intentional — YAML strips the block's
           # base indentation, leaving ISSUE_EOF at column 0 in the shell. Do not change it.
           gh issue create \
-            --title "SDLC Wizard update: v${INSTALLED} -> v${LATEST}" \
+            --title "SDLC Harness update: v${INSTALLED} -> v${LATEST}" \
             --label "wizard-update" \
             --body "$(cat <<ISSUE_EOF
-          ## SDLC Wizard Update Available
+          ## SDLC Harness Update Available
 
           **Installed:** v${INSTALLED}
           **Latest:** v${LATEST}
@@ -4800,7 +4800,7 @@ Use the best tool for the job. If Claude Code builds it better, use theirs.
 **Install:** add the whole repo as a marketplace, then install the Cowork-specific plugin from it:
 
 ```
-/plugin marketplace add BaseInfinity/claude-sdlc-wizard
+/plugin marketplace add BaseInfinity/claude-sdlc-harness
 /plugin install sdlc-wizard-cowork@sdlc-wizard-marketplace
 ```
 

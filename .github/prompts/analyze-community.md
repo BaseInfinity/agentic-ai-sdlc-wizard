@@ -9,11 +9,11 @@
 >
 > The maintainer reads `/tmp/scan_result.json` and decides what (if anything) to incorporate.
 
-You are scanning community discussions about Claude Code to find actionable insights for the SDLC Wizard.
+You are scanning community discussions about Claude Code to find actionable insights for the SDLC Harness.
 
 ## Wizard Context
 
-The SDLC Wizard enforces:
+The SDLC Harness enforces:
 - **TDD** - Failing tests first, then implementation
 - **Planning** - Plan mode before coding
 - **Confidence levels** - HIGH/MEDIUM/LOW stated before implementing

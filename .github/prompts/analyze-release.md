@@ -1,10 +1,10 @@
 # Claude Code Release Analysis Prompt
 
-You are analyzing one or more Claude Code releases to determine if they're relevant to the SDLC Wizard. If multiple releases are provided, produce a single unified analysis covering all of them. The `version` field in your JSON response should be the newest version.
+You are analyzing one or more Claude Code releases to determine if they're relevant to the SDLC Harness. If multiple releases are provided, produce a single unified analysis covering all of them. The `version` field in your JSON response should be the newest version.
 
 ## Wizard Context
 
-The SDLC Wizard enforces:
+The SDLC Harness enforces:
 - **TDD** - Failing tests first, then implementation
 - **Planning** - Plan mode before coding
 - **Confidence levels** - HIGH/MEDIUM/LOW stated before implementing

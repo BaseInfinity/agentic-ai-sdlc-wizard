@@ -1,6 +1,6 @@
-# Contributing to SDLC Wizard
+# Contributing to SDLC Harness
 
-Thank you for your interest in improving the SDLC Wizard!
+Thank you for your interest in improving the SDLC Harness!
 
 ## Quick Start
 
@@ -230,5 +230,5 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 
 ## Questions?
 
-Open an issue or check the [discussions](https://github.com/BaseInfinity/claude-sdlc-wizard/discussions).
+Open an issue or check the [discussions](https://github.com/BaseInfinity/claude-sdlc-harness/discussions).
 

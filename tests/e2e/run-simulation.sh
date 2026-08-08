@@ -1,5 +1,5 @@
 #!/bin/bash
-# E2E Simulation Runner for SDLC Wizard
+# E2E Simulation Runner for SDLC Harness
 #
 # This script:
 # 1. Sets up a test repo from fixtures
@@ -146,7 +146,7 @@ main() {
 
     echo ""
     echo "=========================================="
-    echo "  SDLC Wizard E2E Simulation"
+    echo "  SDLC Harness E2E Simulation"
     echo "=========================================="
     echo ""
 

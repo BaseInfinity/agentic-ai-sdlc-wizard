@@ -35,7 +35,7 @@ echo ""
 WORKSPACE="${TMPDIR:-/tmp}/sdlc-baseline-once-$$"
 mkdir -p "$WORKSPACE"
 trap 'rm -rf "$WORKSPACE"' EXIT
-echo "<!-- SDLC Wizard Version: 1.69.0 -->" > "$WORKSPACE/SDLC.md"
+echo "<!-- SDLC Harness Version: 1.69.0 -->" > "$WORKSPACE/SDLC.md"
 echo "# Testing" > "$WORKSPACE/TESTING.md"
 
 # Each test gets a fresh cache dir so sentinels from one test don't leak
