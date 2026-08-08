@@ -2,7 +2,7 @@
 
 ## Summary
 
-Studied three open-source AI coding agent projects for patterns to adopt in SDLC Wizard.
+Studied three open-source AI coding agent projects for patterns to adopt in SDLC Harness.
 
 As of April 4, 2026:
 
@@ -220,7 +220,7 @@ Runtime self-check that validates installation, team health, hooks, and configur
 
 ## Comparative Analysis
 
-| Pattern | claw-code | OmO | OmX | SDLC Wizard Today | Adopt? |
+| Pattern | claw-code | OmO | OmX | SDLC Harness Today | Adopt? |
 |---------|-----------|-----|-----|-------------------|--------|
 | Graduated test levels | GreenContract | - | - | Binary pass/fail | YES |
 | Declarative policy engine | PolicyEngine | - | - | CLAUDE.md + hooks | EVALUATE |
@@ -242,7 +242,7 @@ Runtime self-check that validates installation, team health, hooks, and configur
 
 ---
 
-## Candidate Patterns for SDLC Wizard
+## Candidate Patterns for SDLC Harness
 
 **WARNING: These are CANDIDATES, not commitments.** Each pattern must pass the Prove It Gate before adoption:
 

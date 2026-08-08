@@ -1,4 +1,4 @@
-# ROADMAP #99 Research: AutoGPT vs SDLC Wizard
+# ROADMAP #99 Research: AutoGPT vs SDLC Harness
 
 **Verdict: NO-GO. Different layer, different audience, no fitting primitive.**
 

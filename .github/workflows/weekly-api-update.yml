@@ -57,7 +57,7 @@ jobs:
           curl --fail --location --silent --show-error \
             --max-time 30 \
             --retry 3 --retry-delay 5 \
-            --user-agent 'sdlc-wizard-bot/1.0 (+https://github.com/BaseInfinity/claude-sdlc-wizard)' \
+            --user-agent 'sdlc-wizard-bot/1.0 (+https://github.com/BaseInfinity/claude-sdlc-harness)' \
             "${CHANGELOG_URL}" \
             -o /tmp/api-changelog.md
 

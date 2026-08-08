@@ -143,7 +143,7 @@ Generate `SDLC.md` with the full SDLC checklist customized to the project:
 
 Include metadata comments:
 ```
-<!-- SDLC Wizard Version: [version from CLAUDE_CODE_SDLC_WIZARD.md] -->
+<!-- SDLC Harness Version: [version from CLAUDE_CODE_SDLC_WIZARD.md] -->
 <!-- Setup Date: [today's date] -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 ```

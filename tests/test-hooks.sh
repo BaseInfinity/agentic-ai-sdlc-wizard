@@ -157,7 +157,7 @@ test_instructions_loaded_size_cap() {
     mkdir -p "$proj/.github/workflows"
     mkdir -p "$proj/.reviews"
     mkdir -p "$tmpdir/bin" "$tmpdir/cache"
-    echo '<!-- SDLC Wizard Version: 1.10.0 -->' > "$proj/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.10.0 -->' > "$proj/SDLC.md"
     echo 'testing' > "$proj/TESTING.md"
     # Effort upgrade (jq + stale effort)
     echo '{"effortLevel":"high"}' > "$proj/.claude/settings.local.json"
@@ -664,10 +664,10 @@ test_instructions_hook_no_trailing_whitespace() {
 # Test 19: SDLC.md contains wizard version metadata comment
 test_sdlc_version_metadata() {
     local sdlc_md="$SCRIPT_DIR/../SDLC.md"
-    if grep -q '<!-- SDLC Wizard Version: [0-9]' "$sdlc_md"; then
+    if grep -q '<!-- SDLC Harness Version: [0-9]' "$sdlc_md"; then
         pass "SDLC.md contains wizard version metadata comment"
     else
-        fail "SDLC.md should contain <!-- SDLC Wizard Version: X.X.X --> metadata comment"
+        fail "SDLC.md should contain <!-- SDLC Harness Version: X.X.X --> metadata comment"
     fi
 }
 
@@ -677,9 +677,9 @@ test_sdlc_version_matches_wizard() {
     local wizard="$SCRIPT_DIR/../CLAUDE_CODE_SDLC_WIZARD.md"
 
     local installed_version
-    installed_version=$(grep -o 'SDLC Wizard Version: [0-9.]*' "$sdlc_md" | head -1 | sed 's/SDLC Wizard Version: //')
+    installed_version=$(grep -o 'SDLC Harness Version: [0-9.]*' "$sdlc_md" | head -1 | sed 's/SDLC Harness Version: //')
     local wizard_version
-    wizard_version=$(grep -o 'SDLC Wizard Version: [0-9.]*' "$wizard" | head -1 | sed 's/SDLC Wizard Version: //')
+    wizard_version=$(grep -o 'SDLC Harness Version: [0-9.]*' "$wizard" | head -1 | sed 's/SDLC Harness Version: //')
 
     if [ -z "$installed_version" ]; then
         fail "Could not extract version from SDLC.md"
@@ -1098,7 +1098,7 @@ echo "--- Update notification tests ---"
 test_update_notification_newer_available() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     # Create fake npm that returns a newer version
     mkdir -p "$tmpdir/bin"
@@ -1118,7 +1118,7 @@ test_update_notification_newer_available() {
 test_update_notification_same_version() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.22.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.22.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     printf '#!/bin/bash\nif echo "$@" | grep -q "claude-code"; then echo "2.1.90"; else echo "1.22.0"; fi\n' > "$tmpdir/bin/npm"
@@ -1138,7 +1138,7 @@ test_update_notification_same_version() {
 test_update_notification_npm_unavailable() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     # Empty bin dir — npm not in PATH
     mkdir -p "$tmpdir/bin"
@@ -1157,7 +1157,7 @@ test_update_notification_npm_unavailable() {
 test_update_notification_npm_fails() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/npm"
@@ -1197,7 +1197,7 @@ test_update_notification_no_version_metadata() {
 test_update_notification_mentions_update_wizard() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     printf '#!/bin/bash\necho "1.22.0"\n' > "$tmpdir/bin/npm"
@@ -1219,7 +1219,7 @@ test_update_notification_mentions_update_wizard() {
 test_update_notification_loud_when_3_minor_behind() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     printf '#!/bin/bash\necho "1.34.0"\n' > "$tmpdir/bin/npm"
@@ -1246,7 +1246,7 @@ test_update_notification_loud_when_3_minor_behind() {
 test_update_notification_mild_when_2_minor_behind() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.32.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.32.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     printf '#!/bin/bash\necho "1.34.0"\n' > "$tmpdir/bin/npm"
@@ -1273,7 +1273,7 @@ test_update_notification_mild_when_2_minor_behind() {
 test_update_notification_uses_daily_cache() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin" "$tmpdir/cache"
     # npm returns 1.34.0 on first call; on second call it would return
@@ -1302,7 +1302,7 @@ test_update_notification_uses_daily_cache() {
 test_update_notification_rejects_malformed_cache_junk() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin" "$tmpdir/cache"
     # Seed cache with garbage — must be ignored, npm must be called
@@ -1327,7 +1327,7 @@ test_update_notification_rejects_malformed_cache_junk() {
 test_update_notification_rejects_malformed_cache_whitespace() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin" "$tmpdir/cache"
     # Whitespace-only cache contents — must be rejected
@@ -1351,7 +1351,7 @@ test_update_notification_rejects_malformed_cache_whitespace() {
 test_update_notification_rejects_non_numeric_minor() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.25.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     # Stub returns non-numeric minor ONLY for the wizard package; anything
@@ -1372,7 +1372,7 @@ NPMEOF
     # Must not surface "1.alpha.0" to the user or compute a bogus delta
     if echo "$output" | grep -q '1.alpha.0'; then
         fail "Non-numeric version leaked to output, got: $output"
-    elif echo "$output" | grep -qE 'SDLC Wizard update available|minor.*behind'; then
+    elif echo "$output" | grep -qE 'SDLC Harness update available|minor.*behind'; then
         fail "Expected silent skip on invalid npm response, got: $output"
     else
         pass "Non-numeric minor field (1.alpha.0) is rejected silently"
@@ -1386,7 +1386,7 @@ NPMEOF
 test_update_notification_silent_when_installed_newer_than_cache() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.43.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.43.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin" "$tmpdir/cache"
     # Cache holds an older version (post-upgrade scenario)
@@ -1415,7 +1415,7 @@ test_update_notification_silent_when_installed_newer_than_cache() {
 test_cc_version_check_uses_fresh_cache_not_npm() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.86.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.86.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin" "$tmpdir/cache"
     printf '2.1.95' > "$tmpdir/cache/latest-cc-version"
@@ -1440,7 +1440,7 @@ test_cc_version_check_uses_fresh_cache_not_npm() {
 test_cc_version_check_silent_when_npm_returns_older_version() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.86.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.86.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     printf '#!/bin/bash\necho "2.1.90 (Claude Code)"\n' > "$tmpdir/bin/claude"
@@ -1463,7 +1463,7 @@ test_cc_version_check_silent_when_npm_returns_older_version() {
 test_update_notification_surfaces_npm_failure() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.30.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.30.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin" "$tmpdir/cache"
     # No cache file; npm fails with EPERM-style error
@@ -1506,7 +1506,7 @@ test_update_notification_surfaces_npm_failure
 test_cc_version_check_silent_under_non_claude_host() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.20.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     # Fake claude CLI that reports an old version
@@ -1689,7 +1689,7 @@ test_instructions_hook_cwd_walkup() {
     # contains "missing" which spuriously triggered the negative grep below).
     local current_version
     current_version=$(grep -oE '"version":\s*"[0-9.]+"' "$SCRIPT_DIR/../package.json" | grep -oE '[0-9.]+')
-    echo "<!-- SDLC Wizard Version: ${current_version} -->" > "$tmpdir/project/SDLC.md"
+    echo "<!-- SDLC Harness Version: ${current_version} -->" > "$tmpdir/project/SDLC.md"
     echo "# Testing" > "$tmpdir/project/TESTING.md"
     # Mock npm/claude/codex to prevent version check output
     mkdir -p "$tmpdir/bin"
@@ -2530,7 +2530,7 @@ test_instructions_hook_dual_install_silence_hint_works_when_cache_dir_absent
 test_instructions_hook_warns_on_autocompact_compound_misconfig() {
     local tmpdir output
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/.claude" "$tmpdir/bin"
     cat > "$tmpdir/.claude/settings.json" <<'EOF'
@@ -2564,7 +2564,7 @@ EOF
 test_instructions_hook_silent_on_single_autocompact_pct_only() {
     local tmpdir output
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/.claude" "$tmpdir/bin"
     cat > "$tmpdir/.claude/settings.json" <<'EOF'
@@ -2591,7 +2591,7 @@ EOF
 test_instructions_hook_silent_on_single_autocompact_window_only() {
     local tmpdir output
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/.claude" "$tmpdir/bin"
     cat > "$tmpdir/.claude/settings.json" <<'EOF'
@@ -2620,7 +2620,7 @@ EOF
 test_instructions_hook_compound_warning_shows_effective_trigger() {
     local tmpdir output
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/.claude" "$tmpdir/bin"
     cat > "$tmpdir/.claude/settings.json" <<'EOF'

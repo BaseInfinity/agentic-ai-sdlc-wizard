@@ -237,7 +237,7 @@ The SDLC skill's CI feedback loops (`.claude/skills/sdlc/SKILL.md`) run during a
 
 ### Self-PR Skip on the Wizard Repo (v1.42.1+)
 
-The `review` job is **skipped on `BaseInfinity/claude-sdlc-wizard` self-PRs** — the workflow's `if:` gate checks `github.repository != 'BaseInfinity/claude-sdlc-wizard'`.
+The `review` job is **skipped on `BaseInfinity/claude-sdlc-harness` self-PRs** — the workflow's `if:` gate checks `github.repository != 'BaseInfinity/claude-sdlc-harness'`.
 
 **Why**: the wizard maintainer keeps `ANTHROPIC_API_KEY` credit balance dead as an "API canary" — any unexpected API draw is detected by failed CI. `claude-code-action@v1` needs that key with positive balance, so self-PRs were failing every run with "Credit balance is too low". Seven PRs (v1.39.0–v1.42.0) shipped to main with the review job red, normalizing red CI and masking any real review failure that might have appeared.
 
@@ -316,7 +316,7 @@ Workflows require the GitHub Actions environment (secrets, runner context, `clau
 | `ANTHROPIC_API_KEY` | pr-review only | `claude-code-action@v1` for PR review comments. Deliberately kept at a dead credit balance as an "API canary" — see below. `ci.yml` and `weekly-update.yml` don't reference it (E2E/eval moved to the local-Max shepherd, #212/#228) |
 | `GITHUB_TOKEN` | All workflows | Auto-provided by GitHub |
 
-**No `NPM_TOKEN` required** as of v1.75.0 — `release.yml` uses [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC via GitHub Actions `id-token: write`). The publisher is configured per-package on npm's side: npmjs.com → `agentic-sdlc-wizard` → Settings → Publishing access → GitHub Actions → repo `BaseInfinity/claude-sdlc-wizard`, workflow filename `release.yml`. Provenance attestations are auto-generated; no long-lived secret to rotate.
+**No `NPM_TOKEN` required** as of v1.75.0 — `release.yml` uses [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC via GitHub Actions `id-token: write`). The publisher is configured per-package on npm's side: npmjs.com → `agentic-sdlc-wizard` → Settings → Publishing access → GitHub Actions → repo `BaseInfinity/claude-sdlc-harness`, workflow filename `release.yml`. Provenance attestations are auto-generated; no long-lived secret to rotate.
 
 ## Workflow Permissions
 

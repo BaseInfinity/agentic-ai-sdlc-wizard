@@ -1709,7 +1709,7 @@ test_readme_raw_url_matches_remote() {
     fi
 
     # Post-npm-distribution: verify GitHub install shorthand uses correct repo name
-    if grep -q 'github:BaseInfinity/claude-sdlc-wizard' "$README"; then
+    if grep -q 'github:BaseInfinity/claude-sdlc-harness' "$README"; then
         pass "README install URL uses correct repo name"
     else
         fail "README install URL does not reference claude-sdlc-wizard"

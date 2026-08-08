@@ -6,7 +6,7 @@ A rigorous, reproducible methodology for measuring how different `CLAUDE_AUTOCOM
 
 ## Background
 
-The SDLC Wizard recommends autocompact thresholds (75% for 200K, 30% for 1M) based on **unverified community consensus** from GitHub issues ([#34332](https://github.com/anthropics/claude-code/issues/34332), [#42375](https://github.com/anthropics/claude-code/issues/42375)) and forum reports. No controlled experiments have been published. This methodology enables the first rigorous benchmarks.
+The SDLC Harness recommends autocompact thresholds (75% for 200K, 30% for 1M) based on **unverified community consensus** from GitHub issues ([#34332](https://github.com/anthropics/claude-code/issues/34332), [#42375](https://github.com/anthropics/claude-code/issues/42375)) and forum reports. No controlled experiments have been published. This methodology enables the first rigorous benchmarks.
 
 ### What Is Autocompact?
 
@@ -243,6 +243,6 @@ This release ships the benchmarking **infrastructure before benchmark data**. Th
 
 - [Claude Code Issue #34332](https://github.com/anthropics/claude-code/issues/34332) — 1M autocompact firing at ~76K
 - [Claude Code Issue #42375](https://github.com/anthropics/claude-code/issues/42375) — Autocompact env var discussion
-- [SDLC Wizard Autocompact Tuning](CLAUDE_CODE_SDLC_WIZARD.md#autocompact-tuning) — Current recommendations
+- [SDLC Harness Autocompact Tuning](CLAUDE_CODE_SDLC_WIZARD.md#autocompact-tuning) — Current recommendations
 - [stats.sh](tests/e2e/lib/stats.sh) — Statistical library (CI calculation, comparison)
 - [run-tier2-evaluation.sh](tests/e2e/run-tier2-evaluation.sh) — Multi-trial evaluation pattern

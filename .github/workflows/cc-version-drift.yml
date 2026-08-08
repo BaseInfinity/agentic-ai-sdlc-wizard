@@ -32,7 +32,7 @@ name: CC Version Drift
 #
 #   4. Baseline source: `<!-- Claude Code Baseline: vX.Y.Z -->`
 #      anchor in SDLC.md. Single-purpose, machine-parseable. Do NOT
-#      reuse `<!-- SDLC Wizard Version -->` (that's the wizard's own
+#      reuse `<!-- SDLC Harness Version -->` (that's the wizard's own
 #      package version, not the CC feature baseline).
 #
 #   5. No `|| true` / `|| echo` failure-suppression. The whole point

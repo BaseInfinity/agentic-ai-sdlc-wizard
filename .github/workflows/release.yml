@@ -82,7 +82,7 @@ jobs:
       # (id-token: write) to authenticate against npm. The publisher is
       # configured on the npm package side: npmjs.com → agentic-sdlc-wizard →
       # Settings → Publishing access → GitHub Actions → repo
-      # BaseInfinity/claude-sdlc-wizard, workflow release.yml.
+      # BaseInfinity/claude-sdlc-harness, workflow release.yml.
       # --provenance is auto-generated on a trusted publish, so the flag is
       # redundant (kept omitted for clarity).
       - name: Publish to npm (Trusted Publishing — OIDC, no token)

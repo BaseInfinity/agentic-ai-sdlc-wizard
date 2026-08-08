@@ -2,11 +2,11 @@
 
 ## Overview
 
-The SDLC Wizard is a documentation-first approach to enforcing SDLC practices in Claude Code projects.
+The SDLC Harness is a documentation-first approach to enforcing SDLC practices in Claude Code projects.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     SDLC Wizard Repo                        │
+│                     SDLC Harness Repo                        │
 ├─────────────────────────────────────────────────────────────┤
 │  CLAUDE_CODE_SDLC_WIZARD.md  ← Main wizard document        │
 │  .claude/                     ← Hooks, skills, config       │
