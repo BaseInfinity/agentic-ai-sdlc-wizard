@@ -1,5 +1,5 @@
 {
-  "description": "SDLC Wizard enforcement hooks",
+  "description": "SDLC Harness enforcement hooks",
   "hooks": {
     "UserPromptSubmit": [
       {

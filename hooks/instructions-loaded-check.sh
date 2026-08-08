@@ -53,7 +53,7 @@ semver_lt() {
 }
 
 if [ -f "$SDLC_MD" ]; then
-    INSTALLED_VERSION=$(grep -o 'SDLC Wizard Version: [0-9.]*' "$SDLC_MD" | head -1 | sed 's/SDLC Wizard Version: //')
+    INSTALLED_VERSION=$(grep -o 'SDLC Harness Version: [0-9.]*' "$SDLC_MD" | head -1 | sed 's/SDLC Harness Version: //')
     if [ -n "$INSTALLED_VERSION" ] && [[ "$INSTALLED_VERSION" =~ $SEMVER_RE ]]; then
         VERSION_CACHE_DIR="${SDLC_WIZARD_CACHE_DIR:-$HOME/.cache/sdlc-wizard}"
         VERSION_CACHE_FILE="$VERSION_CACHE_DIR/latest-version"
@@ -120,14 +120,14 @@ if [ -f "$SDLC_MD" ]; then
 
             if [ "$MINOR_DELTA" -ge 3 ]; then
                 echo ""
-                echo "!! WARNING: SDLC Wizard is ${MINOR_DELTA} minor versions behind !!"
+                echo "!! WARNING: SDLC Harness is ${MINOR_DELTA} minor versions behind !!"
                 echo "   Installed: ${INSTALLED_VERSION}"
                 echo "   Latest:    ${LATEST_VERSION}"
                 echo "   You're missing bug fixes and features shipped across ${MINOR_DELTA} releases."
                 echo "   Strongly recommend running /claude-update-wizard before starting new work."
                 echo ""
             else
-                echo "SDLC Wizard update available: ${INSTALLED_VERSION} → ${LATEST_VERSION} (run /claude-update-wizard)"
+                echo "SDLC Harness update available: ${INSTALLED_VERSION} → ${LATEST_VERSION} (run /claude-update-wizard)"
             fi
         fi
     fi

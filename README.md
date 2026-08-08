@@ -1,4 +1,4 @@
-# Claude Code SDLC Wizard
+# Claude Code SDLC Harness
 
 A **self-evolving Software Development Life Cycle (SDLC) enforcement system for AI coding agents**. Makes Claude plan before coding, test before shipping, and escalate when uncertain. Measures itself getting better over time.
 
@@ -22,7 +22,7 @@ Then start (or restart) Claude Code — type `/exit` then `claude` to reload hoo
 
 **curl (no npm install needed):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/install.sh | bash
 ```
 
 **Homebrew:**
@@ -39,7 +39,7 @@ gh sdlc-wizard init
 
 **From GitHub (no npm registry needed):**
 ```bash
-npx github:BaseInfinity/claude-sdlc-wizard init
+npx github:BaseInfinity/claude-sdlc-harness init
 ```
 
 **Install CLI globally:**
@@ -300,7 +300,7 @@ This applies to everything: native commands vs custom skills, framework utilitie
 
 This isn't the only Claude Code SDLC tool. Here's an honest comparison:
 
-| Aspect | SDLC Wizard | everything-claude-code | claude-sdlc |
+| Aspect | SDLC Harness | everything-claude-code | claude-sdlc |
 |--------|------------|----------------------|-------------|
 | **Focus** | SDLC enforcement + measurement | Agent performance optimization | Plugin marketplace |
 | **Hooks** | 3 (SDLC, TDD, instructions) | 12+ (dev blocker, prettier, etc.) | Webhook watcher |
@@ -334,7 +334,7 @@ This wizard is one of three published siblings. Same enforcement philosophy, dif
 
 | Package | Agent / Domain | What It Does |
 |---------|----------------|--------------|
-| [`agentic-sdlc-wizard`](https://www.npmjs.com/package/agentic-sdlc-wizard) ([repo](https://github.com/BaseInfinity/claude-sdlc-wizard)) | Claude Code / SDLC | This repo. Plan → TDD → self-review for code, with hooks + skills + CI scoring |
+| [`agentic-sdlc-wizard`](https://www.npmjs.com/package/agentic-sdlc-wizard) ([repo](https://github.com/BaseInfinity/claude-sdlc-harness)) | Claude Code / SDLC | This repo. Plan → TDD → self-review for code, with hooks + skills + CI scoring |
 | [`codex-sdlc-wizard`](https://www.npmjs.com/package/codex-sdlc-wizard) ([repo](https://github.com/BaseInfinity/codex-sdlc-wizard)) | OpenAI Codex / SDLC | Same SDLC enforcement, ported to Codex CLI (writes `.codex/` + `AGENTS.md`) |
 | [`opencode-sdlc-wizard`](https://www.npmjs.com/package/opencode-sdlc-wizard) ([repo](https://github.com/BaseInfinity/opencode-sdlc-wizard)) | OpenCode / privacy-first | Same SDLC enforcement against ANY backend OpenCode supports — local Ollama, Azure OpenAI, Together, Groq, OpenRouter. Writes `.opencode/` + `AGENTS.md`. |
 | [`claude-gdlc-wizard`](https://www.npmjs.com/package/claude-gdlc-wizard) ([repo](https://github.com/BaseInfinity/claude-gdlc-wizard)) | Claude Code / GDLC | Game Development Life Cycle — persona-driven playtest cycles, triangulated findings, ratchet-only-tightens |
@@ -364,5 +364,5 @@ PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for evaluation methodology a
 Three ways to report bugs, request features, or ask questions:
 
 - **In-session:** run `/feedback` inside any Claude Code session using this wizard — auto-fills context and redacts secrets before filing
-- **Issue templates:** [bug report](https://github.com/BaseInfinity/claude-sdlc-wizard/issues/new?template=bug_report.md), [feature request](https://github.com/BaseInfinity/claude-sdlc-wizard/issues/new?template=feature_request.md), [question](https://github.com/BaseInfinity/claude-sdlc-wizard/issues/new?template=question.md)
-- **Discussions:** open-ended conversations at [github.com/BaseInfinity/claude-sdlc-wizard/discussions](https://github.com/BaseInfinity/claude-sdlc-wizard/discussions)
+- **Issue templates:** [bug report](https://github.com/BaseInfinity/claude-sdlc-harness/issues/new?template=bug_report.md), [feature request](https://github.com/BaseInfinity/claude-sdlc-harness/issues/new?template=feature_request.md), [question](https://github.com/BaseInfinity/claude-sdlc-harness/issues/new?template=question.md)
+- **Discussions:** open-ended conversations at [github.com/BaseInfinity/claude-sdlc-harness/discussions](https://github.com/BaseInfinity/claude-sdlc-harness/discussions)

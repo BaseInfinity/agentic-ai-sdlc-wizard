@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a bug in the SDLC Wizard (CLI, hooks, skills, workflows, tests)
+about: Report a bug in the SDLC Harness (CLI, hooks, skills, workflows, tests)
 title: "bug: "
 labels: bug
 assignees: ''
@@ -24,7 +24,7 @@ assignees: ''
 
 ## Environment
 
-- **SDLC Wizard version:** <!-- run `grep 'Wizard Version' SDLC.md` in your project, or check package.json -->
+- **SDLC Harness version:** <!-- run `grep 'Wizard Version' SDLC.md` in your project, or check package.json -->
 - **Claude Code version:** <!-- run `claude --version` -->
 - **OS:** <!-- macOS / Linux / Windows -->
 - **Install channel:** <!-- npx / Homebrew / curl script / plugin / GitHub Releases -->

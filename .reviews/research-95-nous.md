@@ -1,4 +1,4 @@
-# ROADMAP #95 Research: Nous Research vs SDLC Wizard
+# ROADMAP #95 Research: Nous Research vs SDLC Harness
 
 **Verdict: NO-GO. Different layer of the stack.**
 
@@ -27,7 +27,7 @@ Product surface:
 
 ## Layer-comparison
 
-| Layer | Nous Research owns | SDLC Wizard owns |
+| Layer | Nous Research owns | SDLC Harness owns |
 |-------|--------------------|------------------|
 | Pre-training / fine-tuning | ✓ (Hermes models, Psyche) | — |
 | RL eval environments | ✓ (atropos) | — |

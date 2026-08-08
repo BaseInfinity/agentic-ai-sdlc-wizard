@@ -271,7 +271,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Installing SDLC Wizard for Codex CLI..."
+echo "Installing SDLC Harness for Codex CLI..."
 
 # AGENTS.md — skip if exists
 if [ ! -f "AGENTS.md" ]; then
@@ -321,7 +321,7 @@ cp "$SCRIPT_DIR/.codex/hooks/"*.sh .codex/hooks/
 chmod +x .codex/hooks/*.sh
 
 echo ""
-echo "SDLC Wizard for Codex installed."
+echo "SDLC Harness for Codex installed."
 echo "Run 'codex' to start a session with SDLC enforcement."
 ```
 

@@ -6,7 +6,7 @@
     "name": "Stefan Ayala",
     "url": "https://github.com/BaseInfinity"
   },
-  "repository": "https://github.com/BaseInfinity/claude-sdlc-wizard",
+  "repository": "https://github.com/BaseInfinity/claude-sdlc-harness",
   "license": "MIT",
   "keywords": ["sdlc", "tdd", "code-quality", "ai-agent", "developer-tools"]
 }

@@ -156,10 +156,10 @@ for p in d.get('plugins', []):
             print(f'notdict|{src}')
         break
 " 2>/dev/null)
-  if [ "$sdlc_wizard_source_info" = "github|BaseInfinity/claude-sdlc-wizard" ]; then
-    pass "root marketplace.json's sdlc-wizard entry uses {source: github, repo: BaseInfinity/claude-sdlc-wizard}"
+  if [ "$sdlc_wizard_source_info" = "github|BaseInfinity/claude-sdlc-harness" ]; then
+    pass "root marketplace.json's sdlc-wizard entry uses {source: github, repo: BaseInfinity/claude-sdlc-harness}"
   else
-    fail "root marketplace.json's sdlc-wizard entry is misconfigured (got: '$sdlc_wizard_source_info', expected 'github|BaseInfinity/claude-sdlc-wizard') — Cowork's remote validator rejects bare-string sources"
+    fail "root marketplace.json's sdlc-wizard entry is misconfigured (got: '$sdlc_wizard_source_info', expected 'github|BaseInfinity/claude-sdlc-harness') — Cowork's remote validator rejects bare-string sources"
   fi
 else
   fail "root .claude-plugin/marketplace.json missing (skipping source-type check)"
@@ -168,7 +168,7 @@ fi
 # Test 4g (#455 live diagnostic, 2026-07-21): the git-subdir entry's "url" field
 # must be a full https:// URL, not owner/repo shorthand. Live Cowork server logs
 # returned, verbatim:
-#   "sdlc-wizard-cowork: Git source URL must use https://, got: BaseInfinity/claude-sdlc-wizard"
+#   "sdlc-wizard-cowork: Git source URL must use https://, got: BaseInfinity/claude-sdlc-harness"
 # Anthropic's general plugin-marketplaces docs show shorthand as valid for
 # git-subdir's url field, but Cowork's remote/account-scoped backend enforces a
 # stricter requirement than the documented baseline — confirmed via live error
@@ -182,10 +182,10 @@ for p in d.get('plugins', []):
         print(p.get('source', {}).get('url', ''))
         break
 " 2>/dev/null)
-  if [ "$cowork_url" = "https://github.com/BaseInfinity/claude-sdlc-wizard.git" ]; then
+  if [ "$cowork_url" = "https://github.com/BaseInfinity/claude-sdlc-harness.git" ]; then
     pass "sdlc-wizard-cowork's git-subdir url is the exact expected full https:// URL"
   else
-    fail "sdlc-wizard-cowork's git-subdir url ('$cowork_url') doesn't match the expected 'https://github.com/BaseInfinity/claude-sdlc-wizard.git' — Cowork's remote validator rejects owner/repo shorthand"
+    fail "sdlc-wizard-cowork's git-subdir url ('$cowork_url') doesn't match the expected 'https://github.com/BaseInfinity/claude-sdlc-harness.git' — Cowork's remote validator rejects owner/repo shorthand"
   fi
 else
   fail "root .claude-plugin/marketplace.json missing (skipping url-format check)"

@@ -28,7 +28,7 @@ echo ""
 
 # Test 1: Wizard contains raw CHANGELOG URL
 test_changelog_url() {
-    if grep -q "raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/CHANGELOG.md" "$WIZARD"; then
+    if grep -q "raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/CHANGELOG.md" "$WIZARD"; then
         pass "Wizard contains raw CHANGELOG URL"
     else
         fail "Wizard should contain raw.githubusercontent.com CHANGELOG URL"
@@ -37,7 +37,7 @@ test_changelog_url() {
 
 # Test 2: Wizard contains raw wizard URL
 test_wizard_url() {
-    if grep -q "raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/CLAUDE_CODE_SDLC_WIZARD.md" "$WIZARD"; then
+    if grep -q "raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/CLAUDE_CODE_SDLC_WIZARD.md" "$WIZARD"; then
         pass "Wizard contains raw wizard URL"
     else
         fail "Wizard should contain raw.githubusercontent.com wizard URL"
@@ -65,7 +65,7 @@ test_changelog_first() {
 
 # Test 5: Optional notification workflow template exists
 test_notification_workflow_exists() {
-    if grep -q "SDLC Wizard Update Check\|wizard-update-check\|Wizard Update Notification" "$WIZARD"; then
+    if grep -q "SDLC Harness Update Check\|wizard-update-check\|Wizard Update Notification" "$WIZARD"; then
         pass "Optional notification workflow template exists in wizard"
     else
         fail "Wizard should contain optional notification workflow template"
@@ -86,13 +86,13 @@ test_notification_workflow_yaml() {
 
     # Extract YAML between the notification workflow code fence.
     # FRAGILITY NOTE: The closing-fence detection (grep '^\`\`\`$') will misfire if any
-    # nested code fence appears between "name: SDLC Wizard Update Check" and the real
+    # nested code fence appears between "name: SDLC Harness Update Check" and the real
     # closing fence. This is low-risk given the current wizard structure but is line-count
     # sensitive — if the workflow section is restructured, re-verify this extraction logic.
     local in_block=false
     local found=false
     while IFS= read -r line; do
-        if echo "$line" | grep -q "name: SDLC Wizard Update Check"; then
+        if echo "$line" | grep -q "name: SDLC Harness Update Check"; then
             in_block=true
             found=true
             echo "$line" > "$temp_yaml"
@@ -125,7 +125,7 @@ test_notification_workflow_yaml() {
 # Test 7: Notification workflow uses sparse-checkout
 test_sparse_checkout() {
     # The workflow should use sparse-checkout to avoid cloning entire repo
-    if grep -A 50 "SDLC Wizard Update Check" "$WIZARD" | grep -q "sparse-checkout"; then
+    if grep -A 50 "SDLC Harness Update Check" "$WIZARD" | grep -q "sparse-checkout"; then
         pass "Notification workflow uses sparse-checkout"
     else
         fail "Notification workflow should use sparse-checkout"
@@ -134,7 +134,7 @@ test_sparse_checkout() {
 
 # Test 8: Notification workflow only needs issues:write permission
 test_workflow_permissions() {
-    if grep -A 10 "SDLC Wizard Update Check" "$WIZARD" | grep -q "issues: write"; then
+    if grep -A 10 "SDLC Harness Update Check" "$WIZARD" | grep -q "issues: write"; then
         pass "Notification workflow uses issues: write permission"
     else
         fail "Notification workflow should use issues: write permission"
@@ -143,7 +143,7 @@ test_workflow_permissions() {
 
 # Test 9: Notification workflow creates issues (not PRs)
 test_creates_issues() {
-    if grep -A 200 "SDLC Wizard Update Check" "$WIZARD" | grep -q "gh issue create"; then
+    if grep -A 200 "SDLC Harness Update Check" "$WIZARD" | grep -q "gh issue create"; then
         pass "Notification workflow creates issues (not PRs)"
     else
         fail "Notification workflow should create issues, not PRs"
@@ -152,7 +152,7 @@ test_creates_issues() {
 
 # Test 10: Notification workflow deduplicates (checks for existing issue)
 test_dedup_check() {
-    if grep -A 200 "SDLC Wizard Update Check" "$WIZARD" | grep -q "wizard-update.*open\|--state open.*wizard-update"; then
+    if grep -A 200 "SDLC Harness Update Check" "$WIZARD" | grep -q "wizard-update.*open\|--state open.*wizard-update"; then
         pass "Notification workflow checks for existing open issues"
     else
         fail "Notification workflow should check for existing open wizard-update issues"
@@ -161,7 +161,7 @@ test_dedup_check() {
 
 # Test 11: Version metadata format documented
 test_version_metadata_format() {
-    if grep -q '<!-- SDLC Wizard Version:' "$WIZARD"; then
+    if grep -q '<!-- SDLC Harness Version:' "$WIZARD"; then
         pass "Version metadata format documented in wizard"
     else
         fail "Wizard should document version metadata comment format"
@@ -182,7 +182,7 @@ test_multi_phase_flow() {
 
 # Test 13: CHANGELOG URL returns valid content from live repo
 test_changelog_url_live() {
-    local url="https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/CHANGELOG.md"
+    local url="https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/CHANGELOG.md"
     local content
     content=$(curl -sf --max-time 10 "$url" 2>/dev/null) || {
         pass "SKIPPED (offline): CHANGELOG URL live fetch"
@@ -197,16 +197,25 @@ test_changelog_url_live() {
 
 # Test 14: Wizard URL returns valid content from live repo
 test_wizard_url_live() {
-    local url="https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/CLAUDE_CODE_SDLC_WIZARD.md"
+    local url="https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/CLAUDE_CODE_SDLC_WIZARD.md"
     local content
     content=$(curl -sf --max-time 10 "$url" 2>/dev/null) || {
         pass "SKIPPED (offline): Wizard URL live fetch"
         return
     }
-    if echo "$content" | grep -q "SDLC Wizard"; then
+    # Accepts either brand during the wizard -> harness rename, and this is a
+    # correctness fix rather than a loosening. The property worth asserting is
+    # "this URL serves the wizard document", not "the title is exactly X".
+    # Pinning the new title made the change unmergeable by its own gate: the
+    # check fetches `main`, `main` still serves the old title until the rename
+    # merges, CI runs this suite, and merge-pr.sh treats CI-green as NOT
+    # waivable. A test that asserts published state while sitting inside the
+    # unpublished diff can never go green on the branch that changes it.
+    # Tighten to "SDLC Harness" alone once the rename is on main.
+    if echo "$content" | grep -qE "SDLC (Harness|Wizard)"; then
         pass "Wizard URL returns valid content from live repo"
     else
-        fail "Wizard URL did not return expected content (missing 'SDLC Wizard')"
+        fail "Wizard URL did not return expected content (no 'SDLC Harness' or 'SDLC Wizard' title)"
     fi
 }
 
@@ -225,7 +234,7 @@ test_version_consistency() {
 
     # Extract version from wizard metadata comment
     local wizard_version
-    wizard_version=$(grep -o 'SDLC Wizard Version: [0-9.]*' "$WIZARD" | head -1 | sed 's/SDLC Wizard Version: //')
+    wizard_version=$(grep -o 'SDLC Harness Version: [0-9.]*' "$WIZARD" | head -1 | sed 's/SDLC Harness Version: //')
 
     if [ -z "$changelog_version" ] || [ -z "$wizard_version" ]; then
         fail "Could not extract versions (CHANGELOG: '$changelog_version', wizard: '$wizard_version')"
@@ -939,7 +948,7 @@ test_package_version_matches_sdlc() {
     sdlc_table_version=$(grep '^| Wizard Version' "$sdlc" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
     # Also check metadata comment for consistency
     local sdlc_meta_version
-    sdlc_meta_version=$(grep '<!-- SDLC Wizard Version:' "$sdlc" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+    sdlc_meta_version=$(grep '<!-- SDLC Harness Version:' "$sdlc" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
     if [ "$pkg_version" = "$sdlc_table_version" ] && [ "$pkg_version" = "$sdlc_meta_version" ]; then
         pass "package.json ($pkg_version) matches SDLC.md table ($sdlc_table_version) and metadata ($sdlc_meta_version)"
     else
@@ -2054,7 +2063,7 @@ test_hook_checks_cc_version() {
 test_cc_version_check_nonblocking() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     # Fake claude that reports old version
     mkdir -p "$tmpdir/bin"
@@ -2076,7 +2085,7 @@ test_cc_version_check_nonblocking() {
 test_cc_version_shows_update() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     printf '#!/bin/bash\nif [ "$1" = "--version" ]; then echo "2.1.81 (Claude Code)"; else echo "1.23.0"; fi\n' > "$tmpdir/bin/claude"
@@ -2100,7 +2109,7 @@ test_cc_version_shows_update() {
 test_cc_version_no_notification_when_current() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/bin"
     printf '#!/bin/bash\nif [ "$1" = "--version" ]; then echo "2.1.90 (Claude Code)"; else echo "1.23.0"; fi\n' > "$tmpdir/bin/claude"
@@ -2142,7 +2151,7 @@ test_hook_has_review_staleness_check() {
 test_review_staleness_warns_when_stale() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     # Create .reviews/ with an old latest-review.md
     mkdir -p "$tmpdir/.reviews"
@@ -2180,7 +2189,7 @@ test_review_staleness_warns_when_stale() {
 test_review_staleness_silent_when_recent() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/.reviews"
     echo "CERTIFIED" > "$tmpdir/.reviews/latest-review.md"
@@ -2211,7 +2220,7 @@ test_review_staleness_silent_when_recent() {
 test_review_staleness_silent_no_reviews_dir() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     # No .reviews/ directory
     mkdir -p "$tmpdir/bin"
@@ -2233,7 +2242,7 @@ test_review_staleness_silent_no_reviews_dir() {
 test_review_staleness_silent_no_codex() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/.reviews"
     echo "CERTIFIED" > "$tmpdir/.reviews/latest-review.md"
@@ -2255,7 +2264,7 @@ test_review_staleness_silent_no_codex() {
 test_review_staleness_nonblocking() {
     local tmpdir
     tmpdir=$(mktemp -d)
-    echo '<!-- SDLC Wizard Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
+    echo '<!-- SDLC Harness Version: 1.23.0 -->' > "$tmpdir/SDLC.md"
     touch "$tmpdir/TESTING.md"
     mkdir -p "$tmpdir/.reviews"
     echo "CERTIFIED" > "$tmpdir/.reviews/latest-review.md"

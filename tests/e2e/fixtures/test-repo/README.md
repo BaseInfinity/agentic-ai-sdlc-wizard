@@ -1,6 +1,6 @@
 # Test Repository
 
-This is a template repository used for E2E testing of the SDLC Wizard.
+This is a template repository used for E2E testing of the SDLC Harness.
 
 ## Purpose
 
