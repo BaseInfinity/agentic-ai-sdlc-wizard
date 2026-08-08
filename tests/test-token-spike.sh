@@ -544,7 +544,7 @@ test_cache_miss_pattern_triggers_spike_warning() {
     fi
 
     local out
-    out=$("$ANALYTICS" --history "$hist" --check 2>&1 || true | strip_locale_warning)
+    out=$({ "$ANALYTICS" --history "$hist" --check 2>&1 || true; } | strip_locale_warning)
 
     if echo "$out" | grep -qiE 'spike|anomal|warning|exceed'; then
         pass "cache-miss pattern triggers spike warning (E2E: transcript→ingest→check, #204 absorbed)"
@@ -602,7 +602,7 @@ test_high_cache_read_no_warning() {
     fi
 
     local out
-    out=$("$ANALYTICS" --history "$hist" --check 2>&1 || true | strip_locale_warning)
+    out=$({ "$ANALYTICS" --history "$hist" --check 2>&1 || true; } | strip_locale_warning)
 
     if echo "$out" | grep -qiE 'spike|anomal'; then
         fail "false positive on healthy hot-cache (costly=$hc_costly, raw_reads=$hc_read). Output: $out"
