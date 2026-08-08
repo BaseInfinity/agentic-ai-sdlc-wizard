@@ -229,17 +229,7 @@ If you can't write a quality test for it, you can't prove it works.
 
 ### Memory Audit Protocol
 
-Per-user memory at `~/.claude/projects/<proj>/memory/` accumulates private learnings. Some are portable lessons (tool quirks, platform gotchas) worth promoting to wizard docs.
-
-**When to run:** end-of-release, after debugging-heavy sessions, or on explicit "audit my memory" request.
-
-**Rule-based denylist** (deterministic, no LLM): `type: user` / `type: reference` → keep private, never promote. `type: project` / `type: feedback` → manual review (mixed private state + portable rule).
-
-**Destinations** (no new files): gotchas → `SDLC.md`. Testing → `TESTING.md`. Skill quirks → that `SKILL.md`. Process rules → `/sdlc` via `/feedback`. **A process rule saved only to memory is a /sdlc gap — codify it so every consumer inherits it. Memory changes one agent; docs change everyone.**
-
-**Tracking:** `promoted_to: <path>` in the memory frontmatter; later audits skip promoted entries.
-
-**Human gate is MANDATORY.** Protocol produces diffs; user approves chunk-by-chunk. Never auto-apply. Prove-It: build a `/memory-audit` slash command only after running 4+ times manually. (Full protocol: wizard doc.)
+End of release: audit `~/.claude/projects/<proj>/memory/` and promote portable lessons into shared docs. **A process rule saved only to memory is a /sdlc gap** — memory changes one agent, docs change everyone. Type-based denylist, destinations and the MANDATORY human gate: `CLAUDE_CODE_SDLC_WIZARD.md`.
 
 ## Post-Mortem: Process Failures Become Rules
 

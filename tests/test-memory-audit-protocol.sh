@@ -1,6 +1,13 @@
 #!/bin/bash
 # Memory Audit Protocol tests
-# Validates the "Memory Audit Protocol" section in skills/sdlc/SKILL.md
+# Validates the "Memory Audit Protocol" — now in CLAUDE_CODE_SDLC_WIZARD.md.
+#
+# GH #489: the protocol moved out of the byte-capped always-loaded skill into
+# the on-demand doc. It was ALREADY supposed to live there — the skill said
+# "Full protocol: CLAUDE_CODE_SDLC_WIZARD.md" while the wizard doc said "the
+# /sdlc skill's Memory Audit Protocol section defines...". A circular pointer,
+# with the protocol existing in exactly one of the two. This test now checks
+# the doc that actually claims to hold it.
 # and the classifier behavior against tests/fixtures/memory-audit-corpus/.
 #
 # Test groups:
@@ -17,7 +24,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+SKILL="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
 CORPUS="$REPO_ROOT/tests/fixtures/memory-audit-corpus"
 
 RED='\033[0;31m'
@@ -37,10 +44,10 @@ skip() { echo -e "${YELLOW}SKIP${NC}: $1"; }
 # ────────────────────────────────────────────
 
 test_protocol_section_exists() {
-    if grep -q '^### Memory Audit Protocol' "$SKILL"; then
-        pass "Memory Audit Protocol section present in skills/sdlc/SKILL.md"
+    if grep -qE '^#{2,3} Memory Audit Protocol' "$SKILL"; then
+        pass "Memory Audit Protocol section present in CLAUDE_CODE_SDLC_WIZARD.md"
     else
-        fail "skills/sdlc/SKILL.md is missing '### Memory Audit Protocol' heading"
+        fail "CLAUDE_CODE_SDLC_WIZARD.md is missing the Memory Audit Protocol heading — the skill points here for it"
     fi
 }
 

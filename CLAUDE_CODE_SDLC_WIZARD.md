@@ -3785,7 +3785,44 @@ Want me to file these? (yes/no/not now)
 
 **`/revise-claude-md` scope:** Only updates CLAUDE.md. It does NOT touch feature docs, TESTING.md, hooks, or skills. Use it for general project context that applies across the codebase.
 
-**Memory Audit Protocol:** Per-user memory at `~/.claude/projects/<proj>/memory/` accumulates private learnings. Some are portable technical lessons that belong in shared docs. The `/sdlc` skill's **Memory Audit Protocol** section (under "After Session (Capture Learnings)") defines a three-bucket classifier (`promote` / `keep` / `manual-review`) with a type-based denylist that keeps `user`/`reference` entries private and routes `project`/`feedback` entries to human review. Run at end-of-release or after debugging-heavy sessions. Human approves every promotion chunk-by-chunk before apply.
+### Memory Audit Protocol
+
+Per-user memory at `~/.claude/projects/<proj>/memory/` accumulates private learnings. Some
+are portable lessons — tool quirks, platform gotchas, process rules — that belong in shared
+docs instead. **A process rule saved only to memory is a /sdlc gap: memory changes one
+agent, docs change everyone.**
+
+**When to run:** end of a release, after a debugging-heavy session, or on an explicit
+"audit my memory" request.
+
+**Rule-based denylist** (deterministic, no LLM judgement needed):
+
+| Frontmatter | Disposition |
+|---|---|
+| `type: user` | keep private, never promote — it describes the person, not the work |
+| `type: reference` | keep private — pointers to dashboards, tickets, personal URLs |
+| `type: project` | manual review — mixes private state with portable rules |
+| `type: feedback` | manual review — usually the richest source of promotable rules |
+
+**Destinations** (promote into an existing file; do not create new ones): tool and platform
+gotchas → `SDLC.md`. Testing lessons → `TESTING.md`. Skill-specific quirks → that
+`SKILL.md`. Process rules → the `/sdlc` skill, via `/feedback`.
+
+**Tracking:** write `promoted_to: <path>` into the memory file's frontmatter. Later audits
+skip anything already promoted, so the protocol is re-runnable without re-reviewing the
+same entries.
+
+**Human gate is MANDATORY.** The protocol produces diffs; the user approves them
+chunk-by-chunk. Never auto-apply — a promotion edits shipped guidance.
+
+**Prove-It:** do not build a `/memory-audit` slash command until this has been run manually
+at least four times. The protocol is cheap; the automation needs evidence it is worth
+maintaining.
+
+**Why this lives here and not in the skill:** the skill is always loaded and byte-capped
+(GH #489). This protocol runs at a discrete, self-announcing moment — end of release — so
+it is read on demand. It previously lived in the skill while *both* documents pointed at
+each other for it (GH #489).
 
 **When to do mini-retro:** After features, tricky bugs, or discovering gotchas. Skip for one-line fixes or questions.
 
