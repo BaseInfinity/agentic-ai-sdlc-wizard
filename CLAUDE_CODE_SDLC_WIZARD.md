@@ -1500,13 +1500,13 @@ Create `.github/CODEOWNERS`:
 
 | Benefit | Solo Dev | Team |
 |---------|----------|------|
-| `/code-review` self-review | ✓ | ✓ |
+| `/code-review` optional preflight | ✓ | ✓ |
 | CI must pass before merge | ✓ | ✓ |
 | Clean commit history | ✓ | ✓ |
 | Easy rollback (revert PR) | ✓ | ✓ |
 | Human review required | — | ✓ |
 
-**Not required, but good practice.** The SDLC workflow's review step is cross-model; `/code-review` remains available as optional preflight input, using `/code-review` (native Claude Code plugin). It launches parallel review agents for CLAUDE.md compliance, bug detection, and logic/security checks. You always have final say — the review just catches things you might miss.
+**Not required, but good practice.** The SDLC workflow's review step is cross-model; `/code-review` remains available as optional preflight input (native Claude Code plugin). It launches parallel review agents for CLAUDE.md compliance, bug detection, and logic/security checks. You always have final say — the review just catches things you might miss.
 
 **Code review workflows:**
 
@@ -2657,7 +2657,7 @@ When the reviewer finds issues, respond per-finding instead of silently fixing e
 **CERTIFIED is not the finish line.** A CERTIFIED verdict and a green CI run are different verification layers that catch different bug classes — a CERTIFIED review does not substitute for actually pushing and watching CI. Confirmed on the same v1.84.0 release: after round-11 CERTIFIED and a full local test sweep, real CI still caught 3 more genuine bugs the review never touched — a content regression in an unrelated section silently dropped by an earlier edit (caught by a pre-existing local test that simply hadn't been re-run since), an environment-specific CLI output-format change invisible to any local run against an older tool version, and a new test file committed without the executable bit (passes every local `bash tests/foo.sh` invocation, only fails when CI runs it as `./tests/foo.sh`). Budget for at least one more fix-push-recheck cycle after CERTIFIED, and don't treat CERTIFIED as license to skip reading the actual CI logs — see the CI Feedback Loop section below.
 
 ```
-Self-review passes → handoff.json (round 1, PENDING_REVIEW)
+Change ready → handoff.json (round 1, PENDING_REVIEW)
                             |
                    Reviewer: FULL REVIEW (structured findings)
                             |
@@ -3326,7 +3326,7 @@ See `.claude/skills/sdlc/SKILL.md` for the enforced checklist.
 1. **Planning Mode** → Research, present approach, get approval
 2. **Transition** → Update docs, /compact
 3. **Implementation** → TDD RED → GREEN → PASS
-4. **Review** → Self-review, present summary
+4. **Review** → cross-model review, present summary
 
 ## Lessons Learned
 
@@ -3686,7 +3686,7 @@ All checks passed! Setup complete.
 | **Planning** | Research, design approach | State confidence |
 | **Transition** | Update docs | Request /compact |
 | **Implementation** | TDD RED → GREEN → PASS | All tests pass |
-| **Review** | Self-review, summary | Present to user |
+| **Review** | Cross-model review, summary | Present to user |
 
 ### Confidence Levels
 
@@ -3753,7 +3753,7 @@ You've successfully set up the system when:
 ## End of Task: Compliance and Mini-Retro
 
 **Compliance check** (Claude does this after each task):
-- TodoWrite used? Confidence stated? TDD followed? Tests pass? Self-review done?
+- Task list used? Confidence stated? TDD followed? Tests pass? Diff read back?
 - If something was skipped: note what and why (intentional vs oversight)
 
 **Mini-retro** (optional, for meaningful tasks only):
@@ -4142,7 +4142,7 @@ Use an independent AI model from a different company as a code reviewer. The aut
 **The Protocol:**
 
 1. Create a `.reviews/` directory in your project
-2. After Claude completes its SDLC loop (self-review passes), write a preflight doc (what you already checked) then a mission-first handoff file:
+2. After Claude completes its SDLC loop, write a preflight doc (what you already checked) then a mission-first handoff file:
 
 ```jsonc
 // .reviews/handoff.json
@@ -4253,7 +4253,7 @@ codex exec \
 **Convergence:** Max 3 recheck rounds (4 total including initial review) as the default. If still NOT CERTIFIED after round 4, escalate to the user with a summary of all open findings — escalate, never ship. Don't spin indefinitely. **Exception:** a large migration may legitimately run longer when each round is still surfacing real, previously-uninventoried surfaces (v1.84.0 ran 11 that way). Judge by whether the finding trend is genuinely converging, and say which case you are claiming.
 
 ```
-Claude writes code → self-review passes → handoff.json (round 1)
+Claude writes code → handoff.json (round 1)
     ↑                                          |
     |                                          v
     |                              Reviewer: FULL REVIEW
@@ -4823,7 +4823,7 @@ The gap this closes: the advisor tool (API beta, `advisor-tool-2026-03-01`) ship
 | `/permissions` | Pre-allow specific commands and check them into `.claude/settings.json` | Anytime you want an auditable team allowlist |
 | `/insights` | Local analyzer of your CC session history. Generates HTML report at `~/.claude/usage-data/report.html` + per-session facet JSON at `~/.claude/usage-data/facets/<session>.json`. Surfaces `underlying_goal`, `outcome`, `friction_counts`, `user_satisfaction_counts`, `brief_summary`, recurring friction patterns, suggested CLAUDE.md additions | Monthly — **qualitative-only**; see caveat below |
 | `/goal <condition>` (v2.1.139+) | Set a completion condition; Claude keeps working across turns until a separate evaluator pass says it's met. **The evaluator is your configured "small fast model" — Haiku by default on the Claude API.** It is swappable via `ANTHROPIC_DEFAULT_HAIKU_MODEL`, but read the blast radius first: that variable is **not scoped to `/goal`**. Claude Code uses it everywhere it needs a small fast model, so pointing it at a frontier model also moves conversation summarization and other background work onto that model. Evaluation tokens alone are negligible; the compaction bill is not. **Know what you are buying:** the evaluator cannot run tools and judges only what is already in the transcript, so it is grading the agent's *claims*. This repo has one recorded failure of exactly that (`SDLC.md`): a condition naming three specific tests was marked achieved because *enough* tests existed, while one tested the wrong scenario — caught only at post-merge self-review. Write conditions that demand verbatim, unfiltered evidence rather than conclusions. **`/goal` is a wrapper around a session-scoped prompt-based Stop hook**, so if you need real verification you can write that Stop hook yourself and skip `/goal` entirely. **And often you need neither:** if the work already produces background events — a review, a CI watch, a long test run — completing one re-invokes the agent automatically, which gives you turn-to-turn autonomy without any evaluator judging doneness. Survives `--resume` (counters reset), not `/clear`. No disk writes — session-state only. Bound it yourself: `/goal "tests pass + git status clean, or stop after 20 turns"`. The evaluator judges the transcript only — it cannot run tools, so don't use `/goal` for "doneness" that lives off-transcript. Requires v2.1.143+ for the subagent-race fix. Composes cleanly with wizard hooks (`UserPromptSubmit`/`SessionStart`/`PreCompact` fire per turn) | Long-running goal-bound work — refactors, migrations, anything where "are we there yet?" has a checkable answer in the transcript |
-| `/code-review [effort] [--comment]` (v2.1.147+, renamed from `/simplify`) | Reports correctness bugs at chosen effort level; `--comment` posts findings as inline GitHub PR comments. Our /sdlc skill already invokes `/code-review`; the `--comment` flag streamlines CI shepherd workflows | Self-review during SDLC; PR review when shepherding |
+| `/code-review [effort] [--comment]` (v2.1.147+, renamed from `/simplify`) | Reports correctness bugs at chosen effort level; `--comment` posts findings as inline GitHub PR comments. The /sdlc skill offers `/code-review` as optional preflight input to cross-model review — it is no longer an instructed step (GH #486); the `--comment` flag streamlines CI shepherd workflows | Self-review during SDLC; PR review when shepherding |
 | `/usage` (v2.1.149+) | Per-category breakdown of limits usage — skills, subagents, plugins, per-MCP-server cost. Complement to `/context all` which shows per-skill per-model token estimates | When investigating session bloat / quota burn — pairs with this repo's `scripts/audit-session-load.sh`, maintainer tooling that is NOT installed by the wizard (#236) |
 | `/context all` (v2.1.139+) | Rounded token estimates per-skill per-model, names the providing plugin for plugin-sourced skills | Same as `/usage` — diagnose what's eating your context |
 

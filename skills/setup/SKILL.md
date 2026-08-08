@@ -137,7 +137,7 @@ Default if no response: **A** (dual-maintain). Document the user's choice as a o
 Generate `SDLC.md` with the full SDLC checklist customized to the project:
 - Plan mode guidance
 - TDD workflow with project-specific commands
-- Self-review steps
+- Cross-model review steps
 - CI feedback loop (if CI detected)
 - Confidence levels
 
