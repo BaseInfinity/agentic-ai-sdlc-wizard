@@ -1,8 +1,30 @@
 # SDLC Harness — Cowork Plugin
 
-SDLC enforcement for Claude Cowork sessions. Provides methodology guidance via skills AND prompt-based hooks that enforce discipline without shell access.
+## The Shallow Surface — By Design
 
-> **Claude Cowork** is a separate product from Claude Code — it's a desktop application for knowledge workers. This plugin targets the shared plugin format that works in both Code and Cowork.
+This project's primary target is **Claude Code (CLI)**. Cowork support is a bonus surface
+and will never hold the CLI back. What ships here is deliberately the shallow version.
+
+**You get:** the complete `/sdlc` operational checklist — byte-identical to the CLI skill,
+nothing removed — plus the `/feedback` skill and two best-effort prompt hooks.
+
+**You do not get:**
+
+- **`CLAUDE_CODE_SDLC_WIZARD.md`** (the ~291 KB deep-protocol doc). The skill cites it for
+  optional depth; in Cowork those citations are inert. The checklist is the complete
+  contract on its own, and the skill says so at the top.
+- Setup/update skills, shell hooks, the CLI installer, or cross-model review tooling.
+- **Enforcement.** Live testing (GH #456) found the prompt hooks do not reliably gate, and
+  the completion hook was removed in v1.92.0 after firing 12 times and being wrong 11. The
+  two remaining hooks are nudges with **no enforcement guarantee**. That rewrite has not
+  been re-validated live — treat enforcement as unproven, not merely absent.
+
+**If you have a terminal, use the full wizard:** `npx agentic-sdlc-wizard init`.
+
+**Why this is not forked into a Cowork-specific skill.** The skill is byte-identical across
+both surfaces, enforced by `tests/test-cowork-drift.sh`. Two hand-maintained copies of a
+20 KB operational contract would silently diverge — this repo's most reliable source of
+defects — to fix pointers that are inert text here anyway.
 
 ## What You Get
 

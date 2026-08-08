@@ -12,7 +12,7 @@ Loaded from repo-local **`.claude/skills/sdlc/SKILL.md`**, which wins over globa
 ## Task
 $ARGUMENTS
 
-Operational checklist. Full protocol: `CLAUDE_CODE_SDLC_WIZARD.md`.
+Operational checklist — **complete on its own**. Full protocol (optional depth, Claude Code installs only): `CLAUDE_CODE_SDLC_WIZARD.md`; if absent, do not hunt for it.
 
 **If the user requests /sdlc, ALWAYS run the full workflow — even for mechanical tasks.** Never silently skip; if overkill, say so and ask.
 
