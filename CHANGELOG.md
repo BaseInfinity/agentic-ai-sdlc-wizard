@@ -4,6 +4,60 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.95.0] - 2026-08-07
+
+**The repo is now `BaseInfinity/claude-sdlc-harness`.** The npm package stays
+`agentic-sdlc-wizard`, and the plugin IDs, CLI bin and slash commands are unchanged —
+those are what your install depends on, and renaming them would force every consumer to
+reinstall for no functional gain. The old repo URL still redirects.
+
+### Fixed — three defects that were shipping to every consumer
+
+- **A hook could block forever on stdin.** `hooks/model-effort-check.sh` still drained
+  stdin with a bare `cat > /dev/null` — the exact unbounded read v1.94.0 existed to
+  remove, observed elsewhere alive at 10h19m against a 10-second timeout. It escaped
+  because the test roster was hand-listed and this hook was never in it; the roster is
+  now derived from `hooks/hooks.json` and fails if it drifts from the manifest.
+- **We shipped the install footgun we warn about.** `instructions-loaded-check.sh` told
+  every consumer, on every session start with an update available, to run a global npm
+  install. The nudge is now channel-neutral and covers package-manager installs, which
+  `claude update` cannot upgrade.
+- **The docs promised a stall watchdog that has never existed.** No such variable is
+  defined anywhere in this repo; the codex wrapper loops on `kill -0` and enforces no
+  timeout at all. The claim is replaced with what the wrapper actually does.
+
+### Fixed — the distribution boundary
+
+`npm pack` ships no `scripts/` directory, yet five shipped references pointed consumers
+at tools they never receive, including `skills/sdlc/SKILL.md` mandating
+`scripts/merge-pr.sh`. Shipped guidance now names a real path (`gh pr merge --squash`)
+and marks repo-local tooling as not installed.
+
+### Fixed — gates that had no exception path
+
+- **`scripts/merge-pr.sh --user-approved "<reason>"`** records a human decision on the PR
+  before merging, and refuses to merge if that record cannot be posted. It cannot waive a
+  red CI check or deleted tests.
+- **The Cowork prompt gate now distinguishes a bypass from a justified exception.** It
+  ended a turn outright for "don't TDD this one-time rename, verify after" — a stated
+  reason with a stated alternative, so the safeguard was substituted rather than removed.
+  It also now allows when ambiguous: this gate ends the turn with no retry, so a wrong
+  denial costs the whole turn while a wrong allow costs nothing.
+
+### Changed — Fable decides
+
+Shipped guidance framed Fable as a rung to escalate to. The contract is stronger and is
+now stated in order: **Fable decides → Opus implements → Fable reviews → Codex gates.**
+Fable appears twice deliberately; Codex is last and singular, an adversarial gate rather
+than a second opinion. Whether Fable should drive instead is explicitly recorded as
+untested, not settled.
+
+### Notes
+
+`ROADMAP.md` had been telling cold sessions to start on work that did not exist, on a
+branch that was empty. Corrected in place rather than deleted. It also claimed "Open PRs
+— none" while one was open; it now links the tracker instead of restating it.
+
 ## [1.94.0] - 2026-08-05
 
 ### Fixed

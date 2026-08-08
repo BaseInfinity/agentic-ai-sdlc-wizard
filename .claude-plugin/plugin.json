@@ -1,12 +1,18 @@
 {
   "name": "sdlc-wizard",
-  "version": "1.94.0",
-  "description": "SDLC enforcement for AI agents — TDD, planning, self-review, CI shepherd",
+  "version": "1.95.0",
+  "description": "SDLC enforcement for AI agents \u2014 TDD, planning, self-review, CI shepherd",
   "author": {
     "name": "Stefan Ayala",
     "url": "https://github.com/BaseInfinity"
   },
   "repository": "https://github.com/BaseInfinity/claude-sdlc-harness",
   "license": "MIT",
-  "keywords": ["sdlc", "tdd", "code-quality", "ai-agent", "developer-tools"]
+  "keywords": [
+    "sdlc",
+    "tdd",
+    "code-quality",
+    "ai-agent",
+    "developer-tools"
+  ]
 }

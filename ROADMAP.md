@@ -9,7 +9,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 1. Every bullet under **Open PRs** must be written as ``- **PR #N** …``. A bullet in any other form fails the test, so a stale entry cannot be spelled around.
 2. `PR #N` anywhere in this section must name a PR that is **not yet merged**. Reference already-merged work in prose as a bare `#N`.
 
-**Last release: v1.94.0, 2026-08-05** (`agentic-sdlc-wizard`). Carries the stdin-hang fix for six shipped hooks — each could block forever on a stdin that never reaches EOF, observed at 10h19m against a 10-second timeout — plus fail-closed gate semantics and a `CLAUDE.md` shipped-surface guard. See `CHANGELOG.md`, including the five-iteration history of the fix itself.
+**Last release: v1.95.0, 2026-08-07** (`agentic-sdlc-wizard`). Carries the stdin-hang fix for six shipped hooks — each could block forever on a stdin that never reaches EOF, observed at 10h19m against a 10-second timeout — plus fail-closed gate semantics and a `CLAUDE.md` shipped-surface guard. See `CHANGELOG.md`, including the five-iteration history of the fix itself.
 
 **This marker was stale and is worth noting as a defect, not just correcting.** It read "Last release: v1.90.0" through the v1.92.0 and v1.93.0 releases; a version sweep grepping for the *outgoing* version can never find a marker frozen at an older one. Caught by cross-model release review 2026-08-05, not by any test. A guard belongs in `tests/test-doc-consistency.sh` — cross-ref GH #493 (the guard itself) and #491 (the wider CI/CD audit).
 
@@ -182,7 +182,7 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 
 | Project | Repo | Status |
 |---------|------|--------|
-| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.94.0 (living tracker — bump every release) |
+| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.95.0 (living tracker — bump every release) |
 | Codex SDLC Adapter | BaseInfinity/codex-sdlc-wizard | v0.7.x, shipped with SDLC workflow |
 | GDLC Wizard (games sibling) | BaseInfinity/claude-gdlc-wizard | v0.2.x, persona-driven playtest cycles |
 | _(add as projects are marked)_ | | |
