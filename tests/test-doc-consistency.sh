@@ -3172,6 +3172,40 @@ test_skill_keeps_exempted_landmines() {
 }
 test_skill_keeps_exempted_landmines
 
+# ---- no shipped surface may present self-review as a GATE ----
+#
+# GH #486 deleted same-model self-review as an instructed step. Fixing the
+# instances by hand missed most of them twice: a first pass fixed 4 of 7 cited
+# sites and reported "all", and the residue included a flatly false claim that
+# the skill still invokes /code-review.
+#
+# So this is a sweep, not a line list. The discriminator: a site FAILS if it
+# presents self-review as a gate, a required step, or an instructed loop —
+# "self-review passes ->", a numbered protocol step, a phase table naming it as
+# the review stage. It PASSES if it describes the still-scored read-back, or
+# /code-review as optional preflight input to cross-model review, or is inside
+# the explicitly labeled historical reference section.
+test_no_shipped_surface_gates_on_self_review() {
+    local bad="" doc base line
+    for doc in "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" "$REPO_ROOT/README.md" \
+               "$REPO_ROOT/skills/sdlc/SKILL.md" "$REPO_ROOT/skills/setup/SKILL.md"; do
+        [ -f "$doc" ] || continue
+        base=$(basename "$doc")
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            # allowed: the labeled history section, and read-back/preflight framing
+            printf '%s' "$line" | grep -qiE 'for reference|optional preflight|preflight input|demoted|no longer|removed in|read back' && continue
+            bad="$bad\n  $base: $(printf '%s' "$line" | cut -c1-96)"
+        done <<< "$(grep -niE 'self-review passes|self.review (step|gate)|already invokes .?/code-review|/code-review self-review' "$doc" 2>/dev/null)"
+    done
+    if [ -z "$bad" ]; then
+        pass "#486: no shipped surface presents self-review as a gate or required step"
+    else
+        fail "shipped surface still gates on same-model self-review, deleted in #486:$(printf '%b' "$bad")"
+    fi
+}
+test_no_shipped_surface_gates_on_self_review
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then
