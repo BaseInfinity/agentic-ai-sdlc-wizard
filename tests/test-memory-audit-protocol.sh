@@ -51,10 +51,22 @@ test_protocol_section_exists() {
     fi
 }
 
+# Slice the Memory Audit section BEFORE checking its contents. Grepping the whole
+# 291KB doc passes vacuously: "When to run" also appears in the Cross-Model Review
+# section, so removing it from THIS protocol still passed. Verified by review.
+_memory_audit_section() {
+    awk '/^#{2,3} Memory Audit Protocol/{f=1} f{print} f && /^#{2,3} [^M]/ && !/Memory Audit/{if(++n>1)exit}' "$SKILL"
+}
+
 test_protocol_subsections_present() {
-    local missing=""
+    local missing="" section
+    section=$(_memory_audit_section)
+    if [ -z "$section" ]; then
+        fail "Memory Audit section could not be sliced — this assertion would be vacuous"
+        return
+    fi
     for keyword in "When to run" "Rule-based denylist" "Destinations" "Tracking" "Human gate"; do
-        if ! grep -qF "$keyword" "$SKILL"; then
+        if ! printf '%s' "$section" | grep -qF "$keyword"; then
             missing="${missing:+${missing}, }$keyword"
         fi
     done
