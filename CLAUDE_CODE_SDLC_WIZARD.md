@@ -2482,7 +2482,11 @@ Before presenting approach, STATE your confidence:
 
 Low confidence does **not** mean "ask the user." It means "escalate," and the user is the third rung, not the first. Ask a human only for what no model can settle.
 
-1. **Fable** — `advisor()` before plans; if the advisor is unavailable, spawn a Fable subagent at `high`.
+1. **Fable — the primary thinker, not a rung you escalate to.** Fable **decides** design, priority and sequencing; you implement its call. You are the coder. Reach for it *before* an approach exists, via `advisor()`, or a Fable subagent at `high` while the advisor is server-side disabled. **The tell that you got this backwards:** you have already chosen an approach and are asking Fable to grade it. Prompt it to decide — "where you would normally say consider X, say do X" — rather than to critique. Codex is a different job entirely: the **adversarial check** that tries to break a decision already made, run before commit or merge. Fable thinks, Codex attacks; do not collapse them into "get a second opinion".
+
+   **The loop, in order.** Fable decides the approach → Opus implements it → **Fable reviews the implementation** → only once that is clean, Codex runs as the final cross-model check. Fable appears twice on purpose: once as the brain before code exists, once as the reviewer of what got built. Codex is last and singular — it is the adversarial gate, not a second opinion to average with the first. Sending work to Codex before Fable has reviewed it wastes the expensive check on defects the cheaper one would have caught.
+
+   **Open question, not yet settled:** this topology runs Opus as the driver calling out to Fable. The inverse — Fable as driver, delegating implementation to Opus subagents — has not been tested and may be better, since it puts the stronger reasoner in the seat that makes decisions continuously rather than on request. Do not assume the current arrangement is optimal; it is the one that has been used, not the one that has been measured.
 2. **Codex `high`** — when Fable can't close the gap, or when a second, adversarially-framed opinion is what's needed.
 3. **The human** — priority, risk appetite, scope, spend, or anything irreversible or outward-facing. A merge gate that demands explicit confirmation *is* this rung, invoked by design rather than by uncertainty.
 
