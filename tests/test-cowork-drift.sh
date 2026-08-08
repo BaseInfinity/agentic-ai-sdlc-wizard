@@ -497,6 +497,50 @@ else
   fail "ROADMAP missing Dynamic Workflows evaluation entry"
 fi
 
+# Test 18: the UserPromptSubmit gate distinguishes a BYPASS from a JUSTIFIED
+# exception.
+#
+# Incident 2026-08-07: the maintainer wrote "do the prose rename now, dont TDD
+# something like this, it will most likely only ever happen once so just verify
+# after". The gate denied it and ended the turn. That prompt is not a bypass —
+# it states a reason (one-time mechanical change) AND an alternative (verify
+# after). The safeguard was being substituted, not removed.
+#
+# The gate could not tell the difference because it only ever asked "does this
+# ask to skip something". A rule with no sanctioned exception path is one people
+# route around; this is the same shape as the merge gate before --user-approved.
+# Assert the prompt carries BOTH halves: the allowance, and the bare-skip denial
+# it must keep.
+if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
+  ups_prompt=$(python3 -c "
+import json
+d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
+print(' '.join(hk.get('prompt','') for h in d.get('UserPromptSubmit',[]) for hk in h.get('hooks',[])))
+" 2>/dev/null)
+
+  if [ -z "$ups_prompt" ]; then
+    fail "could not extract the UserPromptSubmit prompt — this assertion would be vacuous"
+  else
+    missing=""
+    # "stated reason", not bare "reason" — the latter matches the JSON response
+    # field name `"reason"` that the prompt already contained, so it passed
+    # without the clause existing. Caught while writing this test.
+    printf '%s' "$ups_prompt" | grep -qi "stated reason" || missing="$missing no-reason-clause"
+    # "stated alternative", mirroring "stated reason". The looser
+    # alternative|verify matched the word "alternative" elsewhere in the prompt,
+    # so deleting the clause still passed.
+    printf '%s' "$ups_prompt" | grep -qi "stated alternative" || missing="$missing no-alternative-clause"
+    printf '%s' "$ups_prompt" | grep -qiE "substitut|replac" || missing="$missing no-substitution-framing"
+    # It must still deny an unjustified skip, or the fix has gutted the gate.
+    printf '%s' "$ups_prompt" | grep -qi "ok.*false" || missing="$missing no-denial-path"
+    if [ -z "$missing" ]; then
+      pass "UserPromptSubmit gate allows a justified exception and still denies a bare bypass"
+    else
+      fail "UserPromptSubmit gate cannot distinguish a justified exception from a bypass:$missing"
+    fi
+  fi
+fi
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
