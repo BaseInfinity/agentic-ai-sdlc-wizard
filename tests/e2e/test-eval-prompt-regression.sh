@@ -216,7 +216,7 @@ test_high_compliance_self_review_expected_score() {
     if [ "$min_score" = "1" ]; then
         pass "High-compliance expects self_review min=1"
     else
-        fail "High-compliance self_review.min should be 1, got $min_score (self_review is a critical criterion)"
+        fail "High-compliance self_review.min should be 1, got $min_score (self_review is scored but no longer critical (GH #486))"
     fi
 }
 

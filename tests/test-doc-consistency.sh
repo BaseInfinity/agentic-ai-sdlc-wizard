@@ -3089,6 +3089,224 @@ test_readme_diagram_scopes_the_ci_pipeline() {
 }
 test_readme_diagram_scopes_the_ci_pipeline
 
+# ---- the doc-sync rule must name README ----
+#
+# The rule listed `*_DOCS.md` and `ROADMAP.md` and stopped there. README was
+# never named, and on 2026-08-08 that cost: #486 deleted the same-model
+# self-review instruction while README still advertised "Self-review before
+# presenting" as an enforced behaviour, and described a flow starting with a
+# self-review gate that no longer exists. Both shipped stale for hours, and the
+# maintainer noticed before any check did.
+#
+# README is not an afterthought here — npm packs it whether or not it appears in
+# package.json's files list, so it reaches every consumer. A doc-sync rule that
+# omits the most-read shipped document is the rule failing at its own job.
+test_doc_sync_rule_names_readme() {
+    local f="$REPO_ROOT/skills/sdlc/SKILL.md" section
+    section=$(awk '/^## Documentation Sync/,/^## [^D]/' "$f")
+    if [ -z "$section" ]; then
+        fail "Documentation Sync section not found in the skill — this assertion is now vacuous"
+    elif printf '%s' "$section" | grep -q "README"; then
+        pass "doc-sync rule names README (it ships, and it went stale once)"
+    else
+        fail "the Documentation Sync rule never names README, so a shipped-doc update is not required by it — this is how README advertised a behaviour that had been deleted"
+    fi
+}
+test_doc_sync_rule_names_readme
+
+# ---- the first-action mandate must name a tool the harness actually has ----
+#
+# The skill opens with "Your FIRST action must be a TodoWrite". TodoWrite is a
+# standard Claude Code tool but is NOT exposed in every configuration — this
+# session has TaskCreate/TaskUpdate/TaskList and no TodoWrite. A driver reading
+# a mandate for a tool it cannot call either ignores rule 1 or invents a
+# substitute, and neither is what the rule wants.
+#
+# The rubric row already hedges correctly ("Use TodoWrite or TaskCreate"). The
+# mandate did not, so the two disagreed about the same requirement.
+test_first_action_mandate_names_available_tool() {
+    local f="$REPO_ROOT/skills/sdlc/SKILL.md" line
+    line=$(grep -m1 "FIRST action must be" "$f")
+    if [ -z "$line" ]; then
+        fail "the first-action mandate is gone from the skill — this assertion is now vacuous"
+    elif printf '%s' "$line" | grep -q "TaskCreate"; then
+        pass "first-action mandate names TaskCreate as well as TodoWrite (harnesses differ)"
+    else
+        fail "the first-action mandate names only TodoWrite, which is not exposed in every harness — a driver without it cannot follow rule 1"
+    fi
+}
+test_first_action_mandate_names_available_tool
+
+# ---- the skill's exempted landmines must stay pinned ----
+#
+# GH #489 moved the cross-model file mechanics to the wizard doc but EXEMPTED two
+# things from the move: the codex invocation flags (#364 — `< /dev/null` and
+# background, which prevent a stdin hang and a 70-minute foreground kill) and the
+# commit_sha-on-CERTIFIED rule (#437 — what the merge gate checks for staleness).
+#
+# The exemption was granted on the reasoning that improvising these costs real
+# incidents. But the reviewer that granted it noted its own spec was incomplete:
+# an exemption justified by "byte pressure deletes exactly the prose no test
+# protects" needs a pin test in the same change, or the next trim round deletes
+# the very lines the exemption exists to keep.
+#
+# Before #489 these were partially covered by assertions that have since been
+# retargeted to the wizard doc. The multi-line codex-stdin check does not match
+# the skill's single-line inline command, so it is silently exempt there. Today
+# nothing fails if steps 1-2 disappear. This closes that.
+test_skill_keeps_exempted_landmines() {
+    local f="$REPO_ROOT/skills/sdlc/SKILL.md" missing=""
+    [ -f "$f" ] || { fail "skills/sdlc/SKILL.md missing"; return; }
+    # Anchor on the FUNCTIONAL line, not on any mention. Codex broke the first
+    # version of this test by deleting `< /dev/null` from the actual command
+    # while leaving the explanatory prose — it still passed, because a loose
+    # grep cannot tell a working invocation from a sentence about one. My own
+    # mutation proof missed it: I deleted every occurrence at once, so the test
+    # went red for the wrong reason.
+    # Anchor on the BACKTICK-DELIMITED COMMAND SPAN, not the whole markdown line.
+    # The line also carries prose ("always append `< /dev/null`", "**Why:** ...")
+    # so a line-level grep still matched after the guard was stripped from the
+    # actual command — the reviewer's exact mutation evaded two "hardened"
+    # versions of this test. The prose mentions live in their own spans, so
+    # scoping to the command span is tight.
+    local codex_cmd
+    codex_cmd=$(grep -oE '`codex exec[^`]+`' "$f" | head -1)
+    if [ -z "$codex_cmd" ]; then
+        missing="$missing codex-invocation-line(#364)"
+    else
+        printf '%s' "$codex_cmd" | grep -q -- '< /dev/null' \
+            || missing="$missing codex-stdin-guard-ON-THE-COMMAND(#364)"
+        printf '%s' "$codex_cmd" | grep -q -- '-s danger-full-access' \
+            || missing="$missing danger-full-access-flag(#364)"
+    fi
+    grep -qi 'run_in_background' "$f" || missing="$missing background-flag(#364)"
+    # The RULE, not a passing mention: it must say to WRITE commit_sha on CERTIFIED.
+    # Require the RULE with its VALUE, not a co-occurrence of words. The earlier
+    # pattern matched "On CERTIFIED mentions commit_sha" — the write instruction
+    # gone, the assertion still green. What the gate actually needs written is
+    # the resolved HEAD sha, so `rev-parse` is the load-bearing token.
+    # NOTE: a commit_sha assertion lived here and was deleted. It grepped this
+    # doc for the "on CERTIFIED, write commit_sha" instruction — and was defeated
+    # four times, each by prose ABOUT the rule rather than the rule. The behaviour
+    # is enforced by hooks/codex-gate-check.sh (exit 2 on missing/stale sha) and
+    # tested by running that hook against real fixtures. Grepping a doc to protect
+    # a behaviour that already fails closed and has its own executable test is
+    # negative ROI. Do not re-add it.
+    # The Memory Audit pointer is the only route from the always-loaded skill to
+    # the protocol that now lives in the wizard doc. Trim it and the protocol
+    # becomes undiscoverable from the surface a driver actually reads.
+    # Heading alone is not a pointer. The pointer is the DESTINATION — without it
+    # the protocol is undiscoverable from the always-loaded surface.
+    grep -qiE 'Memory Audit Protocol' "$f" || missing="$missing memory-audit-heading"
+    grep -A4 -i 'Memory Audit Protocol' "$f" | grep -q 'CLAUDE_CODE_SDLC_WIZARD.md' \
+        || missing="$missing memory-audit-DESTINATION-pointer"
+    if [ -z "$missing" ]; then
+        pass "skill retains its #489-exempted landmines and the memory-audit pointer"
+    else
+        fail "the skill lost content #489 explicitly exempted from the move — improvising these is what #364 and #437 memorialise:$missing"
+    fi
+}
+test_skill_keeps_exempted_landmines
+
+# ---- no shipped surface may present self-review as a GATE ----
+#
+# GH #486 deleted same-model self-review as an instructed step. Fixing the
+# instances by hand missed most of them twice: a first pass fixed 4 of 7 cited
+# sites and reported "all", and the residue included a flatly false claim that
+# the skill still invokes /code-review.
+#
+# So this is a sweep, not a line list. It matches the gating PHRASINGS this
+# repo has actually shipped — not every conceivable one; a regex cannot judge
+# intent, and a guard whose comment claims more than its pattern is the exact
+# class that defeated the landmine pin twice. The discriminator: a site FAILS if it
+# presents self-review as a gate, a required step, or an instructed loop —
+# "self-review passes ->", a numbered protocol step, a phase table naming it as
+# the review stage. It PASSES if it describes the still-scored read-back, or
+# /code-review as optional preflight input to cross-model review, or is inside
+# the explicitly labeled historical reference section.
+test_no_shipped_surface_gates_on_self_review() {
+    local bad="" doc base line
+    for doc in "$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" "$REPO_ROOT/README.md" \
+               "$REPO_ROOT/skills/sdlc/SKILL.md" "$REPO_ROOT/skills/setup/SKILL.md"; do
+        [ -f "$doc" ] || continue
+        base=$(basename "$doc")
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            # allowed: the labeled history section, and read-back/preflight framing
+            printf '%s' "$line" | grep -qiE 'for reference|optional preflight|preflight input|demoted|no longer|removed in|read back' && continue
+            bad="$bad\n  $base: $(printf '%s' "$line" | cut -c1-96)"
+        # Two passes. Case-INSENSITIVE for the phrase forms; case-SENSITIVE for the
+        # all-caps template form, because a bare case-insensitive SELF-REVIEW also
+        # matches the soft benefit prose that is explicitly allowed ("Self-review |
+        # AI catches its own mistakes"). One pattern could not separate them.
+        done <<< "$( { grep -niE 'self-review passes|self.review (step|gate)|already invokes .?/code-review|/code-review self-review|self-review: run|run .?/code-review.{0,24}before' "$doc" 2>/dev/null; grep -nE 'SELF-REVIEW.*code-review' "$doc" 2>/dev/null; } | sort -un)"
+    done
+    if [ -z "$bad" ]; then
+        pass "#486: no shipped surface presents self-review as a gate or required step"
+    else
+        fail "shipped surface still gates on same-model self-review, deleted in #486:$(printf '%b' "$bad")"
+    fi
+}
+test_no_shipped_surface_gates_on_self_review
+
+# ---- the tutorial hook template must not drift from the shipped hook ----
+#
+# CLAUDE_CODE_SDLC_WIZARD.md:2655 documents this exact defect from v1.84.0:
+# "tutorial hook code silently drifted from the real shipped hook". It recurred
+# twice on this branch — the template still emitted a self-review line the hook
+# had dropped, and a fix to the template's task-list wording was not applied to
+# the hook, so they disagreed about which tool to name and which doc to cite.
+#
+# Doc-lane consumers copy the template; CLI consumers get the hook. When they
+# disagree, one group is following instructions the other group's tooling does
+# not implement.
+test_hook_template_matches_shipped_hook() {
+    local doc="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md" hook="$REPO_ROOT/hooks/sdlc-prompt-check.sh"
+    local bad="" line
+    [ -f "$doc" ] && [ -f "$hook" ] || { fail "template or shipped hook missing"; return; }
+    # Lines the template teaches that the hook must actually emit.
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        grep -qF "$line" "$hook" || bad="$bad\n  template teaches, hook does not emit: $line"
+    done <<'TEMPLATE_LINES'
+1. Task list FIRST (TodoWrite or TaskCreate) (plan tasks before coding)
+Quick refs: SDLC.md | TESTING.md | *_DOCS.md for feature
+TEMPLATE_LINES
+    if [ -z "$bad" ]; then
+        pass "tutorial hook template matches the shipped hook (v1.84.0 drift class)"
+    else
+        fail "tutorial hook template drifted from hooks/sdlc-prompt-check.sh:$(printf '%b' "$bad")"
+    fi
+}
+test_hook_template_matches_shipped_hook
+
+# ---- the review loop must not hand the turn back per round ----
+#
+# Observed 2026-08-08 on PR #509: three review rounds, and after EACH one the
+# driver fixed the findings then stopped and reported — while findings were
+# still landing and the loop had obviously not converged. The maintainer had to
+# say "continue" three times.
+#
+# The mechanism was never missing: a backgrounded reviewer completing re-invokes
+# the driver automatically. What was missing was the rule saying that a turn
+# ending with no pending work IS a stop decision requiring a stated reason.
+test_skill_states_loop_autonomy_rule() {
+    local f="$REPO_ROOT/skills/sdlc/SKILL.md" missing=""
+    [ -f "$f" ] || { fail "skills/sdlc/SKILL.md missing"; return; }
+    grep -qi 'CONVERGED' "$f" || missing="$missing CONVERGED"
+    grep -qi 'DEADLOCK'  "$f" || missing="$missing DEADLOCK"
+    grep -qi 'BOUND'     "$f" || missing="$missing BOUND"
+    # The anti-shopping invariant is the load-bearing half: without it,
+    # "always continue" becomes resubmitting until a tired YES.
+    grep -qi 'reviewer-shopping' "$f" || missing="$missing anti-shopping-invariant"
+    if [ -z "$missing" ]; then
+        pass "skill states the loop-autonomy rule (stop only on CONVERGED/DEADLOCK/BOUND)"
+    else
+        fail "the skill does not state when the review loop may stop, so the driver hands the turn back every round:$missing"
+    fi
+}
+test_skill_states_loop_autonomy_rule
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then

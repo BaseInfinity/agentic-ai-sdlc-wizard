@@ -287,7 +287,7 @@ EVAL_RESULT=$(echo "$EVAL_RESULT" | jq \
     .max_score = ([.criteria[].max] | add)
     ')
 
-# Check critical criteria (self_review and tdd_red are must-pass)
+# Check critical criteria (tdd_red is the sole must-pass (self_review demoted, GH #486))
 CRITICAL_RESULT=$(check_critical_criteria "$EVAL_RESULT")
 CRITICAL_MISS=$(echo "$CRITICAL_RESULT" | jq -r '.critical_miss')
 CRITICAL_FAILURES=$(echo "$CRITICAL_RESULT" | jq -c '.critical_failures')

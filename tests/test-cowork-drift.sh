@@ -541,6 +541,37 @@ print(' '.join(hk.get('prompt','') for h in d.get('UserPromptSubmit',[]) for hk 
   fi
 fi
 
+# Test 19: the skill must declare what happens when the wizard doc is absent.
+#
+# Cowork consumers receive SIX files — README, hooks.json, two plugin manifests,
+# and the two SKILL.md copies. They never receive CLAUDE_CODE_SDLC_WIZARD.md,
+# and there is no mechanism to give it to them: it is 291 KB against a 44 KB
+# plugin, written for a CLI Cowork does not have.
+#
+# So every "full protocol: wizard doc" pointer in the skill is a dangling
+# reference for those users, and GH #489 is adding more of them as content moves
+# out of the byte-capped skill. One sentence at the top converts all of them from
+# broken references into declared graceful degradation.
+#
+# This assertion is load-bearing, not decorative. #489's own finding is that byte
+# pressure deletes exactly the prose no test protects — three content defects in
+# one session came from trimming to fit. Without this check, the next trim round
+# removes the sentence and the defect quietly returns.
+if [ -f "$PROJECT_ROOT/skills/sdlc/SKILL.md" ] && [ -f "$PROJECT_ROOT/cowork/skills/sdlc/SKILL.md" ]; then
+  missing=""
+  for f in "$PROJECT_ROOT/skills/sdlc/SKILL.md" "$PROJECT_ROOT/cowork/skills/sdlc/SKILL.md"; do
+    grep -qiE "complete on its own" "$f" && grep -qiE "if absent, do not hunt for it" "$f" \
+      || missing="$missing $(basename "$(dirname "$(dirname "$f")")")"
+  done
+  if [ -z "$missing" ]; then
+    pass "skill declares the wizard-doc-absent convention (Cowork gets graceful degradation, not dangling pointers)"
+  else
+    fail "skill does not declare what to do when the wizard doc is absent — Cowork users never receive it, so every pointer is a dead end:$missing"
+  fi
+else
+  fail "SKILL.md copies missing — cannot check the wizard-doc-absent convention"
+fi
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

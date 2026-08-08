@@ -4,6 +4,14 @@
 # transcripts) that the wizard doesn't already know about. Output is a JSON
 # digest the maintainer triages.
 
+
+# macOS has no C.UTF-8 locale (it is glibc-only). When a caller exports it,
+# bash warns on stderr, and every capture below merges stderr via 2>&1 — so the
+# warning lands inside the value being asserted and fails unrelated checks.
+# Filter the warning specifically; do not force a locale, which would hide
+# real stderr from the script under test. (Confirmed: 14 + 2 false failures.)
+strip_locale_warning() { grep -v 'warning: setlocale' || true; }
+
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -74,7 +82,7 @@ test_allowlist_exists() {
 
 test_detects_new_slash_command() {
     local out
-    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" 2>&1)
+    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" 2>&1 | strip_locale_warning)
     if echo "$out" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -90,7 +98,7 @@ print('ok')
 
 test_filters_known_commands() {
     local out
-    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" 2>&1)
+    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" 2>&1 | strip_locale_warning)
     # /help and /usage should NOT be in candidates (they are well-known)
     if echo "$out" | python3 -c "
 import sys, json
@@ -115,7 +123,7 @@ test_filters_insights_as_known() {
     # and doesn't depend on an external fixture file existing).
     printf 'Did anyone try /insights yet? Friction counts looked interesting.\n' > "$fixture"
     local out
-    out=$(bash "$SCANNER" "$fixture" 2>&1)
+    out=$(bash "$SCANNER" "$fixture" 2>&1 | strip_locale_warning)
     rm -f "$fixture"
     if echo "$out" | python3 -c "
 import sys, json
@@ -132,7 +140,7 @@ print('ok')
 
 test_filters_wizard_skills() {
     local out
-    out=$(bash "$SCANNER" "$FIXTURES/transcript-multi.txt" 2>&1)
+    out=$(bash "$SCANNER" "$FIXTURES/transcript-multi.txt" 2>&1 | strip_locale_warning)
     if echo "$out" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -148,7 +156,7 @@ print('ok')
 
 test_dedupes_and_counts() {
     local out
-    out=$(bash "$SCANNER" "$FIXTURES/transcript-multi.txt" 2>&1)
+    out=$(bash "$SCANNER" "$FIXTURES/transcript-multi.txt" 2>&1 | strip_locale_warning)
     # /alpha appears twice, /beta once, /gamma once. Each should appear once
     # in candidates, with appropriate counts.
     if echo "$out" | python3 -c "
@@ -168,7 +176,7 @@ print('ok')
 
 test_empty_input_returns_empty_candidates() {
     local out
-    out=$(bash "$SCANNER" "$FIXTURES/transcript-empty.txt" 2>&1)
+    out=$(bash "$SCANNER" "$FIXTURES/transcript-empty.txt" 2>&1 | strip_locale_warning)
     if echo "$out" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -183,7 +191,7 @@ print('ok')
 
 test_outputs_valid_json() {
     local out
-    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" 2>&1)
+    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" 2>&1 | strip_locale_warning)
     if echo "$out" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -200,7 +208,7 @@ print('ok')
 
 test_handles_stdin() {
     local out
-    out=$(echo "Try /stdintest in this prompt" | bash "$SCANNER" - 2>&1)
+    out=$(echo "Try /stdintest in this prompt" | bash "$SCANNER" - 2>&1 | strip_locale_warning)
     if echo "$out" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -216,7 +224,7 @@ print('ok')
 
 test_handles_multiple_files() {
     local out
-    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" "$FIXTURES/transcript-multi.txt" 2>&1)
+    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" "$FIXTURES/transcript-multi.txt" 2>&1 | strip_locale_warning)
     if echo "$out" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -232,7 +240,7 @@ print('ok')
 
 test_includes_sample_context() {
     local out
-    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" 2>&1)
+    out=$(bash "$SCANNER" "$FIXTURES/transcript-newthing.txt" 2>&1 | strip_locale_warning)
     # Codex round 1 P1: weak assertion. Strengthened to require the slash
     # itself appears in the sample window (case-insensitive).
     if echo "$out" | python3 -c "
@@ -257,7 +265,7 @@ test_long_line_sample_includes_slash() {
     printf '%0.s_' {1..350} > "$long_fix"  # 350 underscores
     printf ' and finally we use /latecommand here in this thread\n' >> "$long_fix"
     local out
-    out=$(bash "$SCANNER" "$long_fix" 2>&1)
+    out=$(bash "$SCANNER" "$long_fix" 2>&1 | strip_locale_warning)
     if echo "$out" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -281,7 +289,7 @@ The user mentioned /Help and /HELP and also brought up /NewThing.
 Note that /newthing also got mentioned with normal casing.
 EOF
     local out
-    out=$(bash "$SCANNER" "$case_fix" 2>&1)
+    out=$(bash "$SCANNER" "$case_fix" 2>&1 | strip_locale_warning)
     if echo "$out" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -306,7 +314,7 @@ test_dash_leading_filename() {
 This dash-leading file mentions /dashtest as a candidate.
 EOF
     local out
-    out=$(bash "$SCANNER" "$dash_fix" 2>&1)
+    out=$(bash "$SCANNER" "$dash_fix" 2>&1 | strip_locale_warning)
     if echo "$out" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)

@@ -12,6 +12,14 @@
 #   - Hook gate: token-spike-check.sh only fires when .metrics/ exists
 #   - Hook output: hook surfaces warning when ingest+check finds spike
 
+
+# macOS has no C.UTF-8 locale (it is glibc-only). When a caller exports it,
+# bash warns on stderr, and every capture below merges stderr via 2>&1 — so the
+# warning lands inside the value being asserted and fails unrelated checks.
+# Filter the warning specifically; do not force a locale, which would hide
+# real stderr from the script under test. (Confirmed: 14 + 2 false failures.)
+strip_locale_warning() { grep -v 'warning: setlocale' || true; }
+
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -179,7 +187,7 @@ test_spike_detected_when_last_exceeds_threshold() {
     append_history_record "$tmp/.metrics/token-history.jsonl" "spike" 50000
 
     local out
-    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1) || true
+    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1 | strip_locale_warning) || true
     if echo "$out" | grep -qiE 'WARN|spike|anomaly|σ|sigma'; then
         pass "spike detected when last record >2σ above median (10 baseline + 1 spike)"
     else
@@ -205,7 +213,7 @@ test_no_spike_when_within_threshold() {
     append_history_record "$tmp/.metrics/token-history.jsonl" "normal" 1080
 
     local out
-    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1) || true
+    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1 | strip_locale_warning) || true
     if echo "$out" | grep -qiE 'WARN|spike|anomaly'; then
         fail "false positive: spike reported when last burn within threshold. Output: $out"
     else
@@ -225,7 +233,7 @@ test_no_spike_when_window_too_small() {
     append_history_record "$tmp/.metrics/token-history.jsonl" "huge" 999999
 
     local out
-    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1) || true
+    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1 | strip_locale_warning) || true
     if echo "$out" | grep -qiE 'WARN|spike|anomaly'; then
         fail "false positive on tiny window: output: $out"
     else
@@ -272,8 +280,8 @@ test_median_not_mean() {
     # Mean-based MUST NOT flag (the 50000 outlier inflates stdev and mean).
     # This is the contrast that proves the median branch isn't a no-op.
     local out_med out_mean
-    out_med=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check --metric median 2>&1) || true
-    out_mean=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check --metric mean 2>&1) || true
+    out_med=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check --metric median 2>&1 | strip_locale_warning) || true
+    out_mean=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check --metric mean 2>&1 | strip_locale_warning) || true
 
     local med_warned mean_warned
     if echo "$out_med" | grep -qiE 'WARN|spike|anomaly'; then med_warned=yes; else med_warned=no; fi
@@ -305,7 +313,7 @@ test_flat_baseline_small_uptick_does_not_fire() {
     append_history_record "$tmp/.metrics/token-history.jsonl" "smalluptick" 1100
 
     local out
-    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1) || true
+    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1 | strip_locale_warning) || true
     if echo "$out" | grep -qiE 'WARN|spike|anomaly'; then
         fail "false positive on flat-baseline tiny uptick (1000→1100). Output: $out"
     else
@@ -328,7 +336,7 @@ test_flat_baseline_large_jump_still_fires() {
     append_history_record "$tmp/.metrics/token-history.jsonl" "bigjump" 50000
 
     local out
-    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1) || true
+    out=$("$ANALYTICS" --history "$tmp/.metrics/token-history.jsonl" --check 2>&1 | strip_locale_warning) || true
     if echo "$out" | grep -qiE 'WARN|spike|anomaly'; then
         pass "flat baseline + 50× jump still fires (floor doesn't mask real spikes)"
     else
@@ -426,7 +434,7 @@ test_hook_silent_without_metrics_dir() {
 
     local out
     out=$(CLAUDE_PROJECT_DIR="$tmp" SDLC_TOKEN_SPIKE_TRANSCRIPT_DIR="$tmp/transcripts" \
-        bash "$HOOK" 2>&1 < /dev/null) || true
+        bash "$HOOK" 2>&1 < /dev/null | strip_locale_warning) || true
     if [ -z "$out" ]; then
         pass "hook is silent when .metrics/ does not exist (consumer opt-in)"
     else
@@ -453,7 +461,7 @@ test_hook_warns_on_spike() {
 
     local out
     out=$(CLAUDE_PROJECT_DIR="$tmp" SDLC_TOKEN_SPIKE_TRANSCRIPT_DIR="$tmp/transcripts" \
-        bash "$HOOK" 2>&1 < /dev/null) || true
+        bash "$HOOK" 2>&1 < /dev/null | strip_locale_warning) || true
     if echo "$out" | grep -qiE 'WARN|spike|token'; then
         pass "hook warns on detected spike (gated on .metrics/ + visible to user)"
     else
@@ -536,7 +544,7 @@ test_cache_miss_pattern_triggers_spike_warning() {
     fi
 
     local out
-    out=$("$ANALYTICS" --history "$hist" --check 2>&1 || true)
+    out=$({ "$ANALYTICS" --history "$hist" --check 2>&1 || true; } | strip_locale_warning)
 
     if echo "$out" | grep -qiE 'spike|anomal|warning|exceed'; then
         pass "cache-miss pattern triggers spike warning (E2E: transcript→ingest→check, #204 absorbed)"
@@ -594,7 +602,7 @@ test_high_cache_read_no_warning() {
     fi
 
     local out
-    out=$("$ANALYTICS" --history "$hist" --check 2>&1 || true)
+    out=$({ "$ANALYTICS" --history "$hist" --check 2>&1 || true; } | strip_locale_warning)
 
     if echo "$out" | grep -qiE 'spike|anomal'; then
         fail "false positive on healthy hot-cache (costly=$hc_costly, raw_reads=$hc_read). Output: $out"
