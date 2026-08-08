@@ -57,7 +57,7 @@ exactly one deliberate defect does not have to guess.
 **Test behaviour in the executable that enforces it.** Grep a doc only when the doc content
 IS the executable — a command or template followed verbatim — or the only pointer to one, and
 nothing downstream fails closed without it. Measured 2026-08-08: a doc-grep protecting a rule
-that two tested hooks already enforce was defeated four times in review and protected nothing.
+that the tested gate hook already enforces was defeated four times in review and protected nothing.
 
 ## Testing Diamond — the shape we aim for
 
