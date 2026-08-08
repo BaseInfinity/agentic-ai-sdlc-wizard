@@ -1,12 +1,18 @@
 {
   "name": "sdlc-wizard-cowork",
-  "version": "1.94.0",
-  "description": "SDLC enforcement for Claude Cowork — TDD, planning, self-review via prompt-based hooks and skills",
+  "version": "1.95.0",
+  "description": "SDLC enforcement for Claude Cowork \u2014 TDD, planning, self-review via prompt-based hooks and skills",
   "author": {
     "name": "Stefan Ayala",
     "url": "https://github.com/BaseInfinity"
   },
   "repository": "https://github.com/BaseInfinity/claude-sdlc-harness",
   "license": "MIT",
-  "keywords": ["sdlc", "tdd", "code-quality", "methodology", "cowork"]
+  "keywords": [
+    "sdlc",
+    "tdd",
+    "code-quality",
+    "methodology",
+    "cowork"
+  ]
 }
