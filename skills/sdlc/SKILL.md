@@ -44,7 +44,6 @@ TodoWrite([
   // REVIEW
   { content: "DRY check: Is logic duplicated elsewhere?", status: "pending" },
   { content: "Visual consistency check (if UI change)", status: "pending" },
-  { content: "Self-review: run /code-review", status: "pending" },
   { content: "Security review (if warranted)", status: "pending" },
   { content: "Cross-model review (high-stakes)", status: "pending" },
   { content: "Scope guard: only changes related to task? No legacy/fallback code left?", status: "pending" },
@@ -72,10 +71,10 @@ TodoWrite([
 | plan_mode_tool | 1 | | Use TodoWrite/TaskCreate/EnterPlanMode |
 | tdd_green_ran | 1 | | Run tests, show runner output |
 | tdd_green_pass | 1 | | All tests pass in final run |
-| self_review | 1 | **YES** | Read back files/diffs you modified |
+| self_review | 1 | | Read back files/diffs you modified |
 | clean_code | 1 | | One coherent approach, no dead code |
 
-**Total: 10 points** (11 for UI tasks, +1 for design_system check). Critical miss on `tdd_red` or `self_review` = process failure regardless of total score.
+**Total: 10 points** (11 for UI tasks, +1 for design_system check). Critical miss on `tdd_red` = process failure regardless of total score.
 
 ## Test Failure Recovery
 
@@ -122,16 +121,6 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 **Effort is model-aware, not blanket `max`** — `max` overthinks on Sonnet 5/Opus 4.8. Set via `/effort` per session, not a shell-rc env var (overrides post-switch — see SDLC.md). `/model` persists; picker `s` does not.
 
 **Pinning `claude-opus-4-6`:** pair with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` (1M) — do not set this for `opusplan` (200K, too aggressive). **Advisor (v2.1.170+):** `advisorModel: "fable"` works with all drivers above; set in `/claude-setup-wizard` Step 9.5.
-
-## Self-Review Loop
-
-```
-PLANNING → DOCS → TDD RED → GREEN → Tests Pass → Self-Review
-    ^                                                  |
-    +--- Ask user: fix in new plan? ←- Issues found? YES (NO → Present)
-```
-
-The loop goes back to PLANNING, not TDD RED. Run `/code-review`; issues at confidence ≥ 80 are real, < 80 are likely false positives. Found issues → ask "Want a plan to fix?" → new plan → docs → TDD → review.
 
 ## Cross-Model Review (REQUIRED for High-Stakes)
 

@@ -1579,20 +1579,22 @@ test_rubric_before_test_failure() {
 }
 
 # Test: Self-Review Loop appears BEFORE CI Feedback Loop
-test_self_review_before_ci() {
-    local self_review_line ci_line
-    self_review_line=$(grep -n "Self-Review Loop" "$SKILL" | head -1 | cut -d: -f1)
-    ci_line=$(grep -n "CI Feedback Loop" "$SKILL" | head -1 | cut -d: -f1)
-    if [ -n "$self_review_line" ] && [ -n "$ci_line" ] && [ "$self_review_line" -lt "$ci_line" ]; then
-        pass "Self-Review Loop (line $self_review_line) before CI Feedback Loop (line $ci_line)"
+# GH #486: the Self-Review Loop section is deleted from the skill, so an
+# ordering assertion about it would pass vacuously forever (both greps empty ->
+# the -n guard fails -> permanent fail, or worse, a rewrite that always passes).
+# Replaced with an absence assertion: the section must NOT come back to the
+# always-loaded skill. The cheap read-back survives as a scored rubric row.
+test_self_review_section_absent() {
+    if grep -q "^## Self-Review Loop" "$SKILL"; then
+        fail "the Self-Review Loop section is back in the always-loaded skill — #486 deleted it as same-model verification; cross-model review carries this"
     else
-        fail "Self-Review Loop should appear before CI Feedback Loop"
+        pass "#486: no Self-Review Loop section in the skill"
     fi
 }
 
 test_tests_must_pass_position
 test_rubric_before_test_failure
-test_self_review_before_ci
+test_self_review_section_absent
 
 # -------------------------------------------------------------------
 # #72+#56 Cross-Model Review Standardization + Adversarial Prompting

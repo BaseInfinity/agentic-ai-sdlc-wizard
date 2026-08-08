@@ -2397,7 +2397,6 @@ TodoWrite([
   { content: "Production build check", status: "pending", activeForm: "Verifying production build" },
   // REVIEW PHASE
   { content: "DRY check: Is logic duplicated elsewhere?", status: "pending", activeForm: "Checking for duplication" },
-  { content: "Self-review: run /code-review", status: "pending", activeForm: "Running code review" },
   { content: "Security review (if warranted)", status: "pending", activeForm: "Checking security implications" },
   { content: "Cross-model review (REQUIRED for high-stakes)", status: "pending", activeForm: "Running cross-model review" },
   // CI FEEDBACK LOOP (After local tests pass)
@@ -2514,7 +2513,30 @@ Low confidence does **not** mean "ask the user." It means "escalate," and the us
 
 **Honesty rule.** If you fix a reviewer's finding and choose to skip the confirming round, state that plainly. An unconfirmed fix is not a certification, and reporting it as one is exactly the false-green this protocol exists to prevent. Skipping a round can be the right call — silently implying it happened is not.
 
-## Self-Review Loop (CRITICAL)
+## Self-Review — demoted from critical (GH #486)
+
+**A same-model read-back is no longer a gate.** It is still scored (1 point) because the
+10-point rubric and every stored baseline depend on the total, but it cannot fail a run on
+its own, and it is no longer injected per-prompt or listed as a checklist step.
+
+**Why:** Anthropic's Opus 5 guidance says explicit verification instructions cause
+over-verification. That advice targets *same-model* self-checking, and this repo's own
+record agrees — in one session `/code-review` reported 64/64 green three times while an
+independent model found real P1s each time, including a shipped hook proven silently dead
+and a guard proven to be reading nothing. Same-model self-review has **zero recorded
+unique catches** here.
+
+**What did NOT change: cross-model review.** The guidance above does not transfer to it,
+and it is the only layer with a record of catching real defects. Where `/code-review`
+still earns its place is as *preflight input* to that review on high-stakes work — run it
+to reduce what the cross-model reviewer has to find, not as a gate of its own.
+
+**If your driver is Sonnet-class rather than Opus 5,** keeping a self-review pass is
+reasonable; the over-verification finding is Opus-5-specific. That conditional lives here
+in the on-demand doc rather than in the always-loaded skill, which ships one file to every
+model.
+
+### The old loop, for reference
 
 ```
 PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review

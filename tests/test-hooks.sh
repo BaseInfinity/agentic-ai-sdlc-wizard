@@ -713,13 +713,27 @@ test_sdlc_completed_steps() {
 }
 
 # Test 23: Light hook references /code-review (not outdated subagent pattern)
+# GH #486: the per-prompt self-review directive is GONE, and this asserts its
+# absence rather than its presence.
+#
+# The Opus 5 prompting guide says explicit verification instructions cause
+# over-verification. That advice targets SAME-MODEL self-checking, and this
+# repo's own evidence is blunt about it: /code-review reported 64/64 green three
+# times in one session while an independent model found real P1s each time,
+# including a shipped hook proven silently dead. The same-model layer has zero
+# recorded unique catches here.
+#
+# A per-prompt injection is the worst surface for it — it fires on every turn and
+# compounds. Cross-model review keeps the heavyweight job; the cheap part
+# ("read back the diff you modified") survives as a scored rubric row, which is
+# measurement rather than instruction.
 test_sdlc_hook_self_review_reference() {
     local output
     output=$("$HOOKS_DIR/sdlc-prompt-check.sh" 2>/dev/null)
     if echo "$output" | grep -q "/code-review"; then
-        pass "sdlc-prompt-check.sh references /code-review for self-review"
+        fail "sdlc-prompt-check.sh still injects a /code-review self-review directive on every prompt — deleted in #486 as same-model verification with no recorded unique catches"
     else
-        fail "sdlc-prompt-check.sh should reference /code-review, not outdated subagent pattern"
+        pass "#486: no per-prompt self-review directive (cross-model review carries it)"
     fi
 }
 
@@ -931,7 +945,12 @@ test_enforcement_coverage_score() {
     local todowrite_section
     todowrite_section=$(sed -n '/^TodoWrite(\[/,/^\])/p' "$SKILL_TEMPLATE")
     local enforced=0
-    local total=12
+    # 11, not 12: #486 deleted the Self-Review Loop section, so there is no
+    # longer a documented section for a self-review TodoWrite item to enforce.
+    # Dropping the denominator is the honest fix — re-adding a checklist item
+    # for prose that no longer exists would be enforcing nothing, and the
+    # instructed same-model loop is exactly what #486 removed.
+    local total=11
 
     # Already enforced (baseline)
     echo "$todowrite_section" | grep -qi 'doc\|read.*doc' && enforced=$((enforced + 1))          # Planning: read docs
@@ -939,7 +958,6 @@ test_enforcement_coverage_score() {
     echo "$todowrite_section" | grep -qi 'blast.*radius\|depend' && enforced=$((enforced + 1))    # Blast radius
     echo "$todowrite_section" | grep -qi 'confidence' && enforced=$((enforced + 1))                # Confidence
     echo "$todowrite_section" | grep -qi 'TDD RED\|failing test' && enforced=$((enforced + 1))    # TDD RED
-    echo "$todowrite_section" | grep -qi 'self.review\|code.review' && enforced=$((enforced + 1)) # Self-review
     echo "$todowrite_section" | grep -qi 'security' && enforced=$((enforced + 1))                  # Security review
 
     # New enforcement (gaps we're fixing)
