@@ -3185,8 +3185,17 @@ test_skill_keeps_exempted_landmines() {
     # pattern matched "On CERTIFIED mentions commit_sha" — the write instruction
     # gone, the assertion still green. What the gate actually needs written is
     # the resolved HEAD sha, so `rev-parse` is the load-bearing token.
-    grep -qE 'commit_sha[^\n]*rev-parse' "$f" \
-        || missing="$missing commit_sha-WRITE-RULE-with-value(#437)"
+    # Anchor on the INSTRUCTION, not on tokens appearing together. Three
+    # successively-looser versions of this check were defeated in review:
+    #   v1  any mention of commit_sha            -> "# TODO: add commit_sha" passed
+    #   v2  CERTIFIED and commit_sha co-occur    -> "On CERTIFIED mentions commit_sha" passed
+    #   v3  commit_sha followed by rev-parse     -> "Discussion reference: commit_sha:
+    #                                               git rev-parse HEAD." passed
+    # All three are satisfiable by prose ABOUT the rule. What the merge gate
+    # needs is the rule itself: on CERTIFIED, WRITE the resolved head sha. So
+    # require all four elements on one line.
+    grep -qE 'CERTIFIED[^\n]*write[^\n]*commit_sha[^\n]*rev-parse' "$f" \
+        || missing="$missing commit_sha-WRITE-INSTRUCTION(#437)"
     # The Memory Audit pointer is the only route from the always-loaded skill to
     # the protocol that now lives in the wizard doc. Trim it and the protocol
     # becomes undiscoverable from the surface a driver actually reads.
