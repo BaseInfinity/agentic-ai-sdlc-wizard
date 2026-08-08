@@ -2538,7 +2538,7 @@ model.
 ### The old loop, for reference
 
 ```
-PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
+PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Cross-Model Review
     ↑                                                      │
     │                                                      ↓
     │                                            Issues found?
@@ -2553,7 +2553,7 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Self-Review
 3. Then → docs update → TDD → review (proper SDLC loop)
 
 **How to self-review:**
-1. Run `/code-review` to review your changes
+1. Optionally run `/code-review` as preflight input, then send the diff to a DIFFERENT model
 2. It launches parallel agents (CLAUDE.md compliance, bug detection, logic & security)
 3. Issues at confidence >= 80 are real findings — go back to PLANNING to fix
 4. Issues below 80 are likely false positives — skip unless obviously valid

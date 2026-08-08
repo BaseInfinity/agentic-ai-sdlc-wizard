@@ -3163,8 +3163,14 @@ test_skill_keeps_exempted_landmines() {
     # grep cannot tell a working invocation from a sentence about one. My own
     # mutation proof missed it: I deleted every occurrence at once, so the test
     # went red for the wrong reason.
+    # Anchor on the BACKTICK-DELIMITED COMMAND SPAN, not the whole markdown line.
+    # The line also carries prose ("always append `< /dev/null`", "**Why:** ...")
+    # so a line-level grep still matched after the guard was stripped from the
+    # actual command — the reviewer's exact mutation evaded two "hardened"
+    # versions of this test. The prose mentions live in their own spans, so
+    # scoping to the command span is tight.
     local codex_cmd
-    codex_cmd=$(grep -m1 'codex exec' "$f")
+    codex_cmd=$(grep -oE '`codex exec[^`]+`' "$f" | head -1)
     if [ -z "$codex_cmd" ]; then
         missing="$missing codex-invocation-line(#364)"
     else
@@ -3175,8 +3181,12 @@ test_skill_keeps_exempted_landmines() {
     fi
     grep -qi 'run_in_background' "$f" || missing="$missing background-flag(#364)"
     # The RULE, not a passing mention: it must say to WRITE commit_sha on CERTIFIED.
-    grep -qiE 'commit_sha.*(CERTIFIED|rev-parse)|(CERTIFIED|write).*commit_sha' "$f" \
-        || missing="$missing commit_sha-WRITE-RULE(#437)"
+    # Require the RULE with its VALUE, not a co-occurrence of words. The earlier
+    # pattern matched "On CERTIFIED mentions commit_sha" — the write instruction
+    # gone, the assertion still green. What the gate actually needs written is
+    # the resolved HEAD sha, so `rev-parse` is the load-bearing token.
+    grep -qE 'commit_sha[^\n]*rev-parse' "$f" \
+        || missing="$missing commit_sha-WRITE-RULE-with-value(#437)"
     # The Memory Audit pointer is the only route from the always-loaded skill to
     # the protocol that now lives in the wizard doc. Trim it and the protocol
     # becomes undiscoverable from the surface a driver actually reads.
@@ -3200,7 +3210,10 @@ test_skill_keeps_exempted_landmines
 # sites and reported "all", and the residue included a flatly false claim that
 # the skill still invokes /code-review.
 #
-# So this is a sweep, not a line list. The discriminator: a site FAILS if it
+# So this is a sweep, not a line list. It matches the gating PHRASINGS this
+# repo has actually shipped — not every conceivable one; a regex cannot judge
+# intent, and a guard whose comment claims more than its pattern is the exact
+# class that defeated the landmine pin twice. The discriminator: a site FAILS if it
 # presents self-review as a gate, a required step, or an instructed loop —
 # "self-review passes ->", a numbered protocol step, a phase table naming it as
 # the review stage. It PASSES if it describes the still-scored read-back, or
@@ -3217,7 +3230,11 @@ test_no_shipped_surface_gates_on_self_review() {
             # allowed: the labeled history section, and read-back/preflight framing
             printf '%s' "$line" | grep -qiE 'for reference|optional preflight|preflight input|demoted|no longer|removed in|read back' && continue
             bad="$bad\n  $base: $(printf '%s' "$line" | cut -c1-96)"
-        done <<< "$(grep -niE 'self-review passes|self.review (step|gate)|already invokes .?/code-review|/code-review self-review' "$doc" 2>/dev/null)"
+        # Two passes. Case-INSENSITIVE for the phrase forms; case-SENSITIVE for the
+        # all-caps template form, because a bare case-insensitive SELF-REVIEW also
+        # matches the soft benefit prose that is explicitly allowed ("Self-review |
+        # AI catches its own mistakes"). One pattern could not separate them.
+        done <<< "$( { grep -niE 'self-review passes|self.review (step|gate)|already invokes .?/code-review|/code-review self-review|self-review: run|run .?/code-review.{0,24}before' "$doc" 2>/dev/null; grep -nE 'SELF-REVIEW.*code-review' "$doc" 2>/dev/null; } | sort -un)"
     done
     if [ -z "$bad" ]; then
         pass "#486: no shipped surface presents self-review as a gate or required step"
