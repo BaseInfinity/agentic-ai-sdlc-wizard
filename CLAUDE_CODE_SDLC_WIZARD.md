@@ -2535,7 +2535,7 @@ reasonable; the over-verification finding is Opus-5-specific. That conditional l
 in the on-demand doc rather than in the always-loaded skill, which ships one file to every
 model.
 
-### The old loop, for reference
+### The loop, for reference
 
 ```
 PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Cross-Model Review
