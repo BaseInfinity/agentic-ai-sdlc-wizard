@@ -1,5 +1,5 @@
 {
-  "description": "SDLC Harness enforcement hooks — prompt-based (no shell access needed)",
+  "description": "SDLC Harness enforcement hooks \u2014 prompt-based (no shell access needed)",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "The assistant is about to write or edit this file: $ARGUMENTS\n\nIs the file path a test file — its basename starts with \"test_\"/\"test-\", ends with \"_test\"/\".test\", or the path includes a \"/tests/\", \"/test/\", or \"/spec/\" directory segment? A file is NOT a test file just because \"test\" or \"spec\" appears as a substring elsewhere in its name (for example \"contest.py\" or \"specification_parser.ts\" are NOT test files).\n\nRespond with JSON: {\"ok\": true} if it IS a test file (writing/editing tests is always safe), or if this looks like an edit to an EXISTING file rather than the creation of a brand-new non-test source file. Respond with {\"ok\": false, \"reason\": \"...\"} only if this is clearly the creation of a brand-new, non-test implementation file.\n\nNote: this hook can only see the current file write, not prior turns or the filesystem — it is a best-effort filename heuristic, not proof a failing test was actually run first.",
+            "prompt": "The assistant is about to write or edit this file: $ARGUMENTS\n\nIs the file path a test file \u2014 its basename starts with \"test_\"/\"test-\", ends with \"_test\"/\".test\", or the path includes a \"/tests/\", \"/test/\", or \"/spec/\" directory segment? A file is NOT a test file just because \"test\" or \"spec\" appears as a substring elsewhere in its name (for example \"contest.py\" or \"specification_parser.ts\" are NOT test files).\n\nRespond with JSON: {\"ok\": true} if it IS a test file (writing/editing tests is always safe), or if this looks like an edit to an EXISTING file rather than the creation of a brand-new non-test source file. Respond with {\"ok\": false, \"reason\": \"...\"} only if this is clearly the creation of a brand-new, non-test implementation file.\n\nNote: this hook can only see the current file write, not prior turns or the filesystem \u2014 it is a best-effort filename heuristic, not proof a failing test was actually run first.",
             "timeout": 15
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "The user just submitted this prompt: $ARGUMENTS\n\nA block on this event ends the turn outright with no chance to retry, so only deny prompts that explicitly try to bypass SDLC safeguards. Does this prompt explicitly instruct skipping planning, testing, or self-review (for example: \"skip the tests\", \"don't write a plan\", \"just implement it directly, don't bother testing\", \"ignore TDD\")?\n\nRespond with JSON: {\"ok\": true} if it does NOT ask to skip any safeguard — this is the normal case for almost every prompt, including ordinary code requests with no explicit plan attached. Respond with {\"ok\": false, \"reason\": \"...\"} only if it explicitly asks to bypass planning, testing, or review.",
+            "prompt": "The user just submitted this prompt: $ARGUMENTS\n\nA block on this event ends the turn outright with no chance to retry, so only deny prompts that explicitly try to bypass SDLC safeguards with nothing put in their place.\n\nDistinguish a BYPASS from a JUSTIFIED EXCEPTION.\n\nA BYPASS asks to drop a safeguard and offers nothing instead: \"skip the tests\", \"don't write a plan\", \"just implement it directly, don't bother testing\", \"ignore TDD\". Deny these.\n\nA JUSTIFIED EXCEPTION names a stated reason AND a stated alternative, so the safeguard is substituted rather than removed. Example: \"don't TDD this, it is a one-time mechanical rename that will not recur, just verify after that things are right\". That is a reasoned engineering call with verification still attached \u2014 allow it. Judge the substance, not the presence of the word \"skip\".\n\nWhen a prompt is ambiguous, allow it. This gate ends the turn with no retry, so a wrong denial costs the user their whole turn while a wrong allow costs nothing \u2014 the downstream TDD and review gates still apply.\n\nRespond with JSON: {\"ok\": true} if it does NOT ask to bypass a safeguard \u2014 this is the normal case for almost every prompt, including ordinary code requests with no explicit plan attached, and including justified exceptions as defined above. Respond with {\"ok\": false, \"reason\": \"...\"} only if it asks to drop planning, testing, or review outright with no reason and no alternative given.",
             "timeout": 10
           }
         ]

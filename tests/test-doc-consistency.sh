@@ -3027,6 +3027,41 @@ test_no_shipped_doc_reasserts_the_phantom_watchdog() {
 }
 test_no_shipped_doc_reasserts_the_phantom_watchdog
 
+# ---- Fable is the primary thinker, not a post-hoc reviewer ----
+#
+# Maintainer, 2026-08-07: "use fable to think... it should be your main brain and
+# driving everything, ur just the coder....that should be clear in our /sdlc".
+#
+# The shipped guidance framed Fable as a rung to escalate TO when uncertain, and
+# as a cadence slot ("Fable during design"). Both read as advisory. The intended
+# contract is stronger: Fable DECIDES design, priority and sequencing, and the
+# driver implements that decision. Codex is the adversarial check afterwards —
+# a different job, not the same one later.
+#
+# This is codified here rather than in per-user memory on purpose. The skill's own
+# Memory Audit Protocol says a process rule saved only to memory is a /sdlc gap:
+# memory changes one agent, docs change everyone.
+test_fable_framed_as_decider_not_advisor() {
+    local bad="" doc="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    [ -f "$doc" ] || { fail "wizard doc missing"; return; }
+    # Tolerate markdown emphasis between the words: the doc says
+    # "Fable **decides**", and a literal-space pattern missed it. Same
+    # markup-weld class as the #491 splitter bug.
+    grep -qiE "fable[^A-Za-z]{0,4}(decides|drives)" "$doc" \
+        || bad="$bad\n  the wizard doc never says Fable DECIDES — it reads as advisory"
+    grep -qiE "implement (its|that|the) (call|decision)|you (are|'re) the coder" "$doc" \
+        || bad="$bad\n  it does not say the driver implements Fable's call"
+    # Codex must stay distinct, or the fix has collapsed two different jobs.
+    grep -qiE "codex.*(adversarial|check)" "$doc" \
+        || bad="$bad\n  Codex's adversarial-check role is no longer distinguished from Fable's"
+    if [ -z "$bad" ]; then
+        pass "shipped guidance frames Fable as deciding, with Codex still the adversarial check"
+    else
+        fail "Fable is still framed as an advisor rather than the primary thinker:$(printf '%b' "$bad")"
+    fi
+}
+test_fable_framed_as_decider_not_advisor
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then
