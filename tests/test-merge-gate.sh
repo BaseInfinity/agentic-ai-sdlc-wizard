@@ -328,6 +328,7 @@ setup_wrapper_fixture() {
     cat > "$tmpdir/.gh-stub-config" <<'CONFIG'
 HEAD_SHA=abc123
 VALIDATE_CONCLUSION=success
+EXTRA_VALIDATE_CONCLUSION=
 DIFF_FILES=src/foo.js
 DELETED_TEST_FILES=
 RENAMED_TEST_FILES=
@@ -361,7 +362,32 @@ elif [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
 elif [ "$1" = "api" ]; then
     case "$*" in
         *check-runs*)
-            echo "{\"conclusion\":\"$VALIDATE_CONCLUSION\",\"name\":\"validate\"}"
+            # REAL envelope: {"total_count":N,"check_runs":[...]}, one such object
+            # per page, which is how `gh --paginate` concatenates pages. Codex
+            # round 2: this stub emitted bare concatenated objects, exercising
+            # NEITHER shape GitHub actually returns — so the extraction was being
+            # validated against a payload that does not exist, and a real
+            # bare-array page was silently dropped by the unwrap.
+            #
+            # A SECOND run also named "validate": branch protection requires the
+            # check by NAME, so more than one can exist and the wrapper must not
+            # stop at the first. `null` is emitted UNQUOTED, as a queued or
+            # in-progress run really is, and "name" precedes "conclusion" as it
+            # does live (the opposite of the API docs example).
+            echo "{\"total_count\":1,\"check_runs\":[{\"name\":\"validate\",\"status\":\"completed\",\"conclusion\":\"$VALIDATE_CONCLUSION\"}]}"
+            if [ -n "${EXTRA_VALIDATE_CONCLUSION:-}" ]; then
+                if [ "$EXTRA_VALIDATE_CONCLUSION" = "null" ]; then
+                    extra='{"name":"validate","status":"in_progress","conclusion":null}'
+                else
+                    extra="{\"name\":\"validate\",\"status\":\"completed\",\"conclusion\":\"$EXTRA_VALIDATE_CONCLUSION\"}"
+                fi
+                # EXTRA_VALIDATE_PAGE_SHAPE=bare emits a page as a naked array,
+                # the shape the round-2 finding is about.
+                case "${EXTRA_VALIDATE_PAGE_SHAPE:-wrapped}" in
+                    bare) echo "[$extra]" ;;
+                    *)    echo "{\"total_count\":1,\"check_runs\":[$extra]}" ;;
+                esac
+            fi
             ;;
         *issues*comments*)
             # Cross-model clearance comments. CLEARANCE_PAYLOADS holds one
@@ -424,6 +450,14 @@ elif [ "$1" = "pr" ] && [ "$2" = "comment" ]; then
         echo "stub: comment post failed" >&2
         exit 1
     fi
+    # The wrapper suppresses gh's stdout, so the posted BODY is invisible to a
+    # test that only reads the wrapper's output — which is exactly how the
+    # round-1 record tests came to assert on a confirmation phrase instead of on
+    # the payload. Persist it so the payload itself can be asserted.
+    # Prefix EVERY line: a record body is multi-line, so an unprefixed dump is
+    # unassertable with line-based grep — the path would sit on a different line
+    # from the marker and a naive assertion would silently never match.
+    printf '%s\n' "$*" | sed 's/^/GH_COMMENT_BODY: /' >> "$(dirname "$0")/../.posted-comments"
     echo "GH_COMMENT_POSTED: $*"
     exit 0
 elif [ "$1" = "pr" ] && [ "$2" = "merge" ]; then
@@ -1147,6 +1181,386 @@ test_override_refuses_to_merge_if_the_record_cannot_be_posted() {
 }
 test_override_refuses_to_merge_if_the_record_cannot_be_posted
 
+echo ""
+# --- --dual-certified: dual cross-model agreement AS merge authority (#511) ---
+#
+# The maintainer stated it as standing policy: "if fable and codex agree with the
+# merge then you don't need me". The gate could not express that. HARD_DENY said
+# "a human decides" and the only way to say yes was --user-approved, so every
+# merge on 2026-08-07/08 recorded a per-PR human decision that had actually been
+# made once, months earlier, as policy. The mechanism was forcing a framing lie
+# into the audit trail — worse than an inconvenience, because these records are
+# the durable evidence of WHY something merged.
+#
+# What makes this different from self-review, and therefore admissible where
+# --cross-model-cleared is not: two models that did not write the code, run blind
+# to each other, each able to refuse. PR #497 took five rounds before both
+# certified and every round found real defects.
+#
+# What it still is not: authentication. Both clearance comments are posted by the
+# same gh token. The success line must say ATTESTED, NOT AUTHENTICATED.
+
+# The fixture's gate files must byte-match its own origin/main for the dual
+# path's self-integrity check to have anything honest to compare against.
+# The fixture must install the REAL wrapper and REAL hook and execute the
+# fixture's own copy. Round 1, both reviewers independently: the first version
+# committed two-line `echo gate` dummies as the "pristine" gate while
+# `run_dual_in` executed the real repo's script by absolute path — so integrity
+# passed against files that had nothing to do with the code deciding the merge.
+# The fixture was demonstrating the very hole it was supposed to guard.
+make_gate_pristine() {   # $1=tmpdir
+    local d="$1"
+    mkdir -p "$d/scripts" "$d/.claude/hooks"
+    cp "$WRAPPER" "$d/scripts/merge-pr.sh"
+    cp "$HOOK" "$d/.claude/hooks/merge-gate-check.sh"
+    chmod +x "$d/scripts/merge-pr.sh" "$d/.claude/hooks/merge-gate-check.sh"
+    git -C "$d" add -A >/dev/null 2>&1
+    git -C "$d" -c user.email=t@example.com -c user.name=t commit -qm fixture >/dev/null 2>&1
+    git -C "$d" update-ref refs/remotes/origin/main HEAD
+}
+
+DUAL_YES_PAYLOADS='{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}
+{"reviewer":"fable-5","verdict":"YES","confidence":96,"sha":"abc123"}'
+
+# Everything a HARD-tier dual-certified merge is supposed to need, all valid.
+# Individual tests then break exactly one thing.
+setup_dual_fixture() {   # echoes tmpdir
+    local tmpdir
+    tmpdir=$(setup_wrapper_fixture)
+    printf 'DIFF_FILES=hooks/codex-gate-check.sh\n' >> "$tmpdir/.gh-stub-config"
+    printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' "$DUAL_YES_PAYLOADS")" >> "$tmpdir/.gh-stub-config"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    echo "review body" > "$tmpdir/.reviews/some-review.md"
+    make_gate_pristine "$tmpdir"
+    echo "$tmpdir"
+}
+
+# Executes the FIXTURE'S copy, by the relative path the redirect hook trains
+# agents to use — not the real repo's script. Anything else makes the integrity
+# assertion meaningless.
+run_dual_in() {   # $1=tmpdir, rest=wrapper args
+    local tmpdir="$1"; shift
+    local out code
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" ./scripts/merge-pr.sh 123 "$@" 2>&1) && code=0 || code=$?
+    # Fold in what was actually POSTED, not just what the wrapper said it did.
+    local posted=""
+    [ -f "$tmpdir/.posted-comments" ] && posted=$(cat "$tmpdir/.posted-comments")
+    rm -rf "$tmpdir"
+    printf 'exit=%s %s %s' "$code" "$out" "$posted"
+}
+
+# THE POINT OF THE WHOLE CHANGE. If this fails, every refusal test below is
+# vacuous — they would all pass against a gate that refuses everything.
+test_dual_certified_clears_hard_deny() {
+    local r
+    r=$(run_dual_in "$(setup_dual_fixture)" --dual-certified)
+    if ! printf '%s' "$r" | grep -q "GH_MERGE_INVOKED"; then
+        fail "two SHA-bound YES verdicts did not clear a HARD_DENY path — the gate still cannot express the standing policy: $r"
+    elif ! printf '%s' "$r" | grep -q "DUAL-CERTIFIED"; then
+        fail "merged but did not name the authority it merged under: $r"
+    else
+        pass "--dual-certified clears a HARD_DENY path on two SHA-bound YES verdicts"
+    fi
+}
+test_dual_certified_clears_hard_deny
+
+# The audit record is the deliverable, not a nicety. #511 exists because the
+# records were misattributing a standing policy to a per-PR judgement; a record
+# that overstates what was proven repeats that failure in the other direction.
+test_dual_certified_record_says_attested_not_authenticated() {
+    local r
+    r=$(run_dual_in "$(setup_dual_fixture)" --dual-certified)
+    if ! printf '%s' "$r" | grep -q "GH_MERGE_INVOKED"; then
+        fail "fixture did not merge, cannot inspect the audit line: $r"
+    elif ! printf '%s' "$r" | grep -qi "ATTESTED, NOT AUTHENTICATED"; then
+        fail "the dual-certified audit record does not state that both clearances came from the same token: $r"
+    elif ! printf '%s' "$r" | grep -q "gpt-5.6-sol"; then
+        fail "the audit record does not name which reviewers cleared it: $r"
+    else
+        pass "the dual-certified record names its reviewers and does not oversell them as authenticated"
+    fi
+}
+test_dual_certified_record_says_attested_not_authenticated
+
+test_dual_certified_needs_two_distinct_reviewers() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}')" \
+        >> "$tmpdir/.gh-stub-config"
+    refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
+        "one reviewer alone does not dual-certify a HARD_DENY path"
+}
+test_dual_certified_needs_two_distinct_reviewers
+
+test_dual_certified_refuses_a_no_verdict() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}
+{"reviewer":"fable-5","verdict":"NO","confidence":96,"sha":"abc123"}')" >> "$tmpdir/.gh-stub-config"
+    refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
+        "one YES and one NO does not dual-certify — disagreement is the human's case, not a merge"
+}
+test_dual_certified_refuses_a_no_verdict
+
+# The staleness bar #511 asked for: round-1-only CERTIFIED is a rubber stamp.
+# --user-approved waives the artifact checks; --dual-certified must NOT, because
+# the artifact is the only evidence that a dialogue happened at all.
+test_dual_certified_still_requires_round_2_artifact() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "abc123" ".reviews/some-review.md"
+    refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
+        "a round-1-only clearance artifact still blocks under --dual-certified"
+}
+test_dual_certified_still_requires_round_2_artifact
+
+# Self-integrity. A PR that edits the gate would otherwise be judged by its own
+# edited gate — the exact circularity HARD_DENY exists to prevent, and the one
+# thing dual review alone does not fix (the reviewers read the diff; the running
+# code is what actually decides).
+#
+# Fable round 2: after the fixture rework this test became vacuous — it clobbered
+# the EXECUTING script with two words of prose, so the run died at exit 127
+# ("command not found") and verify_gate_integrity never ran. It was asserting
+# that garbage does not merge. The tamper must stay FUNCTIONAL to reach the check
+# at all, which is also the only shape that matters: a PR branch whose gate still
+# works but no longer says what origin/main's says.
+test_dual_certified_blocks_a_modified_gate() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    printf '\n# functional, but no longer the reviewed gate\n' >> "$tmpdir/scripts/merge-pr.sh"
+    local r
+    r=$(run_dual_in "$tmpdir" --dual-certified)
+    if printf '%s' "$r" | grep -q "command not found\|exit=127"; then
+        fail "the tampered gate did not even execute — this test would pass against no check at all: $r"
+    else
+        refute_merge "$r" \
+            "an executing gate that differs from origin/main does not dual-certify"
+    fi
+}
+test_dual_certified_blocks_a_modified_gate
+
+test_dual_certified_blocks_a_modified_redirect_hook() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    echo "hook, but disarmed" > "$tmpdir/.claude/hooks/merge-gate-check.sh"
+    refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
+        "a working-tree redirect hook that differs from origin/main does not dual-certify"
+}
+test_dual_certified_blocks_a_modified_redirect_hook
+
+# THE ROUND-1 P0/P1, found independently by both reviewers. The check compared
+# cwd-relative paths and never looked at $0, so the executed script was never the
+# verified one — and the gate's OWN error message ("run the merge from a clean
+# main checkout") steers an agent straight into the gap: it re-runs the absolute
+# path it already knows, from a clean cwd, and the PR's edited gate decides while
+# the audit line says the gate matched origin/main.
+#
+# Not the conceded "an agent could edit the script": nothing is edited or
+# deleted here. The check simply binds the wrong artifact.
+test_dual_certified_verifies_the_executing_script_not_the_cwd_copy() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    # cwd copy stays pristine; a DIFFERENT copy — byte-different, behaviourally
+    # identical (a comment) — is what actually runs.
+    mkdir -p "$tmpdir/pr-branch"
+    cp "$tmpdir/scripts/merge-pr.sh" "$tmpdir/pr-branch/merge-pr.sh"
+    printf '\n# tampered on the PR branch\n' >> "$tmpdir/pr-branch/merge-pr.sh"
+    chmod +x "$tmpdir/pr-branch/merge-pr.sh"
+    local out code
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$tmpdir/pr-branch/merge-pr.sh" 123 --dual-certified 2>&1) && code=0 || code=$?
+    rm -rf "$tmpdir"
+    refute_merge "$(printf 'exit=%s %s' "$code" "$out")" \
+        "the RUNNING script must match origin/main, not just the cwd copy"
+}
+test_dual_certified_verifies_the_executing_script_not_the_cwd_copy
+
+# Fable round 1: the dual path asserted "gate byte-matches origin/main" and
+# "artifact CERTIFIED at round>=2" nowhere durable — stdout only, gone with the
+# session. Exactly the defect fixed once already for --user-approved after PR
+# #494 merged traceless, re-introduced on the new path. #511's whole framing is
+# that the RECORD is the deliverable.
+test_dual_certified_posts_a_durable_record() {
+    local r
+    r=$(run_dual_in "$(setup_dual_fixture)" --dual-certified)
+    if ! printf '%s' "$r" | grep -q "GH_MERGE_INVOKED"; then
+        fail "fixture did not merge, cannot check for a durable record: $r"
+    elif printf '%s' "$r" | grep -q "Dual certification recorded on PR"; then
+        pass "the dual path posts a durable record to the PR, not just stdout"
+    else
+        fail "dual-certified merged leaving no durable record of what was verified: $r"
+    fi
+}
+test_dual_certified_posts_a_durable_record
+
+test_dual_certified_refuses_to_merge_if_the_record_cannot_be_posted() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    printf 'COMMENT_FAILS=1\n' >> "$tmpdir/.gh-stub-config"
+    refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
+        "a dual-certified merge whose record cannot be posted does not merge"
+}
+test_dual_certified_refuses_to_merge_if_the_record_cannot_be_posted
+
+# Fable round 1, pre-existing but on-theme: with a clearance flag and NO
+# denylisted path, clearance never runs, so CLEARED_BY is empty and the audit
+# line read "...and denylist acknowledged by ." — an acknowledgement by nobody.
+test_clearance_flag_on_a_clean_pr_does_not_claim_a_phantom_acknowledgement() {
+    local tmpdir r
+    tmpdir=$(setup_dual_fixture)
+    printf 'DIFF_FILES=src/foo.js\n' >> "$tmpdir/.gh-stub-config"
+    r=$(run_dual_in "$tmpdir" --dual-certified)
+    if ! printf '%s' "$r" | grep -q "GH_MERGE_INVOKED"; then
+        fail "fixture did not merge, cannot inspect the audit line: $r"
+    elif printf '%s' "$r" | grep -qE "acknowledged by[[:space:]]*\.?$|acknowledged by[[:space:]]*$"; then
+        fail "audit line claims a denylist acknowledgement by nobody: $r"
+    else
+        pass "a clearance flag on a clean PR reports 'denylist clear', not an empty acknowledgement"
+    fi
+}
+test_clearance_flag_on_a_clean_pr_does_not_claim_a_phantom_acknowledgement
+
+# The three things NO amount of model agreement clears. Red CI and missing tests
+# are objective statements about whether the code works and whether the evidence
+# it works still exists. A version bump is a release, and releases stay human.
+test_dual_certified_cannot_waive_red_ci() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    printf 'VALIDATE_CONCLUSION=failure\n' >> "$tmpdir/.gh-stub-config"
+    refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
+        "--dual-certified cannot merge over a red CI validate check"
+}
+test_dual_certified_cannot_waive_red_ci
+
+test_dual_certified_cannot_waive_test_deletion() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    printf 'DELETED_TEST_FILES=tests/test-something.sh\n' >> "$tmpdir/.gh-stub-config"
+    refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
+        "--dual-certified cannot merge a PR that net-removes test files"
+}
+test_dual_certified_cannot_waive_test_deletion
+
+test_dual_certified_cannot_waive_a_version_bump() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    printf 'PACKAGE_JSON_VERSION_CHANGED=1\n' >> "$tmpdir/.gh-stub-config"
+    refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
+        "--dual-certified cannot publish a release — a version bump still needs --user-approved"
+}
+test_dual_certified_cannot_waive_a_version_bump
+
+# Greater authority covers lesser: a PR touching both tiers must not need two
+# flags. Merging PR #494 hit the mirror-image of this bug, where --user-approved
+# cleared six hooks/ paths and then blocked on a doc.
+test_dual_certified_covers_the_ackable_tier_too() {
+    local tmpdir
+    tmpdir=$(setup_dual_fixture)
+    # Quoted: the stub config is `source`d, so an unquoted second word is run as
+    # a command, and its "not found" lands on stderr — which the wrapper folds
+    # into the API payload with 2>&1 and then fails closed on. The failure looked
+    # like a gate bug and was a harness bug.
+    printf "DIFF_FILES='hooks/codex-gate-check.sh CLAUDE_CODE_SDLC_WIZARD.md'\n" >> "$tmpdir/.gh-stub-config"
+    local r
+    r=$(run_dual_in "$tmpdir" --dual-certified)
+    if printf '%s' "$r" | grep -q "GH_MERGE_INVOKED"; then
+        pass "--dual-certified clears both tiers, not just the stricter one"
+    else
+        fail "--dual-certified cleared HARD_DENY but still blocked on the weaker ACKABLE tier: $r"
+    fi
+}
+test_dual_certified_covers_the_ackable_tier_too
+
+# The block message has to name the new route or the gate is a dead end again —
+# which is the failure mode #478 and #511 are both about.
+test_hard_deny_block_message_offers_the_dual_route() {
+    local r
+    r=$(run_hard_deny)
+    if printf '%s' "$r" | grep -q -- "--dual-certified"; then
+        pass "the HARD_DENY refusal names --dual-certified as a route, not just --user-approved"
+    else
+        fail "the HARD_DENY refusal still offers only a human override: $r"
+    fi
+}
+test_hard_deny_block_message_offers_the_dual_route
+
+echo ""
+# --- CI validate: a second check-run of the same name must not be shadowed ----
+#
+# Branch protection requires the check by NAME, so nothing stops more than one
+# run called "validate" existing on a SHA. The conclusion lookup stopped at the
+# first match, so a green one ordered ahead of a red one satisfied the gate.
+# This is the same defect class as reading evidence structure and never the
+# answer inside it.
+test_wrapper_blocks_a_shadowed_red_validate() {
+    local tmpdir out code
+    tmpdir=$(setup_wrapper_fixture)
+    printf 'EXTRA_VALIDATE_CONCLUSION=failure\n' >> "$tmpdir/.gh-stub-config"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    echo "review body" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && code=0 || code=$?
+    rm -rf "$tmpdir"
+    refute_merge "$(printf 'exit=%s %s' "$code" "$out")" \
+        "a red second check-run named validate is not shadowed by a green first one"
+}
+test_wrapper_blocks_a_shadowed_red_validate
+
+# Both reviewers, round 1: "ALL runs of that name must be green" was only true
+# for runs carrying a STRING conclusion. GitHub represents a queued or
+# in-progress run as `"conclusion": null`, which the quoted-value regex could not
+# see — so a still-running `validate` alongside an old green one merged, while
+# the block message claimed pending blocks and the ROADMAP claimed every run of
+# that name was green. The extraction is jq now, which sees the null.
+test_wrapper_blocks_an_in_progress_duplicate_validate() {
+    local tmpdir out code
+    tmpdir=$(setup_wrapper_fixture)
+    printf 'EXTRA_VALIDATE_CONCLUSION=null\n' >> "$tmpdir/.gh-stub-config"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    echo "review body" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && code=0 || code=$?
+    rm -rf "$tmpdir"
+    refute_merge "$(printf 'exit=%s %s' "$code" "$out")" \
+        "a second 'validate' still in progress (conclusion null) blocks the merge"
+}
+test_wrapper_blocks_an_in_progress_duplicate_validate
+
+# Codex round 2: the jq unwrap handled the {check_runs:[...]} envelope but a
+# BARE ARRAY page fell through `else .` and was dropped by the type filter, so a
+# green wrapped page followed by a bare page carrying a red validate merged. The
+# round-1 stub emitted neither real shape, so nothing could have caught it.
+test_wrapper_blocks_a_red_validate_on_a_bare_array_page() {
+    local tmpdir out code
+    tmpdir=$(setup_wrapper_fixture)
+    printf 'EXTRA_VALIDATE_CONCLUSION=failure\n' >> "$tmpdir/.gh-stub-config"
+    printf 'EXTRA_VALIDATE_PAGE_SHAPE=bare\n' >> "$tmpdir/.gh-stub-config"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    echo "review body" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && code=0 || code=$?
+    rm -rf "$tmpdir"
+    refute_merge "$(printf 'exit=%s %s' "$code" "$out")" \
+        "a red validate on a bare-array page is not dropped by the envelope unwrap"
+}
+test_wrapper_blocks_a_red_validate_on_a_bare_array_page
+
+# Codex round 2: the record tests asserted only on the wrapper's own
+# confirmation line and never on what was actually POSTED, so a body that
+# rendered empty or truncated would still have passed. Assert the payload.
+test_dual_record_body_names_the_authorized_path() {
+    local r
+    r=$(run_dual_in "$(setup_dual_fixture)" --dual-certified)
+    if ! printf '%s' "$r" | grep -q "GH_MERGE_INVOKED"; then
+        fail "fixture did not merge, cannot inspect the posted body: $r"
+    elif ! printf '%s' "$r" | grep -q "GH_COMMENT_BODY:.*hooks/codex-gate-check.sh"; then
+        fail "the posted dual-certification body does not name the merge-evidence path it authorised: $r"
+    elif ! printf '%s' "$r" | grep -q "GH_COMMENT_BODY:.*gpt-5.6-sol"; then
+        fail "the posted body does not name the reviewers who cleared it: $r"
+    else
+        pass "the posted dual-certification body names the authorised path and the reviewers"
+    fi
+}
+test_dual_record_body_names_the_authorized_path
+
+echo ""
 echo "=== Results ==="
 echo "Passed: $PASSED"
 echo "Failed: $FAILED"
