@@ -128,18 +128,14 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
-1. **Preflight** (`.reviews/preflight-{review_id}.md`) — what you already checked: `/code-review` passed, tests passing, manual verifications, known limits. Avoids re-litigating verified ground.
-2. **Mission-first handoff** (`.reviews/handoff.json`) — required keys: `"review_id"`, `"status": "PENDING_REVIEW"`, `"round": 1`, `"mission"`/`"success"`/`"failure"` (without them you get "looks good"), `"files_changed"`, `"verification_checklist"` (verification checklist with file:line refs — NOT generic), `"review_instructions"`, `"preflight_path"`. Optional `"pr_number":` opts into PreCompact self-heal (#209: MERGED → implicit CERTIFIED).
-3. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; background avoids the Bash 10-min `timeout` cap that force-kills foreground codex (bundles take 5–30 min; no wrapper timeout). Foreground burned 70 min on a 7-min review (#364).
-4. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Don't hunt new surfaces, but report every defect; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — always run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
+**Handoff/preflight file mechanics live in the wizard doc.** These two steps stay here because improvising them has cost this repo real time: the codex flags below prevent a stdin hang and a 70-minute foreground kill (#364), and the `commit_sha` rule is what the merge gate checks for staleness (#437).
+
+1. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; background avoids the Bash 10-min `timeout` cap that force-kills foreground codex (bundles take 5–30 min; no wrapper timeout). Foreground burned 70 min on a 7-min review (#364).
+2. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Don't hunt new surfaces, but report every defect; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — always run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
 
 **Convergence:** judge by max severity per round. Escalate, never ship.
 
 **Multi-reviewer:** respond to each independently. **Non-code domains:** add `"audience"`/`"stakes"` keys.
-
-### Release Review Focus
-
-Before any release/publish, add to `verification_checklist`: **CHANGELOG consistency** (sections present, no lost entries), **Version parity** (package.json + SDLC.md + CHANGELOG + wizard metadata), **Stale examples** (hardcoded version strings), **Docs accuracy** (README + ARCHITECTURE reflect current features), **CLI-distributed file parity** (live skills/hooks match CLI templates).
 
 **Full protocol** (rationale, full JSON example, anti-patterns like "find at least N", convergence diagrams): `CLAUDE_CODE_SDLC_WIZARD.md` → "Cross-Model Review Loop".
 

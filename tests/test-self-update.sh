@@ -1227,12 +1227,15 @@ test_skill_release_review_trigger() {
     fi
 }
 
-# SKILL.md has Release Review Focus subsection
+# GH #489: Release Review Focus lives in the wizard doc, not the byte-capped skill.
+# It is read at a discrete, self-announcing moment — you know when you are cutting
+# a release — so it is on-demand content, not something the driver needs mid-task
+# without warning. Asserted against the doc that now owns it.
 test_skill_release_review_section() {
-    if grep -q "### Release Review Focus" "$SKILL"; then
-        pass "SKILL.md has Release Review Focus subsection"
+    if grep -q "### Release Review Focus" "$WIZARD"; then
+        pass "#489: Release Review Focus is in the wizard doc"
     else
-        fail "SKILL.md should have '### Release Review Focus' subsection"
+        fail "wizard doc is missing '### Release Review Focus' — the skill points here for it"
     fi
 }
 
@@ -1253,7 +1256,10 @@ test_skill_release_review_trigger
 test_skill_release_review_section
 test_wizard_embedded_skill_release_trigger
 
-# Release review focus areas present in both wizard and SKILL
+# Release review focus areas — wizard doc only since #489 moved the section
+# out of the byte-capped skill. Checking the skill too would now assert that
+# on-demand content is duplicated into the always-loaded file, which is the
+# thing #489 exists to stop.
 test_release_review_focus_area_parity() {
     local areas=("CHANGELOG consistency" "Version parity" "Stale examples" "Docs accuracy" "CLI-distributed file parity")
     local all_match=true
@@ -1263,14 +1269,9 @@ test_release_review_focus_area_parity() {
             all_match=false
             break
         fi
-        if ! grep -q "$area" "$SKILL"; then
-            fail "SKILL.md missing release review focus area: $area"
-            all_match=false
-            break
-        fi
     done
     if [ "$all_match" = true ]; then
-        pass "All 5 release review focus areas present in both wizard and SKILL"
+        pass "#489: all 5 release review focus areas present in the wizard doc"
     fi
 }
 
@@ -1606,13 +1607,16 @@ echo "--- #72+#56 Cross-Model Review Standardization ---"
 # Test: Handoff schema has mission/success/failure fields
 test_handoff_mission_fields() {
     local has_mission has_success has_failure
-    has_mission=$(grep -c '"mission"' "$SKILL") || true
-    has_success=$(grep -c '"success"' "$SKILL") || true
-    has_failure=$(grep -c '"failure"' "$SKILL") || true
+    # GH #489: handoff schema mechanics moved to the wizard doc — the skill
+    # keeps only the two steps whose details are landmines if improvised (#364
+    # codex flags, #437 commit_sha). Asserted where the schema now lives.
+    has_mission=$(grep -c '"mission"' "$WIZARD") || true
+    has_success=$(grep -c '"success"' "$WIZARD") || true
+    has_failure=$(grep -c '"failure"' "$WIZARD") || true
     if [ "$has_mission" -gt 0 ] && [ "$has_success" -gt 0 ] && [ "$has_failure" -gt 0 ]; then
         pass "Handoff schema has mission/success/failure fields"
     else
-        fail "Handoff schema should have mission, success, and failure fields (found: mission=$has_mission, success=$has_success, failure=$has_failure)"
+        fail "Wizard doc handoff schema should have mission, success, and failure fields (found: mission=$has_mission, success=$has_success, failure=$has_failure)"
     fi
 }
 
@@ -1636,7 +1640,7 @@ test_preflight_doc_mentioned() {
 
 # Test: Review prompt includes verification checklist pattern
 test_verification_checklist() {
-    if grep -qi "verification checklist\|VERIFICATION CHECKLIST\|specific.*verification\|verify.*checklist" "$SKILL"; then
+    if grep -qi "verification checklist\|VERIFICATION CHECKLIST\|specific.*verification\|verify.*checklist" "$WIZARD"; then
         pass "Review prompt includes verification checklist pattern"
     else
         fail "Review prompt should include verification checklist pattern (not generic 'review this')"
