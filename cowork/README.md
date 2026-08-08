@@ -1,4 +1,4 @@
-# SDLC Wizard — Cowork Plugin
+# SDLC Harness — Cowork Plugin
 
 SDLC enforcement for Claude Cowork sessions. Provides methodology guidance via skills AND prompt-based hooks that enforce discipline without shell access.
 
@@ -28,7 +28,7 @@ This plugin ships 2 **prompt-based hooks** (`"type": "prompt"`) — a narrow sli
 
 **Known limit:** the `PreToolUse` TDD check can only see the current file write, not prior turns or the filesystem — it's a best-effort filename heuristic (denies creating a new non-test file), not proof a failing test was actually run first. A `type: "agent"` hook (multi-turn, with Read/Grep/Glob access) would be the mechanically correct fix for real TDD-order verification; that's a larger, separate change, tracked as a follow-up rather than attempted here.
 
-> **Note:** Live-tested via Codex Desktop computer-use E2E runs (issue [#432](https://github.com/BaseInfinity/claude-sdlc-wizard/issues/432), 2026-07-19/20). An earlier version of these hooks was authored against an incorrect understanding of the mechanism (wrong response schema, checklist-style prompts with no explicit final decision request) — see [#456](https://github.com/BaseInfinity/claude-sdlc-wizard/issues/456) — and has since been rewritten to match Anthropic's documented examples. If hooks still misbehave after install, file a bug on the [wizard repo](https://github.com/BaseInfinity/claude-sdlc-wizard/issues).
+> **Note:** Live-tested via Codex Desktop computer-use E2E runs (issue [#432](https://github.com/BaseInfinity/claude-sdlc-harness/issues/432), 2026-07-19/20). An earlier version of these hooks was authored against an incorrect understanding of the mechanism (wrong response schema, checklist-style prompts with no explicit final decision request) — see [#456](https://github.com/BaseInfinity/claude-sdlc-harness/issues/456) — and has since been rewritten to match Anthropic's documented examples. If hooks still misbehave after install, file a bug on the [wizard repo](https://github.com/BaseInfinity/claude-sdlc-harness/issues).
 
 ### What's NOT Ported (and Why)
 
@@ -57,11 +57,11 @@ The methodology (plan → TDD → self-review → confidence check) is universal
 The plugin lives in a subdirectory of the main wizard repo, so it's registered as a second entry (`sdlc-wizard-cowork`) in the repo's root marketplace via a `git-subdir` source — a GitHub web-UI URL like `.../tree/main/cowork` is **not** a supported marketplace source on its own (only `owner/repo` shorthand, full git URLs, local paths, or direct `marketplace.json` URLs are). Add the whole repo as a marketplace, then install the Cowork-specific plugin from it:
 
 ```
-/plugin marketplace add BaseInfinity/claude-sdlc-wizard
+/plugin marketplace add BaseInfinity/claude-sdlc-harness
 /plugin install sdlc-wizard-cowork@sdlc-wizard-marketplace
 ```
 
-In Claude Desktop's UI, this is Customize > Plugins > Add marketplace, entering `BaseInfinity/claude-sdlc-wizard`, then selecting `sdlc-wizard-cowork` from the marketplace's plugin list (not the top-level `sdlc-wizard` entry, which is the CLI-based full wizard).
+In Claude Desktop's UI, this is Customize > Plugins > Add marketplace, entering `BaseInfinity/claude-sdlc-harness`, then selecting `sdlc-wizard-cowork` from the marketplace's plugin list (not the top-level `sdlc-wizard` entry, which is the CLI-based full wizard).
 
 **Fallback (local ZIP upload):** if the marketplace/install flow isn't available in your Claude Desktop build, zip this `cowork/` directory (root must contain `.claude-plugin/`, `hooks/`, `skills/`, `README.md`) and use Customize > Plugins > Add plugin > Upload plugin instead.
 
@@ -73,7 +73,7 @@ claude --plugin-dir ./cowork
 
 ## Relationship to the Full Wizard
 
-This is a **subset** of the [SDLC Wizard](https://github.com/BaseInfinity/claude-sdlc-wizard). The full wizard provides:
+This is a **subset** of the [SDLC Harness](https://github.com/BaseInfinity/claude-sdlc-harness). The full wizard provides:
 
 - 6 lifecycle hooks (command-based, bash)
 - 4 skills (sdlc, setup, update, feedback)

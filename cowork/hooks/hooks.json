@@ -1,5 +1,5 @@
 {
-  "description": "SDLC Wizard enforcement hooks — prompt-based (no shell access needed)",
+  "description": "SDLC Harness enforcement hooks — prompt-based (no shell access needed)",
   "hooks": {
     "PreToolUse": [
       {

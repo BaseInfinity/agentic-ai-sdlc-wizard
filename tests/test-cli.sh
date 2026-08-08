@@ -256,7 +256,7 @@ test_wizard_doc() {
     local d
     d=$(make_temp)
     (cd "$d" && node "$CLI" init > /dev/null 2>&1)
-    if [ -f "$d/CLAUDE_CODE_SDLC_WIZARD.md" ] && grep -q "SDLC Wizard" "$d/CLAUDE_CODE_SDLC_WIZARD.md"; then
+    if [ -f "$d/CLAUDE_CODE_SDLC_WIZARD.md" ] && grep -q "SDLC Harness" "$d/CLAUDE_CODE_SDLC_WIZARD.md"; then
         pass "init copies wizard doc with correct content"
     else
         fail "init should copy CLAUDE_CODE_SDLC_WIZARD.md"
@@ -2263,7 +2263,7 @@ NPMEOF
         > "$stdout_f" 2>&1 || exit_code=$?
     if [ "$exit_code" -eq 0 ] \
        && ! grep -qF "@latest init" "$stdout_f" \
-       && grep -qF "SDLC Wizard installed successfully" "$stdout_f"; then
+       && grep -qF "SDLC Harness installed successfully" "$stdout_f"; then
         pass "#358: init silent + successful when npm unavailable + no cache (offline-graceful)"
     else
         fail "#358: init should be silent + succeed offline (exit=$exit_code, stdout=$(cat "$stdout_f"))"

@@ -1,4 +1,4 @@
-# SDLC Wizard - Claude Instructions
+# SDLC Harness - Claude Instructions
 
 > **Part of the [XDLC ecosystem](https://github.com/BaseInfinity/xdlc)** — this is the SDLC sibling, installed into every project as the code quality layer.
 >
@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-This is a **meta-repository** - it contains the SDLC Wizard documentation and automation, not traditional application code.
+This is a **meta-repository** - it contains the SDLC Harness documentation and automation, not traditional application code.
 
 ### What This Repo Contains
 

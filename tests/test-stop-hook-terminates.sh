@@ -11,7 +11,7 @@
 #   "For Stop/SubagentStop hooks, check stop_hook_active in the input and
 #    return success while it's true."
 #
-# Observed 2026-07-27 in a consumer repo (BaseInfinity/claude-sdlc-wizard#477):
+# Observed 2026-07-27 in a consumer repo (BaseInfinity/claude-sdlc-harness#477):
 # nine consecutive blocks with an identical verdict before the harness
 # overrode. The trigger was a repo whose test suite has KNOWN, INVESTIGATED,
 # pre-existing failures — the correct engineering state, which the hook's

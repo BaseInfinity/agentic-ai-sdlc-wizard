@@ -61,7 +61,7 @@ Use `gh issue create` on the wizard repo:
 
 ```bash
 gh issue create \
-  --repo BaseInfinity/claude-sdlc-wizard \
+  --repo BaseInfinity/claude-sdlc-harness \
   --title "[feedback-type]: Brief description" \
   --body "$(cat <<'EOF'
 ## Feedback Type
@@ -89,4 +89,4 @@ EOF
 - **Opt-in only** — if user declines scan, still create the issue with whatever they tell you manually
 - **No source code** — never include source code snippets in issues
 - **Be specific** — vague issues waste maintainer time. Ask clarifying questions
-- **Check for duplicates** — `gh issue list --repo BaseInfinity/claude-sdlc-wizard --search "keywords"` before creating
+- **Check for duplicates** — `gh issue list --repo BaseInfinity/claude-sdlc-harness --search "keywords"` before creating

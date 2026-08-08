@@ -575,7 +575,7 @@ test_hook_gates_on_local_workflow_file() {
 test_hook_does_not_hardcode_upstream_repo() {
     if [ ! -f "$HOOK" ]; then fail "skip: hook missing"; return; fi
     # Look inside the api-review block only (not other lines referencing the repo).
-    if awk '/API feature review nudge/,/^fi$/' "$HOOK" | grep -q 'BaseInfinity/claude-sdlc-wizard'; then
+    if awk '/API feature review nudge/,/^fi$/' "$HOOK" | grep -q 'BaseInfinity/claude-sdlc-harness'; then
         fail "hook hardcodes upstream repo in api-review block — forks will see wrong issues"
     else
         pass "hook queries current repo (not hardcoded upstream)"

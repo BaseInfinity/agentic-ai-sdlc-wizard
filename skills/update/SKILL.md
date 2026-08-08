@@ -25,7 +25,7 @@ Follow steps IN ORDER. Do not skip or combine.
 
 Read `SDLC.md` and extract from the metadata comment:
 ```
-<!-- SDLC Wizard Version: X.X.X -->
+<!-- SDLC Harness Version: X.X.X -->
 <!-- Completed Steps: ... -->
 ```
 No version comment → treat as `0.0.0` (suggest `/claude-setup-wizard` instead).
@@ -83,7 +83,7 @@ If A: prompt the user to run the one-liner, then re-invoke `/claude-update-wizar
 
 WebFetch:
 ```
-https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/CHANGELOG.md
+https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/CHANGELOG.md
 ```
 Extract latest version from the first `## [X.X.X]` line.
 
@@ -132,7 +132,7 @@ Reports each managed file as MATCH, CUSTOMIZED, MISSING, or DRIFT.
 
 WebFetch:
 ```
-https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-wizard/main/CLAUDE_CODE_SDLC_WIZARD.md
+https://raw.githubusercontent.com/BaseInfinity/claude-sdlc-harness/main/CLAUDE_CODE_SDLC_WIZARD.md
 ```
 Source of truth for all templates, hooks, skills, step registry.
 
@@ -251,7 +251,7 @@ For each approved file: Edit (existing) or Write (MISSING). For settings.json, a
 
 Update `SDLC.md`:
 ```
-<!-- SDLC Wizard Version: X.X.X -->
+<!-- SDLC Harness Version: X.X.X -->
 <!-- Completed Steps: step-0.1, step-0.2, ..., step-update-wizard -->
 ```
 Set to latest version. Update completed steps if new ones applied.

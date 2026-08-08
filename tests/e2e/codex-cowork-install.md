@@ -1,13 +1,13 @@
-# Codex Desktop E2E Test: SDLC Wizard Cowork Plugin Install
+# Codex Desktop E2E Test: SDLC Harness Cowork Plugin Install
 
-Use this prompt with Codex Desktop computer-use to test installing the SDLC Wizard
+Use this prompt with Codex Desktop computer-use to test installing the SDLC Harness
 plugin into Claude Cowork and verifying it works end-to-end.
 
 ## Prompt for Codex Desktop
 
 ```
 You are testing the installation and functionality of a Claude Cowork plugin called
-"SDLC Wizard". Your job is to install it, verify it loads, and test every component.
+"SDLC Harness". Your job is to install it, verify it loads, and test every component.
 Screenshot each step as evidence.
 
 ## Step 1: Open Claude Desktop and navigate to Cowork
@@ -16,7 +16,7 @@ Screenshot each step as evidence.
 2. Click "Cowork" at the top center to switch to the Cowork tab
 3. Screenshot the Cowork tab
 
-## Step 2: Install the SDLC Wizard plugin
+## Step 2: Install the SDLC Harness plugin
 
 Try these install methods IN ORDER until one works:
 
@@ -24,7 +24,7 @@ Try these install methods IN ORDER until one works:
 This is the path `cowork/README.md` and the wizard doc now tell users to take,
 so it is the one that most needs proving. A pass here is what closes issue #455.
 1. Click "Customize" in the left sidebar, then the "Plugins" tab
-2. Choose "Add marketplace" and enter: `BaseInfinity/claude-sdlc-wizard`
+2. Choose "Add marketplace" and enter: `BaseInfinity/claude-sdlc-harness`
 3. From that marketplace's plugin list select **`sdlc-wizard-cowork`** — NOT the
    top-level `sdlc-wizard` entry, which is the CLI-based full wizard
 4. Click "Install"
@@ -58,7 +58,7 @@ failure.
 ### Method D: Local plugin directory
 Last resort, CLI-only — it does not exercise the Desktop install path at all:
 1. Open a terminal
-2. Clone the repo: git clone https://github.com/BaseInfinity/claude-sdlc-wizard.git /tmp/sdlc-wizard
+2. Clone the repo: git clone https://github.com/BaseInfinity/claude-sdlc-harness.git /tmp/sdlc-wizard
 3. In Claude Desktop or Claude Code CLI, try:
    claude --plugin-dir /tmp/sdlc-wizard/cowork
 4. Screenshot the result
@@ -161,13 +161,13 @@ Create a summary with:
 - [ ] UserPromptSubmit DENIES a skip-the-process prompt, and passes a normal one
 - [ ] PreToolUse DENIES a brand-new non-test file, and silently allows a test file
 - [ ] NO Stop hook fires — every turn ends normally, including a code change with no test run (removed in v1.92.0, GH #484; a block here is a P0)
-- [ ] Marketplace install via `BaseInfinity/claude-sdlc-wizard` succeeded (#455)
+- [ ] Marketplace install via `BaseInfinity/claude-sdlc-harness` succeeded (#455)
 - [ ] No entries in plugin Errors tab
 ```
 
 ## Expected Outcome
 
-Method A (add `BaseInfinity/claude-sdlc-wizard` as a marketplace) does NOT depend on
+Method A (add `BaseInfinity/claude-sdlc-harness` as a marketplace) does NOT depend on
 community submission — `owner/repo` is a supported marketplace source on its own. It is
 the flow the docs recommend, and whether it works is the open question in issue #455.
 **Method C** is the one that needs community submission; expect it to find nothing today.

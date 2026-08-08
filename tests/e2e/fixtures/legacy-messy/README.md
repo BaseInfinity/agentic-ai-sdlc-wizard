@@ -15,7 +15,7 @@ E2E test fixture with **intentionally bad code** for testing refactoring scenari
 - No input sanitization
 
 ## Purpose
-Test that the SDLC Wizard can:
+Test that the SDLC Harness can:
 1. Identify code smells
 2. Suggest appropriate refactoring
 3. Write tests before refactoring (TDD)

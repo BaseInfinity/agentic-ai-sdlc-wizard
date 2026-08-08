@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Meta-repository — SDLC Wizard documentation, automation, and a zero-dep Node.js CLI (`cli/`). Primary codebase is bash scripts + YAML workflows. The CLI distributes hooks, skills, and settings via `npx agentic-sdlc-wizard init`.
+Meta-repository — SDLC Harness documentation, automation, and a zero-dep Node.js CLI (`cli/`). Primary codebase is bash scripts + YAML workflows. The CLI distributes hooks, skills, and settings via `npx agentic-sdlc-wizard init`.
 
 - `CLAUDE_CODE_SDLC_WIZARD.md` — The main wizard document
 - `.github/workflows/` — CI, PR review, weekly/monthly automation

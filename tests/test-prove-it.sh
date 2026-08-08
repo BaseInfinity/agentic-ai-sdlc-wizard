@@ -382,7 +382,7 @@ test_readme_has_positioning() {
     if grep -qi "how.*compares\|comparison\|positioning\|community.*landscape\|competitive" "$README" 2>/dev/null; then
         pass "README has positioning/comparison section"
     else
-        fail "README should have a section comparing SDLC Wizard to community alternatives"
+        fail "README should have a section comparing SDLC Harness to community alternatives"
     fi
 }
 test_readme_has_positioning

@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: In-session feedback
-    url: https://github.com/BaseInfinity/claude-sdlc-wizard#feedback
+    url: https://github.com/BaseInfinity/claude-sdlc-harness#feedback
     about: Prefer `/feedback` inside Claude Code — auto-fills context and redacts secrets
   - name: Discussions
-    url: https://github.com/BaseInfinity/claude-sdlc-wizard/discussions
+    url: https://github.com/BaseInfinity/claude-sdlc-harness/discussions
     about: Open-ended conversations, ideas, and troubleshooting
