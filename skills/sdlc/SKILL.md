@@ -149,6 +149,7 @@ Standard pattern: `*_DOCS.md` — living documents that grow with the feature (`
 2. Code change contradicts or extends what the doc describes → MUST update the feature doc
 3. No `*_DOCS.md` exists and feature touches 3+ files → create one
 4. Project has `ROADMAP.md` → mark items done, add new items (ROADMAP feeds CHANGELOG)
+5. **Change alters behaviour README describes → update README.** It ships and is the most-read doc; a deleted behaviour still advertised there is a lie to every consumer
 
 `/claude-md-improver` audits CLAUDE.md structure periodically. Does NOT cover feature docs.
 
