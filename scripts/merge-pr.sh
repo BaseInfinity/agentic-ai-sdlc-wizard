@@ -7,11 +7,16 @@
 # What this mechanically proves (hard-verified, fail-closed):
 #   - CI's `validate` check is success for the PR's REMOTE head SHA (not a
 #     cached field — queried fresh every run).
-#   - The PR touches NO HARD_DENY path — the merge-evidence chain, including
+#   - The PR touches no HARD_DENY path — the merge-evidence chain, including
 #     this wrapper and its redirect hook themselves (closes the
 #     self-referential loophole both Codex and a fresh Fable subagent
 #     independently flagged in the original prose-only policy: a PR editing
-#     the merge policy/mechanism wasn't excluded by a release-only list).
+#     the merge policy/mechanism wasn't excluded by a release-only list) —
+#     UNLESS --dual-certified or --user-approved cleared it. Read a clean exit
+#     as "no HARD path went uncleared", never as "no HARD path was touched";
+#     the success line names which authority applied. Same correction the
+#     ACKABLE bullet below already carries (Codex round-2 P2), applied here
+#     before it could become false a second time.
 #   - Every ACKABLE_DENY path the PR touches carries qualifying, SHA-bound
 #     cross-model evidence. NOTE this is deliberately weaker than "touches no
 #     denylist at all": a successful --cross-model-cleared run IS allowed to
@@ -52,7 +57,26 @@ set -u
 # "validate"; the gate that runs is the PR's own working-tree gate; and both
 # clearance comments come from the same gh token. Errors in the control plane
 # compound, errors in the data plane do not. --cross-model-cleared CANNOT
-# satisfy these; a human decides.
+# satisfy these.
+#
+# GH #511 — --dual-certified CAN, under a strictly higher bar. The maintainer
+# stated it as standing policy: two models that did not write the code, run blind
+# to each other, each able to refuse, is a categorically different evidence class
+# from "the author says it is fine". Until this flag existed the only way to say
+# yes here was --user-approved, so every such merge recorded a per-PR human
+# decision for what was actually one standing policy decision — the mechanism was
+# forcing a framing lie into the very records that exist to explain why something
+# merged.
+#
+# Two of the three self-produced legs above are answered directly:
+#   - "the gate that runs is the PR's own working-tree gate" — the dual path
+#     refuses unless this script and its redirect hook byte-match origin/main.
+#   - "clearance is a local file the agent wrote" — the dual path additionally
+#     requires two distinct reviewers' visible, SHA-bound YES comments on the PR,
+#     and does NOT waive the clearance artifact (so round >= 2 still holds).
+# The third — a new .github/workflows/ file minting a green "validate" — is NOT
+# closed. Nothing local can close it; the compensating layer is that both
+# reviewers read that file in the diff. Say so, do not imply otherwise.
 HARD_DENY=(
     '^\.github/workflows/'
     '^hooks/'
@@ -283,6 +307,102 @@ verify_cross_model_clearance() {
     return 0
 }
 
+# Memoised. Both denylist passes can hit clearance, once per matching path, and
+# each call re-fetches every comment on the PR. The verdict cannot change within
+# a run, so compute it once and reuse it — including the reason text, which must
+# print exactly once rather than once per file.
+CLEARANCE_CHECKED=0
+CLEARANCE_OK=0
+clearance_ok() {
+    if [ "$CLEARANCE_CHECKED" -eq 0 ]; then
+        CLEARANCE_CHECKED=1
+        if verify_cross_model_clearance; then CLEARANCE_OK=1; fi
+    fi
+    [ "$CLEARANCE_OK" -eq 1 ]
+}
+
+# --- Gate self-integrity, dual path only (GH #511) ---
+#
+# HARD_DENY's sharpest objection is that a PR editing the gate is judged by its
+# own edited gate. Dual review does not fix that on its own: the reviewers read
+# the diff, but the code that actually decides is whatever is in the working
+# tree. So on the dual path this script and its redirect hook must byte-match
+# origin/main — merge from a clean main checkout, not from the PR branch.
+#
+# STATE THE LIMIT HONESTLY: a self-check cannot defend against its own deletion.
+# Strip these lines from the working-tree copy and nothing here fires. The
+# compensating layer is that such a deletion is exactly what two independent
+# reviewers are looking at in the diff, and that the same argument applies to
+# every local check in this file (an agent that would edit the gate could simply
+# not run it). This raises the cost of an honest mistake; it is not a boundary
+# against a determined adversary.
+#
+# Paths are cwd-relative on purpose: `git show` resolves repo-relative, and the
+# copy that matters is the one being executed from the repo root.
+GATE_CHECKED=0
+GATE_OK=0
+
+# Compare one working file against its origin/main blob by OBJECT ID.
+#
+# Round 1, Codex: the first version was `git show ... | cmp -s - "$f"`, whose
+# pipeline status is only cmp's. A producer that emits a prefix equal to the
+# local file and THEN fails leaves two equal EOF-terminated streams, so cmp
+# returns 0 and a blob that was never successfully read is recorded as matching.
+# Object IDs sidestep it: both sides are explicit commands with checked exit
+# codes, the comparison is byte-exact, and no temp file or pipeline is involved.
+blob_matches_main() {   # $1=repo-relative path in origin/main  $2=file on disk
+    local want have
+    want=$(git rev-parse --verify --quiet "refs/remotes/origin/main:$1" 2>/dev/null) || return 1
+    have=$(git hash-object -- "$2" 2>/dev/null) || return 1
+    [ -n "$want" ] && [ "$want" = "$have" ]
+}
+
+verify_gate_integrity() {
+    # Best-effort refresh. A stale local ref still names a version that was
+    # reviewed and merged, so falling back to it is safe in the direction that
+    # matters; a hard failure here would make the dual path unusable offline.
+    git fetch --quiet origin main >/dev/null 2>&1 || true
+    if ! git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null 2>&1; then
+        echo "BLOCKED: no refs/remotes/origin/main to compare the gate against, so --dual-certified cannot prove it is running the reviewed gate rather than this branch's edited one. Fetch origin, or use --user-approved \"<reason>\"." >&2
+        return 1
+    fi
+
+    # THE SCRIPT THAT IS RUNNING, via BASH_SOURCE — not a cwd-relative path.
+    #
+    # Round 1, found independently by BOTH reviewers, and the sharpest finding of
+    # the review: the first version compared `scripts/merge-pr.sh` relative to the
+    # working directory and never looked at $0. So the file checked and the file
+    # executing could be different files, and the message printed on failure —
+    # "run the merge from a clean main checkout" — steered an agent directly into
+    # that gap: it re-runs the absolute path it already has, from a clean cwd, and
+    # the PR's edited gate decides the merge while the success line reports that
+    # the gate matched origin/main.
+    #
+    # This is NOT the conceded "an agent could edit or delete this check". Nothing
+    # was edited; the check simply bound the wrong artifact. That distinction is
+    # why it was a real finding and not a restatement of the threat model.
+    if ! blob_matches_main "scripts/merge-pr.sh" "${BASH_SOURCE[0]}"; then
+        echo "BLOCKED: the merge script now executing (${BASH_SOURCE[0]}) does not match origin/main's scripts/merge-pr.sh. --dual-certified would be letting this branch's own gate decide whether this branch may merge. Check out main and run ITS ./scripts/merge-pr.sh — running a PR-branch copy from a clean directory does not count — or decide it yourself with --user-approved \"<reason>\"." >&2
+        return 1
+    fi
+
+    # The redirect hook is different: the Claude Code harness loads it from the
+    # working directory, so the cwd copy IS the operative one. Checking $0 would
+    # be the wrong artifact here for the mirror-image reason.
+    if ! blob_matches_main ".claude/hooks/merge-gate-check.sh" ".claude/hooks/merge-gate-check.sh"; then
+        echo "BLOCKED: '.claude/hooks/merge-gate-check.sh' in this working directory differs from origin/main, or could not be read. That hook is what redirects a bare merge here, and the harness runs the working-tree copy. Run from a clean main checkout, or use --user-approved \"<reason>\"." >&2
+        return 1
+    fi
+    return 0
+}
+gate_integrity_ok() {
+    if [ "$GATE_CHECKED" -eq 0 ]; then
+        GATE_CHECKED=1
+        if verify_gate_integrity; then GATE_OK=1; fi
+    fi
+    [ "$GATE_OK" -eq 1 ]
+}
+
 if [ $# -lt 1 ]; then
     echo "Usage: scripts/merge-pr.sh <PR_NUMBER>" >&2
     exit 1
@@ -291,11 +411,18 @@ fi
 PR_NUM="$1"
 shift
 CROSS_MODEL_CLEARED=0
+DUAL_CERTIFIED=0
 USER_APPROVED_REASON=""
 WAIVED_PATHS=""
+DUAL_PATHS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --cross-model-cleared) CROSS_MODEL_CLEARED=1 ;;
+        # Implies --cross-model-cleared rather than replacing it: greater
+        # authority covers lesser (same precedent as --user-approved clearing
+        # both tiers), and keeping the flags distinct means the audit line can
+        # say which authority was actually invoked.
+        --dual-certified) DUAL_CERTIFIED=1; CROSS_MODEL_CLEARED=1 ;;
         --user-approved)
             # The reason is REQUIRED. A bare flag would be a silent bypass
             # wearing an audit trail's clothes (ROADMAP #479).
@@ -322,7 +449,7 @@ while [ $# -gt 0 ]; do
             fi
             USER_APPROVED_REASON="$1"
             ;;
-        *) echo "Usage: scripts/merge-pr.sh <PR_NUMBER> [--cross-model-cleared] [--user-approved \"<reason>\"]" >&2; exit 1 ;;
+        *) echo "Usage: scripts/merge-pr.sh <PR_NUMBER> [--cross-model-cleared] [--dual-certified] [--user-approved \"<reason>\"]" >&2; exit 1 ;;
     esac
     shift
 done
@@ -434,10 +561,21 @@ fi
                     # proof of human authorship.
                     echo "USER-APPROVED OVERRIDE: PR #$PR_NUM touches '$f' ($pattern), a merge-evidence path where self-produced clearance cannot apply. Proceeding on the stated human decision:" >&2
                     echo "  reason:   $USER_APPROVED_REASON" >&2
-                    WAIVED_PATHS="$WAIVED_PATHS$f (merge-evidence path)\n"
+                    WAIVED_PATHS="$WAIVED_PATHS$f (merge-evidence path)
+"
                     continue
                 fi
-                echo "BLOCKED: PR #$PR_NUM touches '$f', part of the merge-evidence chain ($pattern). --cross-model-cleared does NOT apply here: on these paths the PR defines its own CI check, runs its own gate, and posts its own clearance, so every leg of the evidence would be self-produced. A human decides this one. If you ARE the human and have decided, re-run with --user-approved \"<reason>\" — it merges and records the reason." >&2
+                # GH #511. Checked AFTER --user-approved so an explicit human
+                # decision always wins, and gate integrity BEFORE clearance so
+                # the first thing reported is the one condition the reviewers
+                # themselves cannot vouch for.
+                if [ "$DUAL_CERTIFIED" -eq 1 ] && gate_integrity_ok && clearance_ok; then
+                    echo "DUAL-CERTIFIED: PR #$PR_NUM touches '$f' ($pattern), a merge-evidence path. Cleared by $CLEARED_BY, both bound to $HEAD_SHA, with this gate byte-matching origin/main. ATTESTED, NOT AUTHENTICATED — both clearances were posted by the same gh token, so this records that two reviewers said yes, not that two independent principals did." >&2
+                    DUAL_PATHS="$DUAL_PATHS$f (merge-evidence path)
+"
+                    continue
+                fi
+                echo "BLOCKED: PR #$PR_NUM touches '$f', part of the merge-evidence chain ($pattern). --cross-model-cleared does NOT apply here: on these paths the PR defines its own CI check, runs its own gate, and posts its own clearance, so every leg of the evidence would be self-produced. Two routes forward: post two distinct reviewers' SHA-bound YES clearances to the PR and re-run with --dual-certified from a clean main checkout, or — if you are the human and have decided — --user-approved \"<reason>\", which merges and records the reason." >&2
                 exit 1
             fi
         done
@@ -456,10 +594,11 @@ fi
                     # — found live merging PR #494, where --user-approved
                     # cleared six hooks/ paths and then blocked on a doc.
                     echo "USER-APPROVED OVERRIDE: '$f' is guidance this PR changes, normally cleared by posted review. Proceeding on the stated human decision." >&2
-                    WAIVED_PATHS="$WAIVED_PATHS$f (guidance path)\n"
+                    WAIVED_PATHS="$WAIVED_PATHS$f (guidance path)
+"
                     continue
                 fi
-                if [ "$CROSS_MODEL_CLEARED" -eq 1 ] && verify_cross_model_clearance; then
+                if [ "$CROSS_MODEL_CLEARED" -eq 1 ] && clearance_ok; then
                     echo "DENYLIST ACKNOWLEDGED: '$f' matches $pattern, cleared by $CLEARED_BY. Every other check still ran." >&2
                     continue
                 fi
@@ -484,7 +623,8 @@ fi
                     # Third instance of the same gap: a gate asking for a human
                     # decision while providing no way to express one.
                     echo "USER-APPROVED OVERRIDE: version bump in package.json is release-adjacent and requires explicit confirmation — given, on the stated reason." >&2
-                    WAIVED_PATHS="$WAIVED_PATHS package.json version bump (release-adjacent confirmation)\n"
+                    WAIVED_PATHS="$WAIVED_PATHS package.json version bump (release-adjacent confirmation)
+"
                 else
                     echo "BLOCKED: PR #$PR_NUM changes package.json's version field — release-adjacent. Explicit user confirmation is required: re-run with --user-approved \"<reason>\"." >&2
                     exit 1
@@ -512,22 +652,69 @@ fi
     fi
 
     # --- CI validate check (must be exactly "success" for the remote head) ---
-    if ! CHECK_RUNS=$(gh api "repos/:owner/:repo/commits/$HEAD_SHA/check-runs" 2>&1); then
+    # --paginate: without it this reads only the first page, so "every run named
+    # validate" meant "every run on page one" and a red duplicate on page two was
+    # invisible (Codex round 1). Same defect the files endpoint already carries a
+    # comment about.
+    if ! CHECK_RUNS=$(gh api --paginate "repos/:owner/:repo/commits/$HEAD_SHA/check-runs" 2>&1); then
         echo "FAILED CLOSED: could not fetch check-runs for $HEAD_SHA: $CHECK_RUNS" >&2
         exit 1
     fi
-    VALIDATE_CONCLUSION=$(printf '%s' "$CHECK_RUNS" | grep -o '"conclusion"[[:space:]]*:[[:space:]]*"[^"]*"[^}]*"name"[[:space:]]*:[[:space:]]*"validate"' \
-        | grep -o '^"conclusion"[[:space:]]*:[[:space:]]*"[^"]*"' \
-        | sed 's/.*"conclusion"[[:space:]]*:[[:space:]]*"//; s/"$//' \
-        | head -1)
-    if [ -z "$VALIDATE_CONCLUSION" ]; then
-        VALIDATE_CONCLUSION=$(printf '%s' "$CHECK_RUNS" | grep -o '"name"[[:space:]]*:[[:space:]]*"validate"[^}]*"conclusion"[[:space:]]*:[[:space:]]*"[^"]*"' \
-            | grep -o '"conclusion"[[:space:]]*:[[:space:]]*"[^"]*"$' \
-            | sed 's/.*"conclusion"[[:space:]]*:[[:space:]]*"//; s/"$//' \
-            | head -1)
+    # EVERY run named "validate", not the first one found. Branch protection
+    # requires the check by NAME, so nothing stops several existing on one SHA —
+    # and `head -1` meant a green one ordered ahead of a red one satisfied the
+    # gate. Same defect class as reading the shape of evidence and never the
+    # answer inside it. Residual, deliberately not chased: this cannot tell a
+    # legitimate `validate` from one minted by a workflow the PR itself adds.
+    # That is why .github/workflows/ is HARD_DENY.
+    # jq, not regex. Round 1, both reviewers: a queued or in-progress run is
+    # `"conclusion": null` in real payloads, which a quoted-value pattern cannot
+    # match — so a still-running `validate` beside an old green one merged, while
+    # the block message claimed pending blocks. Fable also measured that the
+    # docs-order pattern never matched a live payload at all (GitHub emits `name`
+    # BEFORE `conclusion`), making half the old extraction dead code.
+    #
+    # jq is already a hard dependency here, so this removes a class of bug rather
+    # than adding a dependency: `// "pending"` turns any null into a value that
+    # fails the green test, and an empty-string conclusion can no longer read as
+    # green by vanishing into a blank line.
+    # Codex round 2: the first version unwrapped `{check_runs:[...]}` but sent a
+    # BARE ARRAY page through `else .`, where the object filter then dropped it —
+    # so a green wrapped page followed by a bare page carrying a red `validate`
+    # merged. `gh --paginate` concatenates whatever each page is, so both shapes
+    # must be flattened, and neither may be silently discarded.
+    #
+    # jq's exit status is checked rather than swallowed. A malformed payload used
+    # to yield an empty set, which the check below then reported as "no validate
+    # check found" — fail-closed, but the message named the wrong cause, and a
+    # gate that misdescribes why it blocked sends the next person to fix CI when
+    # the real problem is the API response.
+    #
+    # `"" -> "empty"` because Fable round 2 caught the previous comment here
+    # asserting something the code did not do: an empty-string conclusion was
+    # claimed to be handled, but it emitted a BLANK LINE, and a blank first
+    # non-success match fails the `-n` test below and reads as green. GitHub's
+    # conclusion is null or a fixed enum, so the payload is unreachable — but the
+    # claim was false, which is this repo's tracked defect class. Mapping it to a
+    # non-empty token makes the sentence true instead of deleting it.
+    if ! VALIDATE_CONCLUSIONS=$(printf '%s' "$CHECK_RUNS" | jq -rs '
+        [ .[]
+          | if   (type == "object" and has("check_runs")) then .check_runs[]
+            elif (type == "array")                        then .[]
+            else . end ]
+        | map(select(type == "object" and (.name? == "validate")))
+        | .[] | (.conclusion // "pending") | if . == "" then "empty" else . end
+    ' 2>/dev/null); then
+        echo "FAILED CLOSED: could not parse the check-runs response for $HEAD_SHA as JSON, so CI status is unknown." >&2
+        exit 1
     fi
-    if [ "$VALIDATE_CONCLUSION" != "success" ]; then
-        echo "BLOCKED: CI 'validate' check is '${VALIDATE_CONCLUSION:-missing}', not green (must be exactly 'success' — pending/skipped/neutral/failure all block). Explicit user confirmation is required. NOT WAIVABLE — --user-approved cannot clear this. Fix CI." >&2
+    if [ -z "$VALIDATE_CONCLUSIONS" ]; then
+        echo "BLOCKED: no CI 'validate' check found for $HEAD_SHA. NOT WAIVABLE — --user-approved cannot clear this. Fix CI." >&2
+        exit 1
+    fi
+    NOT_GREEN=$(printf '%s\n' "$VALIDATE_CONCLUSIONS" | grep -v '^success$' | head -1 || true)
+    if [ -n "$NOT_GREEN" ]; then
+        echo "BLOCKED: a CI 'validate' check for $HEAD_SHA concluded '$NOT_GREEN', not green (must be exactly 'success' — pending/skipped/neutral/failure all block; ALL runs of that name must be green, not just the first). NOT WAIVABLE — --user-approved cannot clear this. Fix CI." >&2
         exit 1
     fi
 
@@ -546,7 +733,8 @@ fi
     # merge in the browser and own it. Keep that split when adding gates.
     CLEARANCE_FILE=".reviews/merge-clearance-$PR_NUM.json"
     if [ -n "$USER_APPROVED_REASON" ]; then
-        WAIVED_PATHS="$WAIVED_PATHS clearance-artifact checks (.reviews/merge-clearance-$PR_NUM.json)\n"
+        WAIVED_PATHS="$WAIVED_PATHS clearance-artifact checks (.reviews/merge-clearance-$PR_NUM.json)
+"
         echo "USER-APPROVED OVERRIDE: skipping the clearance-artifact checks — they exist to demand a human decision, and one was given. The CI-green and test-removal checks above still ran and passed; those are NOT waivable." >&2
     else
         if [ ! -f "$CLEARANCE_FILE" ]; then
@@ -598,6 +786,25 @@ if [ -n "$USER_APPROVED_REASON" ]; then
     echo "Override recorded on PR #$PR_NUM." >&2
 fi
 
+# Same treatment for the dual path (Fable round 1). Its conclusions — the gate
+# byte-matched origin/main, the artifact was CERTIFIED at round >= 2, these two
+# reviewers cleared this SHA — were stdout only, so they evaporated with the
+# session. That is the defect already fixed once for --user-approved after PR
+# #494 merged traceless, re-introduced on the new path. #511's whole argument is
+# that the RECORD is the deliverable, so a dual merge that leaves none fails on
+# its own terms. Posted BEFORE the merge, failing closed, for the same reason.
+if [ -n "$DUAL_PATHS" ]; then
+    DUAL_BODY=$(printf '**DUAL CROSS-MODEL CERTIFIED MERGE**\n\n**Cleared by:** %s — both bound to `%s`\n\n**Merge-evidence path(s) this authorised:**\n%s\n\n**Verified:** CI `validate` green across every run of that name; no net-removed test files; no `package.json` version bump; clearance artifact CERTIFIED at round >= 2 bound to this SHA; the executing merge script and its redirect hook byte-match `origin/main`.\n\n**ATTESTED, NOT AUTHENTICATED.** Both clearances were posted by the same `gh` token, so this records that two distinct reviewers returned YES at >=95 — not that two independent principals did. A new workflow file can still mint a green required check; the compensating layer is that both reviewers read this diff.\n\n_Posted by `scripts/merge-pr.sh --dual-certified` before merging._' \
+        "$CLEARED_BY" \
+        "$HEAD_SHA" \
+        "$(printf '%s' "$DUAL_PATHS" | sed '/^$/d' | sed 's/^/- `/; s/$/`/')")
+    if ! gh pr comment "$PR_NUM" --body "$DUAL_BODY" >/dev/null 2>&1; then
+        echo "BLOCKED: could not post the dual-certification record to PR #$PR_NUM. Refusing to merge — a merge-evidence path cleared without a durable record is the exact gap #511 exists to close." >&2
+        exit 1
+    fi
+    echo "Dual certification recorded on PR #$PR_NUM." >&2
+fi
+
 # --- Execute: always squash, no passthrough flags, atomically bound to the
 # checked SHA. Only the PR number is accepted as input, closing the
 # flag-smuggling surface entirely. ---
@@ -622,7 +829,20 @@ if [ -n "$USER_APPROVED_REASON" ]; then
     echo "  VERIFIED (not waivable): no test deletions, CI validate green."
     echo "  OVERRIDDEN by --user-approved: denylist tiers, version-bump confirmation, and the clearance-artifact checks were NOT verified — they were waived on the stated human decision."
     echo "  reason: $USER_APPROVED_REASON"
+elif [ -n "$DUAL_PATHS" ]; then
+    # GH #511. Says exactly what was proven and exactly what was not — the whole
+    # point of the issue was that the previous records claimed the wrong thing.
+    echo "MERGED: PR #$PR_NUM at $HEAD_SHA (squash, match-head-commit)."
+    echo "  VERIFIED: no test deletions, CI validate green, no package.json version bump, clearance artifact CERTIFIED at round>=2 bound to this SHA, and this gate byte-matches origin/main."
+    echo "  DUAL-CERTIFIED by $CLEARED_BY over merge-evidence path(s):"
+    printf '%s' "$DUAL_PATHS" | sed '/^$/d; s/^/    - /'
+    echo "  ATTESTED, NOT AUTHENTICATED: both clearances were posted by the same gh token. This proves two distinct reviewers returned YES at >=95 bound to $HEAD_SHA — not that two independent principals did."
 else
-    echo "MERGED: PR #$PR_NUM at $HEAD_SHA (squash, match-head-commit). Verified: no test deletions, CI validate green, clearance CERTIFIED round>=2 fresh, and $([ "$CROSS_MODEL_CLEARED" -eq 1 ] && echo "denylist acknowledged by $CLEARED_BY" || echo 'denylist clear')."
+    # Gate on CLEARED_BY, not on the FLAG. Passing a clearance flag on a PR that
+    # touches no denylisted path never runs clearance, so CLEARED_BY is empty and
+    # this line read "...and denylist acknowledged by ." — an acknowledgement by
+    # nobody, in the audit record. Pre-existing, and exactly the failure mode this
+    # change is about (Fable round 1).
+    echo "MERGED: PR #$PR_NUM at $HEAD_SHA (squash, match-head-commit). Verified: no test deletions, CI validate green, clearance CERTIFIED round>=2 fresh, and $([ -n "$CLEARED_BY" ] && echo "denylist acknowledged by $CLEARED_BY" || echo 'denylist clear')."
 fi
 exit 0
