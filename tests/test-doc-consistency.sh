@@ -3062,6 +3062,33 @@ test_fable_framed_as_decider_not_advisor() {
 }
 test_fable_framed_as_decider_not_advisor
 
+# ---- README's architecture diagram must not imply consumers get our CI ----
+#
+# The diagram reads: "GENERATED FILES (in your repo)" -> "validated by" ->
+# "CI/CD PIPELINE / E2E: simulate SDLC task -> score 0-10". With one box
+# labelled "in your repo" and the next unlabelled, the scoring pipeline reads
+# as something that runs in the consumer's repo. It does not: `tests/e2e/` is
+# absent from package.json's files, so `npm pack` ships none of it. That
+# pipeline validates the harness HERE, before a release goes out.
+#
+# Same defect class as GH #491's distribution boundary — a shipped doc implying
+# the consumer has something they never receive.
+test_readme_diagram_scopes_the_ci_pipeline() {
+    local f="$REPO_ROOT/README.md" block
+    [ -f "$f" ] || { fail "README.md missing"; return; }
+    block=$(grep -A4 'CI/CD PIPELINE' "$f" | head -5)
+    if [ -z "$block" ]; then
+        pass "README no longer shows the CI/CD pipeline box (nothing to mis-scope)"
+        return
+    fi
+    if grep -qE 'CI/CD PIPELINE \((this repo|our repo|meta-repo)[^)]*\)' "$f"; then
+        pass "README diagram scopes the CI/CD pipeline to this repo, not the consumer's"
+    else
+        fail "README's CI/CD PIPELINE box is unscoped — it follows a box labelled '(in your repo)', so it reads as running in the consumer's repo. tests/e2e/ does not ship."
+    fi
+}
+test_readme_diagram_scopes_the_ci_pipeline
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then
