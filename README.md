@@ -71,7 +71,7 @@ You want Claude Code to follow engineering discipline automatically:
 - **Write tests first** (TDD enforced via hooks)
 - **State confidence** (LOW = escalate to a model first, don't guess)
 - **Track work visibly** (TaskCreate)
-- **Self-review before presenting**
+- **Cross-model review before shipping** (a *different* model checks the work — same-model self-review was removed in #486 after it reported all-green while an independent model found real P1s)
 - **Prove it's better** (use native features unless you prove custom wins)
 
 The wizard auto-detects your stack (package.json, test framework, deployment targets) and generates bespoke hooks + skills + docs. CI validates the generated assets; cross-stack setup-path E2E is on the [roadmap](ROADMAP.md).
@@ -125,7 +125,7 @@ codex --version   # confirm ready
 
 That's it. Codex picks up your OpenAI account's best available model automatically — **if you have GPT-5.6 Sol, it uses Sol; otherwise it falls back to Terra**. No model config needed.
 
-**How to use it:** after Claude's self-review passes, write a one-file mission brief and run:
+**How to use it:** when the change is high-stakes, write a one-file mission brief and run:
 
 ```bash
 codex exec -c 'model_reasoning_effort="high"' -s danger-full-access \

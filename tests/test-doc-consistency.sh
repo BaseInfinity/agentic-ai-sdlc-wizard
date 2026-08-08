@@ -3089,6 +3089,31 @@ test_readme_diagram_scopes_the_ci_pipeline() {
 }
 test_readme_diagram_scopes_the_ci_pipeline
 
+# ---- the doc-sync rule must name README ----
+#
+# The rule listed `*_DOCS.md` and `ROADMAP.md` and stopped there. README was
+# never named, and on 2026-08-08 that cost: #486 deleted the same-model
+# self-review instruction while README still advertised "Self-review before
+# presenting" as an enforced behaviour, and described a flow starting with a
+# self-review gate that no longer exists. Both shipped stale for hours, and the
+# maintainer noticed before any check did.
+#
+# README is not an afterthought here — npm packs it whether or not it appears in
+# package.json's files list, so it reaches every consumer. A doc-sync rule that
+# omits the most-read shipped document is the rule failing at its own job.
+test_doc_sync_rule_names_readme() {
+    local f="$REPO_ROOT/skills/sdlc/SKILL.md" section
+    section=$(awk '/^## Documentation Sync/,/^## [^D]/' "$f")
+    if [ -z "$section" ]; then
+        fail "Documentation Sync section not found in the skill — this assertion is now vacuous"
+    elif printf '%s' "$section" | grep -q "README"; then
+        pass "doc-sync rule names README (it ships, and it went stale once)"
+    else
+        fail "the Documentation Sync rule never names README, so a shipped-doc update is not required by it — this is how README advertised a behaviour that had been deleted"
+    fi
+}
+test_doc_sync_rule_names_readme
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then
