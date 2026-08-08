@@ -21,13 +21,18 @@ Before that, v1.89.0 (2026-07-29) carried #479 (the merge gate's approval/bypass
 
 The previous release, v1.88.0 (2026-07-24), carried #468 (Opus 5 becomes the Setup A default driver, plus the stale `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30` that `skills/setup/SKILL.md` had been writing into *every consumer's* settings), #470 (the escalation ladder — Fable → Codex → human LAST — propagated to every shipped surface, including the runtime prompt hook that was still emitting the old "ASK USER" rule), and #469's ROADMAP rows.
 
-**Open PRs — none.** #474 merged 2026-07-29; #471 was closed the same day as superseded by it (that branch was CONFLICTING and carried 5 unresolved Codex findings, the worst a newline-injection bypass introduced by its own fix — it tiered the denylist to reduce how *often* the gate fires, and frequency was never the actual defect).
+**Open PRs: see [the PR list](https://github.com/BaseInfinity/claude-sdlc-harness/pulls).** This line used to restate the count and said "none" while a PR was open — the tracker is the source, and restating it here only creates something to go stale. #474 merged 2026-07-29; #471 was closed the same day as superseded by it (that branch was CONFLICTING and carried 5 unresolved Codex findings, the worst a newline-injection bypass introduced by its own fix — it tiered the denylist to reduce how *often* the gate fires, and frequency was never the actual defect).
 
 **Start here next, in this order:**
 
-**Row #485 is implemented** and awaiting cross-model review on branch
-`fix/485-single-tier-merge-gate`. `HARD_DENY` is deleted; all eight patterns sit
-in one clearable tier.
+**Row #485 was NOT implemented, despite this section claiming otherwise for
+nine days.** Verified 2026-08-07: branch `fix/485-single-tier-merge-gate` is **0
+commits ahead of main** — its tip is already-merged #474 and it carries nothing — and
+`HARD_DENY` is alive in `scripts/merge-pr.sh` with 5 occurrences. Both halves of
+the old claim were false, and they sat at the top of the list a cold session reads
+first, sending it to work that does not exist on a branch that is empty. Recorded
+rather than quietly deleted: this is the same defect class as GH #491, one level
+up — a stated fact with nothing checking it.
 
 **Revised order — both reviewers, consulted blind on 2026-07-29, independently
 said the previous list was wrong because the maintainer's actual goal (Codex

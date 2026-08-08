@@ -267,6 +267,23 @@ else
     pass "no duplicate row IDs"
 fi
 
+# Check: ROADMAP must not assert PR-open state at all.
+#
+# It said "**Open PRs — none.**" while PR #503 was open, and every existing check
+# passed — they enforce the FORM of bullets in that block, so a claim of "none"
+# has no bullets to inspect and sails through. A staleness guard that cannot
+# detect the staleness it exists for.
+#
+# The fix is not a better checker. Whether a PR is open is the tracker's fact,
+# and no offline test can verify it. ROADMAP restating it is the duplicate-source
+# hazard #482 names, so the honest move is to stop making the claim and point at
+# the tracker, which is always current by construction.
+if grep -qiE '^\*\*Open PRs? (—|-|:)? *none' "$ROADMAP"; then
+    fail "ROADMAP asserts 'Open PRs — none'. That is the tracker's fact and goes stale silently — no offline test can verify it. Link to the PR list instead of restating it."
+else
+    pass "ROADMAP does not restate PR-open state (tracker is the source — #482)"
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
