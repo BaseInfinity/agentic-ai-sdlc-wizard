@@ -221,15 +221,24 @@ GENERATED FILES (in your repo)
   - .claude/skills/*/SKILL.md
   - .claude/settings.json
   - CLAUDE.md, SDLC.md, TESTING.md, ARCHITECTURE.md
+
+        (that's everything you get — the arrow below leaves your repo)
+
         |
-        | validated by
+        | the harness itself is validated by
         v
-CI/CD PIPELINE
+CI/CD PIPELINE (this repo, NOT yours)
   - E2E: simulate SDLC task -> score 0-10
-  - Before/after: main vs PR wizard
+  - Before/after: main vs PR harness
   - Statistical: 5x trials, 95% CI
   - Model-aware: SDP adjusts for external conditions
 ```
+
+**The bottom box runs here, not in your project.** `tests/e2e/` is not part of the
+published package, so `npm pack` ships none of it. That scoring pipeline is how *this*
+repo proves a change to the harness is an improvement before releasing it — it is not
+something you run, configure, or need an API key for. What lands in your repo is the
+middle box: hooks, skills, settings and docs.
 
 ## Self-Evolving System
 
