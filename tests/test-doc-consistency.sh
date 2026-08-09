@@ -489,9 +489,33 @@ test_wizard_doc_documents_autocompact_disable_trap() {
     # version stopped only at `### `, so it swallowed the "Why opus[1m] is
     # opt-in" bullets below — where "Pinning disables auto-mode" satisfied the
     # disable check on its own.
-    section=$(awk '/^#### Autocompact mechanics/{f=1;print;next} f && /^#{1,4} /{exit} f' "$DOC")
-    if [ -z "$section" ]; then
+    # Extract from the RENDERED PROJECTION, not the raw file. Cross-model
+    # review defeated the column-1 pins three more times without altering one
+    # character of the pinned claims — it wrapped them in an HTML comment, in
+    # `<del>`, and in a fence. Each time the constant still began its line and
+    # the suite stayed green while the document told the reader nothing.
+    # Enumerating containers is unbounded; projecting once is not. The
+    # guarantee this assertion makes is now exactly: "in the output of
+    # `mdfence.py --rendered`, some line begins with the canonical constant."
+    #
+    # TWO extractions, on purpose. The PROSE CLAIMS are guidance and must
+    # survive the projection — #513 settled that fenced content in this repo is
+    # a quotation, not an instruction, so a claim that only exists inside a
+    # fence is not guidance no matter how it renders. The FORMULA BLOCK is the
+    # opposite: it is deliberately fenced, it is an illustration rather than a
+    # claim, and checking it against the projection would demand it be
+    # un-fenced. Anchors that verify presence run on the raw section; pins that
+    # verify a claim run on the projection.
+    local section_raw
+    section_raw=$(awk '/^#### Autocompact mechanics/{f=1;print;next} f && /^#{1,4} /{exit} f' "$DOC")
+    section=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --rendered "$DOC" \
+        | awk '/^#### Autocompact mechanics/{f=1;print;next} f && /^#{1,4} /{exit} f')
+    if [ -z "$section_raw" ]; then
         fail "#520: the 'Autocompact mechanics' section is gone — this assertion is now vacuous, re-anchor it"
+        return
+    fi
+    if [ -z "$section" ]; then
+        fail "#520: the 'Autocompact mechanics' section exists in the file but nothing in it survives the rendered projection — the whole section is commented out, struck, or fenced"
         return
     fi
     local missing=""
@@ -542,8 +566,9 @@ test_wizard_doc_documents_autocompact_disable_trap() {
     _doc_line_begins_with "$section" '2. **The two vars multiply.**' \
         || missing="$missing trap2-canonical-polarity"
     # And the formula block, which is what makes the rest checkable.
-    printf '%s' "$section" | grep -qE 'min\(model_window' || missing="$missing window-formula"
-    printf '%s' "$section" | grep -qE 'window .{0,3} 13000' || missing="$missing threshold-cap-formula"
+    # Raw section: the formula lives inside a fence by design (see above).
+    printf '%s' "$section_raw" | grep -qE 'min\(model_window' || missing="$missing window-formula"
+    printf '%s' "$section_raw" | grep -qE 'window .{0,3} 13000' || missing="$missing threshold-cap-formula"
     if [ -z "$missing" ]; then
         pass "#520: the autocompact section names the sub-200000 disable trap and the multiplication"
     else
@@ -618,8 +643,12 @@ test_sdlc_skill_documents_autocompact_disable_trap() {
     # scope (`the assertion "..." is false`). The constant therefore runs from
     # the start of the line THROUGH the consequence, so there is nowhere to
     # insert a qualifier ahead of it.
-    awk -v pfx='**Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone and keep it >= 200000 — below that Claude Code disables compaction outright instead of hastening it.' \
-        'index($0, pfx) == 1 { f = 1 } END { exit !f }' "$SKILL" \
+    # Same rendered projection as the wizard-doc pins above, and for the same
+    # reason: hiding this line in an HTML comment left it at column 1 and kept
+    # the suite green while the shipped skill said nothing.
+    python3 "$REPO_ROOT/tests/lib/mdfence.py" --rendered "$SKILL" \
+        | awk -v pfx='**Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone and keep it >= 200000 — below that Claude Code disables compaction outright instead of hastening it.' \
+        'index($0, pfx) == 1 { f = 1 } END { exit !f }' \
         || missing="$missing disable-canonical-polarity"
     # The retired advice must not come back on this surface.
     grep -qiE 'PCT_OVERRIDE=30|PCT_OVERRIDE=`?30' "$SKILL" && missing="$missing retired-pct30-pairing"
