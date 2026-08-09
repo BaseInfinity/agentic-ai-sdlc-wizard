@@ -601,8 +601,16 @@ test_wizard_doc_has_no_harmful_opus46_autocompact_pairing() {
     # and a grep that finds nothing exits 1, which would kill the entire run
     # silently and take every later assertion with it. That is exactly what
     # happened when this test was first wired in.
+    #
+    # `--visible`, not raw bytes. The block is fenced JSON, so `--rendered`
+    # would demand it be un-fenced — but raw bytes accepted the whole block
+    # wrapped in an HTML comment, invisible to every reader, at 129/129 green.
+    # Cross-model review found this after the prose pins were already fixed:
+    # the exemption travelled, so the same defect survived on the surfaces I
+    # had not converted yet.
     local block good bad
-    block=$(awk '/"model": "claude-opus-4-6"/{f=1} f{print} f && /^```$/{f=0}' "$DOC" || true)
+    block=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --visible "$DOC" \
+        | awk '/"model": "claude-opus-4-6"/{f=1} f{print} f && /^```$/{f=0}' || true)
     if [ -z "$block" ]; then
         fail "#520: the claude-opus-4-6 settings example is gone — this assertion is now vacuous, re-anchor it or delete it deliberately"
         return
@@ -628,13 +636,19 @@ test_sdlc_skill_documents_autocompact_disable_trap() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
     local missing=""
-    grep -qE '200000|200,000' "$SKILL" || missing="$missing threshold"
+    # Every check on this file reads the VISIBLE projection. A commented-out
+    # threshold is not guidance, and — the direction that actually bit — an
+    # invisible `<!-- PCT_OVERRIDE=30 -->` must not trip the denylist below
+    # and fail a document that is perfectly correct.
+    local skill_vis
+    skill_vis=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --visible "$SKILL")
+    printf '%s' "$skill_vis" | grep -qE '200000|200,000' || missing="$missing threshold"
     # Threshold and consequence on the SAME line. A whole-file `disabl` grep
     # was satisfied by the unrelated `disableAllHooks` text elsewhere in this
     # skill, so the sentence naming the trap could be deleted with the
     # assertion still green — proved by cross-model review, second instance of
     # this exact defect in one round.
-    grep -qiE '(200000[^.]*disabl|disabl[^.]*200000)' "$SKILL" \
+    printf '%s' "$skill_vis" | grep -qiE '(200000[^.]*disabl|disabl[^.]*200000)' \
         || missing="$missing disable-consequence-bound-to-threshold"
     # ...and the polarity, which no token pattern can carry. Same finding as the
     # wizard-doc guard above: the inversion "does not disable compaction"
@@ -655,7 +669,8 @@ test_sdlc_skill_documents_autocompact_disable_trap() {
         'index($0, pfx) == 1 { f = 1 } END { exit !f }' \
         || missing="$missing disable-canonical-polarity"
     # The retired advice must not come back on this surface.
-    grep -qiE 'PCT_OVERRIDE=30|PCT_OVERRIDE=`?30' "$SKILL" && missing="$missing retired-pct30-pairing"
+    printf '%s' "$skill_vis" | grep -qiE 'PCT_OVERRIDE=30|PCT_OVERRIDE=`?30' \
+        && missing="$missing retired-pct30-pairing"
     if [ -z "$missing" ]; then
         pass "#520: shipped skill names the sub-200000 disable trap, and the PCT=30 pairing is gone"
     else
