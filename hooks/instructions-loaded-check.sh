@@ -176,16 +176,33 @@ fi
 #   old check called that a misconfig, so the hook warned against a working
 #   config every session.
 #
-#   FALSE NEGATIVE — the dangerous setting was invisible. ZJu returns false
-#   unconditionally below bIe = 200000, so a window in 100000..199999 SILENTLY
-#   DISABLES autocompact altogether. That is the likeliest accident here: the
-#   consumer is trying to compact EARLIER and instead turns compaction off, with
-#   nothing to tell them. Checked first — if autocompact is off, any statement
-#   about an effective trigger would be a lie.
+#   FALSE NEGATIVE — the surprising setting was invisible. A window below
+#   200000 makes compaction fire SOONER, and the consumer setting it usually
+#   wants exactly that, so this reports rather than warns. (This comment used to
+#   claim such a window DISABLED autocompact. It does not: the live path is
+#   LXy -> jUe -> zJu, with no bIe gate. ZJu, one letter-case away, arms the
+#   precomputed summary and is where that gate actually lives.)
 #
 # So the signature is the effective trigger landing below 200000, whichever
 # vars produced it — not the number of vars set.
 AC_FLOOR=200000
+
+# `kO` is checked BEFORE any trigger arithmetic: with compaction off, every
+# sentence below about when it "fires" is false. DISABLE_AUTO_COMPACT is read
+# from the live env, autoCompactEnabled from settings.
+AC_OFF=""
+case "${DISABLE_AUTO_COMPACT:-}" in 1|true|TRUE|True|yes|YES) AC_OFF=1 ;; esac
+
+# Overhead is min(max_output_tokens, 20000) [fEe/qfr]. 20000 is the default; a
+# lower CLAUDE_CODE_MAX_OUTPUT_TOKENS reduces it and moves the trigger LATER,
+# so it is read rather than assumed.
+AC_OVH=20000
+case "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-}" in
+    ''|*[!0-9]*) ;;
+    *) if [ "$((10#${CLAUDE_CODE_MAX_OUTPUT_TOKENS}))" -lt 20000 ]; then
+           AC_OVH=$((10#${CLAUDE_CODE_MAX_OUTPUT_TOKENS}))
+       fi ;;
+esac
 
 # READ THE LIVE ENV FIRST, settings.json only as a fallback.
 #
@@ -203,6 +220,25 @@ AC_PCT="${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}"
 AC_WIN="${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}"
 AC_SRC="the live environment"
 SETTINGS_JSON="$PROJECT_DIR/.claude/settings.json"
+
+# Second half of the kO check: SETTINGS_JSON is only defined here, so reading it
+# any earlier tested an empty path and silently found nothing. Both keys get the
+# same live-env-first, settings-fallback treatment as the two vars below —
+# reading only the live env made a settings-block consumer invisible.
+if [ -z "$AC_OFF" ] && [ -f "$SETTINGS_JSON" ]; then
+    if grep -q '"autoCompactEnabled"[[:space:]]*:[[:space:]]*false' "$SETTINGS_JSON" \
+       || grep -qE '"DISABLE_AUTO_COMPACT"[[:space:]]*:[[:space:]]*"(1|true|yes)"' "$SETTINGS_JSON"; then
+        AC_OFF=1
+    fi
+fi
+if [ "$AC_OVH" -eq 20000 ] && [ -f "$SETTINGS_JSON" ]; then
+    AC_MO=$(grep -o '"CLAUDE_CODE_MAX_OUTPUT_TOKENS"[[:space:]]*:[[:space:]]*"[0-9]*"' "$SETTINGS_JSON" \
+        | head -1 | sed 's/.*"\([0-9]*\)"$/\1/')
+    case "$AC_MO" in
+        ''|*[!0-9]*) ;;
+        *) if [ "$((10#$AC_MO))" -gt 0 ] && [ "$((10#$AC_MO))" -lt 20000 ]; then AC_OVH=$((10#$AC_MO)); fi ;;
+    esac
+fi
 if [ -z "$AC_PCT" ] && [ -z "$AC_WIN" ] && [ -f "$SETTINGS_JSON" ]; then
     AC_SRC=".claude/settings.json"
     AC_PCT=$(grep -o '"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"[[:space:]]*:[[:space:]]*"[0-9]*"' "$SETTINGS_JSON" \
@@ -212,10 +248,25 @@ if [ -z "$AC_PCT" ] && [ -z "$AC_WIN" ] && [ -f "$SETTINGS_JSON" ]; then
 fi
 # Non-numeric values are treated as unset — the arithmetic below would abort
 # the hook otherwise, and a hook that dies is a hook that checks nothing.
+# A leading zero would make $(( )) read the value as octal, so every figure
+# below uses 10#. PCT=0 is treated as unset because `CCo` ignores it (0 is
+# falsy there) and falls back to the normal cap — reporting a zero-token
+# trigger would be the confident-wrong-number failure this hook exists to stop.
 case "$AC_PCT" in ''|*[!0-9]*) AC_PCT="" ;; esac
+if [ -n "$AC_PCT" ] && [ "$((10#$AC_PCT))" -eq 0 ]; then AC_PCT=""; fi
+if [ -n "$AC_PCT" ]; then AC_PCT=$((10#$AC_PCT)); fi
 case "$AC_WIN" in ''|*[!0-9]*) AC_WIN="" ;; esac
+# `ABe` rejects a value of 0 outright, so the env var is ignored and the model's
+# own default applies. Describing that as an active setting is a lie in the
+# other direction, so it is treated as unset.
+if [ -n "$AC_WIN" ] && [ "$((10#$AC_WIN))" -le 0 ]; then AC_WIN=""; fi
+if [ -n "$AC_WIN" ]; then AC_WIN=$((10#$AC_WIN)); fi
 
-if [ -n "$AC_WIN" ] && [ "$AC_WIN" -lt "$AC_FLOOR" ]; then
+if [ -n "$AC_OFF" ]; then
+    if [ -n "$AC_WIN" ] || [ -n "$AC_PCT" ]; then
+        echo "NOTE: auto-compaction is OFF (autoCompactEnabled false or DISABLE_AUTO_COMPACT set), so CLAUDE_CODE_AUTO_COMPACT_WINDOW / CLAUDE_AUTOCOMPACT_PCT_OVERRIDE have no effect and the session runs to the hard limit. This one is read live — flipping it back takes effect without a restart (#520)."
+    fi
+elif [ -n "$AC_WIN" ] && [ "$AC_WIN" -lt "$AC_FLOOR" ]; then
     # This branch used to say DISABLED and tell the reader to raise the value.
     # Both were wrong. The live trigger (LXy -> jUe -> zJu) has no 200000 gate;
     # the gate lives in ZJu, which arms the PRECOMPUTED summary, not compaction
@@ -224,12 +275,16 @@ if [ -n "$AC_WIN" ] && [ "$AC_WIN" -lt "$AC_FLOOR" ]; then
     #
     #   effective = window - up to 20000 system overhead   [fEe]
     #   trigger   = min(effective x pct/100, effective - 13000)  [CCo]
-    AC_WIN_MAX=$(( AC_WIN - 20000 - 13000 ))
-    # `[ ... ] && X=0` returns non-zero whenever the test is FALSE, which under
-    # `set -e` kills the hook on the common path. An `if` has no exit status to
-    # leak.
-    if [ "$AC_WIN_MAX" -lt 0 ]; then AC_WIN_MAX=0; fi
-    echo "NOTE: CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) makes autocompact fire SOONER, not later — at most ${AC_WIN_MAX} tokens, once up to 20000 of system overhead and the 13000 cap come off. Nothing in this range switches compaction off. Remove it to restore the model's own default (#520)."
+    # CLAMP FIRST. `EX` does max(100000, value), so every value below 100000
+    # resolves to a 100000 window and a trigger of 67000 — not the smaller
+    # figure the raw subtraction gives. Omitting this printed "at most 17000"
+    # for WINDOW=50000 when the truth is 67000: not loose, INVERTED, since the
+    # real trigger exceeded the stated upper bound across the whole range. The
+    # sibling branch below has always clamped; this one was written without it.
+    AC_WIN_CL="$AC_WIN"
+    if [ "$AC_WIN_CL" -lt 100000 ]; then AC_WIN_CL=100000; fi
+    AC_WIN_MAX=$(( AC_WIN_CL - AC_OVH - 13000 ))
+    echo "NOTE: CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) makes autocompact fire SOONER, not later — at ${AC_WIN_MAX} tokens (window minus ${AC_OVH} system overhead, minus the 13000 cap). Nothing in this range switches compaction off. Remove it to restore the model's own default (#520)."
 elif [ -n "$AC_PCT" ] && [ -n "$AC_WIN" ]; then
     # Both set: they multiply, so report the product — but reproduce the real
     # arithmetic, not a naive one.
@@ -245,6 +300,9 @@ elif [ -n "$AC_PCT" ] && [ -n "$AC_WIN" ]; then
     AC_WIN_EFF="$AC_WIN"
     [ "$AC_WIN_EFF" -gt 1000000 ] && AC_WIN_EFF=1000000
     [ "$AC_WIN_EFF" -lt 100000 ] && AC_WIN_EFF=100000
+    # CCo is applied to the OVERHEAD-ADJUSTED window (zJu passes it fEe's
+    # result), not the raw one. Omitting this overstated every figure here.
+    AC_WIN_EFF=$(( AC_WIN_EFF - AC_OVH ))
     AC_TRIGGER=$(( AC_PCT * AC_WIN_EFF / 100 ))
     AC_CAP=$(( AC_WIN_EFF - 13000 ))
     [ "$AC_TRIGGER" -gt "$AC_CAP" ] && AC_TRIGGER="$AC_CAP"
@@ -260,8 +318,11 @@ elif [ -n "$AC_PCT" ] && [ -n "$AC_WIN" ]; then
     # and pairing a wrong ratio with "not an error" approved a 70000 trigger.
     # Do NOT compare this figure against AC_FLOOR: a 200K window caps at 187000,
     # so the floor would flag every user of this branch.
-    AC_WIN_200="$AC_WIN_EFF"
-    [ "$AC_WIN_200" -gt 200000 ] && AC_WIN_200=200000
+    # The 200K-model figure: that model's window, overhead already off, and
+    # never larger than the configured effective window (min() picks the
+    # smaller). The old version omitted overhead and overstated it by AC_OVH.
+    AC_WIN_200=$(( 200000 - AC_OVH ))
+    [ "$AC_WIN_200" -gt "$AC_WIN_EFF" ] && AC_WIN_200="$AC_WIN_EFF"
     AC_TRIG_200=$(( AC_PCT * AC_WIN_200 / 100 ))
     AC_CAP_200=$(( AC_WIN_200 - 13000 ))
     [ "$AC_TRIG_200" -gt "$AC_CAP_200" ] && AC_TRIG_200="$AC_CAP_200"
