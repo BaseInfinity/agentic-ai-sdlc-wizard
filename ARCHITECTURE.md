@@ -34,10 +34,14 @@ The SDLC Harness is a documentation-first approach to enforcing SDLC practices i
 
 **File**: `CLAUDE_CODE_SDLC_WIZARD.md`
 
-The main wizard document (installed by `npx agentic-sdlc-wizard init` or copied manually). Contains:
+The main wizard document (installed by `npx agentic-sdlc-wizard init`). Contains:
 - SDLC philosophy
-- Installation instructions
-- Hook/skill templates
+- Installation instructions — which run the CLI; the document is not a self-contained installer
+- Two illustrative hook templates out of the 8 shipped hooks. **No full, installable SDLC skill
+  template** — the embedded copy of `skills/sdlc/SKILL.md` was deleted in v1.96.0 because it was a
+  second install path to the destination the CLI already writes, and the two had diverged (GH
+  #513). A short illustrative frontmatter snippet remains, teaching `$ARGUMENTS`; it is not a
+  skill you can install
 - Usage guidelines
 
 ### 2. Hooks System

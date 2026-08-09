@@ -48,7 +48,7 @@ npm install -g agentic-sdlc-wizard
 sdlc-wizard init
 ```
 
-**Manual (advanced — escape hatch only):** Download `CLAUDE_CODE_SDLC_WIZARD.md` to your project and tell Claude `Run the SDLC wizard setup`. This skips the live-session auto-invoke and is only intended for environments where `npx`, `curl`, `brew`, and `gh` are all unavailable. The default human path is `npx init` → restart CC → first-prompt auto-setup, not this manual flow.
+**Manual (advanced — partial, not an escape hatch):** Download `CLAUDE_CODE_SDLC_WIZARD.md` to your project and tell Claude `Run the SDLC wizard setup`. This skips the live-session auto-invoke and generates your bespoke `CLAUDE.md`, `SDLC.md`, `TESTING.md` and `ARCHITECTURE.md`. **It does not give you a working install.** The document no longer contains the SDLC skill — Step 6 installs it by running the CLI (GH #513) — and only 2 of the 8 hooks have hand-typed templates here. So this path still needs `npx`; there is no npx-free route to a complete install. The default human path is `npx init` → restart CC → first-prompt auto-setup.
 </details>
 
 <details>
@@ -99,7 +99,7 @@ Layer 2: ENFORCEMENT
 
 Layer 1: PHILOSOPHY
   The wizard document. KISS. TDD. Confidence levels.
-  Copy it, run setup, get a bespoke SDLC.
+  Run the CLI; setup reads it and writes a bespoke SDLC.
 ```
 
 ## What Makes This Different
