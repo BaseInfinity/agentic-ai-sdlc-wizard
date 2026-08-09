@@ -476,7 +476,7 @@ test_wizard_doc_mentions_permissions_command() {
 # protects someone: the sub-200000 disable trap must be named, on the surface
 # that reader is holding. Naming the threshold is what makes it actionable —
 # prose about "small windows" would not be.
-test_wizard_doc_documents_autocompact_disable_trap() {
+test_wizard_doc_states_the_sub_200k_window_mechanic() {
     local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
     # SCOPED to the autocompact section, not the whole document. A whole-file
@@ -535,8 +535,16 @@ test_wizard_doc_documents_autocompact_disable_trap() {
     # And the retired falsehood must not come back on this surface. The claim
     # was guarded, pinned and cross-model certified for thirteen rounds while
     # being wrong, so its exact wording is now a denylist entry.
-    printf '%s' "$section" | grep -qiE 'disables? (autocompact|compaction) (entirely|outright)' \
-        && missing="$missing retired-disable-falsehood"
+    # Not the exact retired sentence — that missed "disables autocompact
+    # altogether", and the stale wording was still sitting in a comment one
+    # copy-paste away. Not a bare pattern either: "nothing disables compaction
+    # outright" is a CORRECT sentence and a bare pattern fails it, which is the
+    # mirror image of the polarity defect this guard exists for. So: the
+    # assertion shape, minus anything carrying a negator.
+    if printf '%s' "$section" | grep -iE 'disables?[^.]{0,40}(autocompact|compaction)' \
+        | grep -viqE 'nothing|never|\bno\b|\bnot\b'; then
+        missing="$missing retired-disable-falsehood"
+    fi
     # The multiplication must stay documented — it is real, it is just not a
     # prohibition. Losing it puts #207's 120000 case back in the dark.
     printf '%s' "$section" | grep -qiE '^2\..*multipl' || missing="$missing trap2-multiplication"
@@ -656,8 +664,10 @@ test_sdlc_skill_documents_autocompact_disable_trap() {
         || missing="$missing sooner-consequence-bound-to-cause"
     # The retired falsehood is a denylist entry on this surface too: it shipped
     # to every consumer repo via npm and was certified thirteen times.
-    printf '%s' "$skill_vis" | grep -qiE 'disables? compaction (outright|entirely)' \
-        && missing="$missing retired-disable-falsehood"
+    if printf '%s' "$skill_vis" | grep -iE 'disables?[^.]{0,40}(autocompact|compaction)' \
+        | grep -viqE 'nothing|never|\bno\b|\bnot\b'; then
+        missing="$missing retired-disable-falsehood"
+    fi
     # ...and the polarity, which no token pattern can carry. Same finding as the
     # wizard-doc guard above: the inversion "does not disable compaction"
     # satisfies every keyword check. This surface phrases the fact differently
@@ -787,7 +797,7 @@ test_wizard_doc_real_browser_trigger_examples() {
 test_wizard_doc_recommends_opus_1m
 test_wizard_doc_frames_opus_1m_as_opt_in
 test_wizard_doc_no_default_opus_1m_wording
-test_wizard_doc_documents_autocompact_disable_trap
+test_wizard_doc_states_the_sub_200k_window_mechanic
 test_wizard_doc_has_no_harmful_opus46_autocompact_pairing
 test_sdlc_skill_documents_autocompact_disable_trap
 test_sdlc_skill_frames_model_as_recommendation

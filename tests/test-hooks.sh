@@ -2668,10 +2668,10 @@ EOF
     mkdir -p "$tmpdir/home"
     output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir/home" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -qE '120000|120[Kk]|120,000'; then
-        pass "#207: warning shows effective compound trigger (120K = 30% × 400K)"
+    if echo "$output" | grep -qE '\b114000\b'; then
+        pass "#207: warning shows effective compound trigger (114000 = 30% of 400K less overhead)"
     else
-        fail "#207: expected effective trigger (120K) in warning, got: $output"
+        fail "#207: expected effective trigger 114000 (30% of 400000-20000) in warning, got: $output"
     fi
 }
 
@@ -2741,6 +2741,78 @@ test_instructions_hook_reports_sub_200k_window_fires_sooner() {
     fi
 }
 
+# Every figure below was computed independently by two reviewers from the
+# binary, then checked against the hook. They exist because the first version
+# of this branch printed "at most 17000" for a window of 50000 when the real
+# trigger is 67000 — a number that was not merely loose but INVERTED, since the
+# truth exceeded the stated upper bound across the whole sub-100000 range.
+test_instructions_hook_clamps_sub_100k_window_to_the_floor() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "50000"')
+    # EX applies max(100000, value), so 50000 resolves to a 100000 window:
+    # 100000 - 20000 overhead - 13000 cap = 67000.
+    if echo "$output" | grep -qE '\b67000\b'; then
+        pass "#520: a sub-100000 window is clamped to the floor before the trigger is computed"
+    else
+        fail "#520: WINDOW=50000 clamps to 100000 and triggers at 67000, got: $output"
+    fi
+}
+
+test_instructions_hook_reads_max_output_tokens_for_the_overhead() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "10000"')
+    # Overhead is min(max_output_tokens, 20000): 150000 - 10000 - 13000 = 127000.
+    if echo "$output" | grep -qE '\b127000\b'; then
+        pass "#520: overhead follows CLAUDE_CODE_MAX_OUTPUT_TOKENS rather than assuming 20000"
+    else
+        fail "#520: max-output 10000 moves the trigger to 127000, not 117000, got: $output"
+    fi
+}
+
+test_instructions_hook_says_nothing_fires_when_compaction_is_off() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000",
+    "DISABLE_AUTO_COMPACT": "1"')
+    local ok=true
+    echo "$output" | grep -qE 'OFF' || ok=false
+    # With kO false, LXy returns before any trigger is evaluated, so a sentence
+    # about when compaction "fires" would be false.
+    echo "$output" | grep -qiE 'fires (at|sooner)' && ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: reports compaction OFF instead of quoting a trigger that cannot fire"
+    else
+        fail "#520: DISABLE_AUTO_COMPACT=1 means no trigger fires at all, got: $output"
+    fi
+}
+
+test_instructions_hook_ignores_a_zero_percentage_like_the_binary_does() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "0"')
+    # 0 is falsy in CCo, so the binary ignores it and uses the normal cap.
+    # Reporting a zero-token trigger would be exactly the confident-wrong-number
+    # failure this hook exists to prevent.
+    if echo "$output" | grep -qE 'fires at 0 tokens|at 0 tokens'; then
+        fail "#520: PCT_OVERRIDE=0 is ignored by CCo; the hook must not report a zero trigger, got: $output"
+    else
+        pass "#520: a zero percentage is treated as unset, as the binary treats it"
+    fi
+}
+
+test_instructions_hook_reads_a_leading_zero_percentage_as_decimal() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "08"')
+    # parseFloat("08") is 8. Without 10#, $(( )) reads it as octal and aborts
+    # the hook. 8% of (400000 - 20000) = 30400.
+    if echo "$output" | grep -qE '\b30400\b'; then
+        pass "#520: a leading-zero percentage is decimal, not octal"
+    else
+        fail "#520: PCT=08 is 8 percent and triggers at 30400, got: $output"
+    fi
+}
+
 # The false positive. 35% x 1000000 = 350000, well above the 200000 floor.
 # This is the config that actually works on a local 1M Opus session, and the
 # hook used to call it a misconfig.
@@ -2758,23 +2830,25 @@ test_instructions_hook_silent_on_deliberate_large_compound_trigger() {
 # Same input, the other half of the claim. The hook cannot know which model
 # will run, but it CAN evaluate the same formula at 200000 and print that as a
 # number. It used to print a ratio instead — "roughly a third" — which is wrong
-# here: 35% x 1000000 reports 350000, and a 200K model yields 70000, a fifth.
+# here: 35% of (1000000 - 20000) reports 343000, and a 200K model yields 63000.
 # Cross-model review flagged that a wrong ratio next to "not an error" approves
-# a 70000 trigger. So: the exact figure must appear, and no approving verdict.
+# a trigger the hook had mis-stated. So: the exact figure must appear, and no
+# approving verdict. Both numbers moved once CCo was applied to the
+# overhead-adjusted window, which is what the binary does.
 test_instructions_hook_reports_the_200k_model_figure_not_a_ratio() {
     local output
     output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "35",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"')
     local ok=true
-    echo "$output" | grep -qE 'NOTE: autocompact fires at 350000' || ok=false
-    echo "$output" | grep -qE '\b70000\b' || ok=false
+    echo "$output" | grep -qE 'NOTE: autocompact fires at 343000' || ok=false
+    echo "$output" | grep -qE '\b63000\b' || ok=false
     # The verdict language is the defect, not just the ratio. "not an error"
     # sanctioned a trigger the hook had mis-stated by a factor of ~1.7.
     echo "$output" | grep -qiE 'not an error|roughly a third' && ok=false
     if [ "$ok" = true ]; then
-        pass "#520: reports the computed 200K-model trigger (70000), not a ratio, and passes no verdict"
+        pass "#520: reports the computed 200K-model trigger (63000), not a ratio, and passes no verdict"
     else
-        fail "#520: 35% x 1000000 must report 350000 AND the 200K figure 70000 with no approving verdict — got: $output"
+        fail "#520: 35% of (1000000-20000) must report 343000 AND the 200K figure 63000 with no approving verdict — got: $output"
     fi
 }
 
@@ -2790,11 +2864,11 @@ test_instructions_hook_still_warns_when_compound_trigger_below_floor() {
     # also satisfies — so raising AC_FLOOR silently downgraded a real warning
     # to an approving note and this test stayed green. Caught by mutation.
     echo "$output" | grep -qE 'WARNING: autocompact fires at' || ok=false
-    echo "$output" | grep -qE '120000|120[Kk]' || ok=false
+    echo "$output" | grep -qE '\b114000\b' || ok=false
     if [ "$ok" = true ]; then
         pass "#520: still WARNS (not merely notes) on the original #207 case — 120000 is below the floor"
     else
-        fail "#520: 30% x 400000 = 120000 must produce a WARNING, not a NOTE, got: $output"
+        fail "#520: 30% of (400000-20000) = 114000 must produce a WARNING, not a NOTE, got: $output"
     fi
 }
 
@@ -2814,11 +2888,11 @@ test_instructions_hook_clamps_oversized_window_before_multiplying() {
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "2000000"')
     local ok=true
     echo "$output" | grep -qE 'WARNING: autocompact fires at' || ok=false
-    echo "$output" | grep -qE '150000' || ok=false
+    echo "$output" | grep -qE '\b147000\b' || ok=false
     if [ "$ok" = true ]; then
         pass "#520: clamps a 2000000 window to 1000000 before multiplying (150000, not 300000)"
     else
-        fail "#520: 15% of a window clamped to 1000000 is 150000 and must WARN — got: $output"
+        fail "#520: 15% of a window clamped to 1000000, less overhead, is 147000 and must WARN — got: $output"
     fi
 }
 
@@ -2862,6 +2936,11 @@ EOF
 }
 
 test_instructions_hook_reports_sub_200k_window_fires_sooner
+test_instructions_hook_reads_a_leading_zero_percentage_as_decimal
+test_instructions_hook_ignores_a_zero_percentage_like_the_binary_does
+test_instructions_hook_says_nothing_fires_when_compaction_is_off
+test_instructions_hook_reads_max_output_tokens_for_the_overhead
+test_instructions_hook_clamps_sub_100k_window_to_the_floor
 test_instructions_hook_silent_on_deliberate_large_compound_trigger
 test_instructions_hook_reports_the_200k_model_figure_not_a_ratio
 test_instructions_hook_still_warns_when_compound_trigger_below_floor
