@@ -503,14 +503,17 @@ test_wizard_doc_documents_autocompact_disable_trap() {
     # a quotation, not an instruction, so a claim that only exists inside a
     # fence is not guidance no matter how it renders. The FORMULA BLOCK is the
     # opposite: it is deliberately fenced, it is an illustration rather than a
-    # claim, and checking it against the projection would demand it be
-    # un-fenced. Anchors that verify presence run on the raw section; pins that
-    # verify a claim run on the projection.
-    local section_raw
-    section_raw=$(awk '/^#### Autocompact mechanics/{f=1;print;next} f && /^#{1,4} /{exit} f' "$DOC")
+    # claim, and `--rendered` would demand it be un-fenced. So it gets
+    # `--visible`, which keeps fenced content but still drops anything hidden.
+    # It does NOT get raw bytes: cross-model review wrapped the formula fence
+    # in an HTML comment and all 129 assertions stayed green — the same defect
+    # as the prose pins had, on the one surface I had exempted.
+    local section_vis
+    section_vis=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --visible "$DOC" \
+        | awk '/^#### Autocompact mechanics/{f=1;print;next} f && /^#{1,4} /{exit} f')
     section=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --rendered "$DOC" \
         | awk '/^#### Autocompact mechanics/{f=1;print;next} f && /^#{1,4} /{exit} f')
-    if [ -z "$section_raw" ]; then
+    if [ -z "$section_vis" ]; then
         fail "#520: the 'Autocompact mechanics' section is gone — this assertion is now vacuous, re-anchor it"
         return
     fi
@@ -566,9 +569,10 @@ test_wizard_doc_documents_autocompact_disable_trap() {
     _doc_line_begins_with "$section" '2. **The two vars multiply.**' \
         || missing="$missing trap2-canonical-polarity"
     # And the formula block, which is what makes the rest checkable.
-    # Raw section: the formula lives inside a fence by design (see above).
-    printf '%s' "$section_raw" | grep -qE 'min\(model_window' || missing="$missing window-formula"
-    printf '%s' "$section_raw" | grep -qE 'window .{0,3} 13000' || missing="$missing threshold-cap-formula"
+    # Visible projection: the formula lives inside a fence by design, but a
+    # fence inside a comment is not visible to anyone (see above).
+    printf '%s' "$section_vis" | grep -qE 'min\(model_window' || missing="$missing window-formula"
+    printf '%s' "$section_vis" | grep -qE 'window .{0,3} 13000' || missing="$missing threshold-cap-formula"
     if [ -z "$missing" ]; then
         pass "#520: the autocompact section names the sub-200000 disable trap and the multiplication"
     else
