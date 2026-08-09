@@ -158,25 +158,107 @@ fi
 # this hook and model-effort-check.sh both fire on SessionStart, so two checks
 # would double-print the nudge and risk drifting out of sync.
 
-# Autocompact compound-misconfig check (#207). Setting BOTH
-# CLAUDE_AUTOCOMPACT_PCT_OVERRIDE and CLAUDE_CODE_AUTO_COMPACT_WINDOW
-# compounds — e.g. 30% × 400000 = 120000 token trigger, which on a 1M
-# window fires at ~12% of context. The wizard doc lists them as
-# alternatives ("PCT_OVERRIDE=30 OR AUTO_COMPACT_WINDOW=400000") but the
-# "or" is easy to misread, and the consumer in #207 hit autocompact at
-# 12% in a fresh session. Surface the misconfig with the effective
-# trigger so it's diagnosable from the warning alone.
+# Autocompact effective-trigger check (#207, retargeted by #520).
+#
+# Verified against decompiled Claude Code v2.1.221 (functions EX, CCo, F0s, ZJu,
+# fEe, kO); evidence recorded on GH #520:
+#
+#   window    = min(model_window, clamp(WINDOW_env, 100000..1000000))    [EX]
+#   threshold = min(floor(window x pct/100), window - 13000)             [CCo]
+#   ...with up to 20000 tokens of system overhead subtracted first       [fEe]
+#
+# This check originally fired on "both vars set" (#207). That was the wrong
+# signature in both directions, and #520 corrects it:
+#
+#   FALSE POSITIVE — setting both is multiplication, not a misconfiguration.
+#   35% of a 1000000 window is a ~350000 trigger, which is a sane deliberate
+#   choice for anyone compacting early on purpose (context quality, #483). The
+#   old check called that a misconfig, so the hook warned against a working
+#   config every session.
+#
+#   FALSE NEGATIVE — the dangerous setting was invisible. ZJu returns false
+#   unconditionally below bIe = 200000, so a window in 100000..199999 SILENTLY
+#   DISABLES autocompact altogether. That is the likeliest accident here: the
+#   consumer is trying to compact EARLIER and instead turns compaction off, with
+#   nothing to tell them. Checked first — if autocompact is off, any statement
+#   about an effective trigger would be a lie.
+#
+# So the signature is the effective trigger landing below 200000, whichever
+# vars produced it — not the number of vars set.
+AC_FLOOR=200000
+
+# READ THE LIVE ENV FIRST, settings.json only as a fallback.
+#
+# An earlier version of this check read `.claude/settings.json` alone, and I
+# argued a session hook could not see the environment because it was fixed at
+# launch. That was wrong, and cross-model review disproved it by probe: a hook
+# is a CHILD PROCESS and inherits the exported variables, so it can read their
+# effective values even though it cannot know their source or unset them.
+#
+# This matters because the env is what actually governs the session, while
+# settings.json is only a claim about it. The incident behind #520 was exactly
+# that gap — a value inherited from the user's GLOBAL settings, invisible in
+# the project file, with the operator reading the file and seeing nothing.
+AC_PCT="${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}"
+AC_WIN="${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}"
+AC_SRC="the live environment"
 SETTINGS_JSON="$PROJECT_DIR/.claude/settings.json"
-if [ -f "$SETTINGS_JSON" ]; then
+if [ -z "$AC_PCT" ] && [ -z "$AC_WIN" ] && [ -f "$SETTINGS_JSON" ]; then
+    AC_SRC=".claude/settings.json"
     AC_PCT=$(grep -o '"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"[[:space:]]*:[[:space:]]*"[0-9]*"' "$SETTINGS_JSON" \
         | head -1 | sed 's/.*"\([0-9]*\)"$/\1/')
     AC_WIN=$(grep -o '"CLAUDE_CODE_AUTO_COMPACT_WINDOW"[[:space:]]*:[[:space:]]*"[0-9]*"' "$SETTINGS_JSON" \
         | head -1 | sed 's/.*"\([0-9]*\)"$/\1/')
-    if [ -n "$AC_PCT" ] && [ -n "$AC_WIN" ]; then
-        # Effective trigger = pct% of window (integer math; both pure digits per the regex).
-        AC_TRIGGER=$(( AC_PCT * AC_WIN / 100 ))
-        AC_PCT_OF_1M=$(( AC_TRIGGER * 100 / 1000000 ))
-        echo "WARNING: autocompact compound misconfig — CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${AC_PCT} AND CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} both set in .claude/settings.json compound to ${AC_TRIGGER} tokens (~${AC_PCT_OF_1M}% of 1M). Pick one — see wizard doc '1M vs 200K' (#207)."
+fi
+# Non-numeric values are treated as unset — the arithmetic below would abort
+# the hook otherwise, and a hook that dies is a hook that checks nothing.
+case "$AC_PCT" in ''|*[!0-9]*) AC_PCT="" ;; esac
+case "$AC_WIN" in ''|*[!0-9]*) AC_WIN="" ;; esac
+
+if [ -n "$AC_WIN" ] && [ "$AC_WIN" -lt "$AC_FLOOR" ]; then
+    # The clamp floor is 100000, so a smaller value is raised to 100000 and is
+    # still below 200000 — the whole sub-200000 range disables, and no value in
+    # it is recoverable by clamping.
+    echo "WARNING: autocompact is DISABLED — CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) is below 200000, and Claude Code turns auto-compaction off entirely below that threshold rather than compacting earlier. Raise it to 200000 or more, or remove it to restore the model's own default (#520)."
+elif [ -n "$AC_PCT" ] && [ -n "$AC_WIN" ]; then
+    # Both set: they multiply, so report the product — but reproduce the real
+    # arithmetic, not a naive one.
+    #
+    # window = min(model_window, clamp(WINDOW, 100000..1000000))     [EX]
+    # trigger = min(floor(window x pct/100), window - 13000)         [CCo]
+    #
+    # Clamping matters: 15% of a stated 2000000 looks like 300000, but the
+    # clamp caps the window at 1000000, so the real figure is 150000 — below
+    # the floor, and the very surprise this check exists to catch.
+    # The -13000 cap matters too: 100% of a 200000 window is not 200000, it is
+    # 187000. Reporting the uncapped number would overstate the headroom.
+    AC_WIN_EFF="$AC_WIN"
+    [ "$AC_WIN_EFF" -gt 1000000 ] && AC_WIN_EFF=1000000
+    [ "$AC_WIN_EFF" -lt 100000 ] && AC_WIN_EFF=100000
+    AC_TRIGGER=$(( AC_PCT * AC_WIN_EFF / 100 ))
+    AC_CAP=$(( AC_WIN_EFF - 13000 ))
+    [ "$AC_TRIGGER" -gt "$AC_CAP" ] && AC_TRIGGER="$AC_CAP"
+    # Still an UPPER BOUND, and described as one: the hook cannot know which
+    # model will run, and a smaller model's window wins the min(). Up to 20000
+    # tokens of system overhead is also subtracted first, which only pushes the
+    # real trigger lower.
+    #
+    # The hook cannot know the model, but it CAN evaluate the same formula for
+    # the most common smaller window and report that number as fact. An earlier
+    # version said "roughly a third" instead; that is wrong for most inputs —
+    # 35% x 1000000 reports 350000 but yields 70000 on a 200K model, a fifth —
+    # and pairing a wrong ratio with "not an error" approved a 70000 trigger.
+    # Do NOT compare this figure against AC_FLOOR: a 200K window caps at 187000,
+    # so the floor would flag every user of this branch.
+    AC_WIN_200="$AC_WIN_EFF"
+    [ "$AC_WIN_200" -gt 200000 ] && AC_WIN_200=200000
+    AC_TRIG_200=$(( AC_PCT * AC_WIN_200 / 100 ))
+    AC_CAP_200=$(( AC_WIN_200 - 13000 ))
+    [ "$AC_TRIG_200" -gt "$AC_CAP_200" ] && AC_TRIG_200="$AC_CAP_200"
+    if [ "$AC_TRIGGER" -lt "$AC_FLOOR" ]; then
+        echo "WARNING: autocompact fires at ${AC_TRIGGER} tokens or less — CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${AC_PCT} and CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) multiply. On a 200K-window model: ${AC_TRIG_200}. Raise the product past 200000 or drop either (#207, #520)."
+    else
+        echo "NOTE: autocompact fires at ${AC_TRIGGER} tokens AT MOST — CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${AC_PCT} and CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) multiply. On a 200K-window model the same pair fires at ${AC_TRIG_200}. Setting CLAUDE_CODE_AUTO_COMPACT_WINDOW alone is steadier (#520)."
     fi
 fi
 

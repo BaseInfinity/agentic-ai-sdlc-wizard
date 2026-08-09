@@ -9,6 +9,18 @@ HOOKS_DIR="$SCRIPT_DIR/../hooks"
 PASSED=0
 FAILED=0
 
+# The suite owns its environment (#520).
+#
+# instructions-loaded-check.sh reads the LIVE env before falling back to
+# settings.json, which is correct — the env is what governs the session. But it
+# means a developer who has these set for their own use silently poisons every
+# fixture here: the hook reports their values instead of the fixture's, and
+# assertions fail locally while passing in a clean CI runner. That is the same
+# green-here-red-there class as #488, so clear them once, up front, and let the
+# tests that care about env precedence set them explicitly and locally.
+unset CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
+unset CLAUDE_CODE_AUTO_COMPACT_WINDOW
+
 # Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -2663,10 +2675,195 @@ EOF
     fi
 }
 
+# --- GH #520: the compound check was aimed at the wrong signature -----------
+#
+# Verified against decompiled Claude Code v2.1.221 (functions EX, CCo, F0s, ZJu,
+# fEe, kO), recorded on GH #520:
+#
+#   window    = min(model_window, clamp(WINDOW_env, 100000..1000000))    [EX]
+#   threshold = min(floor(window x pct/100), window - 13000)             [CCo]
+#   ...with up to 20000 tokens of system overhead subtracted first       [fEe]
+#
+# Two consequences the original #207 check gets wrong:
+#
+#  1. Setting both vars is ARITHMETIC, not a misconfiguration. 35% of a 1M
+#     window is a ~350K trigger, which is a perfectly sane deliberate choice
+#     (the maintainer runs it for context-quality reasons, GH #483). The old
+#     check warned on it, so the hook was firing on a working config — and the
+#     only configuration empirically proven to compact early on a local 1M
+#     Opus session at that.
+#
+#  2. The genuinely dangerous setting was invisible to it: ZJu returns false
+#     unconditionally for any window below bIe = 200000, so WINDOW in the
+#     100000..199999 range SILENTLY DISABLES autocompact altogether. A consumer
+#     trying to be conservative by picking a small window gets no autocompact
+#     at all, and nothing told them.
+#
+# So the signature is not "both set" — it is "the effective trigger is below
+# 200000", whichever vars produced it. These three assertions pin that.
+
+_autocompact_hook_output() {
+    # $1 = the JSON body of the settings "env" block.
+    local tmpdir output env_body="$1"
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    mkdir -p "$tmpdir/.claude" "$tmpdir/bin" "$tmpdir/home"
+    printf '{\n  "env": {\n%s\n  }\n}\n' "$env_body" > "$tmpdir/.claude/settings.json"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/npm"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/claude"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/codex"
+    chmod +x "$tmpdir/bin/npm" "$tmpdir/bin/claude" "$tmpdir/bin/codex"
+    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" \
+        HOME="$tmpdir/home" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" \
+        "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    printf '%s' "$output"
+}
+
+# A window under 200000 disables autocompact entirely (ZJu). Nothing detected
+# this before, and it is the most likely accident in the whole space: the
+# consumer is TRYING to compact earlier and instead turns it off.
+test_instructions_hook_warns_on_sub_200k_window_disable_trap() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000"')
+    local ok=true
+    echo "$output" | grep -q 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' || ok=false
+    echo "$output" | grep -qiE 'disabl' || ok=false
+    echo "$output" | grep -qE '200000|200[Kk]' || ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: warns that a sub-200000 window silently disables autocompact"
+    else
+        fail "#520: WINDOW=150000 disables autocompact entirely (ZJu < bIe=200000) and the hook said nothing useful, got: $output"
+    fi
+}
+
+# The false positive. 35% x 1000000 = 350000, well above the 200000 floor.
+# This is the config that actually works on a local 1M Opus session, and the
+# hook used to call it a misconfig.
+test_instructions_hook_silent_on_deliberate_large_compound_trigger() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "35",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"')
+    if echo "$output" | grep -qiE 'misconfig|WARNING: autocompact'; then
+        fail "#520: 35% x 1000000 = 350000 is a deliberate, working config — the hook must not call it a misconfig, got: $output"
+    else
+        pass "#520: silent on a compound trigger that lands above the 200000 floor"
+    fi
+}
+
+# Same input, the other half of the claim. The hook cannot know which model
+# will run, but it CAN evaluate the same formula at 200000 and print that as a
+# number. It used to print a ratio instead — "roughly a third" — which is wrong
+# here: 35% x 1000000 reports 350000, and a 200K model yields 70000, a fifth.
+# Cross-model review flagged that a wrong ratio next to "not an error" approves
+# a 70000 trigger. So: the exact figure must appear, and no approving verdict.
+test_instructions_hook_reports_the_200k_model_figure_not_a_ratio() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "35",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"')
+    local ok=true
+    echo "$output" | grep -qE 'NOTE: autocompact fires at 350000' || ok=false
+    echo "$output" | grep -qE '\b70000\b' || ok=false
+    # The verdict language is the defect, not just the ratio. "not an error"
+    # sanctioned a trigger the hook had mis-stated by a factor of ~1.7.
+    echo "$output" | grep -qiE 'not an error|roughly a third' && ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: reports the computed 200K-model trigger (70000), not a ratio, and passes no verdict"
+    else
+        fail "#520: 35% x 1000000 must report 350000 AND the 200K figure 70000 with no approving verdict — got: $output"
+    fi
+}
+
+# The regression guard: the real #207 case must still fire, because its
+# effective trigger (120000) IS below the floor.
+test_instructions_hook_still_warns_when_compound_trigger_below_floor() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000"')
+    local ok=true
+    # Must be the WARNING form specifically. An earlier version of this
+    # assertion only required "autocompact" + "120000", which the NOTE branch
+    # also satisfies — so raising AC_FLOOR silently downgraded a real warning
+    # to an approving note and this test stayed green. Caught by mutation.
+    echo "$output" | grep -qE 'WARNING: autocompact fires at' || ok=false
+    echo "$output" | grep -qE '120000|120[Kk]' || ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: still WARNS (not merely notes) on the original #207 case — 120000 is below the floor"
+    else
+        fail "#520: 30% x 400000 = 120000 must produce a WARNING, not a NOTE, got: $output"
+    fi
+}
+
 test_instructions_hook_warns_on_autocompact_compound_misconfig
 test_instructions_hook_silent_on_single_autocompact_pct_only
 test_instructions_hook_silent_on_single_autocompact_window_only
 test_instructions_hook_compound_warning_shows_effective_trigger
+# The window is clamped to 100000..1000000 before the percentage is applied
+# (EX). Multiplying the RAW setting overstates the trigger: 15% of a stated
+# 2000000 looks like 300000 and would be waved through, but the clamp caps the
+# window at 1000000, so the real trigger is 150000 — below the floor, and
+# exactly the early-compaction surprise this check exists to catch. Found by
+# cross-model review after the first version of the fix shipped the raw product.
+test_instructions_hook_clamps_oversized_window_before_multiplying() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "15",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "2000000"')
+    local ok=true
+    echo "$output" | grep -qE 'WARNING: autocompact fires at' || ok=false
+    echo "$output" | grep -qE '150000' || ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: clamps a 2000000 window to 1000000 before multiplying (150000, not 300000)"
+    else
+        fail "#520: 15% of a window clamped to 1000000 is 150000 and must WARN — got: $output"
+    fi
+}
+
+# The live env governs the session; settings.json is only a CLAIM about it.
+# The #520 incident was exactly that gap — the value came from the user's
+# GLOBAL settings, so the project file showed nothing while the session ran on
+# an inherited override. A hook is a child process and inherits exported vars,
+# so it can and must read them. This fixture sets a disable-trap value in the
+# env while settings.json holds a perfectly sane one: the env must win.
+test_instructions_hook_prefers_live_env_over_settings_file() {
+    local tmpdir output
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    mkdir -p "$tmpdir/.claude" "$tmpdir/bin" "$tmpdir/home"
+    cat > "$tmpdir/.claude/settings.json" <<'EOF'
+{
+  "env": {
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000"
+  }
+}
+EOF
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/npm"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/claude"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/codex"
+    chmod +x "$tmpdir/bin/npm" "$tmpdir/bin/claude" "$tmpdir/bin/codex"
+    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" \
+        HOME="$tmpdir/home" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW="150000" \
+        "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    local ok=true
+    echo "$output" | grep -qE 'WARNING: autocompact is DISABLED' || ok=false
+    echo "$output" | grep -q '150000' || ok=false
+    echo "$output" | grep -qi 'live environment' || ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: reads the live env over settings.json, and names which it used"
+    else
+        fail "#520: env WINDOW=150000 must win over settings.json's 400000 — got: $output"
+    fi
+}
+
+test_instructions_hook_warns_on_sub_200k_window_disable_trap
+test_instructions_hook_silent_on_deliberate_large_compound_trigger
+test_instructions_hook_reports_the_200k_model_figure_not_a_ratio
+test_instructions_hook_still_warns_when_compound_trigger_below_floor
+test_instructions_hook_clamps_oversized_window_before_multiplying
+test_instructions_hook_prefers_live_env_over_settings_file
 
 echo ""
 echo "--- CC release review nudge (#85) ---"
