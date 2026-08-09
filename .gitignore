@@ -33,7 +33,8 @@ tests/fixtures/community-scanner/
 /.playwright-mcp/
 /anthropic-sonnet-*.png
 /awesome-claude-code-subagents/
-scripts/__pycache__/
+# Unanchored: Python helpers now live in tests/lib/ as well as scripts/
+__pycache__/
 /~/
 
 # tests/e2e/score-history.txt is recreated by test-cusum.sh on each run
