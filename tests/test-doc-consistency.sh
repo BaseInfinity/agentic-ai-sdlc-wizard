@@ -476,6 +476,29 @@ test_wizard_doc_mentions_permissions_command() {
 # protects someone: the sub-200000 disable trap must be named, on the surface
 # that reader is holding. Naming the threshold is what makes it actionable —
 # prose about "small windows" would not be.
+# Does the text ASSERT that something disables compaction? Three attempts got
+# here:
+#   1. exact retired sentence  — missed "disables autocompact altogether"
+#   2. bare pattern            — failed the CORRECT sentence "nothing disables
+#                                compaction outright", the mirror of the very
+#                                polarity defect this guard exists for
+#   3. pattern + negator       — defeated by a DOWNSTREAM negator, because the
+#                                exclusion ran on the whole line: "A sub-200000
+#                                window disables compaction outright; no later
+#                                trigger occurs" excluded itself via the "no".
+# So the negator has to be scoped to the CLAUSE carrying the claim, not the
+# line. Clauses are split on . ; and — before the test is applied.
+#
+# `\bdisables?\b` and not `disables?`: the latter matches inside "disabled",
+# which caught this document's own past-tense account of the mistake — a guard
+# that forbids describing the error it exists to prevent is unusable.
+_doc_asserts_disabling() {
+    printf '%s' "$1" \
+        | sed 's/[.;]/\n/g; s/ — /\n/g' \
+        | grep -iE '\bdisables?\b[^,]{0,40}(autocompact|compaction)' \
+        | grep -viqE 'nothing|never|\bno\b|\bnot\b'
+}
+
 test_wizard_doc_states_the_sub_200k_window_mechanic() {
     local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
@@ -541,8 +564,7 @@ test_wizard_doc_states_the_sub_200k_window_mechanic() {
     # outright" is a CORRECT sentence and a bare pattern fails it, which is the
     # mirror image of the polarity defect this guard exists for. So: the
     # assertion shape, minus anything carrying a negator.
-    if printf '%s' "$section" | grep -iE 'disables?[^.]{0,40}(autocompact|compaction)' \
-        | grep -viqE 'nothing|never|\bno\b|\bnot\b'; then
+    if _doc_asserts_disabling "$section"; then
         missing="$missing retired-disable-falsehood"
     fi
     # The multiplication must stay documented — it is real, it is just not a
@@ -645,7 +667,7 @@ test_wizard_doc_has_no_harmful_opus46_autocompact_pairing() {
 # consumer's .claude/skills/sdlc/, so it is the surface where wrong autocompact
 # advice reaches the most people — it is where the `PCT_OVERRIDE=30` pairing
 # that #520 deleted had been sitting.
-test_sdlc_skill_documents_autocompact_disable_trap() {
+test_sdlc_skill_states_the_sub_200k_window_mechanic() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
     local missing=""
@@ -664,8 +686,7 @@ test_sdlc_skill_documents_autocompact_disable_trap() {
         || missing="$missing sooner-consequence-bound-to-cause"
     # The retired falsehood is a denylist entry on this surface too: it shipped
     # to every consumer repo via npm and was certified thirteen times.
-    if printf '%s' "$skill_vis" | grep -iE 'disables?[^.]{0,40}(autocompact|compaction)' \
-        | grep -viqE 'nothing|never|\bno\b|\bnot\b'; then
+    if _doc_asserts_disabling "$skill_vis"; then
         missing="$missing retired-disable-falsehood"
     fi
     # ...and the polarity, which no token pattern can carry. Same finding as the
@@ -799,7 +820,7 @@ test_wizard_doc_frames_opus_1m_as_opt_in
 test_wizard_doc_no_default_opus_1m_wording
 test_wizard_doc_states_the_sub_200k_window_mechanic
 test_wizard_doc_has_no_harmful_opus46_autocompact_pairing
-test_sdlc_skill_documents_autocompact_disable_trap
+test_sdlc_skill_states_the_sub_200k_window_mechanic
 test_sdlc_skill_frames_model_as_recommendation
 test_wizard_doc_has_browser_tooling_policy_section
 test_wizard_doc_browser_policy_covers_three_way_split
