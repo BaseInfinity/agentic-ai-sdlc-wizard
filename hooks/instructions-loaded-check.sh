@@ -233,15 +233,108 @@ fi
 # So the hook declares what it evaluates and refuses to guess at the rest:
 #   integers:  ^[0-9]+$        (window, max-output-tokens)
 #   decimals:  ^[0-9]+(\.[0-9]+)?$  (percentage — parseFloat honours 30.5)
-# Anything else that is SET is named on screen with no number attached. The
-# guarantee is then finite and checkable: no input produces a false figure, and
-# unsupported input produces no figure.
+# Anything else that is SET is echoed back verbatim with no COMPUTED figure.
+#
+# State the guarantee precisely, because the loose version ("no number
+# anywhere") is false on its face — the echoed value may itself contain digits,
+# and the issue reference is a number. What the hook promises is narrower and
+# actually checkable: for an out-of-domain input it emits no COMPUTED TOKEN
+# FIGURE, i.e. no "fires at N" sentence. Echoing the operator's own value back
+# is not a claim about the binary; computing a trigger from a value the hook
+# could not parse is. The tests assert the absence of that sentence, not the
+# absence of digits.
 _ac_is_int() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; return 0; }
+# Shell arithmetic is 64-bit and WRAPS on overflow, silently and without error:
+# $((10#18446744073709701616)) evaluates to 150000, so a 20-digit window would
+# have been clamped, subtracted and reported as an ordinary 117000 — a
+# plausible figure manufactured by an overflow, which is the worst kind of
+# wrong. The binary has no such wrap: `bp()` parses to a double and `EX` clamps
+# to 1000000. Every value here is small, so magnitude is settled on the STRING
+# before any arithmetic sees it, and nothing large ever reaches $(( )).
+_ac_clamp_int() {
+    _v=$(printf '%s' "$1" | sed 's/^0*//')
+    [ -z "$_v" ] && { printf '0'; return; }
+    if [ "${#_v}" -gt 7 ]; then printf '%s' "$2"; else printf '%s' "$_v"; fi
+}
+# SOURCE-BLIND VALUE READER. Every settings key is captured the same way: any
+# string value, trimmed, then handed to the SAME classifiers the env path uses.
+# Three separate defects (the overhead sentinel, an out-of-domain max-output,
+# and a padded disable) were all one root cause — file-side reads were narrower
+# than the binary semantics the env path mirrors, so values vanished at their
+# grep before any classifier could see them. Widening greps one at a time fixes
+# instances; classifying source-blind eliminates the class.
+# JSON is not line-oriented and grep is. `"KEY":` followed by its value on the
+# NEXT line is ordinary formatting — any formatter or manual wrap produces it —
+# and a record-bound pattern cannot cross the newline, so the value vanished
+# before classification and the default was silently restored. Flattening first
+# is safe and exact: a JSON string may not contain a literal newline, so
+# collapsing line endings to spaces cannot merge or split any value.
+_ac_flat() { tr '\n\r' '  ' < "$1" 2>/dev/null; }
+# JSON scalars need no quotes, and jq emits numbers and booleans unquoted by
+# default. Claude Code copies settings env values into process.env untouched and
+# the setter string-coerces, so `"DISABLE_AUTO_COMPACT": true` really does
+# disable compaction — confirmed by launching the binary, not inferred. A reader
+# that required quotes therefore printed a live trigger for a config whose
+# sessions never compact. The encoding layer is exactly what a source-blind
+# reader owns, so it is handled here rather than at any call site.
+_ac_raw() {
+    _ac_flat "$1" | grep -oE "\"$2\"[[:space:]]*:[[:space:]]*(\"[^\"]*\"|[^,}[:space:]]+)" \
+        | tail -1 | sed "s/^\"$2\"[[:space:]]*:[[:space:]]*//"
+}
+_ac_has_key() { _ac_flat "$1" | grep -q "\"$2\"[[:space:]]*:"; }
+# DECODE CONFIDENCE. A JSON unicode escape can spell a key name that this reader
+# greps for literally: "CLAUDE_CODE_MAX_OUTPUT_TOKEN\u0053" IS
+# CLAUDE_CODE_MAX_OUTPUT_TOKENS to the binary, and the value is applied. Missing
+# it reports the key ABSENT, which restores a default and prints a figure for a
+# config the operator never wrote.
+#
+# \u is the ONLY escape in JSON's set (\" \\ \/ \b \f \n \r \t \uXXXX) that can encode
+# an ASCII letter, and every key this hook reads is [A-Za-z_]. So refusing to
+# read a file that contains one CLOSES the respelling class here — it does not
+# move it one level further out, which is what each of the five previous
+# encoding fixes did. Nothing generates this spelling (JSON.stringify never
+# escapes ASCII), so the cost is a no-claim on files no formatter produces.
+_ac_label() {
+    case "$1" in
+        "$SETTINGS_JSON") printf '.claude/settings.json' ;;
+        *) printf '~/.claude/settings.json' ;;
+    esac
+}
+_ac_undecodable() {
+    # ERE, and \\ so grep gets a LITERAL backslash. As a BRE, \u is undefined per
+    # POSIX and BSD grep reads it as a bare u — so the guard matched issue4522
+    # and value1000, refused the file, and suppressed a figure that was correct.
+    # It was never observed NOT firing, which is the only test that mattered.
+    _ac_flat "$1" | grep -qE '\\u[0-9A-Fa-f]{4}'
+}
+# PRESENCE IS DECOUPLED FROM PARSE, and that decoupling is what closes the class
+# rather than the list of encodings handled above. If a key is there but its
+# value does not come back as a scalar this reader understands, the answer is
+# "unreadable" — never "absent". Absent silently restores a default and prints a
+# figure computed as though the operator had configured nothing; unreadable
+# degrades to the no-claim NOTE. That holds for EVERY key read here: the
+# figure-bearing keys route the sentinel into AC_UNREAD, and since round 20 so
+# do the disable keys, which alone used to read "unreadable" as "not disabling"
+# and print a figure for a session that never compacts.
+# Returns: the value, or the literal string __AC_UNREADABLE__.
+_ac_setting() {
+    _r=$(_ac_raw "$1" "$2")
+    if [ -z "$_r" ]; then
+        if _ac_has_key "$1" "$2"; then printf '__AC_UNREADABLE__'; fi
+        return
+    fi
+    case "$_r" in
+        '""') return ;;
+        '"'*'"') _r=$(printf '%s' "$_r" | sed 's/^"//; s/"$//') ;;
+    esac
+    _ac_trim "$_r"
+}
 _ac_is_dec() { case "$1" in ''|*[!0-9.]*|*.*.*|.*|*.) return 1 ;; esac; return 0; }
 # Values that are set but outside the domain. Any entry here suppresses EVERY
 # figure, not just the one it came from: an unreadable max-output makes the
 # overhead unknowable, which makes the trigger unknowable too.
 AC_UNREAD=""
+AC_BAD_FILE=""
 
 # Overhead is min(max_output_tokens, 20000) [fEe/qfr]. 20000 is the default; a
 # lower CLAUDE_CODE_MAX_OUTPUT_TOKENS reduces it and moves the trigger LATER,
@@ -261,11 +354,12 @@ if [ -n "$AC_MO_RAW" ]; then
     if _ac_is_int "$AC_MO_RAW"; then
         # `ABe` rejects 0, so a zero here is ignored and the model default
         # applies — which means the FULL 20000 comes off, not none of it.
-        if [ "$((10#$AC_MO_RAW))" -gt 0 ] && [ "$((10#$AC_MO_RAW))" -lt 20000 ]; then
-            AC_OVH=$((10#$AC_MO_RAW))
+        AC_MO_N=$(_ac_clamp_int "$AC_MO_RAW" 20000)
+        if [ "$AC_MO_N" -gt 0 ] && [ "$AC_MO_N" -lt 20000 ]; then
+            AC_OVH="$AC_MO_N"
         fi
     else
-        AC_UNREAD="CLAUDE_CODE_MAX_OUTPUT_TOKENS='${AC_MO_RAW}'"
+        AC_UNREAD="CLAUDE_CODE_MAX_OUTPUT_TOKENS='${AC_MO_RAW}' (the live environment)"
     fi
 fi
 
@@ -295,21 +389,75 @@ SETTINGS_JSON="$PROJECT_DIR/.claude/settings.json"
 # and then printed a trigger for compaction that never fires.
 for _ac_sf in "$SETTINGS_JSON" "$HOME/.claude/settings.json"; do
     [ -z "$AC_OFF" ] && [ -f "$_ac_sf" ] || continue
-    if grep -q '"autoCompactEnabled"[[:space:]]*:[[:space:]]*false' "$_ac_sf" \
-       || grep -qiE '"(DISABLE_AUTO_COMPACT|DISABLE_COMPACT)"[[:space:]]*:[[:space:]]*"(1|true|yes|on)"' "$_ac_sf"; then
-        AC_OFF=1
-        # deliberately NOT AC_OFF_SURE — see its declaration
+    # A file this reader cannot decode is not evidence of anything, and reading
+    # it anyway would attribute a figure to settings the binary resolves
+    # differently. Named once per FILE, not once per key: the keys are not
+    # individually suspect, the file is.
+    if _ac_undecodable "$_ac_sf"; then
+        AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }a \u escape in $(_ac_label "$_ac_sf")"
+        [ "$_ac_sf" = "$SETTINGS_JSON" ] && AC_BAD_FILE=1
+        continue
     fi
+    _ac_ace=$(_ac_setting "$_ac_sf" autoCompactEnabled)
+    _ac_dac=$(_ac_setting "$_ac_sf" DISABLE_AUTO_COMPACT)
+    _ac_dc=$(_ac_setting "$_ac_sf" DISABLE_COMPACT)
+    # The disable keys used to fail OPEN, alone among every value this hook
+    # reads. A plain truthy test answers "not disabling" for everything it does
+    # not recognise, so the hook printed a confident trigger for a session that
+    # never compacts — the reassuring direction, which is the one direction it
+    # must never fail in.
+    #
+    # Two-state was the wrong shape. The binary String-coerces whatever the JSON
+    # holds and then applies rr()'s truthy set, so ["on"] becomes "on" and DOES
+    # disable, while {"x":1} becomes "[object Object]" and does not. This reader
+    # sees the source text, never the coercion, and _ac_raw's bare-token capture
+    # returns ["on"] intact — no comma, brace or space in it — so the value
+    # never even reached the unreadable sentinel. Anything outside the canonical
+    # spellings is therefore a value this hook CANNOT CLASSIFY, and the honest
+    # answer is no claim rather than a guess in the reassuring direction.
+    for _ac_k in autoCompactEnabled DISABLE_AUTO_COMPACT DISABLE_COMPACT; do
+        case "$_ac_k" in
+            autoCompactEnabled) _ac_v="$_ac_ace" ;;
+            DISABLE_AUTO_COMPACT) _ac_v="$_ac_dac" ;;
+            *) _ac_v="$_ac_dc" ;;
+        esac
+        _ac_v=$(_ac_trim "$_ac_v" | tr 'A-Z' 'a-z')
+        # autoCompactEnabled is the inverted one: `false` is what disables.
+        if [ "$_ac_k" = autoCompactEnabled ]; then
+            case "$_ac_v" in
+                '') _ac_st=0 ;;
+                true|1|yes|on) _ac_st=0 ;;
+                false|0|no|off) _ac_st=1 ;;
+                *) _ac_st=2 ;;
+            esac
+        else
+            case "$_ac_v" in
+                '') _ac_st=0 ;;
+                1|true|yes|on) _ac_st=1 ;;
+                0|false|no|off) _ac_st=0 ;;
+                *) _ac_st=2 ;;
+            esac
+        fi
+        case "$_ac_st" in
+            1) AC_OFF=1 ;;  # deliberately NOT AC_OFF_SURE — see its declaration
+            2) AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }${_ac_k} ($(_ac_label "$_ac_sf"), unreadable value)" ;;
+        esac
+    done
 done
-if [ -z "$AC_OVH_SET" ] && [ -f "$SETTINGS_JSON" ]; then
-    AC_MO=$(grep -o '"CLAUDE_CODE_MAX_OUTPUT_TOKENS"[[:space:]]*:[[:space:]]*"[0-9]*"' "$SETTINGS_JSON" \
-        | head -1 | sed 's/.*"\([0-9]*\)"$/\1/')
-    case "$AC_MO" in
-        ''|*[!0-9]*) ;;
-        *) if [ "$((10#$AC_MO))" -gt 0 ] && [ "$((10#$AC_MO))" -lt 20000 ]; then AC_OVH=$((10#$AC_MO)); fi ;;
-    esac
+if [ -z "$AC_OVH_SET" ] && [ -z "$AC_BAD_FILE" ] && [ -f "$SETTINGS_JSON" ]; then
+    AC_MO=$(_ac_setting "$SETTINGS_JSON" CLAUDE_CODE_MAX_OUTPUT_TOKENS)
+    if [ "$AC_MO" = "__AC_UNREADABLE__" ]; then
+        AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }CLAUDE_CODE_MAX_OUTPUT_TOKENS (.claude/settings.json, unreadable value)"
+    elif [ -n "$AC_MO" ]; then
+        if _ac_is_int "$AC_MO"; then
+            AC_MO_N=$(_ac_clamp_int "$AC_MO" 20000)
+            if [ "$AC_MO_N" -gt 0 ] && [ "$AC_MO_N" -lt 20000 ]; then AC_OVH="$AC_MO_N"; fi
+        else
+            AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }CLAUDE_CODE_MAX_OUTPUT_TOKENS='${AC_MO}' (.claude/settings.json)"
+        fi
+    fi
 fi
-if [ -z "$AC_PCT" ] && [ -z "$AC_WIN" ] && [ -f "$SETTINGS_JSON" ]; then
+if [ -z "$AC_PCT" ] && [ -z "$AC_WIN" ] && [ -z "$AC_BAD_FILE" ] && [ -f "$SETTINGS_JSON" ]; then
     AC_SRC=".claude/settings.json"
     # The sed had to widen with the grep: it still captured [0-9]* only, so a
     # decimal survived the pattern and was then thrown away by the extraction.
@@ -318,12 +466,10 @@ if [ -z "$AC_PCT" ] && [ -z "$AC_WIN" ] && [ -f "$SETTINGS_JSON" ]; then
     # from "not configured" — the operator then reads the file, sees the key,
     # and sees the hook say nothing about it. Domain filtering happens once,
     # below, for both sources.
-    AC_PCT=$(grep -o '"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS_JSON" \
-        | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
-    AC_WIN=$(grep -o '"CLAUDE_CODE_AUTO_COMPACT_WINDOW"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS_JSON" \
-        | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
-    AC_PCT=$(_ac_trim "$AC_PCT")
-    AC_WIN=$(_ac_trim "$AC_WIN")
+    AC_PCT=$(_ac_setting "$SETTINGS_JSON" CLAUDE_AUTOCOMPACT_PCT_OVERRIDE)
+    AC_WIN=$(_ac_setting "$SETTINGS_JSON" CLAUDE_CODE_AUTO_COMPACT_WINDOW)
+    [ "$AC_PCT" = "__AC_UNREADABLE__" ] && AC_PCT="an unreadable value"
+    [ "$AC_WIN" = "__AC_UNREADABLE__" ] && AC_WIN="an unreadable value"
 fi
 # DOMAIN FILTER — one place, both sources, both variables.
 #
@@ -347,15 +493,30 @@ if [ -n "$AC_PCT" ]; then
         # introduced by the very fix that made the arithmetic exact.
         if LC_ALL=C awk -v v="$AC_PCT" 'BEGIN{exit !(v+0 == 0)}'; then AC_PCT=""; fi
     else
-        AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }CLAUDE_AUTOCOMPACT_PCT_OVERRIDE='${AC_PCT}'"
+        AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }CLAUDE_AUTOCOMPACT_PCT_OVERRIDE='${AC_PCT}' (${AC_SRC})"
         AC_PCT=""
     fi
 fi
 if [ -n "$AC_WIN" ]; then
     if _ac_is_int "$AC_WIN"; then
-        if [ "$((10#$AC_WIN))" -le 0 ]; then AC_WIN=""; else AC_WIN=$((10#$AC_WIN)); fi
+        # The raw value has to be captured HERE. _ac_clamp_int returns the
+        # ceiling for anything over 7 digits, so an "is it above the ceiling"
+        # test on the CLAMPED value could only ever be true for 1000001-9999999
+        # — and the fixture that proved the echo fix lived in exactly that
+        # range, which is why the fix read as complete while 99999999 still
+        # reported itself back to the operator as 1000000.
+        AC_WIN_RAW="$AC_WIN"
+        AC_WIN_MAG=$(printf '%s' "$AC_WIN_RAW" | sed 's/^0*//')
+        AC_WIN_OVER=""
+        if [ "${#AC_WIN_MAG}" -gt 7 ]; then
+            AC_WIN_OVER=1
+        elif [ "${#AC_WIN_MAG}" -eq 7 ] && [ "$AC_WIN_MAG" -gt 1000000 ]; then
+            AC_WIN_OVER=1
+        fi
+        AC_WIN=$(_ac_clamp_int "$AC_WIN" 1000000)
+        [ "$AC_WIN" -le 0 ] && AC_WIN=""
     else
-        AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }CLAUDE_CODE_AUTO_COMPACT_WINDOW='${AC_WIN}'"
+        AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }CLAUDE_CODE_AUTO_COMPACT_WINDOW='${AC_WIN}' (${AC_SRC})"
         AC_WIN=""
     fi
 fi
@@ -365,7 +526,7 @@ if [ -n "$AC_OFF" ]; then
         if [ -n "$AC_OFF_SURE" ]; then
             echo "NOTE: auto-compaction is OFF — DISABLE_AUTO_COMPACT / DISABLE_COMPACT is set in the environment, so the window and percentage vars have no effect and the session runs to the hard limit. Nothing can unset an env var in a live process; you need claude --resume (#520)."
         else
-            echo "NOTE: a settings file sets autoCompactEnabled false (or a disable var), which would make the window and percentage vars inert. Claude Code merges settings and settings.local.json outranks the project file, so confirm with /config before trusting it. Flipping the key back takes effect immediately (#520)."
+            echo "NOTE: a settings file sets autoCompactEnabled false (or a disable var), which would make the window and percentage vars inert. Claude Code merges settings and settings.local.json outranks the project file, so confirm with /config before trusting it. If it is the autoCompactEnabled key, flipping it back takes effect immediately; a disable VAR in an env block applies at launch and needs claude --resume (#520)."
         fi
     fi
 elif [ -n "$AC_UNREAD" ]; then
@@ -373,7 +534,7 @@ elif [ -n "$AC_UNREAD" ]; then
     # binary would accept it, so any number computed by pretending it is unset
     # would be confidently wrong. Name it instead, so the operator can see the
     # hook read it and declined, rather than wondering whether it was noticed.
-    echo "NOTE: ${AC_UNREAD} (from ${AC_SRC}) — this hook evaluates plain integers only (plus a decimal percentage), so it is computing no trigger. Claude Code DOES read 1e4, 5. and 150k — and a suffix is not its human meaning: 150k parses as 150. Use a plain integer (#520)."
+    echo "NOTE: ${AC_UNREAD} — this hook evaluates plain integers only (plus a decimal percentage), so it is computing no trigger. Claude Code DOES read 1e4, 5. and 150k — and a suffix is not its human meaning: 150k parses as 150. Use a plain integer (#520)."
 elif [ -n "$AC_WIN" ]; then
     # ONE computation, not one per branch. The previous shape had a
     # sub-200000 branch ahead of a both-set branch, so WINDOW=150000 with
@@ -391,6 +552,19 @@ elif [ -n "$AC_WIN" ]; then
     # looks like 300000, but the window caps at 1000000 so the real figure is
     # 150000; and 50000 is raised to 100000, so its trigger is 67000 and not
     # the smaller number a raw subtraction gives.
+    # Keep what the operator actually wrote. Echoing the clamped number back as
+    # their setting misreports the config in the very sentence that exists to
+    # explain it — and the FIRST version of this fix still did that for every
+    # window of 8+ digits, because it tested the magnitude after the clamp had
+    # already destroyed it. AC_WIN_RAW/AC_WIN_OVER are captured before that.
+    #
+    # BOUND the echo: _ac_raw can capture a bare digit token of any length from
+    # a settings file, so echoing verbatim makes the message grow with the
+    # INPUT. The stacked character cap is a fixed number and structurally
+    # cannot catch input-linear growth, so the bound belongs here.
+    AC_WIN_SHOWN="$AC_WIN_RAW"
+    if [ "${#AC_WIN_MAG}" -gt 20 ]; then AC_WIN_SHOWN="a ${#AC_WIN_MAG}-digit value"; fi
+    if [ -n "$AC_WIN_OVER" ]; then AC_WIN_SHOWN="${AC_WIN_SHOWN} capped to 1000000"; fi
     AC_WIN_EFF="$AC_WIN"
     [ "$AC_WIN_EFF" -gt 1000000 ] && AC_WIN_EFF=1000000
     [ "$AC_WIN_EFF" -lt 100000 ] && AC_WIN_EFF=100000
@@ -417,7 +591,7 @@ elif [ -n "$AC_WIN" ]; then
         AC_TRIG_200=$(LC_ALL=C awk -v w="$AC_WIN_200" -v p="$AC_PCT" -v c="$AC_CAP_200" \
             'BEGIN{t=int(w*(p/100)); if (t>c) t=c; print t}')
     fi
-    AC_VARS="CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN}"
+    AC_VARS="CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN_SHOWN}"
     # Keep the SOONER framing for a sub-200000 window. That range was
     # previously reported as DISABLED, with advice to raise the value — advice
     # that moved the trigger LATER for someone whose config already did what
