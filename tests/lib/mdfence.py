@@ -55,9 +55,13 @@ FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 # `<del/>` is not a void element, so a renderer treats it as an opener, and a
 # closer may carry whitespace before the `>`. Both forms were missed: one
 # published struck text, the other suppressed innocent guidance.
-TOKEN = re.compile(r"<!--|-->|<del(?:\s[^>]*)?/?>|</\s*del\s*>", re.I)
+TOKEN = re.compile(r"<!--|-->|<del(?:\s[^>]*)?/?>|</del\s*>", re.I)
 DEL_AT_START = re.compile(r"<del(?:\s[^>]*)?/?>", re.I)
-DEL_CLOSE = re.compile(r"^</\s*del\s*>$", re.I)
+# `</del >` is valid; `</ del >` is not — the raw-HTML grammar requires `</`
+# immediately followed by the tag name. The wider `</\s*del\s*>` was my own
+# overcorrection when `</del >` was added, and it accepted a closer a browser
+# ignores, publishing text that is still struck.
+DEL_CLOSE = re.compile(r"^</del\s*>$", re.I)
 # HTML containers, like fences, only count at 0-3 spaces of indent. Four makes
 # an indented code block, where `<!--` is visible text. `lstrip()` accepted any
 # indent and swallowed the guidance after a four-space-indented comment.
@@ -384,6 +388,20 @@ _RENDERED_FIXTURES = [
     # the element open and suppressed innocent guidance after it.
     ("</del > closes the strike element",
      "<del>\nx\n</del >\n1. **The claim.**\n", True),
+    # ...and the overcorrection that shipped alongside it: `</ del >` is NOT a
+    # closer (raw-HTML grammar requires `</` then the tag name), so the strike
+    # element is still open and the claim is still hidden.
+    ("</ del > does not close the strike element",
+     "<del>\nx\n</ del >\n1. **The claim.**\n", False),
+    # DECLARED BOUND, pinned so a future change has to disagree deliberately.
+    # A column-1 opener inside a MULTI-LINE code span is treated as markup.
+    # Detecting it needs code-span tracking, which produced two separate
+    # findings before it was deliberately deleted (a backticked <del> opening
+    # del state; an unmatched backtick run blinding the scanner permanently).
+    # The scanner models BLOCK structure only; inline constructs are out of
+    # scope by design, and this fires on zero lines of the real corpus.
+    ("a column-1 opener inside a multi-line code span still opens (declared bound)",
+     "A literal `code\n<del>\nstill code`\n1. **The claim.**\n", False),
     # Round 10: a fence closer may be followed only by spaces or tabs. A
     # no-break space is not whitespace for this rule, so the fence stays open.
     ("a no-break space after a closer does not close it",
