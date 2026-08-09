@@ -120,7 +120,7 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 **Effort is model-aware, not blanket `max`** — `max` overthinks on Sonnet 5/Opus 4.8. Set via `/effort` per session, not a shell-rc env var (overrides post-switch — see SDLC.md). `/model` persists; picker `s` does not.
 
-**Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone and keep it >= 200000 — below that Claude Code disables compaction outright instead of hastening it. On **current Opus** a percentage alone is inert unless the window is also set, and then the two multiply; on Sonnet 5 and on a 200K Opus 4.6 pin it is live, so size it against THAT window (#520). **Advisor (v2.1.170+):** `advisorModel: "fable"` works with all drivers above; set in `/claude-setup-wizard` Step 9.5.
+**Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone — a smaller window compacts sooner, and nothing in that range switches compaction off. On **current Opus** a percentage alone is inert unless the window is also set, and then the two multiply; on Sonnet 5 and on a 200K Opus 4.6 pin it is live, so size it against THAT window (#520). **Advisor (v2.1.170+):** `advisorModel: "fable"` works with all drivers above; set in `/claude-setup-wizard` Step 9.5.
 
 ## Cross-Model Review (REQUIRED for High-Stakes)
 

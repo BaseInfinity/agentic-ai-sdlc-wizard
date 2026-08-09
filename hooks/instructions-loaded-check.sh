@@ -216,10 +216,20 @@ case "$AC_PCT" in ''|*[!0-9]*) AC_PCT="" ;; esac
 case "$AC_WIN" in ''|*[!0-9]*) AC_WIN="" ;; esac
 
 if [ -n "$AC_WIN" ] && [ "$AC_WIN" -lt "$AC_FLOOR" ]; then
-    # The clamp floor is 100000, so a smaller value is raised to 100000 and is
-    # still below 200000 — the whole sub-200000 range disables, and no value in
-    # it is recoverable by clamping.
-    echo "WARNING: autocompact is DISABLED — CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) is below 200000, and Claude Code turns auto-compaction off entirely below that threshold rather than compacting earlier. Raise it to 200000 or more, or remove it to restore the model's own default (#520)."
+    # This branch used to say DISABLED and tell the reader to raise the value.
+    # Both were wrong. The live trigger (LXy -> jUe -> zJu) has no 200000 gate;
+    # the gate lives in ZJu, which arms the PRECOMPUTED summary, not compaction
+    # itself. A smaller window compacts SOONER. Someone who set 150000 wanting
+    # an early boundary has a working config, so this informs, it does not warn.
+    #
+    #   effective = window - up to 20000 system overhead   [fEe]
+    #   trigger   = min(effective x pct/100, effective - 13000)  [CCo]
+    AC_WIN_MAX=$(( AC_WIN - 20000 - 13000 ))
+    # `[ ... ] && X=0` returns non-zero whenever the test is FALSE, which under
+    # `set -e` kills the hook on the common path. An `if` has no exit status to
+    # leak.
+    if [ "$AC_WIN_MAX" -lt 0 ]; then AC_WIN_MAX=0; fi
+    echo "NOTE: CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) makes autocompact fire SOONER, not later — at most ${AC_WIN_MAX} tokens, once up to 20000 of system overhead and the 13000 cap come off. Nothing in this range switches compaction off. Remove it to restore the model's own default (#520)."
 elif [ -n "$AC_PCT" ] && [ -n "$AC_WIN" ]; then
     # Both set: they multiply, so report the product — but reproduce the real
     # arithmetic, not a naive one.
@@ -258,7 +268,7 @@ elif [ -n "$AC_PCT" ] && [ -n "$AC_WIN" ]; then
     if [ "$AC_TRIGGER" -lt "$AC_FLOOR" ]; then
         echo "WARNING: autocompact fires at ${AC_TRIGGER} tokens or less — CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${AC_PCT} and CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) multiply. On a 200K-window model: ${AC_TRIG_200}. Raise the product past 200000 or drop either (#207, #520)."
     else
-        echo "NOTE: autocompact fires at ${AC_TRIGGER} tokens AT MOST — CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${AC_PCT} and CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) multiply. On a 200K-window model the same pair fires at ${AC_TRIG_200}. Setting CLAUDE_CODE_AUTO_COMPACT_WINDOW alone is steadier (#520)."
+        echo "NOTE: autocompact fires at ${AC_TRIGGER} tokens AT MOST — CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${AC_PCT} and CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN} (from ${AC_SRC}) multiply. On a 200K-window model the same pair fires at ${AC_TRIG_200} at most, lower once system overhead comes off. Setting CLAUDE_CODE_AUTO_COMPACT_WINDOW alone is steadier (#520)."
     fi
 fi
 
