@@ -277,16 +277,6 @@ test_skill_cross_model_review() {
     fi
 }
 
-# Test 19: Wizard embedded SKILL has a real TodoWrite step for cross-model review
-test_wizard_skill_cross_model_review() {
-    # The wizard's embedded SKILL checklist should have the real step, not just a comment
-    if grep -A 500 "## Full SDLC Checklist" "$WIZARD" | grep -i 'content:.*cross-model review' | grep -qv '^\s*//'; then
-        pass "Wizard embedded SKILL has TodoWrite step for cross-model review"
-    else
-        fail "Wizard embedded SKILL should have a TodoWrite step (not a comment) for cross-model review"
-    fi
-}
-
 # Test 20: SKILL.md has a dedicated cross-model review instructions section
 test_skill_cross_model_review_instructions() {
     local skill_file="$SCRIPT_DIR/../.claude/skills/sdlc/SKILL.md"
@@ -294,15 +284,6 @@ test_skill_cross_model_review_instructions() {
         pass "SKILL.md has dedicated cross-model review section"
     else
         fail "SKILL.md should have a '## Cross-Model Review' section with instructions"
-    fi
-}
-
-# Test 21: Wizard embedded SKILL has a dedicated cross-model review section
-test_wizard_skill_cross_model_review_instructions() {
-    if grep -A 500 "## Full SDLC Checklist" "$WIZARD" | grep -q "## Cross-Model Review"; then
-        pass "Wizard embedded SKILL has cross-model review section"
-    else
-        fail "Wizard embedded SKILL should have a '## Cross-Model Review' section"
     fi
 }
 
@@ -383,9 +364,7 @@ test_version_consistency
 test_cross_model_review_section
 test_cross_model_review_step
 test_skill_cross_model_review
-test_wizard_skill_cross_model_review
 test_skill_cross_model_review_instructions
-test_wizard_skill_cross_model_review_instructions
 test_update_skill_exists
 test_update_skill_template_exists
 test_update_skill_parity
@@ -394,12 +373,26 @@ test_step_registry_update_wizard
 
 # --- Cross-Model Review Dialogue Tests (#40) ---
 
-# Helper: extract wizard cross-model blocks (embedded SKILL + deep-dive)
+# Helper: extract the wizard's cross-model section.
+#
+# There is ONE, not two. This helper used to run a second `sed` for
+# `## Cross-Model Review (REQUIRED` ... `## Test Review` — headings that lived
+# inside the 639-line hand-copy fence #513 deleted and that exist nowhere in the
+# document now. That range matched ZERO bytes, so every assertion built on it was
+# testing the extractor, not the document. Deleted rather than repaired: it has no
+# surviving target.
+#
+# The invariant it violated, which is the third instance of the same family in
+# this repo: AN EXTRACTION THAT FEEDS AN ASSERTION MUST ASSERT ITS OWN
+# NON-EMPTINESS, or the assertion silently tests the extractor.
 wizard_cross_model_blocks() {
-    # Embedded SKILL section: ## Cross-Model Review ... ## Test Review
-    sed -n '/^## Cross-Model Review (REQUIRED/,/^## Test Review/p' "$WIZARD"
-    # Deep-dive section: ### Cross-Model Review Loop ... next ### or EOF
-    sed -n '/^### Cross-Model Review Loop/,/^### [^C]/p' "$WIZARD"
+    local out
+    out=$(sed -n '/^### Cross-Model Review Loop/,/^### [^C]/p' "$WIZARD")
+    if [ -z "$out" ]; then
+        echo "EXTRACTOR RETURNED NOTHING — assertions below would test nothing" >&2
+        return 1
+    fi
+    printf '%s\n' "$out"
 }
 
 # Test 22: Wizard cross-model sections document response.json protocol
@@ -475,7 +468,12 @@ test_wizard_recheck_prompt_parity() {
     prompts=$(grep -c '"You are doing a TARGETED RECHECK.*First read .reviews/handoff.json' "$WIZARD")
     local total
     total=$(grep -c '"You are doing a TARGETED RECHECK' "$WIZARD")
-    if [ "$prompts" -eq "$total" ] && [ "$total" -ge 2 ]; then
+    # `-ge 2` encoded an accident, not a contract: the prompt appeared twice
+    # because the wizard doc carried a second copy of the skill that re-pasted
+    # it. #513 deleted that copy, so demanding two occurrences would have
+    # required re-duplicating the very text the fix de-duplicated. One canonical
+    # prompt is the goal; the parity check below is the actual invariant.
+    if [ "$prompts" -eq "$total" ] && [ "$total" -ge 1 ]; then
         pass "All $total wizard recheck prompts include handoff.json-first instruction"
     else
         fail "Wizard has $total recheck prompts but only $prompts include handoff.json-first ($total expected)"
@@ -1200,21 +1198,24 @@ test_wizard_release_review_trigger() {
     fi
 }
 
-# Wizard has Release Review Checklist subsection
-test_wizard_release_review_checklist() {
-    if grep -q "#### Release Review Checklist" "$WIZARD"; then
-        pass "Wizard has Release Review Checklist subsection"
+# Wizard has Release Review Focus subsection
+test_wizard_release_review_focus() {
+    # Renamed by #513: the doc carried both a "Release Review Checklist" and a
+    # near-identical "Release Review Focus"; they were merged under the latter.
+    # Anchored end-to-end, depth left free — depth is not the contract.
+    if grep -qE "^#+ Release Review Focus[[:space:]]*$" "$WIZARD"; then
+        pass "Wizard has Release Review Focus subsection"
     else
-        fail "Wizard should have a 'Release Review Checklist' subsection"
+        fail "Wizard should have a 'Release Review Focus' subsection"
     fi
 }
 
 # Wizard references v1.20.0 as evidence for release review
 test_wizard_release_review_evidence() {
-    if grep -A 30 "Release Review Checklist" "$WIZARD" | grep -q "v1.20.0"; then
+    if grep -A 30 "Release Review Focus" "$WIZARD" | grep -q "v1.20.0"; then
         pass "Wizard Release Review references v1.20.0 evidence"
     else
-        fail "Wizard Release Review Checklist should reference v1.20.0 as evidence"
+        fail "Wizard Release Review Focus should reference v1.20.0 as evidence"
     fi
 }
 
@@ -1232,43 +1233,61 @@ test_skill_release_review_trigger() {
 # a release — so it is on-demand content, not something the driver needs mid-task
 # without warning. Asserted against the doc that now owns it.
 test_skill_release_review_section() {
-    if grep -q "### Release Review Focus" "$WIZARD"; then
+    # Anchored end-to-end, depth left free. Unanchored, this matched the
+    # `#### Release Review Focus` heading by substring — accidentally correct
+    # after #513 renested it, which is not the same as being right. Depth is not
+    # the contract; the section existing under its own heading is.
+    if grep -qE "^#+ Release Review Focus[[:space:]]*$" "$WIZARD"; then
         pass "#489: Release Review Focus is in the wizard doc"
     else
-        fail "wizard doc is missing '### Release Review Focus' — the skill points here for it"
+        fail "wizard doc is missing a 'Release Review Focus' heading — the skill points here for it"
     fi
 }
 
-# Embedded SKILL "When to run" includes releases
-test_wizard_embedded_skill_release_trigger() {
-    # The embedded SKILL is inside a ```` code fence after "## Step 6: Create SDLC Skill"
-    if sed -n '/## Step 6: Create SDLC Skill/,/^````$/p' "$WIZARD" | grep "When to run" | grep -qi "release\|publish"; then
-        pass "Wizard embedded SKILL 'When to run' includes releases/publishes"
+# Shipped SKILL "When to run" includes releases
+test_shipped_skill_release_trigger() {
+    # GH #513: this used to read the wizard doc's embedded skill copy, inside a
+    # ```` fence under "## Step 6: Create SDLC Skill" — the lane the CLI never
+    # installs, and which this PR deletes. Re-pointed at the file that ships.
+    if grep "When to run" "$SCRIPT_DIR/../skills/sdlc/SKILL.md" | grep -qi "release\|publish"; then
+        pass "shipped SKILL.md 'When to run' includes releases/publishes"
     else
-        fail "Wizard embedded SKILL 'When to run' should include releases/publishes"
+        fail "shipped SKILL.md 'When to run' should include releases/publishes"
     fi
 }
 
 test_wizard_release_review_trigger
-test_wizard_release_review_checklist
+test_wizard_release_review_focus
 test_wizard_release_review_evidence
 test_skill_release_review_trigger
 test_skill_release_review_section
-test_wizard_embedded_skill_release_trigger
+test_shipped_skill_release_trigger
 
 # Release review focus areas — wizard doc only since #489 moved the section
 # out of the byte-capped skill. Checking the skill too would now assert that
 # on-demand content is duplicated into the always-loaded file, which is the
 # thing #489 exists to stop.
+# The five needles are INLINE rather than looped through "${areas[@]}". A needle
+# reaching grep through a variable is opaque to tests/lib/fence-only-assertions.py,
+# which reported it as unverifiable — correctly: had any of these strings existed
+# only inside the deleted hand-copy fence, this test would have passed by matching
+# a quotation of a draft nobody installs, which is the #513 defect exactly.
 test_release_review_focus_area_parity() {
-    local areas=("CHANGELOG consistency" "Version parity" "Stale examples" "Docs accuracy" "CLI-distributed file parity")
     local all_match=true
-    for area in "${areas[@]}"; do
-        if ! grep -q "$area" "$WIZARD"; then
+    local area
+    for area in "CHANGELOG consistency" "Version parity" "Stale examples" \
+                "Docs accuracy" "CLI-distributed file parity"; do
+        case "$area" in
+            "CHANGELOG consistency")        grep -q "CHANGELOG consistency" "$WIZARD" ;;
+            "Version parity")               grep -q "Version parity" "$WIZARD" ;;
+            "Stale examples")               grep -q "Stale examples" "$WIZARD" ;;
+            "Docs accuracy")                grep -q "Docs accuracy" "$WIZARD" ;;
+            "CLI-distributed file parity")  grep -q "CLI-distributed file parity" "$WIZARD" ;;
+        esac || {
             fail "Wizard missing release review focus area: $area"
             all_match=false
             break
-        fi
+        }
     done
     if [ "$all_match" = true ]; then
         pass "#489: all 5 release review focus areas present in the wizard doc"

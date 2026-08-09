@@ -205,6 +205,31 @@ else
   fail "cowork/skills/sdlc/SKILL.md or canonical skills/sdlc/SKILL.md missing"
 fi
 
+# Test 5b: this repo's own dogfooded skill matches canonical (GH #513)
+#
+# `.claude/skills/sdlc` is a TRACKED SYMLINK (mode 120000 -> ../../skills/sdlc),
+# so this diffs the canonical file against itself and cannot fail on a normal
+# checkout. That is not a defect and not a vacuous test: it is a regression guard
+# for someone replacing the symlink with a real, driftable copy — exactly the
+# second-source problem #513 is about. Stated plainly because a test whose
+# comment oversells what it detects is the defect class this suite polices
+# (Fable round 6).
+#
+# cowork/ was byte-checked and .claude/ was not, so .claude/skills/sdlc/SKILL.md
+# could drift from the file consumers actually receive while every suite stayed
+# green — and this repo dogfoods that copy, so drift there means we run a
+# different skill than we ship. #513 removed a second install path in the wizard
+# doc for exactly this destination; this closes the same gap on disk.
+if [ -f "$PROJECT_ROOT/.claude/skills/sdlc/SKILL.md" ] && [ -f "$PROJECT_ROOT/skills/sdlc/SKILL.md" ]; then
+  if diff -q "$PROJECT_ROOT/.claude/skills/sdlc/SKILL.md" "$PROJECT_ROOT/skills/sdlc/SKILL.md" >/dev/null 2>&1; then
+    pass "repo-local .claude sdlc skill matches canonical"
+  else
+    fail "repo-local .claude/skills/sdlc/SKILL.md DRIFTED from canonical (run: cp skills/sdlc/SKILL.md .claude/skills/sdlc/SKILL.md)"
+  fi
+else
+  fail ".claude/skills/sdlc/SKILL.md or canonical skills/sdlc/SKILL.md missing"
+fi
+
 # Test 6: feedback skill matches canonical
 if [ -f "$PROJECT_ROOT/cowork/skills/feedback/SKILL.md" ] && [ -f "$PROJECT_ROOT/skills/feedback/SKILL.md" ]; then
   if diff -q "$PROJECT_ROOT/cowork/skills/feedback/SKILL.md" "$PROJECT_ROOT/skills/feedback/SKILL.md" >/dev/null 2>&1; then
@@ -545,8 +570,9 @@ fi
 #
 # Cowork consumers receive SIX files — README, hooks.json, two plugin manifests,
 # and the two SKILL.md copies. They never receive CLAUDE_CODE_SDLC_WIZARD.md,
-# and there is no mechanism to give it to them: it is 291 KB against a 44 KB
-# plugin, written for a CLI Cowork does not have.
+# and there is no mechanism to give it to them: it is 271 KB (277,908 bytes)
+# against a 35 KB plugin (35,627 bytes across those six files, measured
+# 2026-08-08), written for a CLI Cowork does not have.
 #
 # So every "full protocol: wizard doc" pointer in the skill is a dangling
 # reference for those users, and GH #489 is adding more of them as content moves
