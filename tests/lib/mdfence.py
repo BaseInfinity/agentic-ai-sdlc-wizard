@@ -52,12 +52,27 @@ FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 # walks them in document order. Line-oriented because the claims being guarded
 # are whole lines; a partial-line strip would invite the same
 # substring-is-not-an-assertion mistake that anchoring just fixed.
-TOKEN = re.compile(r"<!--|-->|<del(?:\s[^>]*)?>|</del>", re.I)
-DEL_AT_START = re.compile(r"<del(?:\s[^>]*)?>", re.I)
+# `<del/>` is not a void element, so a renderer treats it as an opener, and a
+# closer may carry whitespace before the `>`. Both forms were missed: one
+# published struck text, the other suppressed innocent guidance.
+TOKEN = re.compile(r"<!--|-->|<del(?:\s[^>]*)?/?>|</\s*del\s*>", re.I)
+DEL_AT_START = re.compile(r"<del(?:\s[^>]*)?/?>", re.I)
+DEL_CLOSE = re.compile(r"^</\s*del\s*>$", re.I)
 # HTML containers, like fences, only count at 0-3 spaces of indent. Four makes
 # an indented code block, where `<!--` is visible text. `lstrip()` accepted any
 # indent and swallowed the guidance after a four-space-indented comment.
 BLOCK_INDENT = re.compile(r"^ {0,3}(?=\S)")
+
+
+def _closes(info):
+    """True when a fence delimiter's trailing text permits it to CLOSE.
+
+    CommonMark: a closing fence "may be followed only by spaces or tabs".
+    `.strip()` accepted every Unicode space, so a closer ending in a
+    no-break space published text that is still fenced. Tabs stay allowed —
+    that is the spec, and the fixture asserting it guards the overcorrection.
+    """
+    return info.strip(" \t") == ""
 
 
 def _fence_open(line):
@@ -92,7 +107,7 @@ def _scan(text):
             continue
         if (m and m.group(2)[0] == open_fence[0]
                 and len(m.group(2)) >= open_fence[1]
-                and not m.group(3).strip()):        # a close carries no info string
+                and _closes(m.group(3))):           # a close carries no info string
             yield None, body
             open_fence, body = None, []
             continue
@@ -109,6 +124,36 @@ def blocks(text):
 def outside(text):
     """The document with every fenced block (and its delimiters) removed."""
     return "\n".join(line for line, b in _scan(text) if b is None)
+
+
+def _walk(line, stack):
+    """Advance the open-container stack across one line.
+
+    A STACK, not a mode plus a counter. `<del>` nests, and an HTML comment
+    nests inside it — inside a comment, `</del>` is text. Tracking only a mode
+    let `<!-- </del> -->` close the strike element from inside a comment and
+    publish still-struck text, and let `<!-- <del> -->` open one that never
+    closed and hid valid guidance.
+
+    Every token on the line is walked, always: `--> <!--` closes and reopens,
+    and stopping at the first closer published the claim underneath.
+    """
+    stack = list(stack)
+    for m in TOKEN.finditer(line):
+        tok = m.group(0).lower()
+        top = stack[-1] if stack else None
+        if top == "comment":
+            if tok == "-->":
+                stack.pop()
+            continue                       # inside a comment nothing else is markup
+        if tok == "<!--":
+            stack.append("comment")
+        elif DEL_CLOSE.match(tok):
+            if top == "del":
+                stack.pop()
+        elif tok.startswith("<del"):
+            stack.append("del")
+    return stack
 
 
 def _strip_hidden(text, keep_fenced):
@@ -152,40 +197,23 @@ def _strip_hidden(text, keep_fenced):
     Unterminated openers keep swallowing on purpose: that fails CLOSED.
     """
     out = []
+    stack = []         # open HTML containers, innermost last
     mode = None        # None | "comment" | "del" | "fence"
     fence = None       # (char, run_length) while mode == "fence"
-    depth = 0          # nesting depth while mode == "del"
     for line in text.split("\n"):
         if mode == "fence":
             m = FENCE.match(line)
             closing = (m and m.group(2)[0] == fence[0]
                        and len(m.group(2)) >= fence[1]
-                       and not m.group(3).strip())
+                       and _closes(m.group(3)))
             if keep_fenced:
                 out.append(line)
             if closing:
                 mode, fence = None, None
             continue
         if mode in ("comment", "del"):
-            # Walk EVERY token: `--> <!--` closes and reopens on one line.
-            # Stopping at the first closer published the hidden claim under it.
-            for m in TOKEN.finditer(line):
-                low = m.group(0).lower()
-                if mode is None:
-                    if low == "<!--":
-                        mode = "comment"
-                    elif low.startswith("<del"):
-                        mode, depth = "del", 1
-                elif mode == "comment" and low == "-->":
-                    mode = None
-                # `<del>` nests. Ignoring an inner opener let its closer end
-                # the OUTER element and publish still-struck text.
-                elif mode == "del" and low.startswith("<del"):
-                    depth += 1
-                elif mode == "del" and low == "</del>":
-                    depth -= 1
-                    if depth <= 0:
-                        mode = None
+            stack = _walk(line, stack)
+            mode = stack[-1] if stack else None
             continue
         opened = _fence_open(line)
         if opened:
@@ -197,29 +225,14 @@ def _strip_hidden(text, keep_fenced):
         stripped = line.lstrip() if indent else ""
         low = stripped.lower()
         if low.startswith("<!--") or DEL_AT_START.match(stripped):
-            mode = "comment" if low.startswith("<!--") else "del"
-            depth = 0 if mode == "comment" else 1
+            opener = "comment" if low.startswith("<!--") else "del"
             # Skip PAST the opener before walking the rest of the line —
             # rescanning it counted the opening `<del>` a second time and left
             # the element permanently open.
-            rest = (stripped[4:] if mode == "comment"
+            rest = (stripped[4:] if opener == "comment"
                     else stripped[DEL_AT_START.match(stripped).end():])
-            # ...and the same line may close it again, and reopen. Walk it all.
-            for m in TOKEN.finditer(rest):
-                tok = m.group(0).lower()
-                if mode is None:
-                    if tok == "<!--":
-                        mode = "comment"
-                    elif tok.startswith("<del"):
-                        mode, depth = "del", 1
-                elif mode == "comment" and tok == "-->":
-                    mode = None
-                elif mode == "del" and tok.startswith("<del"):
-                    depth += 1
-                elif mode == "del" and tok == "</del>":
-                    depth -= 1
-                    if depth <= 0:
-                        mode = None
+            stack = _walk(rest, [opener])
+            mode = stack[-1] if stack else None
             continue                      # the line itself shows nothing
         out.append(line)
     return "\n".join(out)
@@ -355,6 +368,26 @@ _RENDERED_FIXTURES = [
      "```lang`x`\n1. **The claim.**\n", True),
     ("a tilde info string may contain backticks",
      "~~~lang`x`\nhidden\n~~~\n1. **The claim.**\n", True),
+    # Cross-model review, round 10. Inside a comment, `</del>` is text — it
+    # must not close the strike element wrapping it.
+    ("a commented-out del closer does not end the strike",
+     "<del>\n<!-- </del> -->\n1. **The claim.**\n</del>\n", False),
+    # ...and the mirror: a commented-out OPENER must not leave an element open
+    # that then hides valid guidance.
+    ("a commented-out del opener does not open one",
+     "<del>\n<!-- <del> -->\n</del>\n1. **The claim.**\n", True),
+    # Round 10: `<del/>` is not a void element; a renderer treats it as an
+    # opener. Missing it published struck guidance.
+    ("<del/> opens the strike element",
+     "<del/>\n1. **The claim.**\n</del>\n", False),
+    # Round 10: a closer may carry whitespace before the `>`. Missing it left
+    # the element open and suppressed innocent guidance after it.
+    ("</del > closes the strike element",
+     "<del>\nx\n</del >\n1. **The claim.**\n", True),
+    # Round 10: a fence closer may be followed only by spaces or tabs. A
+    # no-break space is not whitespace for this rule, so the fence stays open.
+    ("a no-break space after a closer does not close it",
+     "```\n1. **The claim.**\n```\u00a0\n", False),
     # A fence body is a quotation: markup inside it is content.
     ("comment opener inside a fence is content",
      "```\n<!--\n```\n1. **The claim.**\n", True),
