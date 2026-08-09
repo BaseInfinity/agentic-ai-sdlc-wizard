@@ -52,11 +52,7 @@ FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 # walks them in document order. Line-oriented because the claims being guarded
 # are whole lines; a partial-line strip would invite the same
 # substring-is-not-an-assertion mistake that anchoring just fixed.
-TOKEN = re.compile(r"<!--|-->|<del(?:\s[^>]*)?>|</del>", re.I)
-# Inline code spans, stripped before token scanning: a backticked `<del>`
-# is text a reader SEES, not markup. Longest-run-first so ``a `b` c``
-# is consumed as one span rather than mis-paired.
-INLINE_CODE = re.compile(r"(`+)(?:.+?)\1")
+TOKEN = re.compile(r"`+|<!--|-->|<del(?:\s[^>]*)?>|</del>", re.I)
 
 
 def _scan(text):
@@ -93,75 +89,82 @@ def outside(text):
     return "\n".join(line for line, b in _scan(text) if b is None)
 
 
-def _fence_flags(text):
-    """Yield (line, is_fenced) for every line, keeping fence delimiters and
-    bodies flagged rather than dropped. `outside`/`blocks` throw the fenced
-    lines away; the visibility scanners need to KEEP some of them, so this is
-    the shared walk both projections sit on."""
-    open_fence = None
-    for line in text.split("\n"):
-        m = FENCE.match(line)
-        if open_fence is None:
-            if m:
-                open_fence = (m.group(2)[0], len(m.group(2)))
-                yield line, True
-            else:
-                yield line, False
-            continue
-        if (m and m.group(2)[0] == open_fence[0]
-                and len(m.group(2)) >= open_fence[1]
-                and not m.group(3).strip()):
-            open_fence = None
-            yield line, True
-            continue
-        yield line, True
-
-
 def _strip_hidden(text, keep_fenced):
-    """Drop every line inside an HTML comment or a `<del>` element.
+    """Drop every line a reader does not see.
 
-    `keep_fenced` decides what happens to fenced blocks: False gives prose
-    only, True keeps a fence that a reader can actually see. Both still drop a
-    fence sitting inside a comment.
+    ONE interleaved scanner, not a fence pass followed by a comment pass. The
+    two-pass version opened a fence on the ``` inside `<!--\n```\n-->`, never
+    saw the comment closer, and swallowed the visible section after it.
+    CommonMark has no such ordering: fenced code and HTML blocks are both leaf
+    blocks and whichever OPENS FIRST owns the text until it closes. A single
+    "what container am I in" state is that rule.
 
-    Lines that OPEN a container are dropped along with it. A claim sharing a
-    line with `<!--` is commented out from that point on, and treating the
-    opening line as visible reopens the hole on a one-line comment.
+    `keep_fenced` decides what happens to a fence that is itself visible:
+    False gives prose only (a claim that exists only inside a fence is a
+    quotation, per #513), True keeps it (a formula block is an illustration a
+    reader can see). Neither keeps a fence sitting inside a comment.
 
-    Unterminated openers keep swallowing on purpose — that fails CLOSED. A
-    guard that sees nothing fails loudly; one that guesses the comment ended is
-    back to trusting bytes.
+    Code spans are tracked across lines because CommonMark lets them span
+    lines. Line-local stripping read the `<del>` in ``a `code\nand <del>` span``
+    as markup and hid the section below it — a false positive, which breaks the
+    document for an innocent edit and is worth as much as a miss.
+
+    Unterminated openers keep swallowing on purpose: that fails CLOSED.
     """
-    out, state = [], None          # state: None | "comment" | "del"
-    for line, fenced in _fence_flags(text):
-        if fenced:
-            # Never scan tokens inside a fence: its content is a quotation, and
-            # an example containing `<!--` is not a comment. Keep the line only
-            # if the fence itself is visible.
-            if keep_fenced and state is None:
+    out = []
+    mode = None        # None | "comment" | "del" | "fence"
+    fence = None       # (char, run_length) while mode == "fence"
+    code = 0           # open code-span backtick run length, 0 when none
+    for line in text.split("\n"):
+        if mode == "fence":
+            m = FENCE.match(line)
+            closing = (m and m.group(2)[0] == fence[0]
+                       and len(m.group(2)) >= fence[1]
+                       and not m.group(3).strip())
+            if keep_fenced:
                 out.append(line)
+            if closing:
+                mode, fence = None, None
             continue
-        visible = state is None
-        # Walk EVERY token in order rather than testing "does the line contain
-        # an opener / a closer". The first version tested containment and read
-        # `<!-- x --><!--` as closed; mutation caught it hiding the shipped
-        # skill's guidance at 129/129 green.
-        #
-        # Inline code is stripped FIRST. Cross-model review found a visible
-        # line mentioning a `<del>` tag in backticks opening del state and
-        # swallowing the claim below it — the projection was reading markup a
-        # reader sees as literal text.
-        for m in TOKEN.finditer(INLINE_CODE.sub(" ", line)):
-            tok = m.group(0).lower()
-            if state is None:
-                if tok == "<!--":
-                    state, visible = "comment", False
-                elif tok.startswith("<del"):
-                    state, visible = "del", False
-            elif state == "comment" and tok == "-->":
-                state = None
-            elif state == "del" and tok == "</del>":
-                state = None
+        if mode in ("comment", "del"):
+            # Inside an HTML container nothing else is markup — backticks there
+            # are not code spans, and a nested opener is text.
+            closer = "-->" if mode == "comment" else "</del>"
+            for m in TOKEN.finditer(line):
+                if m.group(0).lower() == closer:
+                    mode = None
+                    break
+            continue
+        if code == 0:
+            m = FENCE.match(line)
+            if m:
+                mode, fence = "fence", (m.group(2)[0], len(m.group(2)))
+                if keep_fenced:
+                    out.append(line)
+                continue
+        # Walk EVERY token in order and never stop early: a line can open and
+        # close a container and open another. Breaking on the first opener read
+        # `<!-- note -->` as still-open and swallowed the document after it.
+        visible = True
+        for m in TOKEN.finditer(line):
+            tok = m.group(0)
+            low = tok.lower()
+            if mode is None:
+                if tok[0] == "`":
+                    if code == 0:
+                        code = len(tok)
+                    elif len(tok) == code:
+                        code = 0
+                elif code:                 # literal text inside a code span
+                    pass
+                elif low == "<!--":
+                    mode, visible = "comment", False
+                elif low.startswith("<del"):
+                    mode, visible = "del", False
+            elif mode == "comment" and low == "-->":
+                mode = None
+            elif mode == "del" and low == "</del>":
+                mode = None
         if visible:
             out.append(line)
     return "\n".join(out)
@@ -266,6 +269,18 @@ _RENDERED_FIXTURES = [
     # A fence body is a quotation: markup inside it is content.
     ("comment opener inside a fence is content",
      "```\n<!--\n```\n1. **The claim.**\n", True),
+    # Cross-model review, round 7. Backticks INSIDE a comment are comment
+    # content, not a fence. Parsing fences in a pass before comments opened a
+    # fence here, never saw the closer, and swallowed the visible claim.
+    ("backticks inside a comment are not a fence",
+     "<!--\n```\n-->\n1. **The claim.**\n", True),
+    # ...and round 7 again: a code span may cross lines. Line-local stripping
+    # read this `<del>` as markup and hid the claim — a false positive, which
+    # breaks the document for an innocent edit.
+    ("a code span may cross lines",
+     "A literal `code\nand <del>` span\n1. **The claim.**\n", True),
+    ("an unclosed code span does not hide the document",
+     "Trailing `tick\n1. **The claim.**\n", True),
 ]
 
 # `visible` keeps fenced illustrations but must still drop hidden ones.
