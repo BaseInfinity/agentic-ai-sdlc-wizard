@@ -53,6 +53,10 @@ FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 # are whole lines; a partial-line strip would invite the same
 # substring-is-not-an-assertion mistake that anchoring just fixed.
 TOKEN = re.compile(r"<!--|-->|<del(?:\s[^>]*)?>|</del>", re.I)
+# Inline code spans, stripped before token scanning: a backticked `<del>`
+# is text a reader SEES, not markup. Longest-run-first so ``a `b` c``
+# is consumed as one span rather than mis-paired.
+INLINE_CODE = re.compile(r"(`+)(?:.+?)\1")
 
 
 def _scan(text):
@@ -89,34 +93,65 @@ def outside(text):
     return "\n".join(line for line, b in _scan(text) if b is None)
 
 
-def rendered(text):
-    """The document reduced to lines a reader actually sees.
+def _fence_flags(text):
+    """Yield (line, is_fenced) for every line, keeping fence delimiters and
+    bodies flagged rather than dropped. `outside`/`blocks` throw the fenced
+    lines away; the visibility scanners need to KEEP some of them, so this is
+    the shared walk both projections sit on."""
+    open_fence = None
+    for line in text.split("\n"):
+        m = FENCE.match(line)
+        if open_fence is None:
+            if m:
+                open_fence = (m.group(2)[0], len(m.group(2)))
+                yield line, True
+            else:
+                yield line, False
+            continue
+        if (m and m.group(2)[0] == open_fence[0]
+                and len(m.group(2)) >= open_fence[1]
+                and not m.group(3).strip()):
+            open_fence = None
+            yield line, True
+            continue
+        yield line, True
 
-    Fenced blocks are already gone via `outside`. On top of that, drop every
-    line touched by an HTML comment or a `<del>` element, including the lines
-    that open and close them — a claim sharing a line with `<!--` is commented
-    out from that point on, and treating the opening line as visible would
-    reopen the hole on a one-line comment.
 
-    Unterminated openers swallow the rest of the document on purpose. That
-    matches how a Markdown renderer behaves and, more importantly, fails
-    CLOSED: a guard that sees nothing fails loudly, while one that guesses the
-    comment ended is back to trusting bytes.
+def _strip_hidden(text, keep_fenced):
+    """Drop every line inside an HTML comment or a `<del>` element.
+
+    `keep_fenced` decides what happens to fenced blocks: False gives prose
+    only, True keeps a fence that a reader can actually see. Both still drop a
+    fence sitting inside a comment.
+
+    Lines that OPEN a container are dropped along with it. A claim sharing a
+    line with `<!--` is commented out from that point on, and treating the
+    opening line as visible reopens the hole on a one-line comment.
+
+    Unterminated openers keep swallowing on purpose — that fails CLOSED. A
+    guard that sees nothing fails loudly; one that guesses the comment ended is
+    back to trusting bytes.
     """
     out, state = [], None          # state: None | "comment" | "del"
-    for line in outside(text).split("\n"):
-        # Visible only if the line began outside every container AND opens
-        # none. A line that opens one is not a place a load-bearing claim may
-        # live, even where a renderer would show the text before the opener —
-        # the claims guarded here are whole lines.
-        #
-        # Walk EVERY token on the line rather than testing "does it contain an
-        # opener / a closer". The first version tested containment and reported
-        # `<!-- x --><!--` as closed, because it found a `-->` after the first
-        # opener and stopped looking. Mutation caught it: that exact line hid
-        # the shipped skill's guidance with the suite green.
+    for line, fenced in _fence_flags(text):
+        if fenced:
+            # Never scan tokens inside a fence: its content is a quotation, and
+            # an example containing `<!--` is not a comment. Keep the line only
+            # if the fence itself is visible.
+            if keep_fenced and state is None:
+                out.append(line)
+            continue
         visible = state is None
-        for m in TOKEN.finditer(line):
+        # Walk EVERY token in order rather than testing "does the line contain
+        # an opener / a closer". The first version tested containment and read
+        # `<!-- x --><!--` as closed; mutation caught it hiding the shipped
+        # skill's guidance at 129/129 green.
+        #
+        # Inline code is stripped FIRST. Cross-model review found a visible
+        # line mentioning a `<del>` tag in backticks opening del state and
+        # swallowing the claim below it — the projection was reading markup a
+        # reader sees as literal text.
+        for m in TOKEN.finditer(INLINE_CODE.sub(" ", line)):
             tok = m.group(0).lower()
             if state is None:
                 if tok == "<!--":
@@ -130,6 +165,27 @@ def rendered(text):
         if visible:
             out.append(line)
     return "\n".join(out)
+
+
+def rendered(text):
+    """Prose a reader sees: fenced blocks removed, hidden regions removed.
+
+    This is what the #520 canonical-sentence pins match against. #513 settled
+    that fenced content in this repo is a quotation rather than an instruction,
+    so a CLAIM that exists only inside a fence is not guidance.
+    """
+    return _strip_hidden(text, keep_fenced=False)
+
+
+def visible(text):
+    """Everything a reader sees, fenced illustrations included.
+
+    For content that is legitimately fenced — a formula block, a settings
+    example — where the question is only "can a reader see this at all". Raw
+    matching cannot answer that: cross-model review wrapped the #520 formula
+    fence in an HTML comment and all 129 assertions stayed green.
+    """
+    return _strip_hidden(text, keep_fenced=True)
 
 
 # --- selftest -------------------------------------------------------------
@@ -197,25 +253,55 @@ _RENDERED_FIXTURES = [
     # must NOT leave the scanner stuck open.
     ("two complete comments on one line close cleanly",
      "<!-- a --><!-- b -->\n1. **The claim.**\n", True),
+    # Cross-model review, round 6. A line that MENTIONS markup is text a reader
+    # sees; scanning it as markup swallowed the claim under it.
+    ("inline-code <del> is text, not an opener",
+     "A literal `<del>` tag\n1. **The claim.**\n", True),
+    ("inline-code comment opener is text, not an opener",
+     "Write `<!--` to hide a line\n1. **The claim.**\n", True),
+    # ...and the overcorrection: real markup on a line that ALSO has inline
+    # code must still be honoured.
+    ("real opener beside inline code still opens",
+     "Use `x` here <!--\n1. **The claim.**\n", False),
+    # A fence body is a quotation: markup inside it is content.
+    ("comment opener inside a fence is content",
+     "```\n<!--\n```\n1. **The claim.**\n", True),
+]
+
+# `visible` keeps fenced illustrations but must still drop hidden ones.
+# (claim, document, must the claim survive visible()?)
+_VISIBLE_FIXTURES = [
+    ("a plain fence is visible", "```\n1. **The claim.**\n```\n", True),
+    # Cross-model review, round 6: this is what raw matching accepted.
+    ("a commented-out fence is not visible",
+     "<!--\n```\n1. **The claim.**\n```\n-->\n", False),
+    ("a struck fence is not visible",
+     "<del>\n```\n1. **The claim.**\n```\n</del>\n", False),
+    ("prose is visible too", "1. **The claim.**\n", True),
 ]
 
 if __name__ == "__main__":
     import sys
     # `--rendered FILE` is the projection the #520 pins match against. Separate
     # from the selftest so the shell side stays a single pipe with no parsing.
-    if len(sys.argv) == 3 and sys.argv[1] == "--rendered":
+    if len(sys.argv) == 3 and sys.argv[1] in ("--rendered", "--visible"):
         with open(sys.argv[2], encoding="utf-8") as fh:
-            sys.stdout.write(rendered(fh.read()))
+            body = fh.read()
+        sys.stdout.write(rendered(body) if sys.argv[1] == "--rendered"
+                         else visible(body))
         sys.exit(0)
     failed = 0
-    for name, doc, want in _RENDERED_FIXTURES:
-        lines = rendered(doc).split("\n")
-        got = any(line.startswith("1. **The claim.**") for line in lines)
-        if got != want:
-            print("FAIL %s: claim visible=%r want %r in %r" % (name, got, want, lines))
-            failed += 1
-        else:
-            print("ok   rendered: %s" % name)
+    for label, fixtures, fn in (("rendered", _RENDERED_FIXTURES, rendered),
+                                ("visible", _VISIBLE_FIXTURES, visible)):
+        for name, doc, want in fixtures:
+            lines = fn(doc).split("\n")
+            got = any(line.startswith("1. **The claim.**") for line in lines)
+            if got != want:
+                print("FAIL %s %s: claim visible=%r want %r in %r"
+                      % (label, name, got, want, lines))
+                failed += 1
+            else:
+                print("ok   %s: %s" % (label, name))
     for name, doc, want_blocks, must_be_outside in _FIXTURES:
         got = blocks(doc)
         out = outside(doc)
