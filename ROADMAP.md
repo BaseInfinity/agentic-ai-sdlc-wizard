@@ -15,9 +15,11 @@ Triage: **31 open → 22, unmilestoned 12 → 0.** Closed with reasons on each i
 
 Row 485 is **superseded by #511 and #517** — do not action it. Analysis lives on the issues, not here: #513 (the embedded install path), #482 (why this file stops being a store), #489 (byte ceiling).
 
-**Last release: v1.95.0, 2026-08-07** (`agentic-sdlc-wizard`). Carries the stdin-hang fix for six shipped hooks — each could block forever on a stdin that never reaches EOF, observed at 10h19m against a 10-second timeout — plus fail-closed gate semantics and a `CLAUDE.md` shipped-surface guard. See `CHANGELOG.md`, including the five-iteration history of the fix itself.
+**Last release: v1.96.0, 2026-08-09** (`agentic-sdlc-wizard`). Deletes the wizard doc's 639-line embedded copy of the SDLC skill — a second install path to the same destination the CLI writes, diverged to 56,284 bytes against the live skill's 19,356 — and the 18 assertions that were grepping that copy instead of the document. Adds four guards against its return, three measuring the payload and one measuring where the reader is told to install. Also: same-model self-review deleted as an instruction (including from a shipped per-prompt hook), dual cross-model certification as merge authorization, and a `validate` lookup that could read a red or queued CI run as green. See `CHANGELOG.md`.
 
-**This marker was stale and is worth noting as a defect, not just correcting.** It read "Last release: v1.90.0" through the v1.92.0 and v1.93.0 releases; a version sweep grepping for the *outgoing* version can never find a marker frozen at an older one. Caught by cross-model release review 2026-08-05, not by any test. A guard belongs in `tests/test-doc-consistency.sh` — cross-ref GH #493 (the guard itself) and #491 (the wider CI/CD audit).
+**Prior release: v1.95.0, 2026-08-07.** Carried the stdin-hang fix for six shipped hooks — each could block forever on a stdin that never reaches EOF, observed at 10h19m against a 10-second timeout — plus fail-closed gate semantics and a `CLAUDE.md` shipped-surface guard, including the five-iteration history of the fix itself.
+
+**The "Last release" marker above was stale and is worth noting as a defect, not just correcting.** It read "Last release: v1.90.0" through the v1.92.0 and v1.93.0 releases; a version sweep grepping for the *outgoing* version can never find a marker frozen at an older one. Caught by cross-model release review 2026-08-05, not by any test. A guard belongs in `tests/test-doc-consistency.sh` — cross-ref GH #493 (the guard itself) and #491 (the wider CI/CD audit).
 
 **Historical, retained — v1.90.0, published to npm 2026-08-01** (`dist-tags.latest = 1.90.0` at that time). That release carried three consumer-visible fixes — the Cowork Stop hook blocking turns while background work was still in flight (unsatisfiable: an agent cannot make a background job finish sooner, the same shape as the #477 loop it was built to prevent); install instructions that pointed at a `.../tree/main/cowork` URL which is not a supported marketplace source and cannot ever have worked (#455); and `cowork/README.md` contradicting itself twice — plus the review loop, severity contract, and the TDD RED/GREEN + Testing Diamond sections in `TESTING.md`. **Deliberately NOT in it:** row #485 (still uncertified on its own branch) and the shellcheck CI gate (pulled on unanimous cross-model recommendation, tracked as #492 with the work preserved as a 362-line patch).
 
@@ -202,7 +204,7 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 
 | Project | Repo | Status |
 |---------|------|--------|
-| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.95.0 (living tracker — bump every release) |
+| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.96.0 (living tracker — bump every release) |
 | Codex SDLC Adapter | BaseInfinity/codex-sdlc-wizard | v0.7.x, shipped with SDLC workflow |
 | GDLC Wizard (games sibling) | BaseInfinity/claude-gdlc-wizard | v0.2.x, persona-driven playtest cycles |
 | _(add as projects are marked)_ | | |
