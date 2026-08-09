@@ -2554,7 +2554,8 @@ test_instructions_hook_dual_install_silence_hint_works_when_cache_dir_absent
 
 # Test (#207): when settings.json has BOTH `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`
 # AND `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, the hook must warn about the
-# compound misconfiguration. Setting both compounds (e.g. 30% × 400K = 120K
+# compound misconfiguration. Setting both compounds (e.g. 30% of 400K less
+# overhead = 114K
 # trigger, which is ~12% of a 1M window) — a docs footgun the consumer
 # (issue #207) hit in practice when autocompact fired at 12% context.
 test_instructions_hook_warns_on_autocompact_compound_misconfig() {
@@ -2645,7 +2646,8 @@ EOF
     fi
 }
 
-# #207: warning shows effective compound trigger (30% × 400K = 120K) so user
+# #207: warning shows effective compound trigger (30% of 400K less overhead
+# = 114000) so user
 # can diagnose impact from the warning alone.
 test_instructions_hook_compound_warning_shows_effective_trigger() {
     local tmpdir output
@@ -2697,7 +2699,8 @@ EOF
 #     unconditionally for any window below bIe = 200000, so WINDOW in the
 #     100000..199999 range SILENTLY DISABLES autocompact altogether. A consumer
 #     trying to be conservative by picking a small window gets no autocompact
-#     at all, and nothing told them.
+#     at all, and nothing told them. (That framing was itself wrong — see the
+#     sub-200000 tests below; a small window compacts SOONER.)
 #
 # So the signature is not "both set" — it is "the effective trigger is below
 # 200000", whichever vars produced it. These three assertions pin that.
@@ -2746,6 +2749,39 @@ test_instructions_hook_reports_sub_200k_window_fires_sooner() {
 # of this branch printed "at most 17000" for a window of 50000 when the real
 # trigger is 67000 — a number that was not merely loose but INVERTED, since the
 # truth exceeded the stated upper bound across the whole sub-100000 range.
+# The collision both reviewers found independently: a sub-200000 window and a
+# percentage together. The old shape had a window-only branch ahead of a
+# both-set branch, so the percentage was dropped by branch order alone and the
+# hook printed 117000 where the binary computes 45500. There is now ONE
+# arithmetic path; this pins it.
+test_instructions_hook_applies_the_percentage_to_a_sub_200k_window() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "35"')
+    local ok=true
+    # min(35% x 130000, 117000) = 45500
+    echo "$output" | grep -qE '\b45500\b' || ok=false
+    echo "$output" | grep -qE '\b117000\b' && ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: a percentage still applies when the window is below 200000"
+    else
+        fail "#520: PCT=35 with WINDOW=150000 triggers at 45500, not 117000, got: $output"
+    fi
+}
+
+test_instructions_hook_honours_a_fractional_percentage() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30.5"')
+    # parseFloat accepts 30.5 and the binary honours it: 30.5% of 380000.
+    # An integers-only filter discarded it and the hook said nothing at all.
+    if echo "$output" | grep -qE '\b115900\b'; then
+        pass "#520: a fractional percentage is honoured, as parseFloat honours it"
+    else
+        fail "#520: PCT=30.5 with WINDOW=400000 triggers at 115900, got: $output"
+    fi
+}
+
 test_instructions_hook_clamps_sub_100k_window_to_the_floor() {
     local output
     output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "50000"')
@@ -2925,8 +2961,9 @@ EOF
         "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     local ok=true
-    echo "$output" | grep -qE 'NOTE: CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000' || ok=false
-    echo "$output" | grep -qi 'sooner' || ok=false
+    # The figure proves which source won: 150000 gives 117000, 400000 gives 367000.
+    echo "$output" | grep -qE '\b117000\b' || ok=false
+    echo "$output" | grep -qE '\b367000\b' && ok=false
     echo "$output" | grep -qi 'live environment' || ok=false
     if [ "$ok" = true ]; then
         pass "#520: reads the live env over settings.json, and names which it used"
@@ -2941,6 +2978,8 @@ test_instructions_hook_ignores_a_zero_percentage_like_the_binary_does
 test_instructions_hook_says_nothing_fires_when_compaction_is_off
 test_instructions_hook_reads_max_output_tokens_for_the_overhead
 test_instructions_hook_clamps_sub_100k_window_to_the_floor
+test_instructions_hook_honours_a_fractional_percentage
+test_instructions_hook_applies_the_percentage_to_a_sub_200k_window
 test_instructions_hook_silent_on_deliberate_large_compound_trigger
 test_instructions_hook_reports_the_200k_model_figure_not_a_ratio
 test_instructions_hook_still_warns_when_compound_trigger_below_floor
