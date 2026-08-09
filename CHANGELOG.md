@@ -4,6 +4,81 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.96.0] - 2026-08-09
+
+### Fixed — the wizard doc shipped a second, diverged copy of the SDLC skill
+
+- **A 639-line fence told you to hand-copy a skill the CLI already installs.**
+  `CLAUDE_CODE_SDLC_WIZARD.md` carried a ````markdown block instructing readers to paste it
+  into `.claude/skills/sdlc/SKILL.md` — the exact file `npx agentic-sdlc-wizard init` writes
+  from `skills/sdlc/SKILL.md`. Two install paths, one destination, and they had diverged to
+  56,284 bytes against the live skill's 19,356, moving in opposite directions inside single
+  PRs. If you hand-copied that block, you installed a draft nobody maintains. The fence is
+  deleted and the sections only reachable inside it are promoted to document level. (#513)
+
+- **18 assertions were verifying the quotation instead of the document.** Across two suites,
+  they grepped the wizard doc for strings that existed only inside that fence, so they passed by
+  matching text no consumer ever installs. Guard and artifact pointed at different objects.
+  (#513)
+
+### Added — four guards so it cannot come back
+
+Three of them ask whether a block reproduces the shipped skill's headings, its frontmatter at
+real file size, or its body prose. The fourth ignores the content entirely and asks whether the
+document tells a reader **where to install a file** — the one thing a hand-copy instruction
+cannot obfuscate and still work.
+
+The body-prose rule measures the raw document rather than fenced blocks, because a verbatim copy
+indented four spaces carries no fence at all, and the same copy measured 105 or 131 reproduced
+lines purely by the author's choice of three- or four-backtick wrapper.
+
+These are lints, not a security boundary, and they say so: every artifact producible by plausible
+accident fires loudly on several rules at once; multi-step deliberate evasion is review's job.
+Reach limits are documented rather than papered over.
+
+### Changed
+
+- **Same-model self-review is no longer instructed — including in a hook that fired every turn.**
+  `hooks/sdlc-prompt-check.sh` (a shipped hook) carried a per-prompt `/code-review` directive; it
+  is deleted, along with the skill's checklist item and its "Self-Review Loop" section. What stays
+  is the *measurement*: the `self_review` rubric row, same 1 point, minus its critical flag, so
+  `tdd_red` is now the only must-pass criterion. A model reviewing its own output was never
+  independent evidence — `/code-review` reported clean three times in one session while an
+  independent model found real P1s each time. Cross-model review is untouched. (#509)
+- **The Memory Audit Protocol now exists where it was advertised.** The skill pointed at the
+  wizard doc, the wizard doc pointed back at the skill, and the protocol lived in neither. It is
+  now written out in `CLAUDE_CODE_SDLC_WIZARD.md` — denylist table, promotion destinations,
+  `promoted_to` tracking, the mandatory human gate — and the skill keeps a pointer that leads
+  somewhere. Cross-model review mechanics moved the same direction. Net effect on the skill:
+  19,993 → 19,137 bytes, so it is no longer one edit from its ceiling. (#509)
+- **The review loop no longer hands the turn back every round.** The skill now states when it may
+  stop, and only three answers count: **CONVERGED** (required verdicts in on the head SHA, zero
+  unresolved findings), **DEADLOCK** (same finding unmoved after two rechecks), or **BOUND** (a
+  gate that mechanically needs a human). While findings are landing, the loop is working — fix and
+  launch the next round in the same turn. The load-bearing half is the anti-shopping invariant:
+  every round must carry a delta, because "always continue" without it is just resubmitting until
+  a tired YES. No fixed round cap. (#509)
+- **README brought in sync with the above.** It no longer tells you to run cross-model review
+  "after Claude's self-review passes" — the trigger is the change being high-stakes — and
+  `/code-review` is described as optional preflight input to that review rather than a gate of its
+  own. (#509)
+- **Cowork's surface is now stated, not discovered.** Cowork users receive six files and never the
+  wizard doc, so "full protocol: wizard doc" was a dead end for them. The skill now says it is
+  complete on its own and those pointers are optional depth. `cowork/README.md` states plainly
+  that Cowork is guidance, not enforcement — its prompt hooks are unproven as gates. (#509)
+- **Dual cross-model certification is now merge authorization.** `scripts/merge-pr.sh` requires
+  two distinct reviewers at >=95% confidence bound to the head commit, plus a CERTIFIED clearance
+  artifact at round >= 2. That round count is a *structural proxy*, not proof — no local script can
+  confirm a review dialogue was genuine, and the script says so rather than implying otherwise.
+  Both clearances are also posted by the same token, so this is attested, not authenticated. Never
+  cleared by any of it: red CI, net-removed tests, version bumps. Repo-local; it does not ship.
+  (#511, #517)
+- **CI `validate` lookup fixed — it could read a red or queued run as green.** The check took
+  `head -1`, so a green run shadowed a red one of the same name, and its regex could not see the
+  `"conclusion": null` a queued run carries. Found while building the above. (#517)
+- **README corrected**: the E2E scoring pipeline runs in this repo, not in yours. (#507)
+- **ROADMAP demoted to a view** over GitHub issues, which are the source of truth. (#518)
+
 ## [1.95.0] - 2026-08-07
 
 **The repo is now `BaseInfinity/claude-sdlc-harness`.** The npm package stays
