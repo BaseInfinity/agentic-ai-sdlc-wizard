@@ -55,13 +55,13 @@ FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 # `<del/>` is not a void element, so a renderer treats it as an opener, and a
 # closer may carry whitespace before the `>`. Both forms were missed: one
 # published struck text, the other suppressed innocent guidance.
-TOKEN = re.compile(r"<!--|-->|<del(?:\s[^>]*)?/?>|</del\s*>", re.I)
-DEL_AT_START = re.compile(r"<del(?:\s[^>]*)?/?>", re.I)
+TOKEN = re.compile(r"<!--|-->|<del(?:[ \t][^>]*)?/?>|</del[ \t]*>", re.I)
+DEL_AT_START = re.compile(r"<del(?:[ \t][^>]*)?/?>", re.I)
 # `</del >` is valid; `</ del >` is not — the raw-HTML grammar requires `</`
 # immediately followed by the tag name. The wider `</\s*del\s*>` was my own
 # overcorrection when `</del >` was added, and it accepted a closer a browser
 # ignores, publishing text that is still struck.
-DEL_CLOSE = re.compile(r"^</del\s*>$", re.I)
+DEL_CLOSE = re.compile(r"^</del[ \t]*>$", re.I)
 # HTML containers, like fences, only count at 0-3 spaces of indent. Four makes
 # an indented code block, where `<!--` is visible text. `lstrip()` accepted any
 # indent and swallowed the guidance after a four-space-indented comment.
@@ -393,6 +393,15 @@ _RENDERED_FIXTURES = [
     # element is still open and the claim is still hidden.
     ("</ del > does not close the strike element",
      "<del>\nx\n</ del >\n1. **The claim.**\n", False),
+    # Python's \s matches U+00A0; the raw-HTML grammar permits only ASCII
+    # space, tab and line endings. An NBSP is indistinguishable on screen and
+    # one Option-Space away on macOS, so both directions are real drift: a
+    # non-closer read as a closer publishes struck text, and a non-opener read
+    # as an opener hides text the reader can plainly see.
+    ("</del\u00a0> does not close the strike element",
+     "<del>\nx\n</del\u00a0>\n1. **The claim.**\n", False),
+    ("<del\u00a0> is not a strike element and hides nothing",
+     "<del\u00a0>\n1. **The claim.**\n", True),
     # DECLARED BOUND, pinned so a future change has to disagree deliberately.
     # A column-1 opener inside a MULTI-LINE code span is treated as markup.
     # Detecting it needs code-span tracking, which produced two separate
