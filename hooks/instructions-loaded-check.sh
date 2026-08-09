@@ -185,34 +185,89 @@ fi
 #
 # So the signature is the effective trigger landing below 200000, whichever
 # vars produced it — not the number of vars set.
+# VERIFICATION BASELINE: Claude Code v2.1.221.
+#
+# Every constant and rule below was read out of that binary, not inferred from
+# behaviour: the 13000 hard-compact margin and 20000 overhead (`CCo`, `fEe`),
+# the 100000..1000000 clamp (`EX`), the 1/true/yes/on truthy set and its trim
+# (`rr`), the merged-settings read (`kO`, `au`), and the divide-before-multiply
+# order of the trigger (`CCo`). Naming the baseline is the point: it turns the
+# next audit into a diff against one version instead of a re-derivation, which
+# is what ends these review rounds rather than restarting them.
 AC_FLOOR=200000
 
 # `kO` is checked BEFORE any trigger arithmetic: with compaction off, every
 # sentence below about when it "fires" is false. DISABLE_AUTO_COMPACT is read
 # from the live env, autoCompactEnabled from settings.
 AC_OFF=""
-# `rr()` accepts 1/true/yes/on in ANY case, and `kO` consults DISABLE_COMPACT
-# as well. Enumerating a few spellings left the rest reading as "compaction is
-# on" while the binary had already returned.
+# 1 only when the live env said so. The env is authoritative for its own
+# variables; a settings FILE is not, because `kO` reads MERGED settings and
+# settings.local.json outranks the project file. This hook cannot resolve that
+# precedence, so a file-derived disable is reported conditionally rather than
+# asserted — see the reporting block.
+AC_OFF_SURE=""
+# `bp()`, `rr()` and `qfr()` all trim before doing anything else, so trimming
+# here is parity, not politeness: " true " disables compaction in the binary,
+# and " 150000 " is a perfectly ordinary window.
+_ac_trim() { printf '%s' "${1:-}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'; }
+# `rr()` is String(e).toLowerCase().trim() and accepts 1/true/yes/on. It
+# lowercased but did not trim, so a padded value read as "compaction is on"
+# while the binary had already returned.
 _ac_truthy() {
-    case "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" in 1|true|yes|on) return 0 ;; esac
+    case "$(_ac_trim "${1:-}" | tr 'A-Z' 'a-z')" in 1|true|yes|on) return 0 ;; esac
     return 1
 }
-if _ac_truthy "${DISABLE_AUTO_COMPACT:-}" || _ac_truthy "${DISABLE_COMPACT:-}"; then AC_OFF=1; fi
+if _ac_truthy "${DISABLE_AUTO_COMPACT:-}" || _ac_truthy "${DISABLE_COMPACT:-}"; then
+    AC_OFF=1
+    AC_OFF_SURE=1
+fi
+
+# THE CLAIM DOMAIN.
+#
+# Everything below computes a token figure, and a wrong figure is worse than no
+# figure — it is the exact failure #520 exists to stop. The binary parses with
+# `parseFloat` and `bp()`, which accept "1e4", "5.", "1,000,000" and "150k"
+# (the last two via a parseInt fallback that silently truncates). Shell cannot
+# express those grammars, and three review rounds each found another form.
+#
+# So the hook declares what it evaluates and refuses to guess at the rest:
+#   integers:  ^[0-9]+$        (window, max-output-tokens)
+#   decimals:  ^[0-9]+(\.[0-9]+)?$  (percentage — parseFloat honours 30.5)
+# Anything else that is SET is named on screen with no number attached. The
+# guarantee is then finite and checkable: no input produces a false figure, and
+# unsupported input produces no figure.
+_ac_is_int() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; return 0; }
+_ac_is_dec() { case "$1" in ''|*[!0-9.]*|*.*.*|.*|*.) return 1 ;; esac; return 0; }
+# Values that are set but outside the domain. Any entry here suppresses EVERY
+# figure, not just the one it came from: an unreadable max-output makes the
+# overhead unknowable, which makes the trigger unknowable too.
+AC_UNREAD=""
 
 # Overhead is min(max_output_tokens, 20000) [fEe/qfr]. 20000 is the default; a
 # lower CLAUDE_CODE_MAX_OUTPUT_TOKENS reduces it and moves the trigger LATER,
 # so it is read rather than assumed.
 AC_OVH=20000
-case "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-}" in
-    ''|*[!0-9]*) ;;
-    # `ABe` rejects 0, so a zero here is ignored and the model default applies
-    # — which means the FULL 20000 comes off, not none of it.
-    *) if [ "$((10#${CLAUDE_CODE_MAX_OUTPUT_TOKENS}))" -gt 0 ] \
-          && [ "$((10#${CLAUDE_CODE_MAX_OUTPUT_TOKENS}))" -lt 20000 ]; then
-           AC_OVH=$((10#${CLAUDE_CODE_MAX_OUTPUT_TOKENS}))
-       fi ;;
-esac
+# "Was the env var set", tracked SEPARATELY from the resulting overhead. The
+# result used to double as the sentinel — `AC_OVH -eq 20000` meant "unset" —
+# so a live value of 20000 or more, which legitimately caps AT 20000, was
+# indistinguishable from no value at all and lost to a stale settings entry.
+# That inverted this hook's own live-env-first rule. An env var that is present
+# and non-empty settles the question even when the binary then rejects its
+# value: the file describes the next session, not this one.
+AC_OVH_SET=""
+AC_MO_RAW=$(_ac_trim "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-}")
+if [ -n "$AC_MO_RAW" ]; then
+    AC_OVH_SET=1
+    if _ac_is_int "$AC_MO_RAW"; then
+        # `ABe` rejects 0, so a zero here is ignored and the model default
+        # applies — which means the FULL 20000 comes off, not none of it.
+        if [ "$((10#$AC_MO_RAW))" -gt 0 ] && [ "$((10#$AC_MO_RAW))" -lt 20000 ]; then
+            AC_OVH=$((10#$AC_MO_RAW))
+        fi
+    else
+        AC_UNREAD="CLAUDE_CODE_MAX_OUTPUT_TOKENS='${AC_MO_RAW}'"
+    fi
+fi
 
 # READ THE LIVE ENV FIRST, settings.json only as a fallback.
 #
@@ -226,8 +281,8 @@ esac
 # settings.json is only a claim about it. The incident behind #520 was exactly
 # that gap — a value inherited from the user's GLOBAL settings, invisible in
 # the project file, with the operator reading the file and seeing nothing.
-AC_PCT="${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}"
-AC_WIN="${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}"
+AC_PCT=$(_ac_trim "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}")
+AC_WIN=$(_ac_trim "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}")
 AC_SRC="the live environment"
 SETTINGS_JSON="$PROJECT_DIR/.claude/settings.json"
 
@@ -243,9 +298,10 @@ for _ac_sf in "$SETTINGS_JSON" "$HOME/.claude/settings.json"; do
     if grep -q '"autoCompactEnabled"[[:space:]]*:[[:space:]]*false' "$_ac_sf" \
        || grep -qiE '"(DISABLE_AUTO_COMPACT|DISABLE_COMPACT)"[[:space:]]*:[[:space:]]*"(1|true|yes|on)"' "$_ac_sf"; then
         AC_OFF=1
+        # deliberately NOT AC_OFF_SURE — see its declaration
     fi
 done
-if [ "$AC_OVH" -eq 20000 ] && [ -f "$SETTINGS_JSON" ]; then
+if [ -z "$AC_OVH_SET" ] && [ -f "$SETTINGS_JSON" ]; then
     AC_MO=$(grep -o '"CLAUDE_CODE_MAX_OUTPUT_TOKENS"[[:space:]]*:[[:space:]]*"[0-9]*"' "$SETTINGS_JSON" \
         | head -1 | sed 's/.*"\([0-9]*\)"$/\1/')
     case "$AC_MO" in
@@ -257,35 +313,67 @@ if [ -z "$AC_PCT" ] && [ -z "$AC_WIN" ] && [ -f "$SETTINGS_JSON" ]; then
     AC_SRC=".claude/settings.json"
     # The sed had to widen with the grep: it still captured [0-9]* only, so a
     # decimal survived the pattern and was then thrown away by the extraction.
-    AC_PCT=$(grep -o '"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"[[:space:]]*:[[:space:]]*"[0-9.]*"' "$SETTINGS_JSON" \
-        | head -1 | sed 's/.*"\([0-9.]*\)"$/\1/')
-    AC_WIN=$(grep -o '"CLAUDE_CODE_AUTO_COMPACT_WINDOW"[[:space:]]*:[[:space:]]*"[0-9]*"' "$SETTINGS_JSON" \
-        | head -1 | sed 's/.*"\([0-9]*\)"$/\1/')
+    # Capture ANY string value, not just digits. A digits-only pattern made an
+    # out-of-domain file value disappear at the grep, which is indistinguishable
+    # from "not configured" — the operator then reads the file, sees the key,
+    # and sees the hook say nothing about it. Domain filtering happens once,
+    # below, for both sources.
+    AC_PCT=$(grep -o '"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS_JSON" \
+        | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+    AC_WIN=$(grep -o '"CLAUDE_CODE_AUTO_COMPACT_WINDOW"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS_JSON" \
+        | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+    AC_PCT=$(_ac_trim "$AC_PCT")
+    AC_WIN=$(_ac_trim "$AC_WIN")
 fi
-# Non-numeric values are treated as unset — the arithmetic below would abort
-# the hook otherwise, and a hook that dies is a hook that checks nothing.
-# A leading zero would make $(( )) read the value as octal, so every figure
-# below uses 10#. PCT=0 is treated as unset because `CCo` ignores it (0 is
-# falsy there) and falls back to the normal cap — reporting a zero-token
-# trigger would be the confident-wrong-number failure this hook exists to stop.
-# `parseFloat` accepts 30.5, and the binary honours it. An integers-only filter
-# discarded the value and emitted nothing at all, so a live percentage went
-# unreported. The value stays a string and awk does the arithmetic.
-case "$AC_PCT" in
-    ''|*[!0-9.]*|*.*.*|.|*[!0-9]) AC_PCT="" ;;
-esac
-if [ -n "$AC_PCT" ] && awk -v v="$AC_PCT" 'BEGIN{exit !(v+0 == 0)}'; then AC_PCT=""; fi
-case "$AC_WIN" in ''|*[!0-9]*) AC_WIN="" ;; esac
-# `ABe` rejects a value of 0 outright, so the env var is ignored and the model's
-# own default applies. Describing that as an active setting is a lie in the
-# other direction, so it is treated as unset.
-if [ -n "$AC_WIN" ] && [ "$((10#$AC_WIN))" -le 0 ]; then AC_WIN=""; fi
-if [ -n "$AC_WIN" ]; then AC_WIN=$((10#$AC_WIN)); fi
+# DOMAIN FILTER — one place, both sources, both variables.
+#
+# In domain: keep the raw string (awk does the arithmetic, so 30.5 survives).
+# Out of domain but SET: record it in AC_UNREAD and clear it, which suppresses
+# every figure below. Genuinely unset: nothing to say.
+#
+# PCT=0 and WINDOW=0 are IN domain and read as unset on purpose: `CCo` and
+# `ABe` both reject zero and fall back to the model default, so reporting a
+# zero-token trigger would be the confident-wrong-number failure this hook
+# exists to stop. A leading zero would also make $(( )) read the value as
+# octal, so every figure below uses 10#.
+if [ -n "$AC_PCT" ]; then
+    if _ac_is_dec "$AC_PCT"; then
+        # LC_ALL=C on every awk call. parseFloat is locale-independent; awk's
+        # numeric conversion is not guaranteed to be, and some awks honour
+        # LC_NUMERIC. Not reproduced on the BSD awk this was developed against
+        # — the observable difference there is output formatting, which this
+        # hook never relies on — but a consumer running an awk that parses
+        # "30.5" as 30 under a comma-decimal locale would get a wrong figure
+        # introduced by the very fix that made the arithmetic exact.
+        if LC_ALL=C awk -v v="$AC_PCT" 'BEGIN{exit !(v+0 == 0)}'; then AC_PCT=""; fi
+    else
+        AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }CLAUDE_AUTOCOMPACT_PCT_OVERRIDE='${AC_PCT}'"
+        AC_PCT=""
+    fi
+fi
+if [ -n "$AC_WIN" ]; then
+    if _ac_is_int "$AC_WIN"; then
+        if [ "$((10#$AC_WIN))" -le 0 ]; then AC_WIN=""; else AC_WIN=$((10#$AC_WIN)); fi
+    else
+        AC_UNREAD="${AC_UNREAD:+$AC_UNREAD, }CLAUDE_CODE_AUTO_COMPACT_WINDOW='${AC_WIN}'"
+        AC_WIN=""
+    fi
+fi
 
 if [ -n "$AC_OFF" ]; then
-    if [ -n "$AC_WIN" ] || [ -n "$AC_PCT" ]; then
-        echo "NOTE: auto-compaction is OFF (autoCompactEnabled false, or DISABLE_AUTO_COMPACT / DISABLE_COMPACT set), so CLAUDE_CODE_AUTO_COMPACT_WINDOW / CLAUDE_AUTOCOMPACT_PCT_OVERRIDE have no effect and the session runs to the hard limit. If it is the settings key, flipping it back takes effect immediately; if it is an env var, nothing can unset it in a live process and you need claude --resume (#520)."
+    if [ -n "$AC_WIN" ] || [ -n "$AC_PCT" ] || [ -n "$AC_UNREAD" ]; then
+        if [ -n "$AC_OFF_SURE" ]; then
+            echo "NOTE: auto-compaction is OFF — DISABLE_AUTO_COMPACT / DISABLE_COMPACT is set in the environment, so the window and percentage vars have no effect and the session runs to the hard limit. Nothing can unset an env var in a live process; you need claude --resume (#520)."
+        else
+            echo "NOTE: a settings file sets autoCompactEnabled false (or a disable var), which would make the window and percentage vars inert. Claude Code merges settings and settings.local.json outranks the project file, so confirm with /config before trusting it. Flipping the key back takes effect immediately (#520)."
+        fi
     fi
+elif [ -n "$AC_UNREAD" ]; then
+    # A value is set that this hook does not evaluate. Print NO figure: the
+    # binary would accept it, so any number computed by pretending it is unset
+    # would be confidently wrong. Name it instead, so the operator can see the
+    # hook read it and declined, rather than wondering whether it was noticed.
+    echo "NOTE: ${AC_UNREAD} (from ${AC_SRC}) — this hook evaluates plain integers only (plus a decimal percentage), so it is computing no trigger. Claude Code DOES read 1e4, 5. and 150k — and a suffix is not its human meaning: 150k parses as 150. Use a plain integer (#520)."
 elif [ -n "$AC_WIN" ]; then
     # ONE computation, not one per branch. The previous shape had a
     # sub-200000 branch ahead of a both-set branch, so WINDOW=150000 with
@@ -311,8 +399,8 @@ elif [ -n "$AC_WIN" ]; then
     AC_TRIGGER="$AC_CAP"
     if [ -n "$AC_PCT" ]; then
         # awk, because parseFloat accepts 30.5 and shell arithmetic does not.
-        AC_TRIGGER=$(awk -v w="$AC_WIN_EFF" -v p="$AC_PCT" -v c="$AC_CAP" \
-            'BEGIN{t=int(w*p/100); if (t>c) t=c; print t}')
+        AC_TRIGGER=$(LC_ALL=C awk -v w="$AC_WIN_EFF" -v p="$AC_PCT" -v c="$AC_CAP" \
+            'BEGIN{t=int(w*(p/100)); if (t>c) t=c; print t}')
     fi
     # The hook cannot know which model will run and a smaller model's window
     # wins the min(), so it also evaluates the SAME formula at 200000 and
@@ -326,8 +414,8 @@ elif [ -n "$AC_WIN" ]; then
     AC_CAP_200=$(( AC_WIN_200 - 13000 ))
     AC_TRIG_200="$AC_CAP_200"
     if [ -n "$AC_PCT" ]; then
-        AC_TRIG_200=$(awk -v w="$AC_WIN_200" -v p="$AC_PCT" -v c="$AC_CAP_200" \
-            'BEGIN{t=int(w*p/100); if (t>c) t=c; print t}')
+        AC_TRIG_200=$(LC_ALL=C awk -v w="$AC_WIN_200" -v p="$AC_PCT" -v c="$AC_CAP_200" \
+            'BEGIN{t=int(w*(p/100)); if (t>c) t=c; print t}')
     fi
     AC_VARS="CLAUDE_CODE_AUTO_COMPACT_WINDOW=${AC_WIN}"
     # Keep the SOONER framing for a sub-200000 window. That range was
@@ -339,7 +427,18 @@ elif [ -n "$AC_WIN" ]; then
     if [ "$AC_WIN" -lt "$AC_FLOOR" ]; then
         AC_TAIL=" A window this size compacts SOONER, not never — nothing in that range switches compaction off."
     fi
-    [ -n "$AC_PCT" ] && AC_VARS="CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${AC_PCT} and ${AC_VARS} multiply, so"
+    # `CCo` ignores any percentage outside 0-100 and falls back to the cap. The
+    # min() already made the FIGURE right by coincidence; the sentence still
+    # said the two vars "multiply", which is a false claim about the mechanism
+    # standing next to a true number. Under a no-false-claims invariant the
+    # mechanism is a claim too.
+    if [ -n "$AC_PCT" ]; then
+        if LC_ALL=C awk -v v="$AC_PCT" 'BEGIN{exit !(v+0 > 100)}'; then
+            AC_VARS="CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${AC_PCT} is outside 0-100 and ignored, leaving ${AC_VARS}, so"
+        else
+            AC_VARS="CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${AC_PCT} and ${AC_VARS} multiply, so"
+        fi
+    fi
     if [ "$AC_TRIGGER" -lt "$AC_FLOOR" ]; then
         echo "WARNING: autocompact fires at ${AC_TRIGGER} tokens or less — ${AC_VARS} (from ${AC_SRC}). On a 200K-window model: ${AC_TRIG_200}. Raise the product past 200000 or drop either (#207, #520).${AC_TAIL}"
     else
