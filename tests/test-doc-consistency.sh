@@ -521,14 +521,25 @@ test_wizard_doc_documents_autocompact_disable_trap() {
     # now requires deliberately updating this constant — that friction IS the
     # guard, and it is the property the token patterns never had.
     #
-    # Normalized whitespace on both sides so a future re-wrap does not
-    # false-fail; the constants below are written pre-normalized. `grep -F`,
-    # not -E, so punctuation is literal.
-    local norm
-    norm=$(printf '%s' "$section" | tr -s '[:space:]' ' ')
-    printf '%s' "$norm" | grep -qF 'A window under 200000 disables autocompact entirely.' \
+    # AND ANCHOR THE PIN TO COLUMN 1. A free-floating `grep -F` matches a
+    # SUBSTRING, and a substring is not an assertion: cross-model review then
+    # passed 129/129 with "It is false that A window under 200000 disables
+    # autocompact entirely." The pinned claim was intact — it had simply been
+    # placed under negating scope. Requiring the constant to BEGIN the line
+    # removes the room to put anything in front of it, so the claim's own
+    # structural unit can no longer be re-scoped. (A separate contradicting
+    # sentence elsewhere in the doc is still review's job, not grep's.)
+    #
+    # `awk index($0,pfx)==1` rather than a regex: the constants contain `*`,
+    # `.` and backticks, and escaping them for grep -E is how these guards
+    # acquired their bugs in the first place. index() is literal by construction.
+    _doc_line_begins_with() {
+        printf '%s\n' "$1" | awk -v pfx="$2" 'index($0, pfx) == 1 { f = 1 } END { exit !f }'
+    }
+    _doc_line_begins_with "$section" \
+        '1. **A window under 200000 disables autocompact entirely.**' \
         || missing="$missing trap1-canonical-polarity"
-    printf '%s' "$norm" | grep -qF 'The two vars multiply.' \
+    _doc_line_begins_with "$section" '2. **The two vars multiply.**' \
         || missing="$missing trap2-canonical-polarity"
     # And the formula block, which is what makes the rest checkable.
     printf '%s' "$section" | grep -qE 'min\(model_window' || missing="$missing window-formula"
@@ -598,11 +609,17 @@ test_sdlc_skill_documents_autocompact_disable_trap() {
         || missing="$missing disable-consequence-bound-to-threshold"
     # ...and the polarity, which no token pattern can carry. Same finding as the
     # wizard-doc guard above: the inversion "does not disable compaction"
-    # satisfies every keyword check. Pinned verbatim, whitespace-normalized.
-    # This surface phrases the fact differently from the wizard doc on purpose —
-    # the skill is byte-capped — so the constant is per-surface, not shared.
-    tr -s '[:space:]' ' ' < "$SKILL" \
-        | grep -qF 'below that Claude Code disables compaction outright instead of hastening it' \
+    # satisfies every keyword check. This surface phrases the fact differently
+    # from the wizard doc on purpose — the skill is byte-capped — so the
+    # constant is per-surface, not shared.
+    #
+    # Anchored to column 1 for the same reason as the wizard-doc pins: a
+    # free substring match was defeated by wrapping the claim in negating
+    # scope (`the assertion "..." is false`). The constant therefore runs from
+    # the start of the line THROUGH the consequence, so there is nowhere to
+    # insert a qualifier ahead of it.
+    awk -v pfx='**Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone and keep it >= 200000 — below that Claude Code disables compaction outright instead of hastening it.' \
+        'index($0, pfx) == 1 { f = 1 } END { exit !f }' "$SKILL" \
         || missing="$missing disable-canonical-polarity"
     # The retired advice must not come back on this surface.
     grep -qiE 'PCT_OVERRIDE=30|PCT_OVERRIDE=`?30' "$SKILL" && missing="$missing retired-pct30-pairing"
