@@ -52,7 +52,8 @@ FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 # walks them in document order. Line-oriented because the claims being guarded
 # are whole lines; a partial-line strip would invite the same
 # substring-is-not-an-assertion mistake that anchoring just fixed.
-TOKEN = re.compile(r"`+|<!--|-->|<del(?:\s[^>]*)?>|</del>", re.I)
+TOKEN = re.compile(r"<!--|-->|<del(?:\s[^>]*)?>|</del>", re.I)
+DEL_AT_START = re.compile(r"<del(?:\s[^>]*)?>", re.I)
 
 
 def _scan(text):
@@ -96,25 +97,42 @@ def _strip_hidden(text, keep_fenced):
     two-pass version opened a fence on the ``` inside `<!--\n```\n-->`, never
     saw the comment closer, and swallowed the visible section after it.
     CommonMark has no such ordering: fenced code and HTML blocks are both leaf
-    blocks and whichever OPENS FIRST owns the text until it closes. A single
-    "what container am I in" state is that rule.
+    blocks and whichever OPENS FIRST owns the text until it closes.
+
+    THE MODEL IS BLOCK-LEVEL HTML, and that is the whole design. A container
+    opens only when a line BEGINS with its opener. Three separate findings
+    came from modelling inline HTML instead:
+
+      * a backticked `<del>` mentioned in prose opened del state;
+      * so the fix tracked code spans — and an unmatched backtick run then
+        established permanent code-span state, blinding the scanner to a real
+        `<!--` after it;
+      * and an opener anywhere on a line hid the whole line, so appending a
+        harmless `<!-- note -->` to a correct sentence deleted it.
+
+    All three are the same mistake. A line beginning with `<!--` shows the
+    reader nothing; a line that MENTIONS `<!--` shows the reader everything
+    before it. Anchoring the rule to column 1 removes the need to know whether
+    a mid-line `<` is markup or prose — which is the question that cannot be
+    answered without a full inline parser, and the one every version of this
+    scanner got wrong.
+
+    DECLARED BOUND: a mid-line opener with no closer on its line does not hide
+    what follows. Modelling that requires code-span tracking, and code-span
+    tracking is what produced two of the three findings above. Within the
+    threat model here — drift and careless edits, not malice — an unclosed
+    mid-line `<!--` is a visibly broken document, not a silent one.
 
     `keep_fenced` decides what happens to a fence that is itself visible:
     False gives prose only (a claim that exists only inside a fence is a
     quotation, per #513), True keeps it (a formula block is an illustration a
     reader can see). Neither keeps a fence sitting inside a comment.
 
-    Code spans are tracked across lines because CommonMark lets them span
-    lines. Line-local stripping read the `<del>` in ``a `code\nand <del>` span``
-    as markup and hid the section below it — a false positive, which breaks the
-    document for an innocent edit and is worth as much as a miss.
-
     Unterminated openers keep swallowing on purpose: that fails CLOSED.
     """
     out = []
     mode = None        # None | "comment" | "del" | "fence"
     fence = None       # (char, run_length) while mode == "fence"
-    code = 0           # open code-span backtick run length, 0 when none
     for line in text.split("\n"):
         if mode == "fence":
             m = FENCE.match(line)
@@ -127,46 +145,45 @@ def _strip_hidden(text, keep_fenced):
                 mode, fence = None, None
             continue
         if mode in ("comment", "del"):
-            # Inside an HTML container nothing else is markup — backticks there
-            # are not code spans, and a nested opener is text.
-            closer = "-->" if mode == "comment" else "</del>"
+            # Walk EVERY token: `--> <!--` closes and reopens on one line.
+            # Stopping at the first closer published the hidden claim under it.
             for m in TOKEN.finditer(line):
-                if m.group(0).lower() == closer:
+                low = m.group(0).lower()
+                if mode is None:
+                    if low == "<!--":
+                        mode = "comment"
+                    elif low.startswith("<del"):
+                        mode = "del"
+                elif mode == "comment" and low == "-->":
                     mode = None
-                    break
+                elif mode == "del" and low == "</del>":
+                    mode = None
             continue
-        if code == 0:
-            m = FENCE.match(line)
-            if m:
-                mode, fence = "fence", (m.group(2)[0], len(m.group(2)))
-                if keep_fenced:
-                    out.append(line)
-                continue
-        # Walk EVERY token in order and never stop early: a line can open and
-        # close a container and open another. Breaking on the first opener read
-        # `<!-- note -->` as still-open and swallowed the document after it.
-        visible = True
-        for m in TOKEN.finditer(line):
-            tok = m.group(0)
-            low = tok.lower()
-            if mode is None:
-                if tok[0] == "`":
-                    if code == 0:
-                        code = len(tok)
-                    elif len(tok) == code:
-                        code = 0
-                elif code:                 # literal text inside a code span
-                    pass
-                elif low == "<!--":
-                    mode, visible = "comment", False
-                elif low.startswith("<del"):
-                    mode, visible = "del", False
-            elif mode == "comment" and low == "-->":
-                mode = None
-            elif mode == "del" and low == "</del>":
-                mode = None
-        if visible:
-            out.append(line)
+        m = FENCE.match(line)
+        if m:
+            mode, fence = "fence", (m.group(2)[0], len(m.group(2)))
+            if keep_fenced:
+                out.append(line)
+            continue
+        stripped = line.lstrip()
+        low = stripped.lower()
+        if low.startswith("<!--") or DEL_AT_START.match(stripped):
+            mode = "comment" if low.startswith("<!--") else "del"
+            # ...and the same line may close it again, and reopen. Walk it all.
+            for m in TOKEN.finditer(stripped[4:] if mode == "comment"
+                                    else stripped):
+                tok = m.group(0).lower()
+                if mode is None:
+                    if tok == "<!--":
+                        mode = "comment"
+                    elif tok.startswith("<del"):
+                        mode = "del"
+                elif mode == "comment" and tok == "-->":
+                    mode = None
+                elif mode == "del" and tok == "</del>":
+                    mode = None
+            continue                      # the line itself shows nothing
+        out.append(line)
     return "\n".join(out)
 
 
@@ -262,10 +279,25 @@ _RENDERED_FIXTURES = [
      "A literal `<del>` tag\n1. **The claim.**\n", True),
     ("inline-code comment opener is text, not an opener",
      "Write `<!--` to hide a line\n1. **The claim.**\n", True),
-    # ...and the overcorrection: real markup on a line that ALSO has inline
-    # code must still be honoured.
-    ("real opener beside inline code still opens",
-     "Use `x` here <!--\n1. **The claim.**\n", False),
+    # THE DECLARED BOUND, pinned so it is a decision rather than an accident:
+    # a mid-line opener does not hide what follows. Modelling that needs
+    # code-span tracking, and code-span tracking is what produced two separate
+    # findings (a backticked <del> opening del state; an unmatched backtick run
+    # blinding the scanner permanently).
+    ("a mid-line opener does not hide the next line (declared bound)",
+     "Use `x` here <!--\n1. **The claim.**\n", True),
+    # Cross-model review, round 8. A harmless trailing comment on a correct
+    # sentence must not delete it — the opener-anywhere rule did exactly that.
+    ("a trailing comment does not delete the sentence it follows",
+     "1. **The claim.** <!-- threshold note -->\n", True),
+    # Round 8: closing and reopening on one line. Stopping at the first closer
+    # published the hidden claim underneath.
+    ("close-then-reopen on one line keeps hiding",
+     "<!--\n--> <!--\n1. **The claim.**\n-->\n", False),
+    # Round 8: an unmatched backtick run is literal text and must not blind the
+    # scanner to a real opener after it.
+    ("an unmatched backtick run does not blind the scanner",
+     "A stray ` tick\n<!--\n1. **The claim.**\n-->\n", False),
     # A fence body is a quotation: markup inside it is content.
     ("comment opener inside a fence is content",
      "```\n<!--\n```\n1. **The claim.**\n", True),
