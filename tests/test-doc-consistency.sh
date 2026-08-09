@@ -487,15 +487,29 @@ test_wizard_doc_mentions_permissions_command() {
 #                                window disables compaction outright; no later
 #                                trigger occurs" excluded itself via the "no".
 # So the negator has to be scoped to the CLAUSE carrying the claim, not the
-# line. Clauses are split on . ; and — before the test is applied.
+# line. Clauses are split on . ; , and — before the test is applied.
+#
+# The comma is a splitter for the same reason the semicolon is (round 16): "A
+# window under 200000 disables compaction, but no other setting does" put the
+# claim and a *different* sentence's negator on one clause, and the "no" in the
+# second half excused the first. Splitting on the comma separates them. Once
+# commas split, no clause can contain one, so the old `[^,]{0,40}` proximity
+# bound is exactly equivalent to `.{0,40}` — the simpler form is kept.
+#
+# DECLARED BOUND: this is a clause-scoped textual guard, and it is a BACKSTOP
+# behind the canonical-sentence pins, not the primary defence. A negator placed
+# outside any punctuation this splits on will defeat it. That is accepted: the
+# pins already fail if the canonical sentences change, so defeating this guard
+# alone does not let a wrong claim through silently. Further grammar defeats are
+# classification questions against this bound, not bugs to patch.
 #
 # `\bdisables?\b` and not `disables?`: the latter matches inside "disabled",
 # which caught this document's own past-tense account of the mistake — a guard
 # that forbids describing the error it exists to prevent is unusable.
 _doc_asserts_disabling() {
     printf '%s' "$1" \
-        | sed 's/[.;]/\n/g; s/ — /\n/g' \
-        | grep -iE '\bdisables?\b[^,]{0,40}(autocompact|compaction)' \
+        | sed 's/[.;,]/\n/g; s/ — /\n/g' \
+        | grep -iE '\bdisables?\b.{0,40}(autocompact|compaction)' \
         | grep -viqE 'nothing|never|\bno\b|\bnot\b'
 }
 
