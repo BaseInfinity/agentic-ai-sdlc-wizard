@@ -2721,20 +2721,23 @@ _autocompact_hook_output() {
     printf '%s' "$output"
 }
 
-# A window under 200000 disables autocompact entirely (ZJu). Nothing detected
-# this before, and it is the most likely accident in the whole space: the
-# consumer is TRYING to compact earlier and instead turns it off.
-test_instructions_hook_warns_on_sub_200k_window_disable_trap() {
+# A window under 200000 makes compaction fire SOONER. The hook used to call
+# this DISABLED and tell the consumer to raise it — advice that moved the
+# trigger later for someone whose config was already doing what they wanted.
+# The word "disabl" is now a FAILURE condition, not a requirement.
+test_instructions_hook_reports_sub_200k_window_fires_sooner() {
     local output
     output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000"')
     local ok=true
     echo "$output" | grep -q 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' || ok=false
-    echo "$output" | grep -qiE 'disabl' || ok=false
-    echo "$output" | grep -qE '200000|200[Kk]' || ok=false
+    echo "$output" | grep -qiE 'disabl' && ok=false
+    echo "$output" | grep -qiE 'sooner|earlier' || ok=false
+    # 150000 - 20000 overhead - 13000 cap = 117000
+    echo "$output" | grep -qE '\b117000\b' || ok=false
     if [ "$ok" = true ]; then
-        pass "#520: warns that a sub-200000 window silently disables autocompact"
+        pass "#520: reports that a sub-200000 window compacts sooner, and names the trigger"
     else
-        fail "#520: WINDOW=150000 disables autocompact entirely (ZJu < bIe=200000) and the hook said nothing useful, got: $output"
+        fail "#520: WINDOW=150000 makes compaction fire at 117000, not disabled — hook must say so without the word 'disabled', got: $output"
     fi
 }
 
@@ -2848,8 +2851,8 @@ EOF
         "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
     local ok=true
-    echo "$output" | grep -qE 'WARNING: autocompact is DISABLED' || ok=false
-    echo "$output" | grep -q '150000' || ok=false
+    echo "$output" | grep -qE 'NOTE: CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000' || ok=false
+    echo "$output" | grep -qi 'sooner' || ok=false
     echo "$output" | grep -qi 'live environment' || ok=false
     if [ "$ok" = true ]; then
         pass "#520: reads the live env over settings.json, and names which it used"
@@ -2858,7 +2861,7 @@ EOF
     fi
 }
 
-test_instructions_hook_warns_on_sub_200k_window_disable_trap
+test_instructions_hook_reports_sub_200k_window_fires_sooner
 test_instructions_hook_silent_on_deliberate_large_compound_trigger
 test_instructions_hook_reports_the_200k_model_figure_not_a_ratio
 test_instructions_hook_still_warns_when_compound_trigger_below_floor

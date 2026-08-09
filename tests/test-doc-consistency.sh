@@ -530,8 +530,13 @@ test_wizard_doc_documents_autocompact_disable_trap() {
     #
     # `^N. ` pins the list item. The trap sentence must carry the threshold and
     # the consequence together, so neither can be dropped independently.
-    printf '%s' "$section" | grep -qiE '^1\..*200000[^.]*disabl' \
-        || missing="$missing trap1-disable-bound-to-threshold"
+    printf '%s' "$section" | grep -qiE '^1\..*200000[^.]*sooner' \
+        || missing="$missing trap1-sooner-bound-to-threshold"
+    # And the retired falsehood must not come back on this surface. The claim
+    # was guarded, pinned and cross-model certified for thirteen rounds while
+    # being wrong, so its exact wording is now a denylist entry.
+    printf '%s' "$section" | grep -qiE 'disables? (autocompact|compaction) (entirely|outright)' \
+        && missing="$missing retired-disable-falsehood"
     # The multiplication must stay documented — it is real, it is just not a
     # prohibition. Losing it puts #207's 120000 case back in the dark.
     printf '%s' "$section" | grep -qiE '^2\..*multipl' || missing="$missing trap2-multiplication"
@@ -564,7 +569,7 @@ test_wizard_doc_documents_autocompact_disable_trap() {
         printf '%s\n' "$1" | awk -v pfx="$2" 'index($0, pfx) == 1 { f = 1 } END { exit !f }'
     }
     _doc_line_begins_with "$section" \
-        '1. **A window under 200000 disables autocompact entirely.**' \
+        '1. **A window under 200000 makes compaction fire sooner, not later.**' \
         || missing="$missing trap1-canonical-polarity"
     _doc_line_begins_with "$section" '2. **The two vars multiply.**' \
         || missing="$missing trap2-canonical-polarity"
@@ -576,7 +581,7 @@ test_wizard_doc_documents_autocompact_disable_trap() {
     if [ -z "$missing" ]; then
         pass "#520: the autocompact section names the sub-200000 disable trap and the multiplication"
     else
-        fail "#520: the 'Autocompact mechanics' section must document the disable trap by threshold — missing:$missing"
+        fail "#520: the 'Autocompact mechanics' section must bind the 200000 threshold to the SOONER consequence — missing:$missing"
     fi
 }
 
@@ -642,14 +647,17 @@ test_sdlc_skill_documents_autocompact_disable_trap() {
     # and fail a document that is perfectly correct.
     local skill_vis
     skill_vis=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --visible "$SKILL")
-    printf '%s' "$skill_vis" | grep -qE '200000|200,000' || missing="$missing threshold"
-    # Threshold and consequence on the SAME line. A whole-file `disabl` grep
-    # was satisfied by the unrelated `disableAllHooks` text elsewhere in this
-    # skill, so the sentence naming the trap could be deleted with the
+    # Cause and consequence on the SAME line. A whole-file grep for the
+    # consequence word was once satisfied by unrelated text elsewhere in this
+    # skill, so the sentence naming the mechanic could be deleted with the
     # assertion still green — proved by cross-model review, second instance of
     # this exact defect in one round.
-    printf '%s' "$skill_vis" | grep -qiE '(200000[^.]*disabl|disabl[^.]*200000)' \
-        || missing="$missing disable-consequence-bound-to-threshold"
+    printf '%s' "$skill_vis" | grep -qiE 'smaller window[^.]*sooner' \
+        || missing="$missing sooner-consequence-bound-to-cause"
+    # The retired falsehood is a denylist entry on this surface too: it shipped
+    # to every consumer repo via npm and was certified thirteen times.
+    printf '%s' "$skill_vis" | grep -qiE 'disables? compaction (outright|entirely)' \
+        && missing="$missing retired-disable-falsehood"
     # ...and the polarity, which no token pattern can carry. Same finding as the
     # wizard-doc guard above: the inversion "does not disable compaction"
     # satisfies every keyword check. This surface phrases the fact differently
@@ -665,16 +673,16 @@ test_sdlc_skill_documents_autocompact_disable_trap() {
     # reason: hiding this line in an HTML comment left it at column 1 and kept
     # the suite green while the shipped skill said nothing.
     python3 "$REPO_ROOT/tests/lib/mdfence.py" --rendered "$SKILL" \
-        | awk -v pfx='**Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone and keep it >= 200000 — below that Claude Code disables compaction outright instead of hastening it.' \
+        | awk -v pfx='**Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone — a smaller window compacts sooner, and nothing in that range switches compaction off.' \
         'index($0, pfx) == 1 { f = 1 } END { exit !f }' \
         || missing="$missing disable-canonical-polarity"
     # The retired advice must not come back on this surface.
     printf '%s' "$skill_vis" | grep -qiE 'PCT_OVERRIDE=30|PCT_OVERRIDE=`?30' \
         && missing="$missing retired-pct30-pairing"
     if [ -z "$missing" ]; then
-        pass "#520: shipped skill names the sub-200000 disable trap, and the PCT=30 pairing is gone"
+        pass "#520: shipped skill states the sub-200000 mechanic correctly, and the PCT=30 pairing is gone"
     else
-        fail "#520: shipped skill must name the 200000 disable threshold and must not re-add the PCT_OVERRIDE=30 pairing — missing:$missing"
+        fail "#520: shipped skill must state that a smaller window compacts SOONER (it does not disable), and must not re-add the PCT_OVERRIDE=30 pairing — missing:$missing"
     fi
 }
 
