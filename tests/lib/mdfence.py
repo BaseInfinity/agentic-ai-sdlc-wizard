@@ -54,6 +54,26 @@ FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 # substring-is-not-an-assertion mistake that anchoring just fixed.
 TOKEN = re.compile(r"<!--|-->|<del(?:\s[^>]*)?>|</del>", re.I)
 DEL_AT_START = re.compile(r"<del(?:\s[^>]*)?>", re.I)
+# HTML containers, like fences, only count at 0-3 spaces of indent. Four makes
+# an indented code block, where `<!--` is visible text. `lstrip()` accepted any
+# indent and swallowed the guidance after a four-space-indented comment.
+BLOCK_INDENT = re.compile(r"^ {0,3}(?=\S)")
+
+
+def _fence_open(line):
+    """(fence_char, run_length) if `line` OPENS a fence, else None.
+
+    A backtick fence's info string may not itself contain a backtick —
+    CommonMark's rule, and without it a line like ``` ```lang`x` ``` reads as an
+    unterminated fence and hides the rest of the document. Tilde fences have no
+    such restriction.
+    """
+    m = FENCE.match(line)
+    if not m:
+        return None
+    if m.group(2)[0] == "`" and "`" in m.group(3):
+        return None
+    return m.group(2)[0], len(m.group(2))
 
 
 def _scan(text):
@@ -63,8 +83,9 @@ def _scan(text):
     for line in text.split("\n"):
         m = FENCE.match(line)
         if open_fence is None:
-            if m:
-                open_fence = (m.group(2)[0], len(m.group(2)))
+            opened = _fence_open(line)
+            if opened:
+                open_fence = opened
                 body = []
             else:
                 yield line, None
@@ -133,6 +154,7 @@ def _strip_hidden(text, keep_fenced):
     out = []
     mode = None        # None | "comment" | "del" | "fence"
     fence = None       # (char, run_length) while mode == "fence"
+    depth = 0          # nesting depth while mode == "del"
     for line in text.split("\n"):
         if mode == "fence":
             m = FENCE.match(line)
@@ -153,35 +175,51 @@ def _strip_hidden(text, keep_fenced):
                     if low == "<!--":
                         mode = "comment"
                     elif low.startswith("<del"):
-                        mode = "del"
+                        mode, depth = "del", 1
                 elif mode == "comment" and low == "-->":
                     mode = None
+                # `<del>` nests. Ignoring an inner opener let its closer end
+                # the OUTER element and publish still-struck text.
+                elif mode == "del" and low.startswith("<del"):
+                    depth += 1
                 elif mode == "del" and low == "</del>":
-                    mode = None
+                    depth -= 1
+                    if depth <= 0:
+                        mode = None
             continue
-        m = FENCE.match(line)
-        if m:
-            mode, fence = "fence", (m.group(2)[0], len(m.group(2)))
+        opened = _fence_open(line)
+        if opened:
+            mode, fence = "fence", opened
             if keep_fenced:
                 out.append(line)
             continue
-        stripped = line.lstrip()
+        indent = BLOCK_INDENT.match(line)
+        stripped = line.lstrip() if indent else ""
         low = stripped.lower()
         if low.startswith("<!--") or DEL_AT_START.match(stripped):
             mode = "comment" if low.startswith("<!--") else "del"
+            depth = 0 if mode == "comment" else 1
+            # Skip PAST the opener before walking the rest of the line —
+            # rescanning it counted the opening `<del>` a second time and left
+            # the element permanently open.
+            rest = (stripped[4:] if mode == "comment"
+                    else stripped[DEL_AT_START.match(stripped).end():])
             # ...and the same line may close it again, and reopen. Walk it all.
-            for m in TOKEN.finditer(stripped[4:] if mode == "comment"
-                                    else stripped):
+            for m in TOKEN.finditer(rest):
                 tok = m.group(0).lower()
                 if mode is None:
                     if tok == "<!--":
                         mode = "comment"
                     elif tok.startswith("<del"):
-                        mode = "del"
+                        mode, depth = "del", 1
                 elif mode == "comment" and tok == "-->":
                     mode = None
+                elif mode == "del" and tok.startswith("<del"):
+                    depth += 1
                 elif mode == "del" and tok == "</del>":
-                    mode = None
+                    depth -= 1
+                    if depth <= 0:
+                        mode = None
             continue                      # the line itself shows nothing
         out.append(line)
     return "\n".join(out)
@@ -298,6 +336,25 @@ _RENDERED_FIXTURES = [
     # scanner to a real opener after it.
     ("an unmatched backtick run does not blind the scanner",
      "A stray ` tick\n<!--\n1. **The claim.**\n-->\n", False),
+    # Cross-model review, round 9. `<del>` nests. Ignoring the inner opener let
+    # its closer end the OUTER element and publish still-struck text.
+    ("nested del keeps hiding until the outer closer",
+     "<del>\n<del>x</del>\n1. **The claim.**\n</del>\n", False),
+    ("nested del on one line still closes cleanly",
+     "<del><del>x</del></del>\n1. **The claim.**\n", True),
+    # Round 9: 4 spaces makes an indented code block, where `<!--` is visible
+    # text — the same 0-3 rule fences already follow. lstrip() accepted any
+    # indent and swallowed the guidance after it.
+    ("a 4-space indented comment opener is visible text",
+     "    <!--\n1. **The claim.**\n", True),
+    ("a 3-space indented comment opener still opens",
+     "   <!--\n1. **The claim.**\n", False),
+    # Round 9: a backtick fence's info string may not contain a backtick.
+    # Treating it as a fence read the rest of the document as fence body.
+    ("backtick in a backtick info string is not a fence",
+     "```lang`x`\n1. **The claim.**\n", True),
+    ("a tilde info string may contain backticks",
+     "~~~lang`x`\nhidden\n~~~\n1. **The claim.**\n", True),
     # A fence body is a quotation: markup inside it is content.
     ("comment opener inside a fence is content",
      "```\n<!--\n```\n1. **The claim.**\n", True),
@@ -332,6 +389,13 @@ if __name__ == "__main__":
     # `--rendered FILE` is the projection the #520 pins match against. Separate
     # from the selftest so the shell side stays a single pipe with no parsing.
     if len(sys.argv) == 3 and sys.argv[1] in ("--rendered", "--visible"):
+        # `--rendered FILE | awk '...{exit}'` is the intended call shape, and
+        # awk exiting at the end of a section closes the pipe mid-write. Python
+        # turns that into a BrokenPipeError traceback on stderr; the suite has
+        # no `pipefail` so it passed while printing noise that reads as a real
+        # error. SIG_DFL makes the write die silently, as any other CLI does.
+        import signal
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
         with open(sys.argv[2], encoding="utf-8") as fh:
             body = fh.read()
         sys.stdout.write(rendered(body) if sys.argv[1] == "--rendered"
