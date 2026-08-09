@@ -1967,7 +1967,24 @@ test_escalation_ladder_order_and_threshold
 test_parallel_blind_dual_review() {
     local WIZARD="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     local SECTION
-    SECTION=$(awk '/^### Parallel Blind Dual Review/{f=1; next} /^### /{f=0} f' "$WIZARD")
+    # Heading DEPTH is not the contract; the section's existence and content are.
+    # GH #513 promoted this out of the Step 6 skill template into document-level
+    # policy, which nested it one level deeper (### -> ####). Matching a fixed
+    # depth would have failed on a change that strictly improved the doc, so the
+    # pin now accepts either and terminates on a sibling-or-shallower heading.
+    # The title is anchored end-to-end and the terminator depth is DERIVED from
+    # whatever depth actually matched, not hardcoded. Without the end anchor a
+    # future "### Parallel Blind Dual Review — deprecated" section would satisfy
+    # the pin; with a hardcoded `^#{1,4} ` terminator a ##### subsection inside
+    # the section would truncate it and the content checks below would pass on a
+    # fragment.
+    SECTION=$(awk '
+        !f && /^#+ Parallel Blind Dual Review[[:space:]]*$/ {
+            match($0, /^#+/); depth = RLENGTH; f = 1; next
+        }
+        f && /^#+ / { match($0, /^#+/); if (RLENGTH <= depth) { f = 0 } }
+        f
+    ' "$WIZARD")
 
     if [ -n "$SECTION" ]; then
         pass "wizard doc has a Parallel Blind Dual Review section"
@@ -3306,6 +3323,105 @@ test_skill_states_loop_autonomy_rule() {
     fi
 }
 test_skill_states_loop_autonomy_rule
+
+# --- GH #513 ---------------------------------------------------------------
+#
+# The wizard doc CARRIED a 639-line ````markdown fence introduced by "Step 6:
+# Create SDLC Skill / Create `.claude/skills/sdlc/SKILL.md`:". That MADE it a
+# SECOND INSTALL PATH for the same destination the CLI writes, and the two had
+# diverged: 56,284 bytes against the live skill's 19,356, moving in opposite
+# directions inside single PRs (#509 shrank the live skill 856 bytes while
+# growing the fence 1,470).
+#
+# One skill, one install path. The CLI is canonical, and `skills/sdlc/SKILL.md`
+# ships in the same npm package as this document — so a reader following the doc
+# already has the real file next to the instructions.
+test_wizard_doc_ships_no_second_install_path_for_the_skill() {
+    local f="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    [ -f "$f" ] || { fail "wizard doc missing"; return; }
+    # Length is NOT the discriminator, though the first version of this guard
+    # used it (longest ````-fence, fail above 100 lines) and a reviewer proved it
+    # wrong in all four directions: a legitimate unrelated 120-line example
+    # fails, a 99-line second install path passes, a 639-line copy in an ordinary
+    # ```-fence passes with a measured length of zero, and a copy split across
+    # two 80-line blocks passes. The property is "this block IS the skill", so
+    # `skillcopy` asks that directly, and NOT all of it about fenced blocks:
+    # rules A (heading reproduction) and B (frontmatter at real-file size) look at
+    # REGIONS — fenced blocks plus indented runs — while rule C measures the RAW
+    # DOCUMENT's reproduction of the skill's body prose, with no markup model at
+    # all. C is markup-blind because a verbatim copy indented four spaces carries
+    # no fence, and because a block-scoped C scored the same copy at 105 or 131
+    # lines purely by 3- vs 4-backtick wrapper choice.
+    local out
+    if out=$(python3 "$SCRIPT_DIR/lib/skillcopy.py" "$REPO_ROOT" 2>&1); then
+        pass "wizard doc ships no second install path for the skill"
+    else
+        fail "wizard doc embeds a copy of the shipped skill — a second install path for a file the CLI already installs. One skill, one source (#513):
+$out"
+    fi
+}
+test_wizard_doc_ships_no_second_install_path_for_the_skill
+
+# The invariant that stops this recurring, and the more valuable of the two.
+#
+# Assertions across this corpus grepped the wizard doc for strings that exist
+# ONLY inside that fence — `## Cross-Model Review (REQUIRED`, `### Release Review
+# Focus`, `gh pr merge --auto`, `no stall watchdog and no timeout`. They were
+# written to check what the DOCUMENT tells a reader, and passed by matching a
+# quotation of a draft nobody installs. Guard and artifact pointed at different
+# objects.
+#
+# ONE count, with its method, because an earlier note gave a bare figure that no
+# measurement reproduced: `fence-only-assertions.py` run against the `main`
+# document, with skill-copy blocks stripped, reports 18 such assertions across 2
+# suites (test-doc-consistency.sh, test-self-update.sh) — measured 2026-08-08,
+# after the re.M and GREP_STDIN repairs, which recovered assertions the earlier
+# count of 15 had been silently missing.
+# That is the guard's own reach and the number that regresses if it weakens. It
+# is NOT a claim about how many exist: shapes the scanner cannot resolve are
+# outside it by construction, which is what the reach-limits section of that
+# module documents.
+#
+# Same defect class as #517's fixture committing dummy files as the "pristine
+# gate" while executing the real script: a check that appears to verify X and
+# actually verifies Y. Third instance in one week, so it gets a test.
+test_no_wizard_doc_assertion_is_satisfied_only_inside_a_fence() {
+    local out
+    if out=$(python3 "$SCRIPT_DIR/lib/fence-only-assertions.py" "$REPO_ROOT" 2>&1); then
+        pass "no test asserts wizard-doc guidance that exists only inside a fenced block"
+    else
+        fail "assertions satisfied ONLY by text inside a fenced block — they verify a quotation, not the document (#513):
+$out"
+    fi
+}
+test_no_wizard_doc_assertion_is_satisfied_only_inside_a_fence
+
+# BOTH guards above are DORMANT while the repo is healthy: with no skill copy in
+# the document there is nothing to strip and nothing to flag, so they pass by
+# having no work to do. Dormant-by-precondition is legitimate; dormant-by-accident
+# is the exact defect (#513, #517) these guards exist to catch, and from the
+# outside the two look identical.
+#
+# The selftests are what tells them apart — each runs its detector against a
+# synthetic document that DOES contain a copy, so the machinery is exercised on
+# every CI run rather than only on the day the repo is already broken. They
+# existed but nothing invoked them, which made the whole dormancy argument
+# unevidenced. Every fixture inside them cites the specific review finding it
+# came from.
+test_guard_selftests_actually_run() {
+    local lib out
+    for lib in "mdfence.py" "skillcopy.py --selftest" "fence-only-assertions.py --selftest"; do
+        # shellcheck disable=SC2086  # the flag is part of the list entry
+        if out=$(python3 "$SCRIPT_DIR/lib/"$lib 2>&1); then
+            pass "guard selftest green: $lib"
+        else
+            fail "guard selftest FAILED: $lib — the detector no longer catches a
+copy it is supposed to catch, so the guard above may be passing vacuously:
+$out"
+        fi
+    done
+}
+test_guard_selftests_actually_run
 
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
