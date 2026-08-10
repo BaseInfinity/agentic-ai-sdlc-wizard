@@ -57,6 +57,36 @@ table. Run any suite directly; a few common ones:
 Run the whole suite before any release. It takes minutes, not seconds, and
 some fixtures need `dangerouslyDisableSandbox` to create their temp dirs.
 
+**Release verification (Cowork plugin)** — GH #561. Install the working-tree
+plugin from the local marketplace, then:
+
+```
+claude plugin details sdlc-wizard-cowork
+```
+
+It must report exactly `Hooks (1)  PreToolUse`.
+
+This verifies the **installed artifact's manifest-registered hooks**
+(`hooks/hooks.json` and manifest `hooks` fields — the surface the #561 hook
+lived on). It does **not** see skill-frontmatter hooks: verified empirically
+2026-08-10, an active frontmatter `UserPromptSubmit` hook did not appear in the
+inventory. Those are guarded at source by the shipped-file walk in
+`tests/test-cowork-drift.sh`.
+
+**No non-interactive, install-time command inventories dormant hooks across
+every skill.** The interactive `/hooks` command does see them — verified
+2026-08-10: activating a skill-frontmatter `UserPromptSubmit` hook moved it
+24 → 25 total and 3 → 4 `UserPromptSubmit`. It is interactive and session-bound,
+so it cannot serve as a release gate, but it is the tool to reach for when
+diagnosing what is actually live in a session.
+
+An undocumented future registration mechanism is uncovered by any check here —
+cross-model diff review is the guard, and it found every missing surface to
+date.
+
+Note it reads the installed cache, not the working tree, so installing first is
+mandatory: run it against an unupdated cache and it reports the OLD plugin.
+
 ## Code Style
 
 ### Markdown

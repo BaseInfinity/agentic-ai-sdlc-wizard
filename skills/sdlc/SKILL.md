@@ -36,7 +36,7 @@ TodoWrite([
   // TRANSITION
   { content: "Doc sync: update or create feature doc — MUST be current before commit", status: "pending" },
   // IMPLEMENTATION
-  { content: "TDD RED: failing test FIRST — watch EACH assertion fail, not the suite", status: "pending" },
+  { content: "TDD RED: failing test FIRST where a RED mutation is writable — watch EACH assertion fail; otherwise three-way call (see TDD proves)", status: "pending" },
   { content: "TDD GREEN: Implement, verify test passes", status: "pending" },
   { content: "Run lint/typecheck", status: "pending" },
   { content: "Run ALL tests", status: "pending" },
@@ -66,7 +66,7 @@ TodoWrite([
 |-----------|--------|-----------|-------------|
 | task_tracking | 1 | | Use TodoWrite or TaskCreate |
 | confidence | 1 | | State HIGH/MEDIUM/LOW |
-| tdd_red | 2 | **YES** | Write/edit test files BEFORE implementation files |
+| tdd_red | 2 | **YES** | Write/edit test files BEFORE implementation files, where a RED mutation is writable (see TDD proves) |
 | plan_mode_outline | 1 | | Outline steps before coding |
 | plan_mode_tool | 1 | | Use TodoWrite/TaskCreate/EnterPlanMode |
 | tdd_green_ran | 1 | | Run tests, show runner output |
@@ -74,7 +74,7 @@ TodoWrite([
 | self_review | 1 | | Read back files/diffs you modified |
 | clean_code | 1 | | One coherent approach, no dead code |
 
-**Total: 10 points** (11 for UI tasks, +1 for design_system check). Critical miss on `tdd_red` = process failure regardless of total score.
+**Total: 10 points** (11 for UI tasks, +1 for design_system check). Critical miss on `tdd_red` = process failure regardless of total score — when a RED mutation was writable. Out-of-scope under the three-way call is not a miss.
 
 ## Test Failure Recovery
 
@@ -220,13 +220,13 @@ Critique tests harder than app code: testing the right things? Proving correctne
 
 Mocks MUST come from real captured data — never guess shapes. Unit tests qualify ONLY for pure I→O (no DB, API, FS, cache).
 
-**TDD proves:** RED (fails — bug or missing feature), GREEN (passes — fix works), Forever (regression protection).
+**TDD proves:** RED (fails — bug or missing feature), GREEN (passes — fix works), Forever (regression protection). **TDD RED applies only where a RED mutation is writable** — write the wrong version the test must catch BEFORE writing the test. If catching the wrong version requires understanding meaning (a reversal, a negation, a contradicting sentence nearby), no assertion can do it: DO NOT write the test. That exception is for prose judged by a reader — for executable behavior, any observable input/output or side-effect difference means a RED mutation IS writable. Three-way call for every change: **EVAL it** (agent-facing guidance a real scenario can observe), **plain-assert it** (mechanical contract only — byte parity, a JSON key, a version, a heading; proves structure, never meaning), or **DON'T TEST IT** (prose whose correctness is a judgement call — cross-model review is the guard). **Implement-first** is allowed ONLY when a named gate blocked the required RED/evidence act itself — a gate refusing implementation because RED is missing is the gate working, not an entry ticket. Quote the refusal verbatim in the issue/PR, get a cross-model ruling that APPROVES that same act and scope BEFORE the edit, and name — before editing — the observable that would differ if the change were wrong, then go look at it after (#525). No quoted refusal or no approving ruling — no entry.
 
 ## Prove It Gate (New Additions Only)
 
-New skill/hook/workflow/PRACTICE? Default answer is NO. Prove it: (1) **Absorption check** — can this be a section in an existing skill? (2) Research equivalents (native CC, third-party, existing skill). (3) If one exists — why is yours better, with evidence. (4) If not — real gap or theoretical? (5) **Quality tests** must prove OUTPUT QUALITY (existence tests prove nothing). (6) Less is more — every addition is burden.
+New skill/hook/workflow/PRACTICE? Default answer is NO. Prove it: (1) **Absorption check** — can this be a section in an existing skill? (2) Research equivalents (native CC, third-party, existing skill). (3) If one exists — why is yours better, with evidence. (4) If not — real gap or theoretical? (5) **Quality tests** must prove OUTPUT QUALITY (existence tests prove nothing) — scoped by the three-way call: prose whose correctness is a judgement call gets cross-model review, not a grep. (6) Less is more — every addition is burden.
 
-If you can't write a quality test for it, you can't prove it works.
+If you can't name the evidence that would prove it works — a test or a cross-model review — you can't prove it works.
 
 ## After Session (Capture Learnings)
 
@@ -245,10 +245,10 @@ End of release: audit `~/.claude/projects/<proj>/memory/`, promote portable less
 ## Post-Mortem: Process Failures Become Rules
 
 ```
-Incident → Root Cause → New Rule → Test That Proves the Rule → Ship
+Incident → Root Cause → New Rule → Evidence per the Three-Way Call → Ship
 ```
 
-Don't fix only the symptom. Add a gate so it can't happen again. Example: PR #145 auto-merged before CI review → "NEVER AUTO-MERGE" block + `test_never_auto_merge_gate`.
+Don't fix only the symptom. Guard the rule per the three-way call (see TDD proves) — EVAL it, plain-assert it, or cross-model review for meaning-level prose. Sometimes the fix is DELETING a gate (#484, #561). Example: PR #145 auto-merged before CI review → "NEVER AUTO-MERGE" block + `test_never_auto_merge_gate`.
 
 ## Context Management & Subagents
 
