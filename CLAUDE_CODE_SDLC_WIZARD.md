@@ -146,7 +146,7 @@ These aren't preferences - they're **how AI agents stay on track**:
 
 | Core Principle | Why It's Critical for AI |
 |----------------|--------------------------|
-| **TDD Red-Green-Pass** | AI agents need concrete pass/fail feedback. Without failing tests first, Claude can't verify its work. This is the feedback loop that keeps implementation correct. |
+| **TDD Red-Green-Pass** | AI agents need concrete pass/fail feedback. Where a RED mutation is writable, failing tests first are the feedback loop that keeps implementation correct; where no assertion can catch the wrong version (meaning-level prose), cross-model review is the verification — see "When TDD RED Applies". |
 | **Testing Diamond** | Integration tests catch real bugs. Unit tests with mocks can "pass" while production fails. AI agents need tests that actually validate behavior. |
 | **Confidence Levels** | Prevents Claude from guessing when uncertain. LOW confidence = escalate (Fable, then Codex) before interrupting a human. This stops runaway bad implementations. |
 | **TodoWrite Visibility** | You need to see what Claude is doing. Without visibility, Claude can go off-track without you knowing. |
@@ -183,7 +183,7 @@ You CAN change these, but understand the trade-offs:
 | Customization | Default | Risk if Changed |
 |---------------|---------|-----------------|
 | **Testing shape** | Diamond (integration-heavy) | Pyramid (unit-heavy) = mocks can hide real bugs, AI gets false confidence |
-| **TDD strictness** | Strict (test first always) | Flexible = AI may skip tests, no verification of correctness |
+| **TDD strictness** | Strict (test first wherever a RED mutation is writable) | Flexible = AI may skip tests, no verification of correctness |
 | **Planning mode** | Required for implementation | Skipping = Claude codes without understanding, wasted effort |
 | **Confidence thresholds** | LOW < 60% = must escalate | Higher threshold = Claude proceeds when unsure, mistakes |
 
@@ -673,7 +673,7 @@ PASS  → All tests pass (no regressions)
 **The core principle:** Have a testing strategy. Know what you're testing and why.
 
 **Customize for your team:**
-- Strict TDD (test first always)? Great.
+- Strict TDD (test first wherever a RED mutation is writable)? Great.
 - Test-after for some cases? Fine, just be consistent.
 - The key: **don't commit code that breaks existing tests.**
 
@@ -2069,7 +2069,7 @@ redundant summaries, or boilerplate."
 **Testing approach** (infer from existing test patterns — test-first files, coverage config)
 ```
 Options:
-- Strict TDD (test first always)
+- Strict TDD (test first wherever a RED mutation is writable)
 - Test-after (write tests after implementation)
 - Mixed (depends on the feature)
 - Minimal (just critical paths)
@@ -2619,6 +2619,10 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Cross-Model Revie
 
 ## Testing and Debugging Practices
 
+### When TDD RED Applies
+
+**TDD proves:** RED (fails — bug or missing feature), GREEN (passes — fix works), Forever (regression protection). **TDD RED applies only where a RED mutation is writable** — write the wrong version the test must catch BEFORE writing the test. If catching the wrong version requires understanding meaning (a reversal, a negation, a contradicting sentence nearby), no assertion can do it: DO NOT write the test. That exception is for prose judged by a reader — for executable behavior, any observable input/output or side-effect difference means a RED mutation IS writable. Three-way call for every change: **EVAL it** (agent-facing guidance a real scenario can observe), **plain-assert it** (mechanical contract only — byte parity, a JSON key, a version, a heading; proves structure, never meaning), or **DON'T TEST IT** (prose whose correctness is a judgement call — cross-model review is the guard). **Implement-first** is allowed ONLY when a named gate blocked the required RED/evidence act itself — a gate refusing implementation because RED is missing is the gate working, not an entry ticket. Quote the refusal verbatim in the issue/PR, get a cross-model ruling that APPROVES that same act and scope BEFORE the edit, and name — before editing — the observable that would differ if the change were wrong, then go look at it after (#525). No quoted refusal or no approving ruling — no entry.
+
 Practices that outlive any one task: keeping the suite trustworthy, and finding a cause
 instead of guessing at one.
 
@@ -2798,7 +2802,7 @@ Create `CLAUDE.md` in your project root. This is your project-specific configura
 
 **STOP! Before writing ANY implementation code:**
 
-1. **Write failing tests FIRST** (TDD RED phase)
+1. **Write failing tests FIRST** (TDD RED) — where a failing test can be written; meaning-level prose changes get cross-model review instead (do not write the test)
 2. **Use integration tests** primarily - see TESTING.md
 3. **Use REAL fixtures** for mock data - never guess API shapes
 
@@ -4277,7 +4281,7 @@ implement  →  fix in-allowlist findings  →  re-review with the ITERATION mod
 3. **Any P0/P1 finding *against a requested behavior* restarts the cycle from the top** — one outside the closed allowlist becomes a linked follow-up issue and does not restart anything. A gate round that surfaces a real defect was not a gate round, it was an iteration round. In-allowlist P2/P3-only findings do not need a full restart: fix them and re-run the gate. Either way the gate must eventually return nothing unresolved *against the requested behaviors* — "findings?" in the diagram means any finding against those, and what differs is only whether you re-enter at iteration or at the gate. Findings outside the allowlist are logged as follow-up issues and never gate anything; the unsatisfiable version of this condition — zero defects anywhere — is what turned #520 into 20 rounds.
 4. **Fixes need their own verification.** A fix shipped on the strength of "the reviewer suggested it" is unverified code — the reviewer proposed it, nobody has yet shown it works. A test that passes against broken code was never a test.
 
-   **TDD, applied to the fix: RED → GREEN.** Write the assertion, run it, watch **that specific assertion** fail, then implement and watch it pass. The common miss is observing red at the *suite* level — one assertion fails, the suite is red, you implement, the suite goes green, and any assertion that was green from birth is never noticed.
+   **TDD, applied to the fix: RED → GREEN** — where a RED mutation is writable; a meaning-level prose fix gets cross-model re-review instead (see "When TDD RED Applies"). Write the assertion, run it, watch **that specific assertion** fail, then implement and watch it pass. The common miss is observing red at the *suite* level — one assertion fails, the suite is red, you implement, the suite goes green, and any assertion that was green from birth is never noticed.
 
    **Editing an existing test is the hard case, and the honest answer depends on what it guards.** If it guards a bug you are about to fix, RED is free — the bug exists, so the test fails for the right reason. If it guards behaviour that is **already correct**, **you cannot get RED**: correct code does not fail, and rewriting does not change that. Say so plainly rather than calling the assertion verified — an unverified regression test is exactly how this repo shipped eight that passed against broken code. When an assertion is load-bearing enough to justify it, breaking the behaviour once to watch the test go red is the only mechanism that validates that class; treat it as a deliberate exception, not the routine.
 
