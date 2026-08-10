@@ -8,7 +8,7 @@ A **self-evolving Software Development Life Cycle (SDLC) enforcement system for 
 
 ## Install
 
-**Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)** (Anthropic's CLI for Claude).
+**Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)** (Anthropic's CLI for Claude). Install it with the native installer — `curl -fsSL https://claude.ai/install.sh | bash` — which the [official setup docs](https://code.claude.com/docs/en/setup) label *Recommended* and which keeps it auto-updating in the background. **Never** use `sudo npm install -g @anthropic-ai/claude-code`: sudo can leave the global module directory root-owned, which then breaks `claude update` *and* `npm uninstall -g`. Check for conflicting installs with `which -a claude`.
 
 Run from your terminal or from inside Claude Code (`!` prefix):
 ```bash
