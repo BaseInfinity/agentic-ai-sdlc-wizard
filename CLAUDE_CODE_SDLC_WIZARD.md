@@ -3800,9 +3800,13 @@ Use an independent AI model from a different company as a code reviewer. The aut
 
 #### When to stop: the scope rule
 
-Added 2026-08-09 after this repo spent eight hours and twenty review rounds on a
-three-line documentation defect and shipped nothing. Both reviewers were asked
+Added 2026-08-09 after this repo spent roughly nine hours and twenty review
+rounds on a three-line documentation defect, and produced 46 lines of deliverable
+against 2,066 lines of review-generated machinery. Both reviewers were asked
 independently what went wrong; they converged, and the rules below are theirs.
+The Codex post-mortem is archived at `.reviews/postmortem-codex.md`; the Fable
+leg was conducted in-session and is not archived, so "they converged" is
+corroborated for one leg and reported in good faith for the other.
 
 **The failure mode has a name: the review loop never promises to terminate.**
 Every round found a real defect, so every round justified the next one. Findings
@@ -3819,18 +3823,37 @@ convergence from the inside.
 
 **SCOPE RULE.** Two passes per frozen scope: one review, one verify — and verify
 reads only the diff since the last verdict. A fix that adds code or promises
-beyond the reviewed diff is *new scope*: it requires a recorded continue/stop
-decision from the planner, carrying the builder's cost line (diff size vs defect
+beyond the reviewed diff is *new scope*: it requires a continue/stop decision
+from the planner (a role, not a fourth model — defined under "Why four layers
+didn't catch it"), recorded in `.reviews/handoff.json` under `"scope_decisions"`
+before the pass runs, carrying the builder's cost line (diff size vs defect
 size, passes used). The decision may well be "continue" — the teeth are
 attribution, not prohibition. Escalate to a human **only** when the two models
 disagree; a rule that wakes the maintainer on every third round has just made
 them the round-limiter.
 
-**BLAME THE LINE.** At the limit, `git blame` the blocker against the PR base. A
-blocker that pre-existed the PR gets the smallest necessary fix. A blocker *born
-inside* the PR means the round found nothing wrong with the change, only with
-the review's own accretions — **cut the accretion, do not repair it.** Repairing
-accretions is what generates the next round.
+**BLAME THE LINE.** A review finds a bug. One question decides what to do:
+**did the issue ask for this code?**
+
+- **Yes → fix the bug.** Always, however late in the loop it surfaces.
+- **No → delete the code.** The bug goes with it. Repairing code nobody asked
+  for is what generates the next round.
+
+`git blame` is how you answer it, not the answer itself. Blame the blocker
+against the **frozen-scope SHA** — `handoff.json`'s `frozen_scope_sha`, written
+on the *first* verdict of a scope whether that verdict is YES or NO, and **never
+overwritten**. It is deliberately not `commit_sha`: that field is written only on
+CERTIFIED and is rewritten by each later certification, so after an initial NO it
+does not exist, and after a later YES it no longer points at the boundary. Two
+fields, two jobs — `commit_sha` says *what was certified*, `frozen_scope_sha`
+says *where this scope began*. Lines older than it are the work you set out to
+do. Lines newer than it exist because a review round asked for them, so they are
+the ones to check against the allowlist. Do **not** blame against the PR base:
+everything you meant to build is also PR-born, and cutting on that test deletes
+the deliverable. Where the two disagree, the allowlist wins — birth time is
+evidence, being asked for is the test. Before the first verdict there is no
+frozen-scope SHA and this rule is silent; it is a stopping rule, not an entry
+rule.
 
 **REVIEW UNIT.** Review committed, immutable increments — never a mutable
 working tree. Approval attaches to a SHA. Approval is a decision to ship at
@@ -3843,6 +3866,12 @@ that mutation.
 add runtime behavior, enforcement, automation, computed output, or new mechanisms
 unless they were asked for. Review findings may correct allowed work; they may
 never *expand* the allowlist. If expansion looks necessary, stop and ask.
+When there is no written issue, the allowlist is the requester's task **as
+restated back to them and left unchallenged before work starts** — the "restate
+the task in your own words" step of the checklist is what creates it. An
+allowlist that was never written down is not a small allowlist; it is an absent
+one, and every rule in this section that references "the requested behaviors"
+is inoperative until it exists.
 
 **CLAIM RULE.** Before code prints a value computed from parsed input, write down
 the input domain over which that figure is promised correct; out-of-domain input
@@ -3861,15 +3890,36 @@ suppressing a figure that was correct. One negative fixture is a regression pin,
 not a proof — for unbounded domains the load-bearing verification is the closure
 argument plus fuzzing of the negative space.
 
-**PROCESS BUDGET scales with observability, not felt confidence.** Confidence is
+**PROCESS BUDGET prices the promise, not felt confidence.** Confidence is
 exactly how the original defect shipped: someone confidently recommended a config
-whose two knobs multiplied.
+whose two knobs multiplied. Price the change before review by one question —
+*does your observation cover the domain the change promises over?* — and apply
+the first row that matches, top to bottom:
 
-| You | Process |
+| The change | Process |
 |---|---|
-| **watched** it do the thing | ship — observation replaces review |
-| are **predicting** it will (deferred effect, interacting settings) | one cross-model fact-check pass |
-| are shipping something that runs on **other people's machines** | full gate |
+| makes **no new promise** (typo, comment, restating a verified fact) | ship — log the skip. File location is irrelevant: a comment fix in auth code is not an auth change |
+| promises behavior in a **High-Stakes domain** — auth, payments, data handling, or the release/publish act itself | full gate, regardless of what you watched: one observed run covers one input, in a domain defined by the inputs you didn't pick |
+| makes a promise you **watched hold over its whole domain** — enumerable, and written down (see CLAIM RULE) | ship — observation replaces review |
+| makes a promise you are **predicting**, over a domain you can still observe *after* shipping — deferred effects, interacting settings, environments you didn't run but do have logs and a rollback for | one cross-model fact-check pass |
+| makes a promise you can **never observe** — executes on machines you don't monitor, or over unbounded inputs | full gate |
+
+Two boundary rulings, decided here so no reader has to arbitrate them. "High-Stakes:
+releases" means the act of tagging and publishing, **not** every change that later
+rides in a release — read it the second way and every row collapses into full
+gate, which prices nothing. Server-side code on your own machines serving other
+people's traffic is *observable* — your logs, your rollback — so it is not the
+unobservable row; it prices as watched or predicted unless its promise is
+High-Stakes.
+
+This retro-dicts the incident correctly: the autocompact recommendation was a
+*predicted* interaction between two knobs, so one cross-model fact-check pass —
+which is exactly what would have caught it. The known failure input is a
+mis-written domain: a "typo fix" that changes a figure consumers act on. Two
+tripwires, one each way. Before: the ship rows are only available with a
+one-line written domain statement (see CLAIM RULE) — can't write it, can't claim
+the row. After: a defect shipped from a ship-priced change reprices that change
+class one row stricter, permanently, recorded in the post-mortem.
 
 #### Why four layers didn't catch it
 
@@ -3886,8 +3936,26 @@ builder holds the real-time view, so it carries the sensor:
 
 - The **builder** attaches a cost line to every review request — diff size vs
   defect size, passes used, hours.
-- The **planner** records continue/stop before any third pass or scope growth. A
-  missing decision blocks the round. Every "continue" carries a name.
+- The **planner** records continue/stop before any third pass or scope growth,
+  as an entry in `.reviews/handoff.json` under a top-level `"scope_decisions"`
+  array: `{"round": N, "decision": "continue|stop", "cost": "<diff lines> vs
+  <defect lines>, <passes> passes", "blame": "requested|unrequested", "by":
+  "<role/model>"}`. A missing entry for the pass about to run blocks the round —
+  checkable with `cat .reviews/handoff.json`, no new tooling. Every "continue"
+  carries a name: the `"by"` field.
+
+**"Planner" is a role, not a fourth model.** It is whoever owns the plan: Setup
+C's Opus plan mode, or the driver itself under Setups A and B. Under a single
+driver this is self-authorization on purpose — the incident mechanism was
+invisibility, not missing authority, and the teeth are attribution, not
+prohibition. The record is ratified downstream: the next reviewer pass reads
+`scope_decisions` and may reject the continue rationale, which stops the loop;
+if the recorded continue is the final pass, the merge-step clearance legs read
+it, and an unjustified continue is a blocking finding there. The human is
+consulted only when the two models disagree about the record. **Do not build a
+hook to check this file** — reviewers reading it *is* the check, and automating
+it inside the PR that names objective substitution would be objective
+substitution.
 
 In the incident that produced these rules, the ratio was **45:1** — 46 lines of
 deliverable against 2,066 lines of machinery nobody asked for — and it was never
@@ -3963,7 +4031,7 @@ codex exec \
 
 > **Never also append a trailing `&` inside the command string when using `run_in_background: true`.** These are two different backgrounding mechanisms — the Bash tool's own `run_in_background` flag, and the shell's native job-control `&` — and combining them double-backgrounds the process: the "completed" notification fires for the outer wrapper shell exiting immediately, not for the actual `codex exec` process, which is still running detached and unmonitored. This produces a convincing but false "review complete" signal — the transcript looks done, but no verdict has actually been written yet. Confirm real completion independently (e.g. `ps aux | grep codex`) before trusting a background-task notification that arrived suspiciously fast for a multi-minute review. Use `run_in_background: true` alone; never both.
 
-4. If CERTIFIED → **write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) blocks a commit if this is missing or doesn't match current HEAD, so a bare `CERTIFIED` status isn't enough. Then done. If NOT CERTIFIED → enter the dialogue loop.
+4. **On the first verdict of a scope, whichever way it goes** → write `"frozen_scope_sha": "<git rev-parse HEAD>"` into `handoff.json`, and never overwrite it while the scope stays frozen. This is the boundary BLAME THE LINE measures against; it must survive an initial NO, so it cannot be `commit_sha`. Then: if CERTIFIED → **also write `"commit_sha": "<git rev-parse HEAD>"`** — `hooks/codex-gate-check.sh` (ROADMAP #437) blocks a commit if this is missing or doesn't match current HEAD, so a bare `CERTIFIED` status isn't enough. That is pass one of two: run the verify pass, which reads only the diff since this verdict. If NOT CERTIFIED → enter the dialogue loop.
 
 **The Dialogue Loop (Round 2+):**
 
@@ -4016,7 +4084,7 @@ codex exec \
    FIXED → verify the fix against the original certify condition. \
    DISPUTED → evaluate the justification (ACCEPT if sound, REJECT if not). \
    ACCEPTED → verify it was applied. \
-   Do NOT expand the review surface. A new P0, P1 or P2 must be reported and BLOCKS. Lesser observations go in 'Notes for next review' (non-blocking). \
+   Do NOT expand the review surface. Report every new P0, P1 or P2. A new finding BLOCKS when it shows a REQUESTED behavior is incorrect; one outside the requested behaviors is reported as a linked follow-up, not a blocker. Lesser observations go in 'Notes for next review' (non-blocking). \
    End with CERTIFIED or NOT CERTIFIED." \
   < /dev/null
 ```
@@ -4025,9 +4093,9 @@ codex exec \
 
 **But scoped does not mean muzzled — and not everything it sees may block.** A recheck reports every defect it finds, at any severity. What **blocks** is bounded by the closed allowlist: a finding blocks when it shows a **requested** behavior is incorrect. A P2 outside the requested behaviors is reported and becomes a linked follow-up issue, not a certification blocker. Certification means *zero unresolved findings against the requested behaviors*, not *zero findings raised after round 1* — and not *zero defects anywhere*, which is unsatisfiable and is the shape that turned #520 into 20 rounds. Report-everything and block-on-scope are different questions; conflating them is how an invariant escalates. An earlier revision of this paragraph said new P2s could never block certification; that let a real defect through on the grounds of what round it was found in, which is not a property of the defect. What the scoping rule actually forbids is expanding the review's *surface*, not silencing what the reviewer sees.
 
-**Convergence:** the default is **two passes per frozen scope** (see "When to stop" above); this section's older max-3-rechecks heuristic is the ceiling, not the target. If still NOT CERTIFIED, escalate to the user with a summary of all open findings — escalate, never ship. Don't spin indefinitely.
+**Convergence:** the default is **two passes per frozen scope** (see "When to stop" above); this section's older max-3-rechecks heuristic is the ceiling, not the target. If still NOT CERTIFIED after the budget, that is a **recorded continue/stop decision**, not an automatic escalation — see the Exception below for where the decision is written. A human is woken only when the two reviewers disagree, or a non-waivable gate has failed twice. Never ship uncertified; but running out of budget is not by itself a reason to interrupt the maintainer.
 
-**Exception — known-large migrations, and it costs a recorded decision.** The cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop — but "every round is still finding something real" is precisely what a self-consuming loop reports about itself, so it is **not** a licence the builder may grant itself. Each round past the budget requires a **planner continue/stop recorded before the round runs**, carrying the cost line and a `git blame` of the last blocker against the PR base; a blocker born inside the PR is not a reason to continue. With that decision on record: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
+**Exception — known-large migrations, and it costs a recorded decision.** The cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop — but "every round is still finding something real" is precisely what a self-consuming loop reports about itself, so it is **not** a licence the builder may grant itself. Each round past the budget requires a continue/stop entry in `.reviews/handoff.json` `"scope_decisions"` **recorded before the round runs** (entry shape and the planner role: "Why four layers didn't catch it" above), carrying the cost line and a `git blame` of the last blocker against the frozen-scope SHA; a blocker in code the issue never asked for is not a reason to continue. With that decision on record: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
 
 **CERTIFIED is not the finish line.** A CERTIFIED verdict and a green CI run are different verification layers that catch different bug classes — a CERTIFIED review does not substitute for actually pushing and watching CI. Confirmed on the same v1.84.0 release: after round-11 CERTIFIED and a full local test sweep, real CI still caught 3 more genuine bugs the review never touched — a content regression in an unrelated section silently dropped by an earlier edit (caught by a pre-existing local test that simply hadn't been re-run since), an environment-specific CLI output-format change invisible to any local run against an older tool version, and a new test file committed without the executable bit (passes every local `bash tests/foo.sh` invocation, only fails when CI runs it as `./tests/foo.sh`). Budget for at least one more fix-push-recheck cycle after CERTIFIED, and don't treat CERTIFIED as license to skip reading the actual CI logs — see the CI Feedback Loop section below.
 
@@ -4038,7 +4106,7 @@ Claude writes code → handoff.json (round 1)
     |                              Reviewer: FULL REVIEW
     |                              (structured findings with IDs)
     |                                          |
-    |                              CERTIFIED? -+→ YES → write commit_sha → Done
+    |                              CERTIFIED? -+→ YES → write commit_sha → verify pass
     |                                          |
     |                                          +→ NO (findings)
     |                                          |
@@ -4046,12 +4114,13 @@ Claude writes code → handoff.json (round 1)
     |                                FIXED / DISPUTED / ACCEPTED
     |                                          |
     |                              Reviewer: TARGETED RECHECK
-    |                              (scoped surface; any new P0/P1/P2 blocks)
+    |                          (scoped surface; a new P0/P1/P2 blocks
+    |                           only if a REQUESTED behavior is wrong)
     |                                          |
     |                              All resolved? → YES → CERTIFIED (write commit_sha)
     |                                          |
     └────────── Fix rejected items ←───────────┘
-                    (max 3 rechecks, then escalate to user)
+        (two passes per frozen scope; past that, a recorded decision)
 ```
 
 **Every CERTIFIED path above writes `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) treats a missing or mismatched SHA as a stale certification, so a bare `CERTIFIED` status string is never enough on its own.
@@ -4128,7 +4197,7 @@ When two models review the same change, **run them in parallel and blind to each
 
 | Severity | Meaning | Action |
 |---|---|---|
-| P0/P1 | Wrong behaviour, security, data loss, or a test that passes against broken code | **Fix before merge. Restarts the cycle.** |
+| P0/P1 | Wrong behaviour, security, data loss, or a test that passes against broken code | **Against a requested behavior: fix before merge, restarts the cycle. Outside the allowlist: linked follow-up issue.** |
 | P2 | Real defect, bounded blast radius. Inaccurate shipped prose belongs here | **Fix before merge.** Re-gate, no full restart |
 | P3 | Correctness or accuracy nit — a stale comment, an unclear message | Fix if cheap and it is about being *right* |
 | P3 (style) | Preference, naming, formatting with no correctness content | **Not review's job — encode it as a lint rule instead.** |
@@ -4139,7 +4208,7 @@ Tell both reviewers this in the prompt, and tell them explicitly: **do not manuf
 
 **Diminishing returns — how to actually tell.** Judge by the *maximum severity per round*, never by finding count: count rises when a reviewer looks somewhere new, which is the opposite of a stopping signal (the round that found the most here also found the most serious bugs). You are converged when two consecutive rounds produce nothing above P3 **from reviewers that had not already cleared this code**. A single reviewer's own trend flattening means only that it has run out of defects *it* can see — one reviewer certified at high confidence here immediately before a fresh reviewer found six P1s in the same code.
 
-**Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other.
+**Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other. **Blindness governs finding-generation and recheck only.** Once every reviewer has returned a verdict, reconciliation is a distinct, final phase: show each the other's *surviving disagreement* and re-ask once. Anchoring is only a hazard while defects are still being discovered; after the verdicts are in, the whole value is in the aggregation. Reconcile once, not per round.
 
 **Cost control.** This is not free — each round costs wall-clock and, for a paid API reviewer, real money. Scale it to blast radius:
 
@@ -4147,14 +4216,17 @@ Tell both reviewers this in the prompt, and tell them explicitly: **do not manuf
 |---|---|
 | Live enforcement: CI config, hooks, agent config, the merge mechanism itself | Parallel blind dual review |
 | Ordinary application code | One reviewer at the pre-commit gate |
-| Docs, roadmap entries, comments | Neither |
+| Docs, roadmap entries, comments that make **no new promise** | Neither |
+| Docs that **do** make a promise — guidance a reader will act on, a figure, an interaction between settings | One fact-check pass. #520 was three doc lines and shipped a wrong config recommendation |
+
+This table is blast radius; PROCESS BUDGET is the promise. **Where they disagree, PROCESS BUDGET wins** — it is the newer rule and the one derived from an incident. Blast radius is a useful first cut, but "it's only docs" is exactly the reasoning that shipped the defect these rules exist because of.
 
 **Iterating vs. gating.** Looping with one reviewer while you build is cheap and effective — use the model that does not bill per token if you have one. But that reviewer is no longer independent by the end: it is reading code shaped by its own earlier feedback. So iterate with it freely, then run the **final** gate as a parallel blind round with a *fresh* instance of each model.
 
 **The loop, stated explicitly.** Reviewers returning findings is the normal case, not a setback, and the agent must not stop to ask permission each time. Run this until it terminates:
 
 ```
-implement  →  fix every finding  →  re-review with the ITERATION model
+implement  →  fix in-allowlist findings  →  re-review with the ITERATION model
                     ↑                            ↓
                     │                    findings? ──yes──┐
                     │                            │        │
@@ -4172,7 +4244,7 @@ implement  →  fix every finding  →  re-review with the ITERATION model
 
 1. **Every finding gets a response before the next round** — FIXED, DISPUTED with reasoning, or ACCEPTED. Never silently drop one.
 2. **A dispute is a claim you owe evidence for.** If the reviewer rejects it and offers a concrete alternative, implement the alternative — you asked for an adversary, not an audience.
-3. **Any P0/P1 finding restarts the cycle from the top.** A gate round that surfaces a real defect was not a gate round, it was an iteration round. P2/P3-only findings do not need a full restart: fix them and re-run the gate. Either way the gate must eventually return *nothing new* — "findings?" in the diagram means any finding, and what differs is only whether you re-enter at iteration or at the gate.
+3. **Any P0/P1 finding *against a requested behavior* restarts the cycle from the top** — one outside the closed allowlist becomes a linked follow-up issue and does not restart anything. A gate round that surfaces a real defect was not a gate round, it was an iteration round. In-allowlist P2/P3-only findings do not need a full restart: fix them and re-run the gate. Either way the gate must eventually return nothing unresolved *against the requested behaviors* — "findings?" in the diagram means any finding against those, and what differs is only whether you re-enter at iteration or at the gate. Findings outside the allowlist are logged as follow-up issues and never gate anything; the unsatisfiable version of this condition — zero defects anywhere — is what turned #520 into 20 rounds.
 4. **Fixes need their own verification.** A fix shipped on the strength of "the reviewer suggested it" is unverified code — the reviewer proposed it, nobody has yet shown it works. A test that passes against broken code was never a test.
 
    **TDD, applied to the fix: RED → GREEN.** Write the assertion, run it, watch **that specific assertion** fail, then implement and watch it pass. The common miss is observing red at the *suite* level — one assertion fails, the suite is red, you implement, the suite goes green, and any assertion that was green from birth is never noticed.
@@ -4186,13 +4258,13 @@ implement  →  fix every finding  →  re-review with the ITERATION model
    **Prefer executing the real thing over asserting on its source text.** A test that greps a script for the *words* proves the words are present, not that the behaviour works — the failure mode that produced every ineffective test in this repo's history. Run the script against a stub and check the exit code.
 
 5. **Verdict disagreement is expected — take the lower one.** Two reviewers can both be right and score differently: one weights a single unfixed P1 as disqualifying, the other weights overall structure. Do not average them, do not pick the friendlier one, and do not treat the gap as a reason to dismiss either. Ship only when *both* clear your bar.
-6. **Two stop conditions, and they are not the same — do not collapse them.** You are **done** when a fresh blind round returns **zero unresolved findings** — not merely "nothing new", because the same unfixed finding raised again is still an open finding. That is the only condition that permits shipping, and it is not reached on a schedule. You are **stuck** when rounds keep producing findings without converging; after 3 rechecks that is a non-convergence alarm, and it ends in escalation to the human with a summary of open findings — never in shipping. **Exception — a large migration may legitimately run past round 4** when each round is still surfacing real, previously-uninventoried surfaces (v1.84.0 ran 11 that way). Judge by whether the finding trend is genuinely converging, and state which of the two you are claiming. An agent that ships because it ran out of rounds has declared victory on a timer.
+6. **Two stop conditions, and they are not the same — do not collapse them.** You are **done** when a fresh blind round returns **zero unresolved findings against the requested behaviors** — not merely "nothing new", because the same unfixed in-allowlist finding raised again is still an open finding, and not "zero defects anywhere", which is unsatisfiable. That is the only condition that permits shipping, and it is not reached on a schedule. You are **stuck** when rounds keep producing findings without converging; past the two-pass budget that is a non-convergence alarm, and it ends in a **recorded continue/stop decision** — never in shipping. It reaches a human only if the two reviewers disagree, or a non-waivable gate has failed twice. **Exception — a large migration may legitimately run past round 4** when each round is still surfacing real, previously-uninventoried surfaces (v1.84.0 ran 11 that way). Judge by whether the finding trend is genuinely converging, and state which of the two you are claiming. An agent that ships because it ran out of rounds has declared victory on a timer.
 
 **Anti-pattern: asking the human to adjudicate each round.** The human sets the bar and decides scope; the models find defects and you fix them. An agent that surfaces every finding for approval has converted an automated gate back into manual review, which is the cost the gate existed to remove.
 
 **If you only have one model available**, run it twice with genuinely different framings — for example once asked to find correctness defects and once asked to prove a specific safety property false — and treat the result as a single review, not two. It is meaningfully better than one pass and meaningfully worse than two models. Do not report it as dual review.
 
-**Do not show reviewers each other's work to "save a round."** That optimisation removes the only property this technique has.
+**Do not show reviewers each other's work to "save a round."** That optimisation removes the only property this technique has. This ban covers the finding-generating passes — the initial review and every recheck. It does **not** cover the final reconciliation phase, which runs after all verdicts are in and exists precisely to make the reviewers argue; see "Merging findings" above. Round-saving is the forbidden motive, not contact as such.
 
 #### Multiple Reviewers (N-Reviewer Pipeline)
 
@@ -4202,7 +4274,7 @@ When multiple reviewers comment on a PR (Claude, Codex, human reviewers), addres
 2. **Respond per-reviewer** — each reviewer has different blind spots. Address each one's findings separately
 3. **Resolve conflicts** — if reviewers disagree, pick the stronger argument, note why
 4. **Iterate until all approve** — don't merge until every active reviewer is satisfied
-5. **Max 3 iterations per reviewer** — escalate to user if a reviewer keeps finding new things
+5. **Two passes per reviewer per frozen scope**, max 3 — past that, a recorded continue/stop decision, not a user interrupt
 
 The value of multiple reviewers: different models/humans catch different issues. No single reviewer is sufficient for high-stakes changes.
 
