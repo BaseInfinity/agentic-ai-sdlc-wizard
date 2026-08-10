@@ -6,7 +6,7 @@ This project's primary target is **Claude Code (CLI)**. Cowork support is a bonu
 and will never hold the CLI back. What ships here is deliberately the shallow version.
 
 **You get:** the complete `/sdlc` operational checklist — byte-identical to the CLI skill,
-nothing removed — plus the `/feedback` skill and two best-effort prompt hooks.
+nothing removed — plus the `/feedback` skill and one best-effort prompt hook.
 
 **You do not get:**
 
@@ -14,10 +14,11 @@ nothing removed — plus the `/feedback` skill and two best-effort prompt hooks.
   optional depth; in Cowork those citations are inert. The checklist is the complete
   contract on its own, and the skill says so at the top.
 - Setup/update skills, shell hooks, the CLI installer, or cross-model review tooling.
-- **Enforcement.** Live testing (GH #456) found the prompt hooks do not reliably gate, and
-  the completion hook was removed in v1.92.0 after firing 12 times and being wrong 11. The
-  two remaining hooks are nudges with **no enforcement guarantee**. That rewrite has not
-  been re-validated live — treat enforcement as unproven, not merely absent.
+- **Enforcement.** Live testing (GH #456) found the prompt hooks do not reliably gate. The
+  completion hook was removed in v1.92.0 after firing 12 times and being wrong 11, and the
+  prompt classifier in v1.97.0 (GH #561) after denying the maintainer's own instructions
+  twice. The one remaining hook is a nudge with **no enforcement guarantee** — treat
+  enforcement as unproven, not merely absent.
 
 **If you have a terminal, use the full wizard:** `npx agentic-sdlc-wizard init`.
 
