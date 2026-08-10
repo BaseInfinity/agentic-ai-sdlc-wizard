@@ -124,6 +124,10 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 **When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **Skip (log justification):** trivial, hotfixes, risk < review cost. **Reviewer:** `gpt-5.6-sol` `high` — adversarial diversity. **Cadence:** Fable during design, Codex once per frozen scope; don't stack both unless the decision needs two independent reviewers.
 
+**Fable decides, Codex checks.** Fable rules on design, priority and sequencing *before* you commit to an approach — not a reviewer of work already done. A second repair to the same component in one cycle is a design question for Fable, not a third patch: review converges on a fix, never on the right design.
+
+**No test costs more rounds than the change it guards.** When a guard accretes rounds past its own change, delete the guard and file the follow-up — the rounds are being spent on the needle, not the risk. #476 spent six on twenty doc lines: four bought real defects, two bought spellings of `sudo`, and the guard was deleted at round six anyway (#551).
+
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
 **Handoff/preflight mechanics: wizard doc.** These two stay; improvising them cost real time (#364, #437).
