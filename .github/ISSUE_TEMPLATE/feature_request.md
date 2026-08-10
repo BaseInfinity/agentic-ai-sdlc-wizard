@@ -14,6 +14,18 @@ assignees: ''
 
 <!-- What should the wizard do? Which layer — hook, skill, workflow, CLI flag? -->
 
+## Scope card
+
+<!-- Fill this in before work starts. It is what scope growth gets compared against -- CLOSED ALLOWLIST has nothing to check without it. -->
+
+- **Acceptance criteria:** <!-- what must be observably true to close this -->
+- **Allowed paths:** <!-- the only files this may touch -->
+- **Exclusions:** <!-- what is explicitly NOT in this issue -->
+- **Risk tier:** <!-- low / medium / high -->
+- **Estimated diff:** <!-- roughly how many lines, deliverable and test -->
+
+The breaker trips on a new subsystem/path/criterion, a diff past 2x the estimate, or two corrective rounds. When it trips, stop and record the decision on this issue rather than continuing.
+
 ## Prove-It Gate
 
 The wizard is deliberately lean. New additions must show their value before landing:
