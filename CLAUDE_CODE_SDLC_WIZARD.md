@@ -3798,6 +3798,114 @@ Use an independent AI model from a different company as a code reviewer. The aut
 
 **Before requesting review, run `shellcheck` on any new or modified `.sh` file** (`shellcheck -s bash <files>`). This closes a real gap this repo hit directly (2026-07-21): a merge-safety-gate PR whose own tests had each been watched failing still passed cleanly, yet Codex's own review still caught bugs `shellcheck` would have flagged for free — including the classic `if [ $? -ne 0 ]` anti-pattern (SC2181), which is fragile against a line accidentally inserted between the command and the check. Mutation testing only proves your tests catch *deliberately broken variants you thought to try* — it can't catch a whole class of mechanical bugs a static analyzer finds instantly. Fix findings before submitting to Codex; don't spend a review round on what a free, instant, deterministic tool already tells you.
 
+#### When to stop: the scope rule
+
+Added 2026-08-09 after this repo spent eight hours and twenty review rounds on a
+three-line documentation defect and shipped nothing. Both reviewers were asked
+independently what went wrong; they converged, and the rules below are theirs.
+
+**The failure mode has a name: the review loop never promises to terminate.**
+Every round found a real defect, so every round justified the next one. Findings
+being *real* is not evidence that continuing is *right*.
+
+Two things made it inevitable. First, the invariant silently escalated — from
+"no wrong figure on a config a user would actually write" to "no false claim of
+any kind, on any input, constructed or not." Nothing satisfies the second
+version, so every round was **guaranteed** a finding and the reviewer's job
+turned generative rather than verificational. Second, the findings changed
+address: after a certain round, every blocker lived at a line *the PR itself had
+created*. That is the loop consuming its own output, and it reads exactly like
+convergence from the inside.
+
+**SCOPE RULE.** Two passes per frozen scope: one review, one verify — and verify
+reads only the diff since the last verdict. A fix that adds code or promises
+beyond the reviewed diff is *new scope*: it requires a recorded continue/stop
+decision from the planner, carrying the builder's cost line (diff size vs defect
+size, passes used). The decision may well be "continue" — the teeth are
+attribution, not prohibition. Escalate to a human **only** when the two models
+disagree; a rule that wakes the maintainer on every third round has just made
+them the round-limiter.
+
+**BLAME THE LINE.** At the limit, `git blame` the blocker against the PR base. A
+blocker that pre-existed the PR gets the smallest necessary fix. A blocker *born
+inside* the PR means the round found nothing wrong with the change, only with
+the review's own accretions — **cut the accretion, do not repair it.** Repairing
+accretions is what generates the next round.
+
+**REVIEW UNIT.** Review committed, immutable increments — never a mutable
+working tree. Approval attaches to a SHA. Approval is a decision to ship at
+accountable-good-enough, *not* a proof of zero defects. Reviewing a live tree
+cost this repo an entire round: a background harness mutated a file mid-read and
+the reviewer filed a correct, detailed diagnosis of a defect that existed only in
+that mutation.
+
+**CLOSED ALLOWLIST.** The issue's requested behaviors are the whole job. **The authority split is not negotiable: the planner may authorise more *process* within the allowlist; only the user may expand the *objective*.** Do not
+add runtime behavior, enforcement, automation, computed output, or new mechanisms
+unless they were asked for. Review findings may correct allowed work; they may
+never *expand* the allowlist. If expansion looks necessary, stop and ask.
+
+**CLAIM RULE.** Before code prints a value computed from parsed input, write down
+the input domain over which that figure is promised correct; out-of-domain input
+must produce no claim at all. If you cannot enumerate or fuzz that domain today,
+print the inputs and let the reader compute. **Scope is measured in promises, not
+lines.** A static claim checked once against a pinned version has an enumerable
+domain; a runtime computation over arbitrary user files signs an unbounded one.
+
+**EXISTENCE RULE.** A guard, monitor, or fix does not exist until it has been
+observed producing **both** outcomes on live input — firing where it must, and
+staying silent where it must not. Every guard ships with a negative fixture.
+RED proves a guard fires and is structurally silent on whether it *overfires*,
+and defensive guards are mostly negative obligation. This repo shipped a guard
+behind 207 green tests whose pattern matched ordinary values like `issue4522`,
+suppressing a figure that was correct. One negative fixture is a regression pin,
+not a proof — for unbounded domains the load-bearing verification is the closure
+argument plus fuzzing of the negative space.
+
+**PROCESS BUDGET scales with observability, not felt confidence.** Confidence is
+exactly how the original defect shipped: someone confidently recommended a config
+whose two knobs multiplied.
+
+| You | Process |
+|---|---|
+| **watched** it do the thing | ship — observation replaces review |
+| are **predicting** it will (deferred effect, interacting settings) | one cross-model fact-check pass |
+| are shipping something that runs on **other people's machines** | full gate |
+
+#### Why four layers didn't catch it
+
+The chain was planner → builder → self-review → cross-model gate, and a
+three-line fix still took eight hours. Every layer's contract is
+correctness-shaped: **every layer is rewarded for finding things, and no layer is
+rewarded for saying "this is now bigger than the bug."** Worse, the layers
+amplify — each finding becomes the builder's new obligation, and each gate sees
+only the current tree, never the cumulative bill.
+
+**The planner owns proportionality.** Not the builder: the builder's reward
+gradient is "satisfy the reviewer," which is the force that grows scope. But the
+builder holds the real-time view, so it carries the sensor:
+
+- The **builder** attaches a cost line to every review request — diff size vs
+  defect size, passes used, hours.
+- The **planner** records continue/stop before any third pass or scope growth. A
+  missing decision blocks the round. Every "continue" carries a name.
+
+In the incident that produced these rules, the ratio was **45:1** — 46 lines of
+deliverable against 2,066 lines of machinery nobody asked for — and it was never
+written down anywhere until the post-mortem. That is why nothing fired.
+
+#### The mechanism behind the creep
+
+Name it so you can catch yourself doing it: **objective substitution.** The agent
+replaces the requested objective ("change this guidance") with a more *measurable*
+one ("make this guidance mechanically enforceable"), because a doc sentence
+cannot be proven correct while a hook with 207 green tests feels like it can.
+Every subsequent review finding then creates more machinery.
+
+"Keep it simple" and "don't over-engineer" do not prevent this — they are taste
+rules with no trigger, evaluated against a solution shape that is already being
+written. The rules above bind because each names a **trigger** and an
+**observable**.
+
 **Prerequisites:**
 - Codex CLI installed: `npm i -g @openai/codex`
 - OpenAI API key configured: `export OPENAI_API_KEY=...`
@@ -3915,11 +4023,11 @@ codex exec \
 
 **The key constraint:** Rechecks are scoped to previous findings only — a reviewer should not go hunting for unrelated new material during a recheck round, which is how a 3-round review becomes an 11-round one.
 
-**But scoped does not mean muzzled.** A recheck that uncovers a genuine P0, P1 or P2 reports it and it blocks — see the severity contract in "Parallel Blind Dual Review". Certification means *zero unresolved findings*, not *zero findings raised after round 1*. An earlier revision of this paragraph said new P2s could never block certification; that let a real defect through on the grounds of what round it was found in, which is not a property of the defect. What the scoping rule actually forbids is expanding the review's *surface*, not silencing what the reviewer sees.
+**But scoped does not mean muzzled — and not everything it sees may block.** A recheck reports every defect it finds, at any severity. What **blocks** is bounded by the closed allowlist: a finding blocks when it shows a **requested** behavior is incorrect. A P2 outside the requested behaviors is reported and becomes a linked follow-up issue, not a certification blocker. Certification means *zero unresolved findings against the requested behaviors*, not *zero findings raised after round 1* — and not *zero defects anywhere*, which is unsatisfiable and is the shape that turned #520 into 20 rounds. Report-everything and block-on-scope are different questions; conflating them is how an invariant escalates. An earlier revision of this paragraph said new P2s could never block certification; that let a real defect through on the grounds of what round it was found in, which is not a property of the defect. What the scoping rule actually forbids is expanding the review's *surface*, not silencing what the reviewer sees.
 
-**Convergence:** Max 3 recheck rounds (4 total including initial review) as the default. If still NOT CERTIFIED after round 4, escalate to the user with a summary of all open findings — escalate, never ship. Don't spin indefinitely. Judge by whether the finding trend is genuinely converging, and say which case you are claiming.
+**Convergence:** the default is **two passes per frozen scope** (see "When to stop" above); this section's older max-3-rechecks heuristic is the ceiling, not the target. If still NOT CERTIFIED, escalate to the user with a summary of all open findings — escalate, never ship. Don't spin indefinitely.
 
-**Exception — known-large migrations:** the round cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop. Judge convergence by the *trend* in finding quality, not the round number: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
+**Exception — known-large migrations, and it costs a recorded decision.** The cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop — but "every round is still finding something real" is precisely what a self-consuming loop reports about itself, so it is **not** a licence the builder may grant itself. Each round past the budget requires a **planner continue/stop recorded before the round runs**, carrying the cost line and a `git blame` of the last blocker against the PR base; a blocker born inside the PR is not a reason to continue. With that decision on record: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
 
 **CERTIFIED is not the finish line.** A CERTIFIED verdict and a green CI run are different verification layers that catch different bug classes — a CERTIFIED review does not substitute for actually pushing and watching CI. Confirmed on the same v1.84.0 release: after round-11 CERTIFIED and a full local test sweep, real CI still caught 3 more genuine bugs the review never touched — a content regression in an unrelated section silently dropped by an earlier edit (caught by a pre-existing local test that simply hadn't been re-run since), an environment-specific CLI output-format change invisible to any local run against an older tool version, and a new test file committed without the executable bit (passes every local `bash tests/foo.sh` invocation, only fails when CI runs it as `./tests/foo.sh`). Budget for at least one more fix-push-recheck cycle after CERTIFIED, and don't treat CERTIFIED as license to skip reading the actual CI logs — see the CI Feedback Loop section below.
 
