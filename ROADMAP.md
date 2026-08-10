@@ -15,9 +15,17 @@ Triage: **31 open → 22, unmilestoned 12 → 0.** Closed with reasons on each i
 
 Row 485 is **superseded by #511 and #517** — do not action it. Analysis lives on the issues, not here: #513 (the embedded install path), #482 (why this file stops being a store), #489 (byte ceiling).
 
-**Last release: v1.96.0, 2026-08-09** (`agentic-sdlc-wizard`). Deletes the wizard doc's 639-line embedded copy of the SDLC skill — a second install path to the same destination the CLI writes, diverged to 56,284 bytes against the live skill's 19,356 — and the 18 assertions that were grepping that copy instead of the document. Adds four guards against its return, three measuring the payload and one measuring where the reader is told to install. Also: same-model self-review deleted as an instruction (including from a shipped per-prompt hook), dual cross-model certification as merge authorization, and a `validate` lookup that could read a red or queued CI run as green. See `CHANGELOG.md`.
+**Last release: v1.97.0, 2026-08-10** (`agentic-sdlc-wizard`). Deletes the Cowork
+`UserPromptSubmit` prompt classifier, which denied the maintainer's own instructions twice — the
+second time after a repair that a passing test had pinned. Scopes TDD RED to where a RED mutation
+is writable, with the three-way call (EVAL it / plain-assert it / don't test it), after six guards
+shipped that passed on every input including the ones they existed to reject. Adds a shipped-file
+walk that guards every documented hook-registration surface — including agent and command
+frontmatter, two surfaces no enumeration across six review rounds ever named. Also: "fixed" means
+observed, a cumulative per-root-task pass budget, the planning scope card, the autocompact
+guidance fix, and native-installer guidance. See `CHANGELOG.md`.
 
-**Prior release: v1.95.0, 2026-08-07.** Carried the stdin-hang fix for six shipped hooks — each could block forever on a stdin that never reaches EOF, observed at 10h19m against a 10-second timeout — plus fail-closed gate semantics and a `CLAUDE.md` shipped-surface guard, including the five-iteration history of the fix itself.
+**Prior release: v1.96.0, 2026-08-09.** Deleted the wizard doc's 639-line embedded copy of the SDLC skill — a second install path to the same destination the CLI writes, diverged to 56,284 bytes against the live skill's 19,356 — and the 18 assertions that were grepping that copy instead of the document. Added four guards against its return.
 
 **The "Last release" marker above was stale and is worth noting as a defect, not just correcting.** It read "Last release: v1.90.0" through the v1.92.0 and v1.93.0 releases; a version sweep grepping for the *outgoing* version can never find a marker frozen at an older one. Caught by cross-model release review 2026-08-05, not by any test. A guard belongs in `tests/test-doc-consistency.sh` — cross-ref GH #493 (the guard itself) and #491 (the wider CI/CD audit).
 
@@ -204,7 +212,7 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 
 | Project | Repo | Status |
 |---------|------|--------|
-| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.96.0 (living tracker — bump every release) |
+| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.97.0 (living tracker — bump every release) |
 | Codex SDLC Adapter | BaseInfinity/codex-sdlc-wizard | v0.7.x, shipped with SDLC workflow |
 | GDLC Wizard (games sibling) | BaseInfinity/claude-gdlc-wizard | v0.2.x, persona-driven playtest cycles |
 | _(add as projects are marked)_ | | |
