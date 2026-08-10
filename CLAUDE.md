@@ -57,19 +57,28 @@ table. Run any suite directly; a few common ones:
 Run the whole suite before any release. It takes minutes, not seconds, and
 some fixtures need `dangerouslyDisableSandbox` to create their temp dirs.
 
-**Also before any release, verify the Cowork plugin's EFFECTIVE hooks natively**
-(GH #561). Install the working-tree plugin from the local marketplace, then:
+**Release verification (Cowork plugin)** — GH #561. Install the working-tree
+plugin from the local marketplace, then:
 
 ```
 claude plugin details sdlc-wizard-cowork
 ```
 
-It must report exactly `Hooks (1)  PreToolUse` — whitelist the full expected
-set, never the absence of one name. `claude plugin details` reports effective
-hooks *however registered*, so it is the only check that sees a registration
-surface the CI walk does not know about. It cannot run in CI (no `claude` CLI)
-and reads the installed cache rather than the working tree, so installing first
-is required — run it against an unupdated cache and it reports the OLD plugin.
+It must report exactly `Hooks (1)  PreToolUse`.
+
+This verifies the **installed artifact's manifest-registered hooks**
+(`hooks/hooks.json` and manifest `hooks` fields — the surface the #561 hook
+lived on). It does **not** see skill-frontmatter hooks: verified empirically
+2026-08-10, an active frontmatter `UserPromptSubmit` hook did not appear in the
+inventory. Those are guarded at source by the shipped-file walk in
+`tests/test-cowork-drift.sh`.
+
+**No native command enumerates all effective hooks.** An undocumented future
+registration mechanism is uncovered by any check here — cross-model diff review
+is the guard, and it found every missing surface to date.
+
+Note it reads the installed cache, not the working tree, so installing first is
+mandatory: run it against an unupdated cache and it reports the OLD plugin.
 
 ## Code Style
 
