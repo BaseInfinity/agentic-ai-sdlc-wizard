@@ -3728,6 +3728,102 @@ $negated"
 test_wizard_prereqs_recommend_native_claude_install
 
 
+# Tests (#530): the standing setup the maintainer kept retyping every session
+# must live in the skill, not in a human's muscle memory.
+#
+# Most of what #530 asked for already shipped: the escalation ladder, the
+# model/effort policy, the clearance format, and PROCESS BUDGET are all in
+# skills/sdlc/SKILL.md already. Two things were not, and both are retyped:
+# Fable's role is to DECIDE, and a guard may not outgrow its change.
+#
+# Greps run INSIDE the Cross-Model Review section, never against the whole
+# file — a keyword that lands anywhere in a 20KB skill proves nothing. #493
+# caught three such assertions before they shipped, and that release went out
+# without the guard rather than with a vacuous one; #551 is the same story.
+#
+# `[^.;]*` throughout, not `[^.]*`: a semicolon ends a clause, and both
+# reviewers' inversion attacks worked by hopping one. These guards are
+# deliberately NOT a semantics engine — they catch drift and deletion, which
+# is what a grep can honestly promise. Adversarial prose is what the reviewers
+# are for, and chasing it is what cost #476 its last two rounds.
+extract_sdlc_cross_model_section() {
+    awk '
+        /^## Cross-Model Review/ { in_section = 1; print; next }
+        in_section && /^## / { in_section = 0 }
+        in_section { print }
+    ' "$1"
+}
+
+# The weak form already shipped: "Cadence: Fable during design". That says WHEN
+# Fable is consulted, not that Fable's answer settles the approach. The rule
+# being retyped is the strong one — Fable rules on design/priority/sequencing
+# BEFORE an approach is committed to.
+test_sdlc_skill_makes_fable_the_deciding_role() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    local section
+    section=$(extract_sdlc_cross_model_section "$SKILL")
+    if [ -z "$section" ]; then
+        fail "#530: no '## Cross-Model Review' section in skills/sdlc/SKILL.md to carry the standing setup"
+        return
+    fi
+    # Both halves required, each with its object named, each within one clause.
+    # Naming the objects is what defeats the inversion both reviewers found:
+    # "Fable decides nothing before lunch; Codex alone chooses every design"
+    # hops the semicolon to reach `design`, and its `before` takes `lunch`.
+    if ! printf '%s\n' "$section" | grep -qiE 'Fable[^.;]*\b(decides|rules|settles|chooses)\b[^.;]*\b(design|priority|sequencing)\b'; then
+        fail "#530: Cross-Model Review section must state that Fable DECIDES design/priority/sequencing — 'Fable during design' only says when to consult, which is why the role kept getting retyped"
+        return
+    fi
+    if ! printf '%s\n' "$section" | grep -qiE '\bbefore\b[^.;]*\b(approach|commit)'; then
+        fail "#530: the skill says Fable decides but not that it decides BEFORE an approach is committed to — deciding after the fact is just review, which is the role it already had"
+        return
+    fi
+    pass "#530: skill states Fable DECIDES design/priority/sequencing before an approach is committed to"
+}
+
+# #476 spent six review rounds on a twenty-line doc change. Rounds 1-4 bought
+# real defects; rounds 5-6 bought spellings of `sudo`.
+#
+# This is deliberately NOT a second round counter. The skill already has one —
+# "TWO PASSES PER FROZEN SCOPE" with its own recorded continue/stop escape —
+# and #476 burned six rounds with that rule already shipped, because each
+# repair re-froze the scope and bought two more passes. A cap was never the
+# missing piece; both reviewers said so independently, and the wizard doc
+# separately blesses continuation past round 4 for large migrations, where
+# v1.84.0's round 8 found a real shipped bug. A narrow cap would have
+# suppressed that round.
+#
+# What was missing is a RATIO: the guard may not outgrow the change. Both
+# halves must land in one clause, because three independent greps are
+# satisfiable by three unrelated sentences — which is precisely how a reviewer
+# broke the first draft of this test.
+test_sdlc_skill_caps_guard_cost_by_its_change() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    local section
+    section=$(extract_sdlc_cross_model_section "$SKILL")
+    if [ -z "$section" ]; then
+        fail "#530: no '## Cross-Model Review' section in skills/sdlc/SKILL.md to carry the guard-cost rule"
+        return
+    fi
+    if ! printf '%s\n' "$section" | grep -qiE '\btests?\b[^.;]*\brounds?\b[^.;]*\bchange it guards\b'; then
+        fail "#530: Cross-Model Review section does not tie a test's review cost to the change it guards — #476 spent six rounds on twenty doc lines and two of them bought spellings"
+        return
+    fi
+    # An over-budget guard has to go somewhere. Deleting it silently loses the
+    # risk it was written for; keeping it is what cost the six rounds.
+    if ! printf '%s\n' "$section" | grep -qiE '\bdelete\b[^.;]*\b(guard|test)\b[^.;]*(follow.up|file)'; then
+        fail "#530: the rule says a guard can outgrow its change but not what to do about it — deleting it without filing the follow-up loses the risk, keeping it is the six rounds"
+        return
+    fi
+    pass "#530: skill caps a guard's review cost by the change it guards, and routes the deleted guard to a follow-up"
+}
+
+test_sdlc_skill_makes_fable_the_deciding_role
+test_sdlc_skill_caps_guard_cost_by_its_change
+
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then
