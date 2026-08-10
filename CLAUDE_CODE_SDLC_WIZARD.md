@@ -1050,7 +1050,7 @@ Override the default auto-compact threshold with environment variables. Per offi
 
 **Sonnet 5 specifics:** Sonnet 5 always runs at 1M context (no 200K variant, no `[1m]` suffix needed) and proactively compacts at its own tuned default of **~967K tokens (96.7%)** — not the generic 1M ceiling. `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` on Sonnet 5 fires at ~75% *of that 967K*, i.e. ~725K tokens — earlier and safer than the native default, not later. **Do not carry over an `opus[1m]`-era `30%` setting to Sonnet 5** — that figure was derived for `opus[1m]`'s older extended-context opt-in, never re-derived for Sonnet 5's smarter native default, and is needlessly conservative here (verified 2026-07-05).
 
-**Opus 5 specifics (Setup A):** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` only causes *earlier* compaction where Claude Code compacts **proactively** — per [env-vars](https://code.claude.com/docs/en/env-vars): when `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is set, in cloud sessions, on Sonnet 4.6/Opus 4.6 without extended context, and on Sonnet 5 at its own default threshold. The docs' example of the non-proactive bucket is a local session on **Opus 4.8** ("auto-compaction triggers when the conversation reaches the model's context limit"); they give no Opus-5-specific threshold or behavior either way. **Claude Code documents no Opus-5-specific proactive threshold or percentage — so Setup A sets no `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` at all.** On Max, bare `opus` auto-upgrades to 1M ([model-config](https://code.claude.com/docs/en/model-config)); that establishes *capacity*, not proactive mode, and does not license a percentage. If you want a deliberately earlier boundary on 1M Opus, `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (e.g. `500000`) is the documented knob — but setting it *makes* compaction proactive, at which point a PCT override compounds with it (#207). Pick one, never both. `/compact` at a phase boundary works regardless of model.
+**Opus 5 specifics (Setup A):** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` only causes *earlier* compaction where Claude Code compacts **proactively** — per [env-vars](https://code.claude.com/docs/en/env-vars): when `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is set, in cloud sessions, on Sonnet 4.6/Opus 4.6 without extended context, and on Sonnet 5 at its own default threshold. The docs' example of the non-proactive bucket is a local session on **Opus 4.8** ("auto-compaction triggers when the conversation reaches the model's context limit"); they give no Opus-5-specific threshold or behavior either way. **Claude Code documents no Opus-5-specific proactive threshold or percentage — so Setup A sets no `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` at all.** On Max, bare `opus` auto-upgrades to 1M ([model-config](https://code.claude.com/docs/en/model-config)); that establishes *capacity*, not proactive mode, and does not license a percentage. If you want a deliberately earlier boundary on 1M Opus, `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (e.g. `500000`) is the documented knob — setting it *makes* compaction proactive, which is also why a PCT override then multiplies against it rather than being ignored (#207). Use the window alone, and see "Autocompact mechanics" below for the arithmetic. A smaller window compacts sooner — it does not switch compaction off. `/compact` at a phase boundary works regardless of model.
 
 > **`env` is global, not per-model.** `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in `.claude/settings.json` applies to whichever model runs under that file — and, per the same doc row, "to both main conversations and subagents". Switching drivers does **not** switch its value: a file carrying Setup B's `75` keeps supplying `75` after you switch to Opus. No static `env` object can express "75 for Sonnet, none for Opus" — if you want per-model tuning, edit the key when you change persistent pins, or keep separate settings profiles.
 
@@ -1068,7 +1068,7 @@ To opt in by hand, edit `.claude/settings.json` (Opus 5 example — the recommen
 
 No `env` block: Claude Code documents no Opus-5 proactive threshold, so there is no supported percentage to set (see "Opus 5 specifics" above).
 
-For the older `claude-opus-4-6` pin instead (still valid for proven stability), a lower override *is* supported — Opus 4.6 without extended context is one of the documented proactive-compaction cases:
+For the older `claude-opus-4-6` pin instead (still valid for proven stability), a percentage override *is* supported — Opus 4.6 without extended context is one of the documented proactive-compaction cases, so unlike on the current default driver the percentage is genuinely live here. **But mind the window it acts on.** An explicit `claude-opus-4-6` string pins **200K**; the Max auto-upgrade to 1M applies to the bare `opus` alias, not to an explicit version string. So a `30` here is 30% of 200K — a **~60K trigger**, the same over-aggressive setting this doc warns about for `opusplan` further down. Earlier revisions shipped exactly that pairing, annotated "(1M)", and it was wrong on both counts (GH #520). Use the 200K figures from the table above:
 
 ```json
 {
@@ -1076,7 +1076,7 @@ For the older `claude-opus-4-6` pin instead (still valid for proven stability), 
   "advisorModel": "fable",
   "env": {
     "CLAUDE_CODE_EFFORT_LEVEL": "max",
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75"
   }
 }
 ```
@@ -1113,9 +1113,45 @@ Claude Code supports both 200K and 1M context windows. **This section is about O
 | **Cost** | Standard pricing | Anthropic currently lists the 1M window at standard pricing across the full context for supported Opus/Sonnet models — **verify current rates at [docs.anthropic.com/pricing](https://docs.anthropic.com/)** before assuming no premium |
 | **Auto-mode** | **Enabled** — Claude Code chooses model per turn | **Disabled** — top-level `model` tells CC you've chosen explicitly |
 | **Auto-compact** | Default ~95% works well | `opus[1m]` resolves to whichever Opus is current, so no fixed threshold is documented for it. The ~76K figure in [issue #34332](https://github.com/anthropics/claude-code/issues/34332) was observed on the older extended-context opt-in and has not been re-derived since — don't treat it as current behavior. See "Opus 5 specifics" above. |
-| **Suggested override (if you pin)** | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` | None by default — no proactive threshold is documented for a current-Opus local session. If you want an earlier boundary, use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (e.g. `400000`), which does make compaction proactive. Never set both (see below). |
+| **Suggested override (if you pin)** | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` | None by default — no proactive threshold is documented for a current-Opus local session, so the percentage alone is inert. If you want an earlier boundary, use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone (e.g. `400000`), which both makes compaction proactive and sets the boundary. A smaller value compacts sooner, not never (see below). |
 
-> **⚠ Do NOT set both.** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` are alternatives, not complementary. Setting both compounds: `30% × 400000 = 120000` tokens, which is ~12% of a 1M window — autocompact fires almost immediately, destroying the headroom you opted in for. Pick one knob: either lower the trigger percentage (`PCT_OVERRIDE`) **on a model that compacts proactively** — Sonnet 5, or Sonnet 4.6/Opus 4.6 without extended context — OR cap the working window (`AUTO_COMPACT_WINDOW=400000`), which is the option that applies when no proactive threshold is documented for your model. The `instructions-loaded-check.sh` `InstructionsLoaded` hook (fires on session start/resume) detects this misconfig and prints the effective trigger so you can debug from the warning alone (#207).
+#### Autocompact mechanics — compute the trigger, don't guess it
+
+Verified against decompiled Claude Code **v2.1.221** (functions `EX`, `CCo`, `F0s`, `ZJu`, `fEe`, `kO`). Version-stamped deliberately: these are implementation constants, not a documented contract, and they can move.
+
+```
+window    = min(model_window, clamp(AUTO_COMPACT_WINDOW, 100000..1000000))
+threshold = min(floor(window × PCT_OVERRIDE/100), window − 13000)
+           ...with up to 20000 tokens of system overhead subtracted first
+```
+
+**`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` is a percentage of *used* context, and it is inert unless something puts your session in the "proactive" bucket** — the window var being set, a cloud session, Sonnet 4.6/Opus 4.6 *without* extended context, or Sonnet 5. On a local current-Opus session with no window set, it does **nothing**, and compaction happens at the model's context limit. This is measured, not inferred: a session running `PCT_OVERRIDE=35` alone reached 42% of a 1M window with no compaction.
+
+**Five traps, in the order they bite:**
+
+1. **A window under 200000 makes compaction fire sooner, not later.** There is no lower bound below which compaction switches off: the live trigger is `LXy` → `jUe` → `zJu`, which has no such gate. The `bIe = 200000` check belongs to `ZJu`, a *different* function that arms the **precomputed** summary — below it compaction still happens, reactively rather than pre-warmed. Two near-identical names, one letter apart, and reading the wrong one is how this document previously claimed the opposite (see "How this section was wrong" below).
+2. **The two vars multiply.** `30% × 400000` gives 114000 — ~11% of a 1M window (#207). But `35% × 1000000` gives 343000, a perfectly sane deliberate boundary. Both figures are the percentage of the window *after* overhead comes off, which is where `CCo` applies it; the naive products (120000, 350000) overstate each by the overhead share. **Setting both is arithmetic, not an error.** What matters is where the product lands, so compute it and sanity-check it against your real window.
+3. **Env is read at launch.** Editing `settings.json` mid-session changes nothing, and there is no mechanism to *unset* a var in a live process. `claude --resume` is the fix; it preserves the transcript. If you are stuck mid-session with compaction firing too early, `autoCompactEnabled: false` (settings.json or `/config`) is read **live** by `kO` and stops it without a restart — that is the settings key only; `DISABLE_AUTO_COMPACT=1` as a real env var also stops compaction but cannot be unset in a live process — at the cost of running to the hard limit instead. Interim only.
+4. **A suffix is not read as its human meaning — `150k` parses as `150`.** The window var goes through `parseInt` as a fallback, so `150k` becomes `150`, which the 100000 floor then raises to a **100000** window: a real trigger around 67000, on a config the operator reads as "150 thousand". `1,000,000` is accepted and means what it looks like; `150000.5` truncates. Write plain integers, with no suffix, separator or decimal point — this is the one trap here that leaves nothing on screen to notice.
+5. **Diagnose from the live env, not the settings file.** `env | grep -iE "compact|CLAUDE_CODE"` first, then `~/.claude/settings.json`, then `settings.local.json` / `~/.claude.json`, then shell rc, then `launchctl getenv`. The settings file is a *claim* about the process; the env is the process.
+
+**Recommended, scoped by what you are running — there is no single right answer here, and claiming one is how this section was wrong before:**
+
+| Your driver | Recommendation | Why |
+|---|---|---|
+| **Auto-mode (no pin)** — the default | **Set neither.** | Whichever model runs per turn brings its own tuned default. A static `env` cannot express per-model tuning (see the `env` note above), so any value you pick is wrong for some turn. |
+| **Current Opus (Opus 5), 1M** | **Set neither.** If you deliberately want an earlier boundary, `CLAUDE_CODE_AUTO_COMPACT_WINDOW` **alone**, ≥ 200000. | A percentage alone is inert here — no proactive threshold is documented, and a live session confirmed it: percentage-only, well past a third of the window consumed, no compaction. The window var both enables proactive mode and sets the boundary. |
+| **Sonnet 5** | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75` — unchanged. | Sonnet 5 compacts proactively at its own ~967K default, so the percentage is live and acts on a known number. This is the case where the percentage is the *right* knob. |
+| **Explicit `claude-opus-4-6` pin** | Percentage, sized against **200K** — use the 200K rows in the table above, not the 1M figures. | The percentage is live (Opus 4.6 without extended context is a documented proactive case) but the window is small, so `30` means ~60K, not a 1M-era boundary. An explicit version string does not get the Max auto-upgrade. |
+| **`opusplan`** | **Set neither.** | Not a single surface: it runs current Opus for planning and Sonnet 5 for execution, and Sonnet 5 is natively 1M. One `env` value would have to be right for both halves, and no value is. |
+
+**Deliberately wanting earlier compaction is legitimate** — long contexts degrade output quality — so this is about picking the knob that is actually connected on your surface, not about avoiding the knobs.
+
+**Where you have the choice, prefer the window var to the two-var form**, for one specific reason: `min()` clamps the window to the model's own, so a one-var setting degrades gracefully on a smaller model, while `WINDOW=1000000 + PCT=35` silently becomes a trigger around 70000 the moment a 200K model runs under it — lower still once system overhead comes off. Note the two are not exactly interchangeable — the `window − 13000` cap and the system-overhead subtraction both apply — so treat any single number here as approximate.
+
+The `instructions-loaded-check.sh` `InstructionsLoaded` hook (session start/resume) reports the effective trigger — warning only when the product lands below 200000, and otherwise stating it as the deliberate choice it probably is (#207, #520).
+
+**How this section was wrong, and what that cost.** The first version of it stated trap 1 backwards: that a sub-200000 window *disabled* compaction. It came from reading `ZJu` and attributing its gate to the live path, which is `zJu` — the same eight characters in a different case. Thirteen rounds of adversarial cross-model review certified the machinery that guards these sentences and never once asked whether a sentence was true, because it was never asked to. A second reviewer, briefed on the claims rather than the guards, disproved it against the running binary in one pass. Guard coverage is not claim truth, and the two need separately commissioned reviewers (#502, #515).
 
 **Why `opus[1m]` is opt-in (issue #198):**
 - **Pinning disables auto-mode.** Max-plan users pay for Claude Code's per-turn model selection (Sonnet for cheap tasks, Opus for hard ones, plus weekly-limit smoothing). A top-level `model` gives that up.
@@ -1132,7 +1168,7 @@ Claude Code supports both 200K and 1M context windows. **This section is about O
 
 **Cost awareness:** Larger windows let you consume more tokens in one session, and total cost always scales with tokens consumed regardless of tier. Use `/usage` to monitor (aliases: `/cost`, `/stats`) — a 900K-token session is meaningfully more expensive than an 80K one even at standard rates.
 
-**Autocompact pairing — no longer recommended for `opus[1m]`:** older versions of this doc told you to pair the `opus[1m]` pin with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. That pairing was derived for the original extended-context opt-in and has never been re-derived; since `opus[1m]` now resolves to the current Opus, the docs give no proactive threshold that the percentage would act on. **Set no override** unless you also set `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (which does make compaction proactive — and then the two compound, #207). Setup A pins bare `opus` and Step 9.5 writes no override at all. See "Opus 5 specifics" above.
+**Autocompact pairing — no longer recommended for `opus[1m]`:** older versions of this doc told you to pair the `opus[1m]` pin with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=30`. That pairing was derived for the original extended-context opt-in and has never been re-derived; since `opus[1m]` now resolves to the current Opus, the docs give no proactive threshold that the percentage would act on. **Set no override.** If you want an earlier boundary, set `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone at 200000 or above — that makes compaction proactive *and* sets the boundary in one var, where adding a percentage on top only multiplies against it (#207, #520). Setup A pins bare `opus` and Step 9.5 writes no override at all. See "Opus 5 specifics" and "Autocompact mechanics" above.
 
 ### OpusPlan Tier (Opus planner + Sonnet driver, #395) — Setup C
 
@@ -3762,6 +3798,182 @@ Use an independent AI model from a different company as a code reviewer. The aut
 
 **Before requesting review, run `shellcheck` on any new or modified `.sh` file** (`shellcheck -s bash <files>`). This closes a real gap this repo hit directly (2026-07-21): a merge-safety-gate PR whose own tests had each been watched failing still passed cleanly, yet Codex's own review still caught bugs `shellcheck` would have flagged for free — including the classic `if [ $? -ne 0 ]` anti-pattern (SC2181), which is fragile against a line accidentally inserted between the command and the check. Mutation testing only proves your tests catch *deliberately broken variants you thought to try* — it can't catch a whole class of mechanical bugs a static analyzer finds instantly. Fix findings before submitting to Codex; don't spend a review round on what a free, instant, deterministic tool already tells you.
 
+#### When to stop: the scope rule
+
+Added 2026-08-09 after this repo spent roughly nine hours and twenty review
+rounds on a three-line documentation defect, and produced 46 lines of deliverable
+against 2,066 lines of review-generated machinery. Both reviewers were asked
+independently what went wrong; they converged, and the rules below are theirs.
+The Codex post-mortem is archived at `.reviews/postmortem-codex.md`; the Fable
+leg was conducted in-session and is not archived, so "they converged" is
+corroborated for one leg and reported in good faith for the other.
+
+**The failure mode has a name: the review loop never promises to terminate.**
+Every round found a real defect, so every round justified the next one. Findings
+being *real* is not evidence that continuing is *right*.
+
+Two things made it inevitable. First, the invariant silently escalated — from
+"no wrong figure on a config a user would actually write" to "no false claim of
+any kind, on any input, constructed or not." Nothing satisfies the second
+version, so every round was **guaranteed** a finding and the reviewer's job
+turned generative rather than verificational. Second, the findings changed
+address: after a certain round, every blocker lived at a line *the PR itself had
+created*. That is the loop consuming its own output, and it reads exactly like
+convergence from the inside.
+
+**SCOPE RULE.** Two passes per frozen scope: one review, one verify — and verify
+reads only the diff since the last verdict. A fix that adds code or promises
+beyond the reviewed diff is *new scope*: it requires a continue/stop decision
+from the planner (a role, not a fourth model — defined under "Why four layers
+didn't catch it"), recorded in `.reviews/handoff.json` under `"scope_decisions"`
+before the pass runs, carrying the builder's cost line (diff size vs defect
+size, passes used). The decision may well be "continue" — the teeth are
+attribution, not prohibition. Escalate to a human **only** when the two models
+disagree; a rule that wakes the maintainer on every third round has just made
+them the round-limiter.
+
+**BLAME THE LINE.** A review finds a bug. One question decides what to do:
+**did the issue ask for this code?**
+
+- **Yes → fix the bug.** Always, however late in the loop it surfaces.
+- **No → delete the code.** The bug goes with it. Repairing code nobody asked
+  for is what generates the next round.
+
+`git blame` is how you answer it, not the answer itself. Blame the blocker
+against the **frozen-scope SHA** — `handoff.json`'s `frozen_scope_sha`, written
+on the *first* verdict of a scope whether that verdict is YES or NO, and **never
+overwritten**. It is deliberately not `commit_sha`: that field is written only on
+CERTIFIED and is rewritten by each later certification, so after an initial NO it
+does not exist, and after a later YES it no longer points at the boundary. Two
+fields, two jobs — `commit_sha` says *what was certified*, `frozen_scope_sha`
+says *where this scope began*. Lines older than it are the work you set out to
+do. Lines newer than it exist because a review round asked for them, so they are
+the ones to check against the allowlist. Do **not** blame against the PR base:
+everything you meant to build is also PR-born, and cutting on that test deletes
+the deliverable. Where the two disagree, the allowlist wins — birth time is
+evidence, being asked for is the test. Before the first verdict there is no
+frozen-scope SHA and this rule is silent; it is a stopping rule, not an entry
+rule.
+
+**REVIEW UNIT.** Review committed, immutable increments — never a mutable
+working tree. Approval attaches to a SHA. Approval is a decision to ship at
+accountable-good-enough, *not* a proof of zero defects. Reviewing a live tree
+cost this repo an entire round: a background harness mutated a file mid-read and
+the reviewer filed a correct, detailed diagnosis of a defect that existed only in
+that mutation.
+
+**CLOSED ALLOWLIST.** The issue's requested behaviors are the whole job. **The authority split is not negotiable: the planner may authorise more *process* within the allowlist; only the user may expand the *objective*.** Do not
+add runtime behavior, enforcement, automation, computed output, or new mechanisms
+unless they were asked for. Review findings may correct allowed work; they may
+never *expand* the allowlist. If expansion looks necessary, stop and ask.
+When there is no written issue, the allowlist is the requester's task **as
+restated back to them and left unchallenged before work starts** — the "restate
+the task in your own words" step of the checklist is what creates it. An
+allowlist that was never written down is not a small allowlist; it is an absent
+one, and every rule in this section that references "the requested behaviors"
+is inoperative until it exists.
+
+**CLAIM RULE.** Before code prints a value computed from parsed input, write down
+the input domain over which that figure is promised correct; out-of-domain input
+must produce no claim at all. If you cannot enumerate or fuzz that domain today,
+print the inputs and let the reader compute. **Scope is measured in promises, not
+lines.** A static claim checked once against a pinned version has an enumerable
+domain; a runtime computation over arbitrary user files signs an unbounded one.
+
+**EXISTENCE RULE.** A guard, monitor, or fix does not exist until it has been
+observed producing **both** outcomes on live input — firing where it must, and
+staying silent where it must not. Every guard ships with a negative fixture.
+RED proves a guard fires and is structurally silent on whether it *overfires*,
+and defensive guards are mostly negative obligation. This repo shipped a guard
+behind 207 green tests whose pattern matched ordinary values like `issue4522`,
+suppressing a figure that was correct. One negative fixture is a regression pin,
+not a proof — for unbounded domains the load-bearing verification is the closure
+argument plus fuzzing of the negative space.
+
+**PROCESS BUDGET prices the promise, not felt confidence.** Confidence is
+exactly how the original defect shipped: someone confidently recommended a config
+whose two knobs multiplied. Price the change before review by one question —
+*does your observation cover the domain the change promises over?* — and apply
+the first row that matches, top to bottom:
+
+| The change | Process |
+|---|---|
+| makes **no new promise** (typo, comment, restating a verified fact) | ship — log the skip. File location is irrelevant: a comment fix in auth code is not an auth change |
+| promises behavior in a **High-Stakes domain** — auth, payments, data handling, or the release/publish act itself | full gate, regardless of what you watched: one observed run covers one input, in a domain defined by the inputs you didn't pick |
+| makes a promise you **watched hold over its whole domain** — enumerable, and written down (see CLAIM RULE) | ship — observation replaces review |
+| makes a promise you are **predicting**, over a domain you can still observe *after* shipping — deferred effects, interacting settings, environments you didn't run but do have logs and a rollback for | one cross-model fact-check pass |
+| makes a promise you can **never observe** — executes on machines you don't monitor, or over unbounded inputs | full gate |
+
+Two boundary rulings, decided here so no reader has to arbitrate them. "High-Stakes:
+releases" means the act of tagging and publishing, **not** every change that later
+rides in a release — read it the second way and every row collapses into full
+gate, which prices nothing. Server-side code on your own machines serving other
+people's traffic is *observable* — your logs, your rollback — so it is not the
+unobservable row; it prices as watched or predicted unless its promise is
+High-Stakes.
+
+This retro-dicts the incident correctly: the autocompact recommendation was a
+*predicted* interaction between two knobs, so one cross-model fact-check pass —
+which is exactly what would have caught it. The known failure input is a
+mis-written domain: a "typo fix" that changes a figure consumers act on. Two
+tripwires, one each way. Before: the ship rows are only available with a
+one-line written domain statement (see CLAIM RULE) — can't write it, can't claim
+the row. After: a defect shipped from a ship-priced change reprices that change
+class one row stricter, permanently, recorded in the post-mortem.
+
+#### Why four layers didn't catch it
+
+The chain was planner → builder → self-review → cross-model gate, and a
+three-line fix still took eight hours. Every layer's contract is
+correctness-shaped: **every layer is rewarded for finding things, and no layer is
+rewarded for saying "this is now bigger than the bug."** Worse, the layers
+amplify — each finding becomes the builder's new obligation, and each gate sees
+only the current tree, never the cumulative bill.
+
+**The planner owns proportionality.** Not the builder: the builder's reward
+gradient is "satisfy the reviewer," which is the force that grows scope. But the
+builder holds the real-time view, so it carries the sensor:
+
+- The **builder** attaches a cost line to every review request — diff size vs
+  defect size, passes used, hours.
+- The **planner** records continue/stop before any third pass or scope growth,
+  as an entry in `.reviews/handoff.json` under a top-level `"scope_decisions"`
+  array: `{"round": N, "decision": "continue|stop", "cost": "<diff lines> vs
+  <defect lines>, <passes> passes", "blame": "requested|unrequested", "by":
+  "<role/model>"}`. A missing entry for the pass about to run blocks the round —
+  checkable with `cat .reviews/handoff.json`, no new tooling. Every "continue"
+  carries a name: the `"by"` field.
+
+**"Planner" is a role, not a fourth model.** It is whoever owns the plan: Setup
+C's Opus plan mode, or the driver itself under Setups A and B. Under a single
+driver this is self-authorization on purpose — the incident mechanism was
+invisibility, not missing authority, and the teeth are attribution, not
+prohibition. The record is ratified downstream: the next reviewer pass reads
+`scope_decisions` and may reject the continue rationale, which stops the loop;
+if the recorded continue is the final pass, the merge-step clearance legs read
+it, and an unjustified continue is a blocking finding there. The human is
+consulted only when the two models disagree about the record. **Do not build a
+hook to check this file** — reviewers reading it *is* the check, and automating
+it inside the PR that names objective substitution would be objective
+substitution.
+
+In the incident that produced these rules, the ratio was **45:1** — 46 lines of
+deliverable against 2,066 lines of machinery nobody asked for — and it was never
+written down anywhere until the post-mortem. That is why nothing fired.
+
+#### The mechanism behind the creep
+
+Name it so you can catch yourself doing it: **objective substitution.** The agent
+replaces the requested objective ("change this guidance") with a more *measurable*
+one ("make this guidance mechanically enforceable"), because a doc sentence
+cannot be proven correct while a hook with 207 green tests feels like it can.
+Every subsequent review finding then creates more machinery.
+
+"Keep it simple" and "don't over-engineer" do not prevent this — they are taste
+rules with no trigger, evaluated against a solution shape that is already being
+written. The rules above bind because each names a **trigger** and an
+**observable**.
+
 **Prerequisites:**
 - Codex CLI installed: `npm i -g @openai/codex`
 - OpenAI API key configured: `export OPENAI_API_KEY=...`
@@ -3819,7 +4031,7 @@ codex exec \
 
 > **Never also append a trailing `&` inside the command string when using `run_in_background: true`.** These are two different backgrounding mechanisms — the Bash tool's own `run_in_background` flag, and the shell's native job-control `&` — and combining them double-backgrounds the process: the "completed" notification fires for the outer wrapper shell exiting immediately, not for the actual `codex exec` process, which is still running detached and unmonitored. This produces a convincing but false "review complete" signal — the transcript looks done, but no verdict has actually been written yet. Confirm real completion independently (e.g. `ps aux | grep codex`) before trusting a background-task notification that arrived suspiciously fast for a multi-minute review. Use `run_in_background: true` alone; never both.
 
-4. If CERTIFIED → **write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) blocks a commit if this is missing or doesn't match current HEAD, so a bare `CERTIFIED` status isn't enough. Then done. If NOT CERTIFIED → enter the dialogue loop.
+4. **On the first verdict of a scope, whichever way it goes** → write `"frozen_scope_sha": "<git rev-parse HEAD>"` into `handoff.json`, and never overwrite it while the scope stays frozen. This is the boundary BLAME THE LINE measures against; it must survive an initial NO, so it cannot be `commit_sha`. Then: if CERTIFIED → **also write `"commit_sha": "<git rev-parse HEAD>"`** — `hooks/codex-gate-check.sh` (ROADMAP #437) blocks a commit if this is missing or doesn't match current HEAD, so a bare `CERTIFIED` status isn't enough. That is pass one of two: run the verify pass, which reads only the diff since this verdict. If NOT CERTIFIED → enter the dialogue loop.
 
 **The Dialogue Loop (Round 2+):**
 
@@ -3872,18 +4084,18 @@ codex exec \
    FIXED → verify the fix against the original certify condition. \
    DISPUTED → evaluate the justification (ACCEPT if sound, REJECT if not). \
    ACCEPTED → verify it was applied. \
-   Do NOT expand the review surface. A new P0, P1 or P2 must be reported and BLOCKS. Lesser observations go in 'Notes for next review' (non-blocking). \
+   Do NOT expand the review surface. Report every new P0, P1 or P2. A new finding BLOCKS when it shows a REQUESTED behavior is incorrect; one outside the requested behaviors is reported as a linked follow-up, not a blocker. Lesser observations go in 'Notes for next review' (non-blocking). \
    End with CERTIFIED or NOT CERTIFIED." \
   < /dev/null
 ```
 
 **The key constraint:** Rechecks are scoped to previous findings only — a reviewer should not go hunting for unrelated new material during a recheck round, which is how a 3-round review becomes an 11-round one.
 
-**But scoped does not mean muzzled.** A recheck that uncovers a genuine P0, P1 or P2 reports it and it blocks — see the severity contract in "Parallel Blind Dual Review". Certification means *zero unresolved findings*, not *zero findings raised after round 1*. An earlier revision of this paragraph said new P2s could never block certification; that let a real defect through on the grounds of what round it was found in, which is not a property of the defect. What the scoping rule actually forbids is expanding the review's *surface*, not silencing what the reviewer sees.
+**But scoped does not mean muzzled — and not everything it sees may block.** A recheck reports every defect it finds, at any severity. What **blocks** is bounded by the closed allowlist: a finding blocks when it shows a **requested** behavior is incorrect. A P2 outside the requested behaviors is reported and becomes a linked follow-up issue, not a certification blocker. Certification means *zero unresolved findings against the requested behaviors*, not *zero findings raised after round 1* — and not *zero defects anywhere*, which is unsatisfiable and is the shape that turned #520 into 20 rounds. Report-everything and block-on-scope are different questions; conflating them is how an invariant escalates. An earlier revision of this paragraph said new P2s could never block certification; that let a real defect through on the grounds of what round it was found in, which is not a property of the defect. What the scoping rule actually forbids is expanding the review's *surface*, not silencing what the reviewer sees.
 
-**Convergence:** Max 3 recheck rounds (4 total including initial review) as the default. If still NOT CERTIFIED after round 4, escalate to the user with a summary of all open findings — escalate, never ship. Don't spin indefinitely. Judge by whether the finding trend is genuinely converging, and say which case you are claiming.
+**Convergence:** the default is **two passes per frozen scope** (see "When to stop" above); this section's older max-3-rechecks heuristic is the ceiling, not the target. If still NOT CERTIFIED after the budget, that is a **recorded continue/stop decision**, not an automatic escalation — see the Exception below for where the decision is written. A human is woken only when the two reviewers disagree, or a non-waivable gate has failed twice. Never ship uncertified; but running out of budget is not by itself a reason to interrupt the maintainer.
 
-**Exception — known-large migrations:** the round cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop. Judge convergence by the *trend* in finding quality, not the round number: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
+**Exception — known-large migrations, and it costs a recorded decision.** The cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop — but "every round is still finding something real" is precisely what a self-consuming loop reports about itself, so it is **not** a licence the builder may grant itself. Each round past the budget requires a continue/stop entry in `.reviews/handoff.json` `"scope_decisions"` **recorded before the round runs** (entry shape and the planner role: "Why four layers didn't catch it" above), carrying the cost line and a `git blame` of the last blocker against the frozen-scope SHA; a blocker in code the issue never asked for is not a reason to continue. With that decision on record: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
 
 **CERTIFIED is not the finish line.** A CERTIFIED verdict and a green CI run are different verification layers that catch different bug classes — a CERTIFIED review does not substitute for actually pushing and watching CI. Confirmed on the same v1.84.0 release: after round-11 CERTIFIED and a full local test sweep, real CI still caught 3 more genuine bugs the review never touched — a content regression in an unrelated section silently dropped by an earlier edit (caught by a pre-existing local test that simply hadn't been re-run since), an environment-specific CLI output-format change invisible to any local run against an older tool version, and a new test file committed without the executable bit (passes every local `bash tests/foo.sh` invocation, only fails when CI runs it as `./tests/foo.sh`). Budget for at least one more fix-push-recheck cycle after CERTIFIED, and don't treat CERTIFIED as license to skip reading the actual CI logs — see the CI Feedback Loop section below.
 
@@ -3894,7 +4106,7 @@ Claude writes code → handoff.json (round 1)
     |                              Reviewer: FULL REVIEW
     |                              (structured findings with IDs)
     |                                          |
-    |                              CERTIFIED? -+→ YES → write commit_sha → Done
+    |                              CERTIFIED? -+→ YES → write commit_sha → verify pass
     |                                          |
     |                                          +→ NO (findings)
     |                                          |
@@ -3902,12 +4114,13 @@ Claude writes code → handoff.json (round 1)
     |                                FIXED / DISPUTED / ACCEPTED
     |                                          |
     |                              Reviewer: TARGETED RECHECK
-    |                              (scoped surface; any new P0/P1/P2 blocks)
+    |                          (scoped surface; a new P0/P1/P2 blocks
+    |                           only if a REQUESTED behavior is wrong)
     |                                          |
     |                              All resolved? → YES → CERTIFIED (write commit_sha)
     |                                          |
     └────────── Fix rejected items ←───────────┘
-                    (max 3 rechecks, then escalate to user)
+        (two passes per frozen scope; past that, a recorded decision)
 ```
 
 **Every CERTIFIED path above writes `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) treats a missing or mismatched SHA as a stale certification, so a bare `CERTIFIED` status string is never enough on its own.
@@ -3984,7 +4197,7 @@ When two models review the same change, **run them in parallel and blind to each
 
 | Severity | Meaning | Action |
 |---|---|---|
-| P0/P1 | Wrong behaviour, security, data loss, or a test that passes against broken code | **Fix before merge. Restarts the cycle.** |
+| P0/P1 | Wrong behaviour, security, data loss, or a test that passes against broken code | **Against a requested behavior: fix before merge, restarts the cycle. Outside the allowlist: linked follow-up issue.** |
 | P2 | Real defect, bounded blast radius. Inaccurate shipped prose belongs here | **Fix before merge.** Re-gate, no full restart |
 | P3 | Correctness or accuracy nit — a stale comment, an unclear message | Fix if cheap and it is about being *right* |
 | P3 (style) | Preference, naming, formatting with no correctness content | **Not review's job — encode it as a lint rule instead.** |
@@ -3995,7 +4208,7 @@ Tell both reviewers this in the prompt, and tell them explicitly: **do not manuf
 
 **Diminishing returns — how to actually tell.** Judge by the *maximum severity per round*, never by finding count: count rises when a reviewer looks somewhere new, which is the opposite of a stopping signal (the round that found the most here also found the most serious bugs). You are converged when two consecutive rounds produce nothing above P3 **from reviewers that had not already cleared this code**. A single reviewer's own trend flattening means only that it has run out of defects *it* can see — one reviewer certified at high confidence here immediately before a fresh reviewer found six P1s in the same code.
 
-**Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other.
+**Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other. **Blindness governs finding-generation and recheck only.** Once every reviewer has returned a verdict, reconciliation is a distinct, final phase: show each the other's *surviving disagreement* and re-ask once. Anchoring is only a hazard while defects are still being discovered; after the verdicts are in, the whole value is in the aggregation. Reconcile once, not per round.
 
 **Cost control.** This is not free — each round costs wall-clock and, for a paid API reviewer, real money. Scale it to blast radius:
 
@@ -4003,14 +4216,17 @@ Tell both reviewers this in the prompt, and tell them explicitly: **do not manuf
 |---|---|
 | Live enforcement: CI config, hooks, agent config, the merge mechanism itself | Parallel blind dual review |
 | Ordinary application code | One reviewer at the pre-commit gate |
-| Docs, roadmap entries, comments | Neither |
+| Docs, roadmap entries, comments that make **no new promise** | Neither |
+| Docs that **do** make a promise — guidance a reader will act on, a figure, an interaction between settings | One fact-check pass. #520 was three doc lines and shipped a wrong config recommendation |
+
+This table is blast radius; PROCESS BUDGET is the promise. **Where they disagree, PROCESS BUDGET wins** — it is the newer rule and the one derived from an incident. Blast radius is a useful first cut, but "it's only docs" is exactly the reasoning that shipped the defect these rules exist because of.
 
 **Iterating vs. gating.** Looping with one reviewer while you build is cheap and effective — use the model that does not bill per token if you have one. But that reviewer is no longer independent by the end: it is reading code shaped by its own earlier feedback. So iterate with it freely, then run the **final** gate as a parallel blind round with a *fresh* instance of each model.
 
 **The loop, stated explicitly.** Reviewers returning findings is the normal case, not a setback, and the agent must not stop to ask permission each time. Run this until it terminates:
 
 ```
-implement  →  fix every finding  →  re-review with the ITERATION model
+implement  →  fix in-allowlist findings  →  re-review with the ITERATION model
                     ↑                            ↓
                     │                    findings? ──yes──┐
                     │                            │        │
@@ -4028,7 +4244,7 @@ implement  →  fix every finding  →  re-review with the ITERATION model
 
 1. **Every finding gets a response before the next round** — FIXED, DISPUTED with reasoning, or ACCEPTED. Never silently drop one.
 2. **A dispute is a claim you owe evidence for.** If the reviewer rejects it and offers a concrete alternative, implement the alternative — you asked for an adversary, not an audience.
-3. **Any P0/P1 finding restarts the cycle from the top.** A gate round that surfaces a real defect was not a gate round, it was an iteration round. P2/P3-only findings do not need a full restart: fix them and re-run the gate. Either way the gate must eventually return *nothing new* — "findings?" in the diagram means any finding, and what differs is only whether you re-enter at iteration or at the gate.
+3. **Any P0/P1 finding *against a requested behavior* restarts the cycle from the top** — one outside the closed allowlist becomes a linked follow-up issue and does not restart anything. A gate round that surfaces a real defect was not a gate round, it was an iteration round. In-allowlist P2/P3-only findings do not need a full restart: fix them and re-run the gate. Either way the gate must eventually return nothing unresolved *against the requested behaviors* — "findings?" in the diagram means any finding against those, and what differs is only whether you re-enter at iteration or at the gate. Findings outside the allowlist are logged as follow-up issues and never gate anything; the unsatisfiable version of this condition — zero defects anywhere — is what turned #520 into 20 rounds.
 4. **Fixes need their own verification.** A fix shipped on the strength of "the reviewer suggested it" is unverified code — the reviewer proposed it, nobody has yet shown it works. A test that passes against broken code was never a test.
 
    **TDD, applied to the fix: RED → GREEN.** Write the assertion, run it, watch **that specific assertion** fail, then implement and watch it pass. The common miss is observing red at the *suite* level — one assertion fails, the suite is red, you implement, the suite goes green, and any assertion that was green from birth is never noticed.
@@ -4042,13 +4258,13 @@ implement  →  fix every finding  →  re-review with the ITERATION model
    **Prefer executing the real thing over asserting on its source text.** A test that greps a script for the *words* proves the words are present, not that the behaviour works — the failure mode that produced every ineffective test in this repo's history. Run the script against a stub and check the exit code.
 
 5. **Verdict disagreement is expected — take the lower one.** Two reviewers can both be right and score differently: one weights a single unfixed P1 as disqualifying, the other weights overall structure. Do not average them, do not pick the friendlier one, and do not treat the gap as a reason to dismiss either. Ship only when *both* clear your bar.
-6. **Two stop conditions, and they are not the same — do not collapse them.** You are **done** when a fresh blind round returns **zero unresolved findings** — not merely "nothing new", because the same unfixed finding raised again is still an open finding. That is the only condition that permits shipping, and it is not reached on a schedule. You are **stuck** when rounds keep producing findings without converging; after 3 rechecks that is a non-convergence alarm, and it ends in escalation to the human with a summary of open findings — never in shipping. **Exception — a large migration may legitimately run past round 4** when each round is still surfacing real, previously-uninventoried surfaces (v1.84.0 ran 11 that way). Judge by whether the finding trend is genuinely converging, and state which of the two you are claiming. An agent that ships because it ran out of rounds has declared victory on a timer.
+6. **Two stop conditions, and they are not the same — do not collapse them.** You are **done** when a fresh blind round returns **zero unresolved findings against the requested behaviors** — not merely "nothing new", because the same unfixed in-allowlist finding raised again is still an open finding, and not "zero defects anywhere", which is unsatisfiable. That is the only condition that permits shipping, and it is not reached on a schedule. You are **stuck** when rounds keep producing findings without converging; past the two-pass budget that is a non-convergence alarm, and it ends in a **recorded continue/stop decision** — never in shipping. It reaches a human only if the two reviewers disagree, or a non-waivable gate has failed twice. **Exception — a large migration may legitimately run past round 4** when each round is still surfacing real, previously-uninventoried surfaces (v1.84.0 ran 11 that way). Judge by whether the finding trend is genuinely converging, and state which of the two you are claiming. An agent that ships because it ran out of rounds has declared victory on a timer.
 
 **Anti-pattern: asking the human to adjudicate each round.** The human sets the bar and decides scope; the models find defects and you fix them. An agent that surfaces every finding for approval has converted an automated gate back into manual review, which is the cost the gate existed to remove.
 
 **If you only have one model available**, run it twice with genuinely different framings — for example once asked to find correctness defects and once asked to prove a specific safety property false — and treat the result as a single review, not two. It is meaningfully better than one pass and meaningfully worse than two models. Do not report it as dual review.
 
-**Do not show reviewers each other's work to "save a round."** That optimisation removes the only property this technique has.
+**Do not show reviewers each other's work to "save a round."** That optimisation removes the only property this technique has. This ban covers the finding-generating passes — the initial review and every recheck. It does **not** cover the final reconciliation phase, which runs after all verdicts are in and exists precisely to make the reviewers argue; see "Merging findings" above. Round-saving is the forbidden motive, not contact as such.
 
 #### Multiple Reviewers (N-Reviewer Pipeline)
 
@@ -4058,7 +4274,7 @@ When multiple reviewers comment on a PR (Claude, Codex, human reviewers), addres
 2. **Respond per-reviewer** — each reviewer has different blind spots. Address each one's findings separately
 3. **Resolve conflicts** — if reviewers disagree, pick the stronger argument, note why
 4. **Iterate until all approve** — don't merge until every active reviewer is satisfied
-5. **Max 3 iterations per reviewer** — escalate to user if a reviewer keeps finding new things
+5. **Two passes per reviewer per frozen scope**, max 3 — past that, a recorded continue/stop decision, not a user interrupt
 
 The value of multiple reviewers: different models/humans catch different issues. No single reviewer is sufficient for high-stakes changes.
 

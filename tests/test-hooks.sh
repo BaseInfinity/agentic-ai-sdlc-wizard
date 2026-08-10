@@ -9,6 +9,25 @@ HOOKS_DIR="$SCRIPT_DIR/../hooks"
 PASSED=0
 FAILED=0
 
+# The suite owns its environment (#520).
+#
+# instructions-loaded-check.sh reads the LIVE env before falling back to
+# settings.json, which is correct — the env is what governs the session. But it
+# means a developer who has these set for their own use silently poisons every
+# fixture here: the hook reports their values instead of the fixture's, and
+# assertions fail locally while passing in a clean CI runner. That is the same
+# green-here-red-there class as #488, so clear them once, up front, and let the
+# tests that care about env precedence set them explicitly and locally.
+unset CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
+unset CLAUDE_CODE_AUTO_COMPACT_WINDOW
+# The other three inputs the autocompact branch reads. Without these, a
+# maintainer whose own shell sets one gets different results from CI for the
+# same commit — and the failure mode is a fixture that silently exercises the
+# live value instead of the one it declares.
+unset CLAUDE_CODE_MAX_OUTPUT_TOKENS
+unset DISABLE_AUTO_COMPACT
+unset DISABLE_COMPACT
+
 # Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -162,11 +181,19 @@ test_instructions_loaded_size_cap() {
     # Effort upgrade (jq + stale effort)
     echo '{"effortLevel":"high"}' > "$proj/.claude/settings.local.json"
     # #207: autocompact compound misconfig (both env vars set)
+    # The autocompact config here must be the LONGEST-emitting one, not merely a
+    # misconfigured one. WINDOW=400000 was neither: a window at or above 200000
+    # never appends the "compacts SOONER" tail, so this fixture measured a
+    # 266-char message while the true worst case was 390 — the cap was passing
+    # by testing the wrong config. Worst case is a sub-200000 window (tail) with
+    # an out-of-range percentage (the longer "ignored" clause) read from the
+    # settings file (a longer source string than "the live environment"), and
+    # the widest trigger digits.
     cat > "$proj/.claude/settings.json" <<'STACKED_SETTINGS'
 {
   "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000"
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "150",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "199999"
   }
 }
 STACKED_SETTINGS
@@ -187,14 +214,21 @@ STACKED_SETTINGS
     local size
     size=$(cd "$proj" && HOME="$fakehome" PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$proj" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null | wc -c | tr -d ' ')
     rm -rf "$tmpdir"
-    # Cap raised 1500 → 1700 to accommodate the autocompact compound-misconfig
-    # branch added in v1.44.1 / #207. Each new diagnostic warning legitimately
-    # earns its space — but keep the cap as a brevity gate so unbounded growth
-    # gets caught.
-    if [ "$size" -lt 1700 ]; then
-        pass "instructions-loaded-check stacked worst-case (all 8 branches incl. #207) is bounded (${size} chars < 1700)"
+    # Cap history: 1500 → 1700 for the #207 compound-misconfig branch, then
+    # 1700 → 1900 in #520 when the fixture was corrected to measure the actual
+    # worst case. That correction alone added 124 chars (266 → 390 for the
+    # autocompact line) without one character of new prose — the old figure was
+    # an artifact of a fixture that never reached the longest branch. Measured
+    # at 1817 after the correction; 1900 leaves ~83 chars of headroom, which is
+    # deliberately tight so the next addition has to be argued for.
+    #
+    # This is a raise justified by measurement, NOT a re-pin to whatever the
+    # code happens to emit. If this fails, the honest options are trimming the
+    # prose or arguing the raise — never widening the cap to fit.
+    if [ "$size" -lt 1900 ]; then
+        pass "instructions-loaded-check stacked worst-case (all 8 branches incl. #207) is bounded (${size} chars < 1900)"
     else
-        fail "instructions-loaded-check stacked worst-case exceeded cap (${size} chars ≥ 1700)"
+        fail "instructions-loaded-check stacked worst-case exceeded cap (${size} chars ≥ 1900)"
     fi
 }
 
@@ -2542,7 +2576,8 @@ test_instructions_hook_dual_install_silence_hint_works_when_cache_dir_absent
 
 # Test (#207): when settings.json has BOTH `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`
 # AND `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, the hook must warn about the
-# compound misconfiguration. Setting both compounds (e.g. 30% × 400K = 120K
+# compound misconfiguration. Setting both compounds (e.g. 30% of 400K less
+# overhead = 114K
 # trigger, which is ~12% of a 1M window) — a docs footgun the consumer
 # (issue #207) hit in practice when autocompact fired at 12% context.
 test_instructions_hook_warns_on_autocompact_compound_misconfig() {
@@ -2633,7 +2668,8 @@ EOF
     fi
 }
 
-# #207: warning shows effective compound trigger (30% × 400K = 120K) so user
+# #207: warning shows effective compound trigger (30% of 400K less overhead
+# = 114000) so user
 # can diagnose impact from the warning alone.
 test_instructions_hook_compound_warning_shows_effective_trigger() {
     local tmpdir output
@@ -2656,10 +2692,829 @@ EOF
     mkdir -p "$tmpdir/home"
     output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" HOME="$tmpdir/home" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
     rm -rf "$tmpdir"
-    if echo "$output" | grep -qE '120000|120[Kk]|120,000'; then
-        pass "#207: warning shows effective compound trigger (120K = 30% × 400K)"
+    if echo "$output" | grep -qE '\b114000\b'; then
+        pass "#207: warning shows effective compound trigger (114000 = 30% of 400K less overhead)"
     else
-        fail "#207: expected effective trigger (120K) in warning, got: $output"
+        fail "#207: expected effective trigger 114000 (30% of 400000-20000) in warning, got: $output"
+    fi
+}
+
+# --- GH #520: the compound check was aimed at the wrong signature -----------
+#
+# Verified against decompiled Claude Code v2.1.221 (functions EX, CCo, F0s, ZJu,
+# fEe, kO), recorded on GH #520:
+#
+#   window    = min(model_window, clamp(WINDOW_env, 100000..1000000))    [EX]
+#   threshold = min(floor(window x pct/100), window - 13000)             [CCo]
+#   ...with up to 20000 tokens of system overhead subtracted first       [fEe]
+#
+# Two consequences the original #207 check gets wrong:
+#
+#  1. Setting both vars is ARITHMETIC, not a misconfiguration. 35% of a 1M
+#     window is a ~350K trigger, which is a perfectly sane deliberate choice
+#     (the maintainer runs it for context-quality reasons, GH #483). The old
+#     check warned on it, so the hook was firing on a working config — and the
+#     only configuration empirically proven to compact early on a local 1M
+#     Opus session at that.
+#
+#  2. The genuinely dangerous setting was invisible to it: ZJu returns false
+#     unconditionally for any window below bIe = 200000, so WINDOW in the
+#     100000..199999 range SILENTLY DISABLES autocompact altogether. A consumer
+#     trying to be conservative by picking a small window gets no autocompact
+#     at all, and nothing told them. (That framing was itself wrong — see the
+#     sub-200000 tests below; a small window compacts SOONER.)
+#
+# So the signature is not "both set" — it is "the effective trigger is below
+# 200000", whichever vars produced it. These three assertions pin that.
+
+# Same fixture, driven by the LIVE ENVIRONMENT instead of settings.json.
+# Needed because the two disagree in exactly the cases under test: the binary
+# reads env first, and several defects only appear when an env value is present
+# and a settings value is also present. Callers pass VAR=value pairs.
+_autocompact_hook_env() {
+    local tmpdir output settings="${AC_ENV_SETTINGS:-}" raw="${AC_ENV_SETTINGS_RAW:-}"
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    mkdir -p "$tmpdir/.claude" "$tmpdir/bin" "$tmpdir/home"
+    if [ -n "$raw" ]; then
+        printf '%s\n' "$raw" > "$tmpdir/.claude/settings.json"
+    elif [ -n "$settings" ]; then
+        printf '{\n  "env": {\n%s\n  }\n}\n' "$settings" > "$tmpdir/.claude/settings.json"
+    fi
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/npm"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/claude"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/codex"
+    chmod +x "$tmpdir/bin/npm" "$tmpdir/bin/claude" "$tmpdir/bin/codex"
+    output=$(cd "$tmpdir" && env "$@" PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" \
+        HOME="$tmpdir/home" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" \
+        "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    printf '%s' "$output"
+}
+
+_autocompact_hook_output() {
+    # $1 = the JSON body of the settings "env" block.
+    local tmpdir output env_body="$1"
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    mkdir -p "$tmpdir/.claude" "$tmpdir/bin" "$tmpdir/home"
+    printf '{\n  "env": {\n%s\n  }\n}\n' "$env_body" > "$tmpdir/.claude/settings.json"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/npm"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/claude"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/codex"
+    chmod +x "$tmpdir/bin/npm" "$tmpdir/bin/claude" "$tmpdir/bin/codex"
+    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" \
+        HOME="$tmpdir/home" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" \
+        "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    printf '%s' "$output"
+}
+
+# A window under 200000 makes compaction fire SOONER. The hook used to call
+# this DISABLED and tell the consumer to raise it — advice that moved the
+# trigger later for someone whose config was already doing what they wanted.
+# The word "disabl" is now a FAILURE condition, not a requirement.
+test_instructions_hook_reports_sub_200k_window_fires_sooner() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000"')
+    local ok=true
+    echo "$output" | grep -q 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' || ok=false
+    echo "$output" | grep -qiE 'disabl' && ok=false
+    echo "$output" | grep -qiE 'sooner|earlier' || ok=false
+    # 150000 - 20000 overhead - 13000 cap = 117000
+    echo "$output" | grep -qE '\b117000\b' || ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: reports that a sub-200000 window compacts sooner, and names the trigger"
+    else
+        fail "#520: WINDOW=150000 makes compaction fire at 117000, not disabled — hook must say so without the word 'disabled', got: $output"
+    fi
+}
+
+# Every figure below was computed independently by two reviewers from the
+# binary, then checked against the hook. They exist because the first version
+# of this branch printed "at most 17000" for a window of 50000 when the real
+# trigger is 67000 — a number that was not merely loose but INVERTED, since the
+# truth exceeded the stated upper bound across the whole sub-100000 range.
+# The collision both reviewers found independently: a sub-200000 window and a
+# percentage together. The old shape had a window-only branch ahead of a
+# both-set branch, so the percentage was dropped by branch order alone and the
+# hook printed 117000 where the binary computes 45500. There is now ONE
+# arithmetic path; this pins it.
+test_instructions_hook_applies_the_percentage_to_a_sub_200k_window() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "35"')
+    local ok=true
+    # min(35% x 130000, 117000) = 45500
+    echo "$output" | grep -qE '\b45500\b' || ok=false
+    echo "$output" | grep -qE '\b117000\b' && ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: a percentage still applies when the window is below 200000"
+    else
+        fail "#520: PCT=35 with WINDOW=150000 triggers at 45500, not 117000, got: $output"
+    fi
+}
+
+test_instructions_hook_honours_a_fractional_percentage() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30.5"')
+    # parseFloat accepts 30.5 and the binary honours it: 30.5% of 380000.
+    # An integers-only filter discarded it and the hook said nothing at all.
+    if echo "$output" | grep -qE '\b115900\b'; then
+        pass "#520: a fractional percentage is honoured, as parseFloat honours it"
+    else
+        fail "#520: PCT=30.5 with WINDOW=400000 triggers at 115900, got: $output"
+    fi
+}
+
+test_instructions_hook_clamps_sub_100k_window_to_the_floor() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "50000"')
+    # EX applies max(100000, value), so 50000 resolves to a 100000 window:
+    # 100000 - 20000 overhead - 13000 cap = 67000.
+    if echo "$output" | grep -qE '\b67000\b'; then
+        pass "#520: a sub-100000 window is clamped to the floor before the trigger is computed"
+    else
+        fail "#520: WINDOW=50000 clamps to 100000 and triggers at 67000, got: $output"
+    fi
+}
+
+test_instructions_hook_reads_max_output_tokens_for_the_overhead() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "10000"')
+    # Overhead is min(max_output_tokens, 20000): 150000 - 10000 - 13000 = 127000.
+    if echo "$output" | grep -qE '\b127000\b'; then
+        pass "#520: overhead follows CLAUDE_CODE_MAX_OUTPUT_TOKENS rather than assuming 20000"
+    else
+        fail "#520: max-output 10000 moves the trigger to 127000, not 117000, got: $output"
+    fi
+}
+
+test_instructions_hook_says_nothing_fires_when_compaction_is_off() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000",
+    "DISABLE_AUTO_COMPACT": "1"')
+    local ok=true
+    # The fixture puts the var in a settings ENV BLOCK, which is a FILE. The
+    # hook no longer says a bare "OFF" for a file-derived disable, because `kO`
+    # reads MERGED settings and settings.local.json outranks the project file —
+    # a project-level disable can be overridden by a local one this hook cannot
+    # resolve. It reports the key and hedges. Only a live env var, which is
+    # authoritative for itself, still gets the unconditional sentence.
+    echo "$output" | grep -qiE 'DISABLE_AUTO_COMPACT|autoCompactEnabled|inert' || ok=false
+    echo "$output" | grep -qiE 'merges|outranks|confirm' || ok=false
+    # With kO false, LXy returns before any trigger is evaluated, so a sentence
+    # about when compaction "fires" would be false either way.
+    echo "$output" | grep -qiE 'fires (at|sooner)' && ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: reports compaction OFF instead of quoting a trigger that cannot fire"
+    else
+        fail "#520: DISABLE_AUTO_COMPACT=1 means no trigger fires at all, got: $output"
+    fi
+}
+
+test_instructions_hook_ignores_a_zero_percentage_like_the_binary_does() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "0"')
+    # 0 is falsy in CCo, so the binary ignores it and uses the normal cap.
+    # Reporting a zero-token trigger would be exactly the confident-wrong-number
+    # failure this hook exists to prevent.
+    if echo "$output" | grep -qE 'fires at 0 tokens|at 0 tokens'; then
+        fail "#520: PCT_OVERRIDE=0 is ignored by CCo; the hook must not report a zero trigger, got: $output"
+    else
+        pass "#520: a zero percentage is treated as unset, as the binary treats it"
+    fi
+}
+
+test_instructions_hook_reads_a_leading_zero_percentage_as_decimal() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "08"')
+    # parseFloat("08") is 8. Without 10#, $(( )) reads it as octal and aborts
+    # the hook. 8% of (400000 - 20000) = 30400.
+    if echo "$output" | grep -qE '\b30400\b'; then
+        pass "#520: a leading-zero percentage is decimal, not octal"
+    else
+        fail "#520: PCT=08 is 8 percent and triggers at 30400, got: $output"
+    fi
+}
+
+# The false positive. 35% x 1000000 = 350000, well above the 200000 floor.
+# This is the config that actually works on a local 1M Opus session, and the
+# hook used to call it a misconfig.
+test_instructions_hook_silent_on_deliberate_large_compound_trigger() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "35",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"')
+    if echo "$output" | grep -qiE 'misconfig|WARNING: autocompact'; then
+        fail "#520: 35% x 1000000 = 350000 is a deliberate, working config — the hook must not call it a misconfig, got: $output"
+    else
+        pass "#520: silent on a compound trigger that lands above the 200000 floor"
+    fi
+}
+
+# Same input, the other half of the claim. The hook cannot know which model
+# will run, but it CAN evaluate the same formula at 200000 and print that as a
+# number. It used to print a ratio instead — "roughly a third" — which is wrong
+# here: 35% of (1000000 - 20000) reports 343000, and a 200K model yields 62999.
+#
+# 62999, NOT 63000. `CCo` is Math.min(Math.floor(e*(n/100)), r) — it divides
+# BEFORE multiplying. This hook used to compute int(w*p/100), which multiplies
+# first, and under IEEE754 the two associations differ by exactly one token on
+# the residue class where p/100 is inexact-below and the naive product lands on
+# an integer. A fuzz over 9765 in-domain (window, pct) cells put the old form
+# 230 cells away from the binary and the source-shaped form 0 cells away, so
+# mirroring the binary's association closes the class rather than moving it.
+# This pin was 63000 and was WRONG: it would have failed a hook corrected to
+# the binary. Found by cross-model review; the suite defended the defect.
+# Cross-model review flagged that a wrong ratio next to "not an error" approves
+# a trigger the hook had mis-stated. So: the exact figure must appear, and no
+# approving verdict. Both numbers moved once CCo was applied to the
+# overhead-adjusted window, which is what the binary does.
+# ---- #520 round 17: the hook's CLAIM DOMAIN ----
+# Three consecutive review rounds each found a wrong figure in a branch the
+# previous round had not named, and the root cause was always the same: this
+# hook was hand-reimplementing JavaScript parsing in shell. `parseFloat` takes
+# "1e4" and "5."; `rr()` trims; settings resolution is merged, not scanned. Bash
+# cannot reach parity, and every round could construct another input form.
+#
+# So the guarantee changed shape. The hook now computes a figure ONLY for a
+# declared domain — plain integers, and plain decimals for the percentage — and
+# for anything else prints NO NUMBER and says the value is not evaluated. The
+# invariant these tests pin is finite and total: no input produces a false
+# figure, and unsupported input produces no figure. That is checkable; "every
+# input form the binary might accept" is not.
+#
+# The asymmetry that made this necessary: an out-of-domain WINDOW already
+# degraded to silence, but an out-of-domain PCT or MAX_OUTPUT_TOKENS degraded to
+# "as if unset" — which silently substitutes a default and prints a confidently
+# wrong number. Silence is safe; a wrong figure is the thing this hook exists to
+# prevent.
+
+test_instructions_hook_makes_no_claim_for_a_settings_exponent_max_output() {
+    local output
+    # The env path recorded an unreadable value; the SETTINGS path did not,
+    # because its grep only captured digits — so an out-of-domain file value
+    # vanished before it could suppress anything, the 20000 default was
+    # silently restored, and the hook printed a figure the binary would not
+    # compute. Same no-claim breach, other source.
+    output=$(AC_ENV_SETTINGS='    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "1e4",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000"' _autocompact_hook_env)
+    if ! echo "$output" | grep -qE 'fires at [0-9]' \
+       && echo "$output" | grep -qE '1e4'; then
+        pass "#520: an out-of-domain max-output in settings suppresses the figure too"
+    else
+        fail "#520: settings MAX_OUTPUT_TOKENS=1e4 must print no computed trigger — got: $output"
+    fi
+}
+
+test_instructions_hook_does_not_wrap_on_a_huge_window() {
+    local output
+    # Shell arithmetic is 64-bit and WRAPS silently: $((10#18446744073709701616))
+    # is 150000, so this value would have been clamped, subtracted and reported
+    # as an ordinary 117000 — a plausible figure produced by an overflow, which
+    # is the worst kind of wrong. The binary parses to a double and clamps to
+    # 1000000, giving 967000.
+    output=$(_autocompact_hook_env CLAUDE_CODE_AUTO_COMPACT_WINDOW=18446744073709701616)
+    if echo "$output" | grep -qE '\b967000\b' && ! echo "$output" | grep -qE '\b117000\b'; then
+        pass "#520: a window past the 64-bit boundary clamps to 1000000 (967000), it does not wrap"
+    else
+        fail "#520: a 20-digit window must report 967000, not a wrapped 117000 — got: $output"
+    fi
+}
+
+test_instructions_hook_does_not_wrap_on_a_huge_max_output() {
+    local output
+    # Same wrap, other variable and other direction: the wrapped value lands
+    # under 20000 and REDUCES the overhead, moving the trigger later. The binary
+    # caps the overhead at 20000, so 150000 stays 117000.
+    output=$(_autocompact_hook_env CLAUDE_CODE_MAX_OUTPUT_TOKENS=18446744073709561616 \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000)
+    if echo "$output" | grep -qE '\b117000\b' && ! echo "$output" | grep -qE '\b127000\b'; then
+        pass "#520: a max-output past the 64-bit boundary caps the overhead (117000), it does not wrap"
+    else
+        fail "#520: a 20-digit max-output must report 117000, not a wrapped 127000 — got: $output"
+    fi
+}
+
+test_instructions_hook_echoes_the_written_window_not_the_clamped_one() {
+    local output
+    # A value above the ceiling was echoed back post-clamp, so the sentence
+    # explaining the operator's config misreported it as something they never
+    # wrote. Both numbers are true and the pairing is what makes it legible.
+    output=$(_autocompact_hook_env CLAUDE_CODE_AUTO_COMPACT_WINDOW=2000000)
+    if echo "$output" | grep -qE '2000000 capped to 1000000'; then
+        pass "#520: an over-ceiling window is echoed as written, with the cap named"
+    else
+        fail "#520: WINDOW=2000000 must echo the written value and the cap — got: $output"
+    fi
+}
+
+test_instructions_hook_echoes_a_huge_window_as_written() {
+    local output
+    # Fable round 19, BLOCKER. _ac_clamp_int destroyed the raw value before
+    # AC_WIN_SHOWN snapshotted it, so the "capped to" pairing could only ever
+    # fire for the 7-digit range 1000001-9999999 — which is exactly what the
+    # fixture above tests, so the fix looked complete and was range-incomplete.
+    # At 8+ digits the hook printed "CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000":
+    # a false statement about the operator's config, in the sentence that exists
+    # to report it. "Just make it huge" is natural authoring, not a pathological
+    # spelling, so this is the same defect class as the round-18 echo — and
+    # certifying it would apply a laxer standard to round 19 than to round 18.
+    output=$(_autocompact_hook_env CLAUDE_CODE_AUTO_COMPACT_WINDOW=99999999)
+    if echo "$output" | grep -qE '99999999 capped to 1000000' \
+       && echo "$output" | grep -qE '\b967000\b' \
+       && ! echo "$output" | grep -qE '=1000000 [(]from'; then
+        pass "#520: an 8-digit window is echoed as written, not as the clamp"
+    else
+        fail "#520: WINDOW=99999999 must be echoed raw with the cap named — got: $output"
+    fi
+}
+
+test_instructions_hook_bounds_a_pathological_window_echo() {
+    local output big
+    big=$(printf '9%.0s' $(seq 1 150))
+    # _ac_raw can capture an arbitrarily long bare digit token from a settings
+    # file, so echoing the raw value verbatim makes the message length grow with
+    # the INPUT. The stacked 1900-char cap is fixed-length and structurally
+    # cannot catch input-linear growth, so the bound has to live here.
+    output=$(_autocompact_hook_env CLAUDE_CODE_AUTO_COMPACT_WINDOW="$big")
+    if ! echo "$output" | grep -qF "$big" \
+       && echo "$output" | grep -qE '150-digit' \
+       && echo "$output" | grep -qE '\b967000\b'; then
+        pass "#520: an absurdly long window is described, not echoed verbatim"
+    else
+        fail "#520: a 150-digit window must be described rather than echoed — got: $output"
+    fi
+}
+
+test_instructions_hook_makes_no_claim_for_an_unreadable_disable() {
+    local output
+    # Fable round 19, residual (e) — the disable keys failed OPEN. Every other
+    # unreadable value degrades to no-claim, but _ac_truthy("__AC_UNREADABLE__")
+    # is merely false, so an unreadable disable read as "not disabling" and the
+    # hook printed a trigger for a file whose next session never compacts.
+    # ["on"] String-coerces truthy in the binary. Fail-open is the one direction
+    # this hook must never fail, since the reassuring number is the wrong one.
+    output=$(AC_ENV_SETTINGS_RAW='{ "env": { "DISABLE_AUTO_COMPACT": ["on"],
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000" } }' _autocompact_hook_env)
+    if ! echo "$output" | grep -qE 'fires at [0-9]'; then
+        pass "#520: an unreadable disable value fails safe, not open"
+    else
+        fail "#520: an unreadable DISABLE_AUTO_COMPACT must suppress every figure — got: $output"
+    fi
+}
+
+test_instructions_hook_does_not_refuse_an_innocent_u_value() {
+    local output
+    # NEGATIVE FIXTURE for the \u guard, and the reason it exists: RED proves a
+    # guard FIRES and is structurally silent on whether it OVERFIRES. The guard
+    # shipped as a BRE, which BSD grep reads as a bare u, so any value with u
+    # followed by four hex-class characters — issue4522, value1000, queue2024 —
+    # refused the whole file and suppressed a figure that was CORRECT.
+    # One negative point is a regression pin, not proof; the closure argument is
+    # what carries the guard. This pins the point that actually shipped broken.
+    output=$(AC_ENV_SETTINGS_RAW='{ "env": { "MY_FLAG": "issue4522",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000" } }' _autocompact_hook_env)
+    if echo "$output" | grep -qE '\b117000\b' && ! echo "$output" | grep -q 'escape'; then
+        pass "#520: an innocent u-plus-hex value is not mistaken for a JSON escape"
+    else
+        fail "#520: 'issue4522' must not trigger the escape guard — got: $output"
+    fi
+}
+
+test_instructions_hook_makes_no_claim_for_an_escaped_key_name() {
+    local output
+    # Codex round 19. Claude Code decodes \u0053 to S, so this key IS
+    # CLAUDE_CODE_MAX_OUTPUT_TOKENS and the 10000 is applied; a reader that
+    # greps the literal source spelling sees no key, restores the 20000 default
+    # overhead, and prints 117000 where the binary computes 127000.
+    #
+    # \u is the ONLY JSON escape that can encode an ASCII letter — the rest of
+    # the set (\" \\ \/ \b \f \n \r \t) yields none — and every key
+    # this hook reads is [A-Za-z_]. That is why guarding on it CLOSES the
+    # respelling class instead of moving it one level further out, which is what
+    # each of the five previous encoding findings did.
+    output=$(AC_ENV_SETTINGS_RAW='{ "env": {
+    "CLAUDE_CODE_MAX_OUTPUT_TOKEN\u0053": "10000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000" } }' _autocompact_hook_env)
+    if ! echo "$output" | grep -qE 'fires at [0-9]'; then
+        pass "#520: an escaped key name degrades to no-claim, never a wrong figure"
+    else
+        fail "#520: a \u-escaped key must suppress every figure — got: $output"
+    fi
+}
+
+test_instructions_hook_does_not_embed_the_project_path_in_its_notes() {
+    local tmpdir deep output b
+    # The no-claim NOTE named its source with the FULL settings path, once per
+    # unreadable key, so the message grew at roughly 5x the length of the
+    # project path — a 303-char path measured 1524 chars against a 1900 cap.
+    # This is the same input-linear growth the digit bound closed, arriving by a
+    # different route, which is exactly why a fixed character cap cannot be the
+    # thing that catches it: the cap fixture picks its own short tmp path.
+    tmpdir=$(mktemp -d)
+    deep="$tmpdir/$(printf 'averyverylongdirectorysegment/%.0s' 1 2 3 4 5 6 7 8)"
+    mkdir -p "$deep/.claude" "$deep/bin" "$deep/home"
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$deep/SDLC.md"
+    touch "$deep/TESTING.md"
+    for b in npm claude codex; do
+        printf '#!/bin/bash\nexit 1\n' > "$deep/bin/$b"; chmod +x "$deep/bin/$b"
+    done
+    printf '%s\n' '{ "env": { "DISABLE_AUTO_COMPACT": ["on"], "DISABLE_COMPACT": ["on"],
+      "CLAUDE_CODE_MAX_OUTPUT_TOKENS": ["1"], "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": ["1"],
+      "CLAUDE_CODE_AUTO_COMPACT_WINDOW": ["1"] }, "autoCompactEnabled": ["x"] }' \
+      > "$deep/.claude/settings.json"
+    output=$(cd "$deep" && env PATH="$deep/bin:$PATH" CLAUDE_PROJECT_DIR="$deep" \
+        HOME="$deep/home" SDLC_WIZARD_CACHE_DIR="$deep/cache" \
+        "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    if ! printf '%s' "$output" | grep -qF "$deep" \
+       && printf '%s' "$output" | grep -q 'unreadable value' \
+       && [ "${#output}" -lt 900 ]; then
+        pass "#520: the no-claim NOTE names a short source label, not the project path"
+    else
+        fail "#520: the NOTE must not grow with the project path (${#output} chars) — got: $output"
+    fi
+}
+
+test_instructions_hook_resolves_duplicate_keys_last_wins() {
+    local output
+    # Found while verifying the escape finding; reported by neither reviewer as
+    # a blocker, and it is the one of this group with the BEST careless-edit
+    # path — a bad merge resolution, or appending to an env block without
+    # noticing the key is already there. No escapes involved.
+    # JSON.parse resolves a repeated key to the LAST occurrence; the reader took
+    # the first, so the hook reported 117000 for a config the binary reads as
+    # 400000 - 20000 - 13000 = 367000.
+    output=$(AC_ENV_SETTINGS_RAW='{ "env": {
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000" } }' _autocompact_hook_env)
+    if echo "$output" | grep -qE '\b367000\b'; then
+        pass "#520: a repeated key resolves last-wins, as JSON.parse does"
+    else
+        fail "#520: duplicate WINDOW keys must yield the last value's 367000 — got: $output"
+    fi
+}
+
+test_instructions_hook_states_provenance_once() {
+    local output
+    output=$(_autocompact_hook_env CLAUDE_CODE_MAX_OUTPUT_TOKENS=1e4 \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000)
+    if [ "$(echo "$output" | grep -oE 'the live environment' | wc -l | tr -d ' ')" = "1" ]; then
+        pass "#520: the no-claim note states provenance once, not twice"
+    else
+        fail "#520: provenance must appear exactly once — got: $output"
+    fi
+}
+
+test_instructions_hook_reads_an_unquoted_disable_scalar() {
+    local output
+    # JSON scalars need no quotes, and jq emits numbers and booleans unquoted by
+    # default. Claude Code copies settings env values into process.env untouched
+    # and the setter string-coerces, so an unquoted `true` really does disable
+    # compaction — verified by launching the binary, not inferred. The reader
+    # required a quoted value, so this printed a live trigger for a config whose
+    # sessions never compact.
+    output=$(AC_ENV_SETTINGS_RAW='{ "env": { "DISABLE_AUTO_COMPACT": true,
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000" } }' _autocompact_hook_env)
+    if ! echo "$output" | grep -qE 'fires at [0-9]'; then
+        pass "#520: an unquoted disable scalar suppresses the figure"
+    else
+        fail "#520: unquoted DISABLE_AUTO_COMPACT:true must print no trigger — got: $output"
+    fi
+}
+
+test_instructions_hook_reads_an_unquoted_numeric_setting() {
+    local output
+    # Same encoding gap on the arithmetic side: unquoted 5000 is a real overhead
+    # of 5000, so the trigger is 282000, not the 267000 a 20000 default gives.
+    output=$(AC_ENV_SETTINGS_RAW='{ "env": { "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": 5000 } }' _autocompact_hook_env)
+    if echo "$output" | grep -qE '\b282000\b' && ! echo "$output" | grep -qE '\b267000\b'; then
+        pass "#520: an unquoted numeric setting is read (282000, not 267000)"
+    else
+        fail "#520: unquoted MAX_OUTPUT_TOKENS:5000 must yield 282000 — got: $output"
+    fi
+}
+
+test_instructions_hook_fails_safe_on_an_unparseable_setting_value() {
+    local output
+    # The class-closing property: key PRESENCE is detected independently of
+    # value PARSE. An encoding the reader cannot handle must degrade to the
+    # no-claim NOTE, never to silence and never to a figure computed as though
+    # the key were absent. This is what makes "the class is closed" a property
+    # of the design rather than a claim about the encodings enumerated so far.
+    output=$(AC_ENV_SETTINGS_RAW='{ "env": { "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": ["10000"] } }' _autocompact_hook_env)
+    if ! echo "$output" | grep -qE 'fires at [0-9]' \
+       && echo "$output" | grep -qE 'CLAUDE_CODE_MAX_OUTPUT_TOKENS'; then
+        pass "#520: an unparseable setting value fails safe to the no-claim note"
+    else
+        fail "#520: an unreadable settings encoding must suppress the figure — got: $output"
+    fi
+}
+
+test_instructions_hook_output_does_not_depend_on_stdin() {
+    local a b
+    # A reader that lost its file operand would silently read the hook's own
+    # stdin — the event payload — and manufacture claims from it. That failure
+    # is invisible to every settings fixture, so it is pinned directly.
+    a=$(AC_ENV_SETTINGS_RAW='{ "env": { "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000" } }' \
+        _autocompact_hook_env < /dev/null)
+    b=$(printf '{"DISABLE_AUTO_COMPACT": "true", "autoCompactEnabled": false}' \
+        | AC_ENV_SETTINGS_RAW='{ "env": { "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000" } }' \
+        _autocompact_hook_env)
+    if [ "$a" = "$b" ] && echo "$a" | grep -qE 'fires at 117000'; then
+        pass "#520: hook output is independent of stdin (no settings read consumes it)"
+    else
+        fail "#520: stdin must not influence the autocompact report — with: $b / without: $a"
+    fi
+}
+
+test_instructions_hook_reads_settings_values_across_line_breaks() {
+    local output
+    # grep is RECORD-BOUND: [[:space:]]* cannot cross a newline, so a value
+    # placed on the line after its key vanished before classification and the
+    # 20000 default was silently restored. The value here is the plain integer
+    # 10000 — nothing exotic — only the JSON formatting changed, which any
+    # formatter or manual wrap can do. The binary parses JSON, not lines.
+    output=$(AC_ENV_SETTINGS_RAW='{
+  "env": {
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS":
+      "10000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000"
+  }
+}' _autocompact_hook_env)
+    if echo "$output" | grep -qE '\b127000\b' && ! echo "$output" | grep -qE '\b117000\b'; then
+        pass "#520: a settings value on the next line is still read (127000, not 117000)"
+    else
+        fail "#520: multiline settings JSON must yield 127000 — got: $output"
+    fi
+}
+
+test_instructions_hook_reads_a_disable_across_line_breaks() {
+    local output
+    # Same record-bound defect on the OFF path, which is the branch where being
+    # wrong prints a trigger for a session that never compacts.
+    output=$(AC_ENV_SETTINGS_RAW='{
+  "autoCompactEnabled":
+    false,
+  "env": { "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000" }
+}' _autocompact_hook_env)
+    if ! echo "$output" | grep -qE 'fires at [0-9]'; then
+        pass "#520: an autoCompactEnabled value on the next line still suppresses the figure"
+    else
+        fail "#520: multiline autoCompactEnabled:false must print no trigger — got: $output"
+    fi
+}
+
+test_instructions_hook_treats_a_padded_settings_disable_as_disabling() {
+    local output
+    # `rr()` trims, so " true " in a settings env block disables compaction once
+    # merged. The OFF check used a fixed quoted alternation that missed it, and
+    # the hook printed a live trigger for a session that never compacts — the
+    # same "file-side read is narrower than the binary" root cause as the
+    # max-output capture. Both now go through the source-blind reader.
+    output=$(AC_ENV_SETTINGS='    "DISABLE_AUTO_COMPACT": " true ",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000"' _autocompact_hook_env)
+    if ! echo "$output" | grep -qE 'fires at [0-9]' \
+       && echo "$output" | grep -qiE 'inert|no effect|OFF'; then
+        pass "#520: a padded settings disable is read as disabling, as rr() does"
+    else
+        fail "#520: settings DISABLE_AUTO_COMPACT=' true ' must print no trigger — got: $output"
+    fi
+}
+
+test_instructions_hook_attributes_an_unread_value_to_its_own_source() {
+    local output
+    # AC_SRC was stamped ".claude/settings.json" on entering the pct/win
+    # fallback, so an env-sourced unreadable value was attributed to a file that
+    # never contained it. Provenance is a claim like any other.
+    output=$(AC_ENV_SETTINGS='    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "150000"' \
+        _autocompact_hook_env CLAUDE_CODE_MAX_OUTPUT_TOKENS=1e4)
+    if echo "$output" | grep -qE "1e4' \(the live environment\)"; then
+        pass "#520: an env-sourced unreadable value is attributed to the environment, not the file"
+    else
+        fail "#520: MAX_OUTPUT_TOKENS=1e4 from env must not be blamed on settings.json — got: $output"
+    fi
+}
+
+test_instructions_hook_scopes_the_live_flip_to_the_settings_key() {
+    local output
+    # The hedge's final clause asserted that flipping the key back takes effect
+    # immediately — true for autoCompactEnabled, false for a disable VAR in an
+    # env block, which applies at launch. The same sentence named both.
+    output=$(AC_ENV_SETTINGS_RAW='{ "autoCompactEnabled": false }' \
+        _autocompact_hook_env CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000)
+    if echo "$output" | grep -qE 'autoCompactEnabled key' \
+       && echo "$output" | grep -qE 'claude --resume'; then
+        pass "#520: the live-flip claim is scoped to the settings key, not to disable vars"
+    else
+        fail "#520: the hedge must scope 'takes effect immediately' to autoCompactEnabled — got: $output"
+    fi
+}
+
+test_instructions_hook_matches_the_multiplication_order_at_a_second_cell() {
+    local output
+    # A DIFFERENT residue cell from the 35/180000 pin, so the class stays locked
+    # rather than one arithmetic accident. A 380000 window is 360000 effective;
+    # 70% of that is 252000 the naive way and 251999 in the binary's order. The
+    # cap for this window is 347000, so it does not mask the difference.
+    output=$(_autocompact_hook_env CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70 \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW=380000)
+    if echo "$output" | grep -qE '\b251999\b' && ! echo "$output" | grep -qE '\b252000\b'; then
+        pass "#520: divide-before-multiply holds at a second residue cell (251999)"
+    else
+        fail "#520: 70% of (380000-20000) must report 251999, not 252000 — got: $output"
+    fi
+}
+
+test_instructions_hook_makes_no_claim_for_an_exponent_max_output() {
+    local output
+    output=$(_autocompact_hook_env CLAUDE_CODE_MAX_OUTPUT_TOKENS=1e4 \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000)
+    # parseFloat("1e4") is 10000, so the binary's overhead is 10000 and the
+    # trigger is 127000. The hook used to ignore the value, default the overhead
+    # to 20000, and print 117000 as fact.
+    if ! echo "$output" | grep -qE 'fires at [0-9]' \
+       && ! echo "$output" | grep -qE '\b(117000|127000)\b' \
+       && echo "$output" | grep -qE '1e4' \
+       && echo "$output" | grep -qiE 'not evaluate|does not read|plain integer'; then
+        pass "#520: exponent MAX_OUTPUT_TOKENS yields a presence note and no figure"
+    else
+        fail "#520: MAX_OUTPUT_TOKENS=1e4 must print no trigger figure and name the value — got: $output"
+    fi
+}
+
+test_instructions_hook_makes_no_claim_for_a_trailing_point_percentage() {
+    local output
+    output=$(_autocompact_hook_env CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=5. \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000)
+    # parseFloat("5.") is 5, so the binary triggers at 19000. The hook used to
+    # discard the percentage and print 367000 as a reassuring NOTE — the widest
+    # possible miss, and in the safe-sounding direction.
+    if ! echo "$output" | grep -qE 'fires at [0-9]' \
+       && ! echo "$output" | grep -qE '\b(367000|19000)\b' \
+       && echo "$output" | grep -qiE 'not evaluate|does not read|plain'; then
+        pass "#520: trailing-point percentage yields a presence note and no figure"
+    else
+        fail "#520: PCT=5. must print no trigger figure — got: $output"
+    fi
+}
+
+test_instructions_hook_makes_no_claim_for_a_suffixed_window() {
+    local output
+    output=$(_autocompact_hook_env CLAUDE_CODE_AUTO_COMPACT_WINDOW=150k)
+    # `bp()` falls back to parseInt, so "150k" is 150, which the clamp raises to
+    # a 100000 window — a real trigger of 67000, and nothing on screen would
+    # suggest the suffix was dropped. No figure is printed for it, but the value
+    # is named so the operator can see the hook did not read it as 150000.
+    if ! echo "$output" | grep -qE 'fires at [0-9]' \
+       && ! echo "$output" | grep -qE '\b(67000|150000|137000)\b' \
+       && echo "$output" | grep -qE '150k'; then
+        pass "#520: suffixed window yields a presence note and no figure"
+    else
+        fail "#520: WINDOW=150k must print no trigger figure and name the value — got: $output"
+    fi
+}
+
+test_instructions_hook_treats_a_padded_disable_as_off() {
+    local output
+    output=$(_autocompact_hook_env "DISABLE_AUTO_COMPACT= true " \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000)
+    # `rr()` is String(e).toLowerCase().trim() — the trim is why a padded value
+    # disables compaction in the binary. The hook lowercased but never trimmed,
+    # so it reported a live 117000 trigger for a session that never compacts.
+    if ! echo "$output" | grep -qE '\b117000\b' \
+       && echo "$output" | grep -qiE 'off|no effect'; then
+        pass "#520: a whitespace-padded DISABLE_AUTO_COMPACT reads as OFF, as rr() does"
+    else
+        fail "#520: DISABLE_AUTO_COMPACT=' true ' must report OFF and no trigger — got: $output"
+    fi
+}
+
+test_instructions_hook_accepts_a_padded_in_domain_window() {
+    local output
+    output=$(_autocompact_hook_env "CLAUDE_CODE_AUTO_COMPACT_WINDOW= 150000 ")
+    # The other half of the same trim: `bp()` trims too, so a padded plain
+    # integer is IN domain and must still produce its figure. Trimming only on
+    # the disable path would have turned this into a new silent case.
+    if echo "$output" | grep -qE '\b117000\b'; then
+        pass "#520: a whitespace-padded plain-integer window stays in domain (117000)"
+    else
+        fail "#520: WINDOW=' 150000 ' must report 117000 — got: $output"
+    fi
+}
+
+test_instructions_hook_prefers_a_live_max_output_over_settings() {
+    local output
+    # Live env 32000 caps to the 20000 overhead; the stale settings value 8000
+    # must NOT be consulted. The hook keyed its "was it set" test on the RESULT
+    # being 20000, so a live value at or above 20000 was indistinguishable from
+    # unset and lost to the file — inverting the hook's own live-env-first rule.
+    output=$(AC_ENV_SETTINGS='    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000"' \
+        _autocompact_hook_env CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000 \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000)
+    if echo "$output" | grep -qE '\b117000\b' && ! echo "$output" | grep -qE '\b129000\b'; then
+        pass "#520: a live MAX_OUTPUT_TOKENS wins over a settings value even when it caps (117000)"
+    else
+        fail "#520: live 32000 + settings 8000 must report 117000, not 129000 — got: $output"
+    fi
+}
+
+test_instructions_hook_hedges_a_file_derived_disable() {
+    local output
+    # `kO` reads MERGED settings, and settings.local.json outranks the project
+    # file. This hook cannot resolve that precedence, so it must not assert OFF
+    # as fact from a file — only from the live env, which is authoritative for
+    # its own variables. The claim is hedged instead of dropped: the operator
+    # still needs to know the key is there.
+    output=$(AC_ENV_SETTINGS_RAW='{ "autoCompactEnabled": false }' \
+        _autocompact_hook_env CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000)
+    if echo "$output" | grep -qiE 'autoCompactEnabled' \
+       && echo "$output" | grep -qiE 'merges|outranks|confirm' \
+       && ! echo "$output" | grep -qE 'auto-compaction is OFF'; then
+        pass "#520: a file-derived disable is reported conditionally, not asserted as fact"
+    else
+        fail "#520: settings-derived autoCompactEnabled:false must be hedged — got: $output"
+    fi
+}
+
+test_instructions_hook_says_an_out_of_range_percentage_is_ignored() {
+    local output
+    output=$(_autocompact_hook_env CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=150 \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000)
+    # 150 passes the domain filter but `CCo` ignores any percentage outside
+    # 0-100, so the trigger is the plain cap. The figure was already right by
+    # coincidence of the min(); the MESSAGE still said the two vars "multiply",
+    # which is a false claim about the mechanism even beside a true number.
+    if echo "$output" | grep -qE '\b367000\b' \
+       && echo "$output" | grep -qiE 'ignore' \
+       && ! echo "$output" | grep -qE 'multiply'; then
+        pass "#520: an out-of-range percentage is reported as ignored, not as multiplying"
+    else
+        fail "#520: PCT=150 must report 367000 and say the percentage is ignored — got: $output"
+    fi
+}
+
+test_instructions_hook_reports_the_200k_model_figure_not_a_ratio() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "35",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"')
+    local ok=true
+    echo "$output" | grep -qE 'NOTE: autocompact fires at 343000' || ok=false
+    echo "$output" | grep -qE '\b62999\b' || ok=false
+    # The verdict language is the defect, not just the ratio. "not an error"
+    # sanctioned a trigger the hook had mis-stated by a factor of ~1.7.
+    echo "$output" | grep -qiE 'not an error|roughly a third' && ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: reports the computed 200K-model trigger (62999), not a ratio, and passes no verdict"
+    else
+        fail "#520: 35% of (1000000-20000) must report 343000 AND the 200K figure 62999 with no approving verdict — got: $output"
+    fi
+}
+
+# Pins the ASSOCIATION, not just a number. 180000 x 35% is the cheapest cell in
+# the class where multiply-then-divide and divide-then-multiply disagree: the
+# naive int(w*p/100) yields 63000, the binary's Math.floor(e*(n/100)) yields
+# 62999. The test above pins the same arithmetic in the secondary "on a 200K
+# model" figure; this pins it in the MAIN figure, so a regression in either awk
+# call is caught on its own. Without this, reverting one of the two calls would
+# still leave a green suite.
+test_instructions_hook_matches_the_binarys_multiplication_order() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "35",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"')
+    if echo "$output" | grep -qE '\b62999\b' && ! echo "$output" | grep -qE '\b63000\b'; then
+        pass "#520: main figure uses the binary's divide-before-multiply order (62999, not 63000)"
+    else
+        fail "#520: 35% of (200000-20000) must report 62999 — int(w*p/100) gives 63000 and is off by one token — got: $output"
+    fi
+}
+
+# The regression guard: the real #207 case must still fire, because its
+# effective trigger (120000) IS below the floor.
+test_instructions_hook_still_warns_when_compound_trigger_below_floor() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000"')
+    local ok=true
+    # Must be the WARNING form specifically. An earlier version of this
+    # assertion only required "autocompact" + "120000", which the NOTE branch
+    # also satisfies — so raising AC_FLOOR silently downgraded a real warning
+    # to an approving note and this test stayed green. Caught by mutation.
+    echo "$output" | grep -qE 'WARNING: autocompact fires at' || ok=false
+    echo "$output" | grep -qE '\b114000\b' || ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: still WARNS (not merely notes) on the original #207 case — 120000 is below the floor"
+    else
+        fail "#520: 30% of (400000-20000) = 114000 must produce a WARNING, not a NOTE, got: $output"
     fi
 }
 
@@ -2667,6 +3522,110 @@ test_instructions_hook_warns_on_autocompact_compound_misconfig
 test_instructions_hook_silent_on_single_autocompact_pct_only
 test_instructions_hook_silent_on_single_autocompact_window_only
 test_instructions_hook_compound_warning_shows_effective_trigger
+# The window is clamped to 100000..1000000 before the percentage is applied
+# (EX). Multiplying the RAW setting overstates the trigger: 15% of a stated
+# 2000000 looks like 300000 and would be waved through, but the clamp caps the
+# window at 1000000, so the real trigger is 150000 — below the floor, and
+# exactly the early-compaction surprise this check exists to catch. Found by
+# cross-model review after the first version of the fix shipped the raw product.
+test_instructions_hook_clamps_oversized_window_before_multiplying() {
+    local output
+    output=$(_autocompact_hook_output '    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "15",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "2000000"')
+    local ok=true
+    echo "$output" | grep -qE 'WARNING: autocompact fires at' || ok=false
+    echo "$output" | grep -qE '\b147000\b' || ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: clamps a 2000000 window to 1000000 before multiplying (150000, not 300000)"
+    else
+        fail "#520: 15% of a window clamped to 1000000, less overhead, is 147000 and must WARN — got: $output"
+    fi
+}
+
+# The live env governs the session; settings.json is only a CLAIM about it.
+# The #520 incident was exactly that gap — the value came from the user's
+# GLOBAL settings, so the project file showed nothing while the session ran on
+# an inherited override. A hook is a child process and inherits exported vars,
+# so it can and must read them. This fixture sets a disable-trap value in the
+# env while settings.json holds a perfectly sane one: the env must win.
+test_instructions_hook_prefers_live_env_over_settings_file() {
+    local tmpdir output
+    tmpdir=$(mktemp -d)
+    echo '<!-- SDLC Harness Version: 1.44.0 -->' > "$tmpdir/SDLC.md"
+    touch "$tmpdir/TESTING.md"
+    mkdir -p "$tmpdir/.claude" "$tmpdir/bin" "$tmpdir/home"
+    cat > "$tmpdir/.claude/settings.json" <<'EOF'
+{
+  "env": {
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000"
+  }
+}
+EOF
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/npm"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/claude"
+    printf '#!/bin/bash\nexit 1\n' > "$tmpdir/bin/codex"
+    chmod +x "$tmpdir/bin/npm" "$tmpdir/bin/claude" "$tmpdir/bin/codex"
+    output=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" CLAUDE_PROJECT_DIR="$tmpdir" \
+        HOME="$tmpdir/home" SDLC_WIZARD_CACHE_DIR="$tmpdir/cache" \
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW="150000" \
+        "$HOOKS_DIR/instructions-loaded-check.sh" 2>/dev/null)
+    rm -rf "$tmpdir"
+    local ok=true
+    # The figure proves which source won: 150000 gives 117000, 400000 gives 367000.
+    echo "$output" | grep -qE '\b117000\b' || ok=false
+    echo "$output" | grep -qE '\b367000\b' && ok=false
+    echo "$output" | grep -qi 'live environment' || ok=false
+    if [ "$ok" = true ]; then
+        pass "#520: reads the live env over settings.json, and names which it used"
+    else
+        fail "#520: env WINDOW=150000 must win over settings.json's 400000 — got: $output"
+    fi
+}
+
+test_instructions_hook_reports_sub_200k_window_fires_sooner
+test_instructions_hook_reads_a_leading_zero_percentage_as_decimal
+test_instructions_hook_ignores_a_zero_percentage_like_the_binary_does
+test_instructions_hook_says_nothing_fires_when_compaction_is_off
+test_instructions_hook_reads_max_output_tokens_for_the_overhead
+test_instructions_hook_clamps_sub_100k_window_to_the_floor
+test_instructions_hook_honours_a_fractional_percentage
+test_instructions_hook_applies_the_percentage_to_a_sub_200k_window
+test_instructions_hook_silent_on_deliberate_large_compound_trigger
+test_instructions_hook_reports_the_200k_model_figure_not_a_ratio
+test_instructions_hook_matches_the_binarys_multiplication_order
+test_instructions_hook_matches_the_multiplication_order_at_a_second_cell
+test_instructions_hook_makes_no_claim_for_a_settings_exponent_max_output
+test_instructions_hook_does_not_wrap_on_a_huge_window
+test_instructions_hook_does_not_wrap_on_a_huge_max_output
+test_instructions_hook_echoes_the_written_window_not_the_clamped_one
+test_instructions_hook_echoes_a_huge_window_as_written
+test_instructions_hook_bounds_a_pathological_window_echo
+test_instructions_hook_makes_no_claim_for_an_unreadable_disable
+test_instructions_hook_makes_no_claim_for_an_escaped_key_name
+test_instructions_hook_does_not_refuse_an_innocent_u_value
+test_instructions_hook_resolves_duplicate_keys_last_wins
+test_instructions_hook_does_not_embed_the_project_path_in_its_notes
+test_instructions_hook_states_provenance_once
+test_instructions_hook_reads_an_unquoted_disable_scalar
+test_instructions_hook_reads_an_unquoted_numeric_setting
+test_instructions_hook_fails_safe_on_an_unparseable_setting_value
+test_instructions_hook_output_does_not_depend_on_stdin
+test_instructions_hook_reads_settings_values_across_line_breaks
+test_instructions_hook_reads_a_disable_across_line_breaks
+test_instructions_hook_treats_a_padded_settings_disable_as_disabling
+test_instructions_hook_attributes_an_unread_value_to_its_own_source
+test_instructions_hook_scopes_the_live_flip_to_the_settings_key
+test_instructions_hook_makes_no_claim_for_an_exponent_max_output
+test_instructions_hook_makes_no_claim_for_a_trailing_point_percentage
+test_instructions_hook_makes_no_claim_for_a_suffixed_window
+test_instructions_hook_treats_a_padded_disable_as_off
+test_instructions_hook_accepts_a_padded_in_domain_window
+test_instructions_hook_prefers_a_live_max_output_over_settings
+test_instructions_hook_hedges_a_file_derived_disable
+test_instructions_hook_says_an_out_of_range_percentage_is_ignored
+test_instructions_hook_still_warns_when_compound_trigger_below_floor
+test_instructions_hook_clamps_oversized_window_before_multiplying
+test_instructions_hook_prefers_live_env_over_settings_file
 
 echo ""
 echo "--- CC release review nudge (#85) ---"
