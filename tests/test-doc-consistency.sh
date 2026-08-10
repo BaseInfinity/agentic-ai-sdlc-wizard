@@ -3824,6 +3824,236 @@ test_sdlc_skill_makes_fable_the_deciding_role
 test_sdlc_skill_caps_guard_cost_by_its_change
 
 
+# Tests (#539): the pass budget is cumulative per ROOT TASK, never per frozen
+# scope.
+#
+# "Frozen scope" is redefinable. Re-freeze after every fix and "two passes per
+# frozen scope" silently becomes unlimited — which is #520 (20 rounds, 46 lines)
+# and #476 (six rounds, twenty doc lines). The count has to survive a re-freeze.
+#
+# WHAT IS AND IS NOT PROVEN HERE. Both the skill and the wizard define the
+# budget, so both are read. What is checked is that each names the `root_task`
+# and `base_sha` fields the artifact must record. Whether the surrounding prose
+# teaches the CORRECT rule is NOT checked and is not checkable this way — see
+# the helper comment below for the four rounds that established that.
+#
+# NOT a cap. #530 deleted a second round counter for contradicting the first.
+# This amends the surviving counter's DEFINITION and adds no limit — whether to
+# continue stays governed by the recorded continue/stop decision.
+# The wizard states the budget in four places; only ONE of them is the
+# authoritative definition, so the wizard's field check reads that section
+# rather than the whole file. Historically this scoping also mattered because
+# reading the whole file let the definition under
+# "When to stop" be reversed to "resets on each re-freeze" while the three
+# dependent restatements downstream kept the regex satisfied — 137/137 green
+# with the shipped wizard directly contradicting #539. Found by a reviewer, by
+# mutating the definition rather than deleting it: deletion-shaped mutation is
+# structurally blind to a claim that survives somewhere else in the file.
+extract_wizard_when_to_stop_section() {
+    awk '
+        /^#### When to stop: the scope rule/ { in_section = 1; print; next }
+        in_section && /^#{1,4} / { in_section = 0 }
+        in_section { print }
+    ' "$1"
+}
+
+# RECORDS THE FIELDS, PROVES NOTHING ABOUT THE RULE. Read the fail messages
+# literally: they say a field NAME is absent, not that the document teaches the
+# right rule. That is the whole claim, and it is deliberately small.
+#
+# The definition assertion that used to live here is DELETED. It was patched in
+# four consecutive review rounds and defeated each time, finally by Markdown
+# strikethrough: `~~The count is cumulative and never resets~~` leaves the pinned
+# string byte-identical while the live sentence teaches the opposite, and the
+# suite stayed 137/137 green. Every repair was the same shape — a presence check
+# asked to prove a polarity. grep cannot do that; the fifth patch would have
+# failed the same way.
+#
+# The guard-cost rule fired: a guard may not outlive the change it protects, and
+# this one had cost more review rounds than the twenty-three lines of rule it was
+# written for. It is deleted and the risk is filed, per #530. See the follow-up
+# issue for the residual: nothing here detects a document that STATES the fields
+# and then contradicts the rule in prose.
+assert_names_root_task_artifact_fields() {
+    local label="$1" body="$2"
+    if ! printf '%s\n' "$body" | grep -qE '\broot_task\b'; then
+        fail "#539: $label never names the \`root_task\` field the artifact must record"
+        return 1
+    fi
+    if ! printf '%s\n' "$body" | grep -qE '\bbase_sha\b'; then
+        fail "#539: $label never names the \`base_sha\` field — root task is 'verbatim request + base SHA', and without the SHA the root is not pinned"
+        return 1
+    fi
+    return 0
+}
+
+test_pass_budget_is_cumulative_per_root_task() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    local WIZ="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$SKILL" ] || [ ! -f "$WIZ" ]; then fail "#539: skill or wizard doc not found"; return; fi
+    local wiz_section
+    wiz_section=$(extract_wizard_when_to_stop_section "$WIZ")
+    if [ -z "$wiz_section" ]; then
+        fail "#539: no '#### When to stop: the scope rule' section in CLAUDE_CODE_SDLC_WIZARD.md to carry the budget definition"
+        return
+    fi
+    # `|| return 0`, not `|| return`: the file runs under `set -e`, so a test
+    # function returning non-zero kills the whole suite mid-run. The helper
+    # already called fail(); the test's own exit status must stay clean.
+    assert_names_root_task_artifact_fields "skills/sdlc/SKILL.md" "$(cat "$SKILL")" || return 0
+    assert_names_root_task_artifact_fields "CLAUDE_CODE_SDLC_WIZARD.md \"When to stop\"" "$wiz_section" || return 0
+    pass "#539: skill and wizard both name the root_task and base_sha fields the artifact records (field names only — the rule's correctness is not asserted)"
+}
+
+# A new scope must APPEND, never replace. Without this the cumulative count is
+# recorded and then overwritten, which reads identical to never having counted.
+#
+# Checked in BOTH docs. Checking only the skill let the wizard be reversed to say
+# scopes replace prior records while all 137 tests stayed green — the two shipped
+# documents could contradict #539 undetected. Found by a reviewer, by mutation.
+test_new_scopes_append_rather_than_replace() {
+    local f label missing=""
+    for f in "skills/sdlc/SKILL.md" "CLAUDE_CODE_SDLC_WIZARD.md"; do
+        label="$f"
+        if [ ! -f "$REPO_ROOT/$f" ]; then fail "#539: $f not found"; return; fi
+        printf '%s\n' "$(cat "$REPO_ROOT/$f")" \
+            | grep -qiE '\bappend[^.;]*\b(replac|overwrit|reset)' || missing="$missing $label"
+    done
+    if [ -n "$missing" ]; then
+        fail "#539: no clause containing \`append\` followed by replace/overwrite/reset appears in:$missing — a cumulative count that gets overwritten on re-freeze is not cumulative, and one doc carrying the clause while the other does not is the drift case"
+        return
+    fi
+    pass "#539: skill and wizard each contain an append clause paired with replace/overwrite/reset (the words co-occur in order — the polarity of the sentence is not asserted)"
+}
+
+test_pass_budget_is_cumulative_per_root_task
+test_new_scopes_append_rather_than_replace
+
+
+# Tests (#538): the scope card is the artifact that makes CLOSED ALLOWLIST
+# checkable.
+#
+# CLOSED ALLOWLIST says "the issue's requested behaviors are the whole job" but
+# never named the thing you compare growth against. That is why nothing fired
+# during #520. The card is six fields: one issue, acceptance criteria, allowed
+# paths, exclusions, risk tier, estimated diff.
+SCOPE_CARD_FIELDS='acceptance:allowed paths:exclusions:risk tier:estimated diff'
+
+test_sdlc_skill_planning_requires_a_scope_card() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    # Scoped to the PLANNING block of the TodoWrite checklist. A scope card
+    # named anywhere else in the skill is not a planning-phase requirement,
+    # and the issue asks for it BEFORE work starts.
+    local planning
+    planning=$(awk '/\/\/ PLANNING/ { f = 1; next } /\/\/ TRANSITION/ { f = 0 } f' "$SKILL")
+    if [ -z "$planning" ]; then
+        fail "#538: no PLANNING block found in the skill's TodoWrite checklist to carry the scope card"
+        return
+    fi
+    if ! printf '%s\n' "$planning" | grep -qi 'scope card'; then
+        fail "#538: the words \`scope card\` never appear in the skill's PLANNING block — without the card named there, there is nothing to compare scope growth against, which is why nothing fired during #520"
+        return
+    fi
+    local missing="" f
+    local IFS=':'
+    for f in $SCOPE_CARD_FIELDS; do
+        printf '%s\n' "$planning" | grep -qi "$f" || missing="$missing '$f'"
+    done
+    unset IFS
+    # 'one issue' is the sixth field and is checked HERE ONLY, not via
+    # SCOPE_CARD_FIELDS. The templates satisfy it structurally -- a card on an
+    # issue is by construction about that one issue -- so folding it into the
+    # shared list would fail the template test for the wrong reason. The
+    # planning phase has no such structure and must say it. Both reviewers
+    # found the gap; this is the fix one of them prescribed after showing the
+    # other's would misfire.
+    printf '%s\n' "$planning" | grep -qi 'one issue' || missing="$missing 'one issue'"
+    if [ -n "$missing" ]; then
+        fail "#538: field name(s) absent from the skill's PLANNING block:$missing — a card missing 'estimated diff' or 'allowed paths' cannot trip the breaker, and one missing 'one issue' permits a multi-issue card, which is a scope card that cannot be exceeded"
+        return
+    fi
+    pass "#538: skill's PLANNING phase names a scope card and all six of its fields (the words are present — whether the phase is honoured is not asserted)"
+}
+
+# The breaker is what makes the card mechanical rather than decorative. Each
+# condition must name its object, so "watch for scope growth" does not satisfy it.
+test_scope_card_breaker_conditions_are_named() {
+    local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
+    if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
+    local body
+    body=$(cat "$SKILL")
+    # All three categories, each checked separately. A single alternation over
+    # (subsystem|path|criterion) passed when two of the three were mutated away,
+    # so the guard could lose two breaker triggers while reporting all three
+    # protected. Found by a reviewer, by mutation.
+    local cat missing_cat=""
+    for cat in subsystem path criterion; do
+        printf '%s\n' "$body" | grep -qiE "\\b(new|another)\\b[^.;]*\\b${cat}" || missing_cat="$missing_cat $cat"
+    done
+    if [ -n "$missing_cat" ]; then
+        fail "#538: breaker does not name the new-X condition for:$missing_cat — each category is a separate trigger and losing one silently disarms it"
+        return
+    fi
+    # The multiplier must sit in the same clause as the estimate. A bare `2x`
+    # alternative was a DEAD CHECK: SKILL.md:52 ("max 2x") and :100 ("FAILED
+    # 2x") already satisfy it, so that branch could never fail. Caught by
+    # mutation, not by reading.
+    if ! printf '%s\n' "$body" | grep -qiE '(2x|twice|double)[^.;]*estimate|estimate[^.;]*(2x|twice|double)'; then
+        fail "#538: breaker does not name the >2x-estimate condition — the estimated-diff field is inert without it"
+        return
+    fi
+    if ! printf '%s\n' "$body" | grep -qiE 'two corrective rounds|2 corrective rounds'; then
+        fail "#538: breaker does not name the two-corrective-rounds condition"
+        return
+    fi
+    pass "#538: all three scope-card breaker conditions are named with their objects"
+}
+
+# Issue templates. ALL THREE, per #538's literal "every issue template".
+#
+# question.md carried an exclusion in the first draft, on the reasoning that a
+# question produces no diff so 'estimated diff' and 'allowed paths' are
+# meaningless. One reviewer upheld that; the other ruled the acceptance says
+# "every issue template" without qualification. The acceptance won -- a question
+# that turns out to be a bug or a feature ask becomes work, and the card is
+# cheaper to have present than to remember to add. Its card says so in as many
+# words and permits N/A while the issue stays a question.
+#
+# config.yml stays excluded and both reviewers agreed: it is the chooser
+# configuration, not a template.
+test_issue_templates_carry_a_scope_card() {
+    local DIR="$REPO_ROOT/.github/ISSUE_TEMPLATE"
+    if [ ! -d "$DIR" ]; then fail "#538: no .github/ISSUE_TEMPLATE/ directory"; return; fi
+    local t missing_any=""
+    for t in bug_report.md feature_request.md question.md; do
+        if [ ! -f "$DIR/$t" ]; then
+            fail "#538: expected issue template $t is missing"
+            return
+        fi
+        if ! grep -qi 'scope card' "$DIR/$t"; then
+            missing_any="$missing_any $t(no-card)"
+            continue
+        fi
+        local f
+        local IFS=':'
+        for f in $SCOPE_CARD_FIELDS; do
+            grep -qi "$f" "$DIR/$t" || missing_any="$missing_any $t(no:'$f')"
+        done
+        unset IFS
+    done
+    if [ -n "$missing_any" ]; then
+        fail "#538: issue template(s) missing the scope card or its fields:$missing_any — the card has to exist before work starts, which means on the issue"
+        return
+    fi
+    pass "#538: all three issue templates carry a scope card with every textually-checkable field"
+}
+
+test_sdlc_skill_planning_requires_a_scope_card
+test_scope_card_breaker_conditions_are_named
+test_issue_templates_carry_a_scope_card
+
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then
