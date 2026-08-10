@@ -9,6 +9,14 @@
 # a mechanical inventory of every file/output that hits a session, so trim
 # candidates surface before they bloat the context budget.
 #
+# #489: THIS TOOL IS ADVISORY. The TRIM threshold is not a measured ceiling —
+# it is 5,000 (a round number) times 4 (a chars-per-token rule of thumb from a
+# different vendor), and SDLC_AUDIT_THRESHOLD_TOKENS can move it at will. A
+# test once turned that flag into a CI failure, which made an unmeasured number
+# a hard contract on a shipped file and forced every later edit to buy its
+# bytes by degrading something else. That gate is deleted. No measured ceiling
+# exists today; #483 is where one would come from.
+#
 # Usage:
 #   scripts/audit-session-load.sh           # human-readable table
 #   scripts/audit-session-load.sh --json    # machine-readable

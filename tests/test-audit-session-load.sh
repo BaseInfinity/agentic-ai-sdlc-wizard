@@ -143,33 +143,68 @@ test_audit_ranks_by_size_descending() {
     fi
 }
 
-# Eat-our-own-dogfood: the wizard's own SKILL.md files must come in below the
-# bloat threshold the audit warns about. Phase 2 follow-up to PR #272 — the
-# audit tool flagged 2 of our 4 SKILL.md files (sdlc 12,427 tokens; update
-# 8,555 tokens) on the day we shipped it. Acting on the tool's findings closes
-# the Prove-It loop: a tool that surfaces real issues whose owner ignores them
-# is just a louder lint warning.
-test_wizard_own_skills_below_threshold() {
+# #489: the build gate that used to live here is deleted.
+#
+# It failed CI whenever a SKILL.md crossed the audit's TRIM threshold, which
+# made 20,000 bytes a hard contract on a shipped file. That number was never
+# measured: `scripts/audit-session-load.sh` computes it as THRESHOLD_TOKENS
+# (5,000, a round number) times 4 (a chars-per-token rule of thumb from a
+# different vendor), and the whole thing is tunable by an environment variable.
+# Under the CLAIM RULE we cannot enforce a number we never measured.
+#
+# The cost was real and compounding. With sdlc/SKILL.md sitting at 19,997 of
+# 20,000, every subsequent edit had to buy its own bytes by degrading another
+# instruction in the same file, and that trading shipped three defects in a
+# single session — including invalid JSON and a dropped instruction value.
+# A budget that forces a silent trade on every edit is a circling generator.
+#
+# The audit itself is untouched: it still reports sizes and still raises TRIM,
+# because observability was always its job. Only build-red is gone. If a real
+# ceiling is ever measured, it belongs here — see #483, which is where such a
+# measurement would come from.
+#
+# Still enforced elsewhere, deliberately: tests/test-cowork-drift.sh keeps
+# skills/sdlc/SKILL.md and cowork/skills/sdlc/SKILL.md byte-identical.
+#
+# One thing the deleted test was doing incidentally, kept below: it was the
+# only place that ran a real json.loads over the audit's REAL multi-entry
+# output. Cross-model review caught that removing the gate would have taken
+# that coverage with it — the other JSON test greps for substrings, so
+# stripping the commas between entries left all nine survivors green while
+# `python3 -m json.tool` rejected the output.
+
+# Parses the audit's output for THIS repo, which is the only fixture with
+# enough entries for a malformed separator to show up. Asserts validity and
+# shape only — never sizes, never flags. That distinction is the point: the
+# tool's contract is that it emits parseable JSON, not that any file in this
+# repo is under some particular number.
+test_audit_json_is_parseable_on_real_repo() {
     local repo_root="$SCRIPT_DIR/.."
-    local output flagged
+    local output verdict
     output=$(SDLC_AUDIT_ROOT="$repo_root" "$AUDIT" --json 2>&1)
-    flagged=$(printf '%s' "$output" | python3 -c '
+    verdict=$(printf '%s' "$output" | python3 -c '
 import json, sys
 try:
     data = json.loads(sys.stdin.read())
-except json.JSONDecodeError:
-    print("INVALID_JSON")
+except json.JSONDecodeError as e:
+    print("INVALID_JSON: %s" % e)
     sys.exit(0)
-flagged = [e["path"] for e in data.get("entries", [])
-           if e.get("type") == "skill" and e.get("flag") == "TRIM"]
-print("\n".join(flagged))
+entries = data.get("entries")
+if not isinstance(entries, list):
+    print("NO_ENTRIES_LIST")
+elif len(entries) < 2:
+    print("TOO_FEW_ENTRIES: %d" % len(entries))
+elif any(k not in e for e in entries for k in ("path", "type", "flag")):
+    print("ENTRY_MISSING_KEYS")
+elif "trim_candidate_count" not in data:
+    print("NO_TRIM_COUNT")
+else:
+    print("OK")
 ' 2>/dev/null)
-    if [ -z "$flagged" ]; then
-        pass "wizard repo's own SKILL.md files all stay below 5000-token threshold"
-    elif [ "$flagged" = "INVALID_JSON" ]; then
-        fail "audit --json produced invalid JSON; cannot enforce SKILL budget"
+    if [ "$verdict" = "OK" ]; then
+        pass "audit --json stays parseable with the real repo's multi-entry output"
     else
-        fail "wizard SKILL.md files exceed token threshold (act on the tool's findings): $flagged"
+        fail "audit --json must parse and carry >=2 well-formed entries, got: $verdict"
     fi
 }
 
@@ -221,11 +256,11 @@ test_audit_flags_oversized_skill_as_trim_candidate
 test_audit_does_not_flag_small_files
 test_audit_threshold_boundary_inclusive
 test_audit_json_output_includes_trim_count
+test_audit_json_is_parseable_on_real_repo
 test_audit_threshold_override
 test_audit_empty_repo_no_crash
 test_audit_ranks_by_size_descending
 test_audit_scans_consumer_install_layout
-test_wizard_own_skills_below_threshold
 
 echo ""
 echo "=== Results ==="
