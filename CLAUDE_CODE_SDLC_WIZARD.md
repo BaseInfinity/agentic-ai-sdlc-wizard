@@ -2781,6 +2781,12 @@ Reproduce → Isolate → Root Cause → Fix → Regression Test
 
 **Environment-specific bugs** (works locally, fails in CI/staging/prod): Check environment differences (env vars, OS version, dependency versions, file permissions). Reproduce the environment locally if possible. Add logging at the failure point — don't guess, observe.
 
+### Fixed Means Observed
+
+Before reporting a fix, name the observable that would differ if it were NOT fixed — then go look at it. Settings file edited → read the live process env, not the file. Hook changed → fire it. Threshold changed → measure it against the real files. If the only evidence is "I made the edit", the state is *submitted*, not fixed.
+
+**Out-of-repo changes get no gate** (global `settings.json`, env vars, shell rc, scheduler entries): no diff, no PR, no reviewer ever sees them. Before editing, check `.reviews/` artifacts and memory for prior findings on the subject; state the verification command in the same message as the change; if a live process won't pick up the edit (env vars need a restart), say so instead of "fixed". **Evidence:** 2026-08-08 (#525) — a settings fix was reported fixed while the bug was still live; the answer was already in `.reviews/` from PR #468.
+
 ## Step 8: Create CLAUDE.md
 
 Create `CLAUDE.md` in your project root. This is your project-specific configuration:
