@@ -63,16 +63,42 @@ COMMAND_FIELD=$(printf '%s' "$TOOL_INPUT" \
 # never look like more than one word to it.
 COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
     | sed -E 's/^"command"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')
+# The interior class must mirror the escape-aware extraction above:
+# `[^\\]*` cannot cross the backslashes inside a heredoc body, so a quoted
+# span containing one was never collapsed. `([^\\]|\\[^"])*` consumes an
+# escaped non-quote as one unit; neither alternative can match `\"`, so the
+# span still self-terminates at the real closing quote and cannot over-consume.
 MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
-    | sed -E -e 's/\\"[^\\]*\\"/Q/g' -e "s/'[^']*'/Q/g")
+    | sed -E -e 's/\\"([^\\]|\\[^"])*\\"/Q/g' -e "s/'[^']*'/Q/g")
+
+# #533 P0-3: decode literal \n and \r to real newlines — AFTER masking.
+#
+# The gate has never seen a `git commit` that was not on the first line. In
+# COMMAND_VALUE a JSON newline is still the two characters `\` and `n`, so in
+# `echo hi\ngit commit` the `\bgit` below sits immediately after the word
+# character `n` and the word boundary never fires. Verified against this
+# hook's own parent commit: `git add -A\ngit commit -m "x"` returned 0 with no
+# review artifact present at all. Every multi-line command has walked past
+# this gate since it was written. That is the gate's whole purpose failing
+# open, and it is not a regression from the in-flight lane — it predates it.
+#
+# Order is load-bearing: masking is line-based (sed), so a quoted span that
+# spans lines could no longer be collapsed once the newlines are real.
+MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" | sed -E -e 's/\\n/\n/g' -e 's/\\r/\n/g')
 
 # #236(b): literal substring "git commit" misses git's own global-flag forms
 # — `git -C <dir> commit` and `git -c k=v commit` are valid invocations that
 # never contain that exact two-word substring, and previously sailed through
 # unreviewed. Regex allows any number of -C/-c (with their required value),
 # --long-flag, or single-letter-flag tokens between "git" and "commit".
+#
+# #533 P0-4: git accepts a short option's value attached, so `git -C/other
+# commit` is a real invocation the `-C\s+\S+` alternative could not match —
+# it fell through to `-[A-Za-z]`, which then demanded `commit` where `/other`
+# stood. Verified against this hook's own parent: exit 0, no artifact needed.
+# `\s*` in place of `\s+` covers both spellings for -C and -c alike.
 if ! printf '%s' "$MASKED_COMMAND" \
-    | grep -qE '\bgit(\s+(-C\s+\S+|-c\s+\S+|--\S+|-[A-Za-z]))*\s+commit\b'; then
+    | grep -qE '\bgit(\s+(-[Cc]\s*\S+|--\S+|-[A-Za-z]))*\s+commit\b'; then
     exit 0
 fi
 
@@ -108,23 +134,94 @@ STATUS=$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$REVIEW_FILE" \
 # file: every git capture needs `|| true` (a non-match exits 1 and kills the
 # script), and the comparison must be a full `if`, never `[ ... ] && VAR=0`
 # (a false test returns 1 and kills the script).
-ON_DEFAULT_BRANCH=1
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
-DEFAULT_BRANCH="${DEFAULT_BRANCH#origin/}"
-case "$CURRENT_BRANCH" in
-    ""|HEAD|main|master) ;;
-    *)
-        if [ -n "$DEFAULT_BRANCH" ]; then
-            if [ "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" ]; then ON_DEFAULT_BRANCH=0; fi
-        elif git show-ref --verify --quiet refs/heads/main \
-            || git show-ref --verify --quiet refs/heads/master \
-            || git show-ref --verify --quiet refs/remotes/origin/main \
-            || git show-ref --verify --quiet refs/remotes/origin/master; then
-            ON_DEFAULT_BRANCH=0
+# LANE_OK is a conjunction of independent NECESSARY conditions. Anything
+# unproven refuses the lane. Every earlier draft of this failed because it
+# looked for evidence that the branch is NOT the default; the only sound
+# question is whether it is PROVABLY not.
+LANE_OK=0
+
+# (a) The command must provably operate on this hook's own cwd.
+#
+# The resolver below reads the repository the hook is standing in. If the
+# intercepted command targets a different one, every answer it gives is about
+# the wrong repo — `git -C <repo-on-main> commit` was granted the lane while
+# the hook's cwd sat on a feature branch. Before the lane existed an in-flight
+# status blocked unconditionally, so that mismatch failed strict; the lane
+# converted it to fail lenient.
+#
+# This is a POSITIVE shape test, not a blacklist of escapes, and it gates ONLY
+# the lane. Detection above stays maximally broad; eligibility is maximally
+# narrow. Command substitution needs no ban — `$(...)` runs in a subshell whose
+# cwd cannot affect the parent's commit — which is what keeps heredocs eligible.
+#
+# Known limitation, accepted deliberately: a bare `git commit -F - <<'MSG'`
+# loses the lane. That heredoc body is unquoted, so masking cannot reach it and
+# a prose line is indistinguishable from a command segment here. The three forms
+# that carry a body through a quoted span — `-m "multi\nline"`, `-m "$(cat
+# <<'EOF' ...)"`, and `-F <file>` — all keep it, so no commit is prevented; one
+# spelling of it is. Failing strict is the right direction for a coarse test.
+ELIGIBLE=1
+# Any relocation token anywhere refuses. `-C` matches with no separator
+# requirement: `git -C/other/repo commit` is valid git.
+if printf '%s' "$MASKED_COMMAND" | grep -qE '(^|[^[:alnum:]_.-])(cd|pushd|popd|chdir)([^[:alnum:]_.-]|$)|(^|[[:space:]])-C|--git-dir|--work-tree|GIT_DIR|GIT_WORK_TREE'; then
+    ELIGIBLE=0
+fi
+# Every segment must itself be a git invocation. Counting, never `grep -qv`:
+# a wrapper script or a non-git chain member can relocate in ways no token
+# test sees.
+if [ "$ELIGIBLE" -eq 1 ]; then
+    _seg_total=$(printf '%s' "$MASKED_COMMAND" | tr '\n' '\036' | sed -E 's/(&&|\|\||;|\|)/\036/g' | tr '\036' '\n' | grep -cE '[^[:space:]]' || true)
+    _seg_git=$(printf '%s' "$MASKED_COMMAND" | tr '\n' '\036' | sed -E 's/(&&|\|\||;|\|)/\036/g' | tr '\036' '\n' | grep -cE '^[[:space:]]*git([[:space:]]|$)' || true)
+    if [ "$_seg_total" -ne "$_seg_git" ]; then
+        ELIGIBLE=0
+    fi
+fi
+
+if [ "$ELIGIBLE" -eq 1 ]; then
+    # (b) Must be a real work tree. Kills bare repos.
+    _INSIDE=$(git rev-parse --is-inside-work-tree 2>/dev/null || true)
+    # (c) HEAD must be attached. `symbolic-ref` fails cleanly when detached,
+    #     where `rev-parse --abbrev-ref` prints the literal string "HEAD".
+    CURRENT_BRANCH=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    if [ "$_INSIDE" = "true" ] && [ -n "$CURRENT_BRANCH" ]; then
+        # (d) Reserved-trunk denylist, case-insensitive. This is the second
+        #     independent witness, and it is load-bearing rather than
+        #     decorative: a STALE origin/HEAD is offline-indistinguishable
+        #     from a fresh one (`git remote set-head -a` needs the network),
+        #     so a repo whose trunk moved to `develop` while origin/HEAD still
+        #     says `master` would otherwise resolve "current != default" and
+        #     take the lane ON its trunk. This check can only ever add
+        #     strictness: a false refusal costs a lane, never soundness.
+        _LOWER=$(printf '%s' "$CURRENT_BRANCH" | tr '[:upper:]' '[:lower:]')
+        case "$_LOWER" in
+            main|master|develop|development|dev|trunk|default|stable|prod|production|release|releases|integration|next)
+                _RESERVED=1 ;;
+            *)  _RESERVED=0 ;;
+        esac
+        if [ "$_RESERVED" -eq 0 ]; then
+            # (e) At least one remote must yield a VERIFIED default, and the
+            #     current branch must differ from every remote's default. A
+            #     dangling symref target is not evidence, so the target ref
+            #     must itself exist. The vestigial refs/heads/main fallback is
+            #     deliberately gone: "a main ref exists somewhere" proved
+            #     nothing about which branch this repo's trunk is.
+            _ANY_VERIFIED=0
+            _CONFLICT=0
+            for _r in $(git remote 2>/dev/null || true); do
+                _d=$(git symbolic-ref --quiet --short "refs/remotes/$_r/HEAD" 2>/dev/null || true)
+                _d="${_d#"$_r"/}"
+                [ -z "$_d" ] && continue
+                if git show-ref --verify --quiet "refs/remotes/$_r/$_d"; then
+                    _ANY_VERIFIED=1
+                    if [ "$CURRENT_BRANCH" = "$_d" ]; then _CONFLICT=1; fi
+                fi
+            done
+            if [ "$_ANY_VERIFIED" -eq 1 ] && [ "$_CONFLICT" -eq 0 ]; then
+                LANE_OK=1
+            fi
         fi
-        ;;
-esac
+    fi
+fi
 
 case "$STATUS" in
     PENDING_REVIEW|PENDING_RECHECK)
@@ -138,10 +235,10 @@ case "$STATUS" in
         # commit_sha is deliberately not read here: on this lane it is either
         # absent by design (never certified) or stale by design (a round is
         # open). Freshness is lane CERTIFIED/REVIEWED's job, and it keeps it.
-        if [ "$ON_DEFAULT_BRANCH" -eq 0 ]; then
+        if [ "$LANE_OK" -eq 1 ]; then
             exit 0
         fi
-        echo "CROSS-MODEL REVIEW REQUIRED: status is '$STATUS' (a review round is open) and this looks like the default branch${DEFAULT_BRANCH:+ [$DEFAULT_BRANCH]}${CURRENT_BRANCH:+, current [$CURRENT_BRANCH]}. In-flight work may be committed on a non-default branch so reviewers get an immutable SHA instead of a live tree; reaching the default branch still needs a certification bound to that exact HEAD. Human override: relaunch Claude Code with CODEX_GATE_SKIP=1 in its environment — this hook runs before your command, so an inline prefix inside a tool call cannot reach it." >&2
+        echo "CROSS-MODEL REVIEW REQUIRED: status is '$STATUS' (a review round is open) but this commit is not provably off the default branch${CURRENT_BRANCH:+ [current: $CURRENT_BRANCH]}. In-flight work may be committed on a non-default branch so reviewers get an immutable SHA instead of a live tree; reaching the default branch still needs a certification bound to that exact HEAD. Human override: relaunch Claude Code with CODEX_GATE_SKIP=1 in its environment — this hook runs before your command, so an inline prefix inside a tool call cannot reach it." >&2
         exit 2
         ;;
     CERTIFIED|REVIEWED)

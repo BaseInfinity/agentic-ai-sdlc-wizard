@@ -3896,6 +3896,16 @@ _gate_repo() {
     printf '%s' "$d"
 }
 
+_gate_clone() {
+    # $1 = dir, $2 = the branch origin/HEAD should name. Gives the fixture the
+    # shape `git clone` leaves behind, which is the ONLY shape the resolver
+    # accepts as proof. A bare `git init` repo has no default-branch evidence
+    # at all, so it must block — see F4.
+    git -C "$1" remote add origin /nonexistent-not-contacted
+    git -C "$1" update-ref "refs/remotes/origin/$2" "$(git -C "$1" rev-parse HEAD)"
+    git -C "$1" symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$2"
+}
+
 _gate_run() {
     # $1 = dir, $2 = command json value. Echoes output, RETURNS the hook's
     # exit code. It must return rather than set a global: callers invoke this
@@ -3915,6 +3925,7 @@ _gate_run() {
 test_codex_gate_inflight_recheck_allowed_on_feature_branch() {
     local d out
     d=$(_gate_repo feature/x)
+    _gate_clone "$d" main
     printf '{"status":"PENDING_RECHECK","round":2}' > "$d/.reviews/handoff.json"
     out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
     rm -rf "$d"
@@ -3932,6 +3943,7 @@ test_codex_gate_inflight_recheck_allowed_on_feature_branch() {
 test_codex_gate_inflight_review_allowed_on_feature_branch() {
     local d out
     d=$(_gate_repo feature/x)
+    _gate_clone "$d" main
     printf '{"status":"PENDING_REVIEW","round":1}' > "$d/.reviews/handoff.json"
     out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
     rm -rf "$d"
@@ -4013,6 +4025,10 @@ test_codex_gate_inflight_silent_on_non_commit_command() {
 test_codex_gate_inflight_blocked_on_default_branch() {
     local d out
     d=$(_gate_repo "")
+    # Clone-shaped and pointed at the branch we are standing on, so this blocks
+    # because it IS the default branch — not merely because a bare `git init`
+    # fixture offers no evidence either way.
+    _gate_clone "$d" "$(git -C "$d" symbolic-ref --quiet --short HEAD)"
     printf '{"status":"PENDING_RECHECK","round":2}' > "$d/.reviews/handoff.json"
     out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
     rm -rf "$d"
@@ -4051,6 +4067,159 @@ test_codex_gate_feature_branch_does_not_relax_stale_check() {
     else
         fail "#533: stale cert on a feature branch must exit 2 stale, got exit=$_GATE_EXIT out: $out"
     fi
+}
+
+# ---- #533 round 2: the two silent bypasses Codex reproduced, plus a third ----
+#
+# Round 1 shipped a lane whose branch check consulted whatever refs happened to
+# be lying around, and whose "is this repo the one being committed to" question
+# was never asked at all. Both failed LENIENT, which is the only direction that
+# matters: the lane turned a hard block into a silent allow.
+#
+# The rule the F-tests pin: proof, not absence of contradiction. The resolver
+# admits exactly one shape — a remote whose `refs/remotes/<r>/HEAD` symref
+# resolves to a ref that actually exists — and every other topology blocks.
+# A local `main` ref, a stale symref, a dangling symref, and a bare `git init`
+# are all "we do not know", and "we do not know" is not a lane.
+#
+# The rule the G-tests pin: the hook can only vouch for the repository it is
+# standing in, so a command that relocates git elsewhere is ineligible by
+# shape. This is deliberately coarse — `cd`, `-C`, `--git-dir`, `GIT_DIR` and
+# any non-git segment refuse the lane rather than trying to model the shell.
+# Refusing the lane is not a block; it just falls through to the old rules.
+
+_gate_lane_case() {
+    # $1 = label, $2 = expected exit, $3 = command json value, $4.. = setup
+    # commands run against the fixture dir (available to them as $d).
+    local label="$1" want="$2" cmd="$3" out rc
+    shift 3
+    d=$(_gate_repo "")
+    mkdir -p "$d/.reviews"
+    printf '{"status":"PENDING_RECHECK","round":2}' > "$d/.reviews/handoff.json"
+    for _s in "$@"; do eval "$_s"; done
+    out=$(_gate_run "$d" "$cmd") && rc=0 || rc=$?
+    rm -rf "$d"
+    if [ "$rc" -eq "$want" ]; then
+        pass "#533: $label"
+    else
+        fail "#533: $label — want exit $want, got $rc: $out"
+    fi
+}
+
+_GC='git commit -m \"wip\"'
+
+# F — the resolver. Every row that is not a verified clone must block.
+test_codex_gate_resolver_topologies() {
+    _gate_lane_case "clone-shaped feature branch is the ONLY lane" 0 "$_GC" \
+        'git -C "$d" checkout -q -B feature/x' '_gate_clone "$d" main'
+
+    # Codex reproduced this one: the default moved to develop years ago, the
+    # symref was never repointed, and "origin/HEAD names something else" read
+    # as proof of a feature branch.
+    _gate_lane_case "stale origin/HEAD does not prove non-default" 2 "$_GC" \
+        'git -C "$d" checkout -q -B develop' '_gate_clone "$d" master'
+
+    # Codex reproduced this one too: a leftover master ref from a rename is
+    # not evidence about which branch the remote considers default.
+    _gate_lane_case "vestigial local master is not evidence" 2 "$_GC" \
+        'git -C "$d" checkout -q -B develop' \
+        'git -C "$d" update-ref refs/heads/master "$(git -C "$d" rev-parse HEAD)"'
+
+    _gate_lane_case "dangling origin/HEAD blocks" 2 "$_GC" \
+        'git -C "$d" checkout -q -B feature/x' \
+        'git -C "$d" remote add origin /nonexistent-not-contacted' \
+        'git -C "$d" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/gone'
+
+    # The common consumer shape. `git init` with no remote knows nothing about
+    # a default branch, so it gets no lane.
+    _gate_lane_case "git init with no remote blocks" 2 "$_GC" \
+        'git -C "$d" checkout -q -B feature/x'
+
+    # A trunk name must not be admitted just because the casing differs.
+    _gate_lane_case "reserved trunk name blocks case-insensitively" 2 "$_GC" \
+        'git -C "$d" checkout -q -B Develop' '_gate_clone "$d" main'
+
+    # Fork workflow: origin says feature/x is not default, upstream says it is.
+    # Any remote calling it default is enough to refuse the lane.
+    _gate_lane_case "a second remote calling it default blocks" 2 "$_GC" \
+        'git -C "$d" checkout -q -B feature/x' '_gate_clone "$d" main' \
+        'git -C "$d" remote add upstream /nonexistent-not-contacted-2' \
+        'git -C "$d" update-ref refs/remotes/upstream/feature/x "$(git -C "$d" rev-parse HEAD)"' \
+        'git -C "$d" symbolic-ref refs/remotes/upstream/HEAD refs/remotes/upstream/feature/x'
+}
+
+# G — targeting and detection. The hook vouches for its own cwd or nothing.
+test_codex_gate_lane_targeting_and_detection() {
+    local clone='git -C "$d" checkout -q -B feature/x' mk='_gate_clone "$d" main'
+
+    _gate_lane_case "plain commit takes the lane" 0 "$_GC" "$clone" "$mk"
+    _gate_lane_case "git add && commit takes the lane" 0 \
+        'git add -A \&\& git commit -m \"wip\"' "$clone" "$mk"
+    _gate_lane_case "-c overrides take the lane" 0 \
+        'git -c user.name=\"A B\" commit -m \"wip\"' "$clone" "$mk"
+
+    # Codex P0-1: the hook read its own branch and vouched for a DIFFERENT
+    # repository, which was sitting on main. Every relocation form must refuse.
+    _gate_lane_case "git -C elsewhere refuses the lane" 2 \
+        'git -C /other commit -m \"wip\"' "$clone" "$mk"
+    _gate_lane_case "cd elsewhere refuses the lane" 2 \
+        'cd /other \&\& git commit -m \"wip\"' "$clone" "$mk"
+    _gate_lane_case "subshell cd refuses the lane" 2 \
+        '(cd /other; git commit -m \"wip\")' "$clone" "$mk"
+    _gate_lane_case "--git-dir refuses the lane" 2 \
+        'git --git-dir=/other/.git commit -m \"wip\"' "$clone" "$mk"
+    _gate_lane_case "GIT_DIR env prefix refuses the lane" 2 \
+        'GIT_DIR=/other/.git git commit -m \"wip\"' "$clone" "$mk"
+    # The work-tree pair relocates the tree rather than the repo, and reaches a
+    # different checkout just as effectively. The relocation regex covered both
+    # from the start; these pin it so a future trim cannot drop them silently.
+    _gate_lane_case "--work-tree refuses the lane" 2 \
+        'git --work-tree=/other commit -m \"wip\"' "$clone" "$mk"
+    _gate_lane_case "GIT_WORK_TREE env prefix refuses the lane" 2 \
+        'GIT_WORK_TREE=/other git commit -m \"wip\"' "$clone" "$mk"
+    _gate_lane_case "a non-git segment refuses the lane" 2 \
+        'npm run prepare \&\& git commit -m \"wip\"' "$clone" "$mk"
+    _gate_lane_case "a later relocation refuses the whole command" 2 \
+        'git commit -m \"a\"\ncd /other\ngit commit -m \"b\"' "$clone" "$mk"
+
+    # P0-3, found while verifying the above. COMMAND_VALUE holds a newline as
+    # the two characters \ and n, so `\bgit` sat right after the word character
+    # n and the boundary never fired. Confirmed against 435708a: a multi-line
+    # command reached exit 0 with NO artifact present at all. Every multi-line
+    # commit in this hook's history walked straight past the gate.
+    _gate_lane_case "multi-line add + commit takes the lane" 0 \
+        'git add -A\ngit commit -m \"wip\"' "$clone" "$mk"
+    _gate_lane_case "multi-line commit is DETECTED at all" 2 \
+        'echo hi\ngit commit -m \"wip\"' "$clone" "$mk" 'rm -rf "$d/.reviews"'
+
+    # P0-4, same family. git takes a short option's value attached, so
+    # `git -C/other commit` is real and `-C\s+\S+` could not match it; it fell
+    # to `-[A-Za-z]`, which then wanted `commit` where `/other` stood. Also
+    # confirmed exit 0 against 435708a.
+    _gate_lane_case "attached -C value is DETECTED at all" 2 \
+        'git -C/other commit -m \"wip\"' "$clone" "$mk"
+
+    # The lane's usable surface, pinned. A conventional-commit body is prose,
+    # and prose contains the word cd and the characters ; and && — so the three
+    # forms that carry a body through a QUOTED span must survive masking, or
+    # #533 delivers a lane no real commit in this repo can take.
+    _gate_lane_case "quoted multi-line -m keeps the lane" 0 \
+        'git commit -q -m \"fix(x): a thing\n\nprose mentioning cd here\"' "$clone" "$mk"
+    _gate_lane_case "-F with a message file keeps the lane" 0 \
+        'git commit -q -F /tmp/msg.txt' "$clone" "$mk"
+
+    # The one form that does NOT: a bare `-F -` heredoc. Its body is unquoted,
+    # so masking cannot reach it and the shape test cannot tell a prose line
+    # from a command segment. Refusing is the correct direction to fail — the
+    # commit is not blocked, it just needs one of the forms above. Pinned so
+    # the limitation is a decision on record rather than a surprise later.
+    _gate_lane_case "bare -F - heredoc refuses the lane (known, fail-strict)" 2 \
+        'git commit -q -F - <<'"'"'MSG'"'"'\nfix(x): a thing\n\nprose mentioning cd here\nMSG' \
+        "$clone" "$mk"
+
+    _gate_lane_case "heredoc message with shell metacharacters keeps the lane" 0 \
+        'git commit -q -m \"$(cat <<'"'"'EOF'"'"'\nfix: a thing; and another \&\& more\nmentions cd /tmp in the body\nEOF\n)\"' \
+        "$clone" "$mk"
 }
 
 # Changed for #533: this tmpdir was not a git repo, so after the in-flight
@@ -4199,6 +4368,8 @@ test_codex_gate_inflight_silent_on_non_commit_command
 test_codex_gate_inflight_blocked_on_default_branch
 test_codex_gate_feature_branch_still_needs_an_artifact
 test_codex_gate_feature_branch_does_not_relax_stale_check
+test_codex_gate_resolver_topologies
+test_codex_gate_lane_targeting_and_detection
 test_codex_gate_blocks_commit_without_review
 test_codex_gate_allows_commit_with_certified_review
 test_codex_gate_allows_commit_with_reviewed_status
