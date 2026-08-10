@@ -46,7 +46,7 @@ This repository uses the SDLC Harness to enforce:
 |------|---------|---------|
 | `sdlc-prompt-check.sh` | Every prompt | SDLC baseline reminder, claude-setup-wizard redirect when SDLC.md/TESTING.md missing |
 | `tdd-pretool-check.sh` | Before Write/Edit/MultiEdit | Blocks (exit 2) implementation writes to `src/**` unless a test file was touched earlier this session. This repo's own gate is scoped to `hooks/`, `cli/`, `.github/workflows/` via `SDLC_TDD_SRC_PATTERN` (no `src/` dir here) |
-| `codex-gate-check.sh` | Before `git commit` (Bash) | Blocks (exit 2) commits without a REVIEWED/CERTIFIED `.reviews/handoff.json`, or with a stale (`commit_sha` mismatch) certification |
+| `codex-gate-check.sh` | Before `git commit` (Bash) | Blocks (exit 2) commits without a `.reviews/handoff.json`, with a stale (`commit_sha` mismatch) certification, or with an unrecognised status. An **in-flight** status (`PENDING_REVIEW`/`PENDING_RECHECK`) may commit, but only on a branch the hook can prove is not the default one — so a review round has an immutable SHA to read instead of a live tree (#533) |
 | `instructions-loaded-check.sh` | Session start | Wizard-version + CC-version staleness nudges, cross-model-review staleness check, autocompact compound-misconfig check, dual-channel-install check |
 | `model-effort-check.sh` | Session start | Nudges upgrade when effort/model is behind recommended |
 | `precompact-seam-check.sh` | Before manual `/compact` | Blocks compact mid-rebase/merge/cherry-pick (requires CC v2.1.105+) |

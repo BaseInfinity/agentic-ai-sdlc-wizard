@@ -3864,10 +3864,203 @@ test_codex_gate_silent_on_non_commit_commands() {
     fi
 }
 
+# ---- #533: the branch-scoped in-flight lane ----
+#
+# The gate blocked every commit unless status was REVIEWED or CERTIFIED, but
+# the shipped protocol prescribes PENDING_REVIEW / PENDING_RECHECK for the
+# whole duration of a review round. So work could not be saved exactly while
+# it was being reviewed, which forced reviewers onto a mutable working tree —
+# and during #520 round 18 a reviewer read a tree a mutation harness was
+# concurrently mutating, and filed a fully-diagnosed P1 against a defect that
+# existed only in the mutation. An entire round spent on an artifact.
+#
+# The lane: an in-flight status may commit, but ONLY onto a branch the hook can
+# positively prove is not the default branch. The gate's purpose is stopping
+# unreviewed work from reaching the default branch, never stopping work from
+# being saved. Everything else blocks exactly as before.
+#
+# Fixture convention: `git init -q` then `git checkout -q -B <name>` — never
+# `git init -b`, which needs git >= 2.28 and this hook ships to consumers.
+# The origin/HEAD ref is built fully offline; it is a local ref that `git
+# clone` writes, so no network is involved in reading or faking it.
+_gate_repo() {
+    # $1 = branch name. Echoes the tmpdir. Caller rm -rf's it.
+    local d
+    d=$(mktemp -d)
+    git -C "$d" init -q
+    git -C "$d" config user.email t@t.t
+    git -C "$d" config user.name t
+    git -C "$d" commit -q --allow-empty -m base
+    [ -n "${1:-}" ] && git -C "$d" checkout -q -B "$1"
+    mkdir -p "$d/.reviews"
+    printf '%s' "$d"
+}
+
+_gate_run() {
+    # $1 = dir, $2 = command json value. Echoes output, RETURNS the hook's
+    # exit code. It must return rather than set a global: callers invoke this
+    # in a command substitution, which is a subshell, so any variable it
+    # assigned would be discarded — the first draft did exactly that and every
+    # assertion read an empty exit code, which made the pinning tests fail for
+    # a reason that had nothing to do with the hook.
+    local out rc
+    out=$(printf '{"tool_input":{"command":"%s"}}' "$2" \
+        | (cd "$1" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && rc=0 || rc=$?
+    printf '%s' "$out"
+    return "$rc"
+}
+
+# T1 — the defect itself. A round is open; work must be savable.
+# The empty-output half also kills "branch resolution leaks git stderr".
+test_codex_gate_inflight_recheck_allowed_on_feature_branch() {
+    local d out
+    d=$(_gate_repo feature/x)
+    printf '{"status":"PENDING_RECHECK","round":2}' > "$d/.reviews/handoff.json"
+    out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
+    rm -rf "$d"
+    if [ "$_GATE_EXIT" -eq 0 ] && [ -z "$out" ]; then
+        pass "#533: PENDING_RECHECK commits on a feature branch (exit 0, silent)"
+    else
+        fail "#533: PENDING_RECHECK on feature branch should exit 0 silent, got exit=$_GATE_EXIT out: $out"
+    fi
+}
+
+# T2 — round 1 is the worse case, not a lesser one. The wizard's canonical
+# handoff is PENDING_REVIEW/round 1, and that is the status that holds while
+# the FIRST reviewer reads — exactly the configuration that produced the
+# phantom P1. Admitting only PENDING_RECHECK would leave it on a live tree.
+test_codex_gate_inflight_review_allowed_on_feature_branch() {
+    local d out
+    d=$(_gate_repo feature/x)
+    printf '{"status":"PENDING_REVIEW","round":1}' > "$d/.reviews/handoff.json"
+    out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
+    rm -rf "$d"
+    if [ "$_GATE_EXIT" -eq 0 ] && [ -z "$out" ]; then
+        pass "#533: PENDING_REVIEW commits on a feature branch (exit 0, silent)"
+    else
+        fail "#533: PENDING_REVIEW on feature branch should exit 0 silent, got exit=$_GATE_EXIT out: $out"
+    fi
+}
+
+# T3 — forces the origin/HEAD lookup to exist. A hardcoded main|master list
+# would hand a develop-trunk repo the lenient lane on its own trunk.
+test_codex_gate_inflight_blocked_on_resolved_default_develop() {
+    local d out
+    d=$(_gate_repo develop)
+    git -C "$d" update-ref refs/remotes/origin/develop "$(git -C "$d" rev-parse HEAD)"
+    git -C "$d" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
+    printf '{"status":"PENDING_RECHECK","round":2}' > "$d/.reviews/handoff.json"
+    out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
+    rm -rf "$d"
+    if [ "$_GATE_EXIT" -eq 2 ]; then
+        pass "#533: blocked on a resolved default branch named develop"
+    else
+        fail "#533: develop-as-resolved-default should exit 2, got exit=$_GATE_EXIT out: $out"
+    fi
+}
+
+# T4 — `git rev-parse --abbrev-ref HEAD` returns the literal string HEAD when
+# detached, which a naive check would classify as a feature branch.
+test_codex_gate_inflight_blocked_on_detached_head() {
+    local d out
+    d=$(_gate_repo feature/x)
+    git -C "$d" checkout -q --detach
+    printf '{"status":"PENDING_RECHECK","round":2}' > "$d/.reviews/handoff.json"
+    out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
+    rm -rf "$d"
+    if [ "$_GATE_EXIT" -eq 2 ]; then
+        pass "#533: blocked on detached HEAD (cannot prove it is off the default branch)"
+    else
+        fail "#533: detached HEAD should exit 2, got exit=$_GATE_EXIT out: $out"
+    fi
+}
+
+# T5 — the advertised-but-unreachable escape hatch, in executable form. Every
+# message told callers to set CODEX_GATE_SKIP=1, but the hook reads it from
+# its own process environment; a PreToolUse hook runs BEFORE the command, so
+# an inline prefix inside a tool call cannot produce it. Verified live: two
+# identical blocks. The mechanism is correct and stays (it is the human-only
+# override); the message must stop advertising a route callers cannot take.
+test_codex_gate_message_names_reachable_override_route() {
+    local d out
+    d=$(mktemp -d)
+    out=$(_gate_run "$d" 'git commit -m \"x\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
+    rm -rf "$d"
+    if echo "$out" | grep -qiE 'relaunch|environment of the'; then
+        pass "#533: block message names the reachable override route"
+    else
+        fail "#533: block message must not advertise an inline CODEX_GATE_SKIP prefix, got: $out"
+    fi
+}
+
+# T-N1 — negative fixture (EXISTENCE RULE): the new branch code must not run,
+# and must not print, on non-commit calls.
+test_codex_gate_inflight_silent_on_non_commit_command() {
+    local d out
+    d=$(_gate_repo feature/x)
+    printf '{"status":"PENDING_RECHECK","round":2}' > "$d/.reviews/handoff.json"
+    out=$(_gate_run "$d" 'git status') && _GATE_EXIT=0 || _GATE_EXIT=$?
+    rm -rf "$d"
+    if [ "$_GATE_EXIT" -eq 0 ] && [ -z "$out" ]; then
+        pass "#533: silent on non-commit commands with an in-flight artifact"
+    else
+        fail "#533: git status should exit 0 silent, got exit=$_GATE_EXIT out: $out"
+    fi
+}
+
+# T6 — the boundary this whole lane is scoped by. If this ever goes red the
+# quarantine has broken and in-flight work can reach the default branch.
+test_codex_gate_inflight_blocked_on_default_branch() {
+    local d out
+    d=$(_gate_repo "")
+    printf '{"status":"PENDING_RECHECK","round":2}' > "$d/.reviews/handoff.json"
+    out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
+    rm -rf "$d"
+    if [ "$_GATE_EXIT" -eq 2 ]; then
+        pass "#533: in-flight status still BLOCKED on the default branch"
+    else
+        fail "#533: in-flight on default branch must exit 2, got exit=$_GATE_EXIT out: $out"
+    fi
+}
+
+# T7 — branch-awareness must NOT reach the artifact-absent path, or the gate
+# becomes a no-op on every feature branch.
+test_codex_gate_feature_branch_still_needs_an_artifact() {
+    local d out
+    d=$(_gate_repo feature/x)
+    rm -rf "$d/.reviews"
+    out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
+    rm -rf "$d"
+    if [ "$_GATE_EXIT" -eq 2 ] && echo "$out" | grep -qi "cross-model review"; then
+        pass "#533: a feature branch with no artifact is still blocked"
+    else
+        fail "#533: no artifact on a feature branch must exit 2, got exit=$_GATE_EXIT out: $out"
+    fi
+}
+
+# T8 — the lane must not relax #437's freshness check.
+test_codex_gate_feature_branch_does_not_relax_stale_check() {
+    local d out
+    d=$(_gate_repo feature/x)
+    printf '{"status":"CERTIFIED","commit_sha":"0000000000000000000000000000000000000000"}' \
+        > "$d/.reviews/handoff.json"
+    out=$(_gate_run "$d" 'git commit -m \"wip\"') && _GATE_EXIT=0 || _GATE_EXIT=$?
+    rm -rf "$d"
+    if [ "$_GATE_EXIT" -eq 2 ] && echo "$out" | grep -qi "stale"; then
+        pass "#533: stale certification still blocked on a feature branch"
+    else
+        fail "#533: stale cert on a feature branch must exit 2 stale, got exit=$_GATE_EXIT out: $out"
+    fi
+}
+
+# Changed for #533: this tmpdir was not a git repo, so after the in-flight
+# lane exists it would only have exercised the not-a-repo path and could no
+# longer fail in the direction that matters. It now runs ON the lenient
+# branch, proving an unrecognised status does not open the lane. The status
+# match is an exact allowlist, never "not CERTIFIED" — a typo must not pass.
 test_codex_gate_blocks_on_invalid_status() {
     local tmpdir
-    tmpdir=$(mktemp -d)
-    mkdir -p "$tmpdir/.reviews"
+    tmpdir=$(_gate_repo feature/x)
     printf '{"status":"PENDING"}' > "$tmpdir/.reviews/handoff.json"
     local out exit_code
     out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: thing\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
@@ -3997,6 +4190,15 @@ test_codex_gate_blocks_commit_with_quoted_value_containing_space() {
     fi
 }
 
+test_codex_gate_inflight_recheck_allowed_on_feature_branch
+test_codex_gate_inflight_review_allowed_on_feature_branch
+test_codex_gate_inflight_blocked_on_resolved_default_develop
+test_codex_gate_inflight_blocked_on_detached_head
+test_codex_gate_message_names_reachable_override_route
+test_codex_gate_inflight_silent_on_non_commit_command
+test_codex_gate_inflight_blocked_on_default_branch
+test_codex_gate_feature_branch_still_needs_an_artifact
+test_codex_gate_feature_branch_does_not_relax_stale_check
 test_codex_gate_blocks_commit_without_review
 test_codex_gate_allows_commit_with_certified_review
 test_codex_gate_allows_commit_with_reviewed_status
