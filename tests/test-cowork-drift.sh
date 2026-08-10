@@ -352,7 +352,7 @@ if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
   if python3 -c "
 import json
 d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-assert not d.get('UserPromptSubmit'), 'UserPromptSubmit hook is back'
+assert 'UserPromptSubmit' not in d, 'UserPromptSubmit key is back'
 " 2>/dev/null; then
     pass "hooks.json has NO UserPromptSubmit hook (GH #561 — it blocked the maintainer's own policy instruction)"
   else
