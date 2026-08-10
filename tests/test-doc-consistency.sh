@@ -459,31 +459,275 @@ test_wizard_doc_mentions_permissions_command() {
     fi
 }
 
-# Test (#207): the wizard doc must explicitly warn that PCT_OVERRIDE and
-# AUTO_COMPACT_WINDOW are ALTERNATIVES, not complementary. Setting both
-# compounds (30% × 400K = 120K trigger = ~12% of 1M) — the consumer hit
-# this in practice and autocompact fired at 12% context.
-test_wizard_doc_warns_against_compound_autocompact_config() {
+# Test (#207, RETARGETED by #520): these two assertions used to require the
+# words "do not set both" / "pick one". That doctrine is now known to be false,
+# so the assertions were enforcing a falsehood — the single worst state for a
+# guard to be in, because it actively resists the correction.
+#
+# What the decompile of v2.1.221 established (evidence on GH #520):
+#   - Setting both is MULTIPLICATION, not a misconfiguration. 35% x 1000000 is
+#     a 350000 trigger, which is a sane deliberate boundary.
+#   - The real trap is a window below 200000, which disables autocompact
+#     ENTIRELY (ZJu returns false under bIe = 200000) rather than compacting
+#     sooner. "Pick one" never mentioned it, so a consumer following the old
+#     advice could turn compaction off while believing they had tuned it.
+#
+# The property both now assert is the one that is actually true and actually
+# protects someone: the sub-200000 disable trap must be named, on the surface
+# that reader is holding. Naming the threshold is what makes it actionable —
+# prose about "small windows" would not be.
+# Does the text ASSERT that something disables compaction? Three attempts got
+# here:
+#   1. exact retired sentence  — missed "disables autocompact altogether"
+#   2. bare pattern            — failed the CORRECT sentence "nothing disables
+#                                compaction outright", the mirror of the very
+#                                polarity defect this guard exists for
+#   3. pattern + negator       — defeated by a DOWNSTREAM negator, because the
+#                                exclusion ran on the whole line: "A sub-200000
+#                                window disables compaction outright; no later
+#                                trigger occurs" excluded itself via the "no".
+# So the negator has to be scoped to the CLAUSE carrying the claim, not the
+# line. Clauses are split on . ; , and — before the test is applied.
+#
+# The comma is a splitter for the same reason the semicolon is (round 16): "A
+# window under 200000 disables compaction, but no other setting does" put the
+# claim and a *different* sentence's negator on one clause, and the "no" in the
+# second half excused the first. Splitting on the comma separates them. Once
+# commas split, no clause can contain one, so the old `[^,]{0,40}` proximity
+# bound is exactly equivalent to `.{0,40}` — the simpler form is kept.
+#
+# DECLARED BOUND: this is a clause-scoped textual guard, and it is a BACKSTOP
+# behind the canonical-sentence pins, not the primary defence. A negator placed
+# outside any punctuation this splits on will defeat it. That is accepted: the
+# pins already fail if the canonical sentences change, so defeating this guard
+# alone does not let a wrong claim through silently. Further grammar defeats are
+# classification questions against this bound, not bugs to patch.
+#
+# `\bdisables?\b` and not `disables?`: the latter matches inside "disabled",
+# which caught this document's own past-tense account of the mistake — a guard
+# that forbids describing the error it exists to prevent is unusable.
+_doc_asserts_disabling() {
+    printf '%s' "$1" \
+        | sed 's/[.;,]/\n/g; s/ — /\n/g' \
+        | grep -iE '\bdisables?\b.{0,40}(autocompact|compaction)' \
+        | grep -viqE 'nothing|never|\bno\b|\bnot\b'
+}
+
+test_wizard_doc_states_the_sub_200k_window_mechanic() {
     local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
     if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
-    if grep -qE '(do not set both|don.t set both|alternatives.*not|pick one.*not both|either.*PCT_OVERRIDE.*or.*AUTO_COMPACT_WINDOW|setting both.*compound)' "$DOC"; then
-        pass "wizard doc explicitly marks PCT_OVERRIDE / AUTO_COMPACT_WINDOW as alternatives (#207)"
+    # SCOPED to the autocompact section, not the whole document. A whole-file
+    # grep for "compound" was satisfied by the prompt-brevity section 600 lines
+    # away, so every autocompact multiplication sentence could have been deleted
+    # with this assertion still green — the same guard-and-artifact-point-at-
+    # different-objects defect as #513. Caught by cross-model review.
+    local section
+    # Stop at the NEXT heading of any level, not just `### `. An earlier
+    # version stopped only at `### `, so it swallowed the "Why opus[1m] is
+    # opt-in" bullets below — where "Pinning disables auto-mode" satisfied the
+    # disable check on its own.
+    # Extract from the RENDERED PROJECTION, not the raw file. Cross-model
+    # review defeated the column-1 pins three more times without altering one
+    # character of the pinned claims — it wrapped them in an HTML comment, in
+    # `<del>`, and in a fence. Each time the constant still began its line and
+    # the suite stayed green while the document told the reader nothing.
+    # Enumerating containers is unbounded; projecting once is not. The
+    # guarantee this assertion makes is now exactly: "in the output of
+    # `mdfence.py --rendered`, some line begins with the canonical constant."
+    #
+    # TWO extractions, on purpose. The PROSE CLAIMS are guidance and must
+    # survive the projection — #513 settled that fenced content in this repo is
+    # a quotation, not an instruction, so a claim that only exists inside a
+    # fence is not guidance no matter how it renders. The FORMULA BLOCK is the
+    # opposite: it is deliberately fenced, it is an illustration rather than a
+    # claim, and `--rendered` would demand it be un-fenced. So it gets
+    # `--visible`, which keeps fenced content but still drops anything hidden.
+    # It does NOT get raw bytes: cross-model review wrapped the formula fence
+    # in an HTML comment and all 129 assertions stayed green — the same defect
+    # as the prose pins had, on the one surface I had exempted.
+    local section_vis
+    section_vis=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --visible "$DOC" \
+        | awk '/^#### Autocompact mechanics/{f=1;print;next} f && /^#{1,4} /{exit} f')
+    section=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --rendered "$DOC" \
+        | awk '/^#### Autocompact mechanics/{f=1;print;next} f && /^#{1,4} /{exit} f')
+    if [ -z "$section_vis" ]; then
+        fail "#520: the 'Autocompact mechanics' section is gone — this assertion is now vacuous, re-anchor it"
+        return
+    fi
+    if [ -z "$section" ]; then
+        fail "#520: the 'Autocompact mechanics' section exists in the file but nothing in it survives the rendered projection — the whole section is commented out, struck, or fenced"
+        return
+    fi
+    local missing=""
+    # ANCHOR TO THE NUMBERED TRAP ITEMS THEMSELVES, not to loose vocabulary
+    # anywhere in the section. Round 2 of cross-model review deleted BOTH
+    # numbered mechanics and this assertion still passed 129/129, because
+    # summary prose later in the section re-satisfied every keyword. A guard
+    # that survives deletion of the thing it guards is decoration.
+    #
+    # `^N. ` pins the list item. The trap sentence must carry the threshold and
+    # the consequence together, so neither can be dropped independently.
+    printf '%s' "$section" | grep -qiE '^1\..*200000[^.]*sooner' \
+        || missing="$missing trap1-sooner-bound-to-threshold"
+    # And the retired falsehood must not come back on this surface. The claim
+    # was guarded, pinned and cross-model certified for thirteen rounds while
+    # being wrong, so its exact wording is now a denylist entry.
+    # Not the exact retired sentence — that missed "disables autocompact
+    # altogether", and the stale wording was still sitting in a comment one
+    # copy-paste away. Not a bare pattern either: "nothing disables compaction
+    # outright" is a CORRECT sentence and a bare pattern fails it, which is the
+    # mirror image of the polarity defect this guard exists for. So: the
+    # assertion shape, minus anything carrying a negator.
+    if _doc_asserts_disabling "$section"; then
+        missing="$missing retired-disable-falsehood"
+    fi
+    # The multiplication must stay documented — it is real, it is just not a
+    # prohibition. Losing it puts #207's 120000 case back in the dark.
+    printf '%s' "$section" | grep -qiE '^2\..*multipl' || missing="$missing trap2-multiplication"
+    # ---- POLARITY ----
+    # The anchors above verify that the right WORDS co-occur on the right list
+    # item. They cannot verify that the sentence says the true thing: cross-model
+    # review passed this suite 129/129 after replacing both mechanics with their
+    # exact inversions ("under 200000 does not disable autocompact", "the two
+    # vars do not multiply"). A negation denylist would be the fourth patch in
+    # the same arms race and loses to "fails to disable" or a clause reorder.
+    #
+    # So pin the load-bearing sentence verbatim. The only string that satisfies
+    # a literal match for the true claim is the true claim. Rewording the doc
+    # now requires deliberately updating this constant — that friction IS the
+    # guard, and it is the property the token patterns never had.
+    #
+    # AND ANCHOR THE PIN TO COLUMN 1. A free-floating `grep -F` matches a
+    # SUBSTRING, and a substring is not an assertion: cross-model review then
+    # passed 129/129 with "It is false that A window under 200000 disables
+    # autocompact entirely." The pinned claim was intact — it had simply been
+    # placed under negating scope. Requiring the constant to BEGIN the line
+    # removes the room to put anything in front of it, so the claim's own
+    # structural unit can no longer be re-scoped. (A separate contradicting
+    # sentence elsewhere in the doc is still review's job, not grep's.)
+    #
+    # `awk index($0,pfx)==1` rather than a regex: the constants contain `*`,
+    # `.` and backticks, and escaping them for grep -E is how these guards
+    # acquired their bugs in the first place. index() is literal by construction.
+    _doc_line_begins_with() {
+        printf '%s\n' "$1" | awk -v pfx="$2" 'index($0, pfx) == 1 { f = 1 } END { exit !f }'
+    }
+    _doc_line_begins_with "$section" \
+        '1. **A window under 200000 makes compaction fire sooner, not later.**' \
+        || missing="$missing trap1-canonical-polarity"
+    _doc_line_begins_with "$section" '2. **The two vars multiply.**' \
+        || missing="$missing trap2-canonical-polarity"
+    # And the formula block, which is what makes the rest checkable.
+    # Visible projection: the formula lives inside a fence by design, but a
+    # fence inside a comment is not visible to anyone (see above).
+    printf '%s' "$section_vis" | grep -qE 'min\(model_window' || missing="$missing window-formula"
+    printf '%s' "$section_vis" | grep -qE 'window .{0,3} 13000' || missing="$missing threshold-cap-formula"
+    if [ -z "$missing" ]; then
+        pass "#520: the autocompact section names the sub-200000 disable trap and the multiplication"
     else
-        fail "wizard doc must warn against setting both PCT_OVERRIDE AND AUTO_COMPACT_WINDOW (compound trigger footgun, #207)"
+        fail "#520: the 'Autocompact mechanics' section must bind the 200000 threshold to the SOONER consequence — missing:$missing"
     fi
 }
 
-# Test (#207, Codex round 1 finding 2): the SHIPPED `/sdlc` skill must not
-# repeat the ambiguous "30 or AUTO_COMPACT_WINDOW=400000" wording. This file
-# is distributed via npm to consumers' .claude/skills/sdlc/, so doc drift
-# here puts the same footgun back in front of every user.
-test_sdlc_skill_warns_against_compound_autocompact_config() {
+# The specific harmful artifact #520 removed, guarded on the surface it lived
+# on longest. An explicit `claude-opus-4-6` string pins 200K (the Max
+# auto-upgrade is the bare `opus` alias only), and Opus 4.6 without extended
+# context IS a proactive case — so a 30% override there is live and fires at
+# ~60K, which is the same over-aggression this doc warns about for `opusplan`.
+# The old text shipped that pairing annotated "(1M)", wrong on both counts.
+test_wizard_doc_has_no_harmful_opus46_autocompact_pairing() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    # Look only at the JSON settings blocks that pin claude-opus-4-6, so an
+    # explanatory sentence ABOUT the retired pairing does not trip this.
+    local bad
+    # POSITIVE assertion, not a denylist. The first version only rejected bad
+    # values, so deleting the whole recommendation passed — cross-model review
+    # proved it by removing the block and staying 129/129 green. The block must
+    # EXIST and carry an acceptable value.
+    #
+    # `|| true` is load-bearing on both greps: this suite runs under `set -e`,
+    # and a grep that finds nothing exits 1, which would kill the entire run
+    # silently and take every later assertion with it. That is exactly what
+    # happened when this test was first wired in.
+    #
+    # `--visible`, not raw bytes. The block is fenced JSON, so `--rendered`
+    # would demand it be un-fenced — but raw bytes accepted the whole block
+    # wrapped in an HTML comment, invisible to every reader, at 129/129 green.
+    # Cross-model review found this after the prose pins were already fixed:
+    # the exemption travelled, so the same defect survived on the surfaces I
+    # had not converted yet.
+    local block good bad
+    block=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --visible "$DOC" \
+        | awk '/"model": "claude-opus-4-6"/{f=1} f{print} f && /^```$/{f=0}' || true)
+    if [ -z "$block" ]; then
+        fail "#520: the claude-opus-4-6 settings example is gone — this assertion is now vacuous, re-anchor it or delete it deliberately"
+        return
+    fi
+    # Acceptable: 60-100. Below 60 on a 200K pin is the ~60K-or-worse trigger
+    # this doc calls over-aggressive for opusplan.
+    good=$(printf '%s' "$block" | grep -E '"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "(6[0-9]|7[0-9]|8[0-9]|9[0-9]|100)"' || true)
+    bad=$(printf '%s' "$block" | grep -E '"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "([0-9]|[1-5][0-9])"' || true)
+    if [ -n "$bad" ]; then
+        fail "#520: a claude-opus-4-6 block (200K, proactive) sets an over-aggressive percentage — 30 there is a ~60K trigger: $bad"
+    elif [ -z "$good" ]; then
+        fail "#520: the claude-opus-4-6 block no longer carries an autocompact recommendation at all — the guidance was deleted rather than corrected"
+    else
+        pass "#520: the claude-opus-4-6 block recommends a percentage sized for its 200K window"
+    fi
+}
+
+# Same property on the SHIPPED skill. This file is distributed via npm to every
+# consumer's .claude/skills/sdlc/, so it is the surface where wrong autocompact
+# advice reaches the most people — it is where the `PCT_OVERRIDE=30` pairing
+# that #520 deleted had been sitting.
+test_sdlc_skill_states_the_sub_200k_window_mechanic() {
     local SKILL="$REPO_ROOT/skills/sdlc/SKILL.md"
     if [ ! -f "$SKILL" ]; then fail "skills/sdlc/SKILL.md not found"; return; fi
-    if grep -qiE '(do not set (both|this)|don.t set both|pick one|alternatives.*not)' "$SKILL"; then
-        pass "skills/sdlc/SKILL.md warns against autocompact compound config (#207)"
+    local missing=""
+    # Every check on this file reads the VISIBLE projection. A commented-out
+    # threshold is not guidance, and — the direction that actually bit — an
+    # invisible `<!-- PCT_OVERRIDE=30 -->` must not trip the denylist below
+    # and fail a document that is perfectly correct.
+    local skill_vis
+    skill_vis=$(python3 "$REPO_ROOT/tests/lib/mdfence.py" --visible "$SKILL")
+    # Cause and consequence on the SAME line. A whole-file grep for the
+    # consequence word was once satisfied by unrelated text elsewhere in this
+    # skill, so the sentence naming the mechanic could be deleted with the
+    # assertion still green — proved by cross-model review, second instance of
+    # this exact defect in one round.
+    printf '%s' "$skill_vis" | grep -qiE 'smaller window[^.]*sooner' \
+        || missing="$missing sooner-consequence-bound-to-cause"
+    # The retired falsehood is a denylist entry on this surface too: it shipped
+    # to every consumer repo via npm and was certified thirteen times.
+    if _doc_asserts_disabling "$skill_vis"; then
+        missing="$missing retired-disable-falsehood"
+    fi
+    # ...and the polarity, which no token pattern can carry. Same finding as the
+    # wizard-doc guard above: the inversion "does not disable compaction"
+    # satisfies every keyword check. This surface phrases the fact differently
+    # from the wizard doc on purpose — the skill is byte-capped — so the
+    # constant is per-surface, not shared.
+    #
+    # Anchored to column 1 for the same reason as the wizard-doc pins: a
+    # free substring match was defeated by wrapping the claim in negating
+    # scope (`the assertion "..." is false`). The constant therefore runs from
+    # the start of the line THROUGH the consequence, so there is nowhere to
+    # insert a qualifier ahead of it.
+    # Same rendered projection as the wizard-doc pins above, and for the same
+    # reason: hiding this line in an HTML comment left it at column 1 and kept
+    # the suite green while the shipped skill said nothing.
+    python3 "$REPO_ROOT/tests/lib/mdfence.py" --rendered "$SKILL" \
+        | awk -v pfx='**Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone — a smaller window compacts sooner, and nothing in that range switches compaction off.' \
+        'index($0, pfx) == 1 { f = 1 } END { exit !f }' \
+        || missing="$missing disable-canonical-polarity"
+    # The retired advice must not come back on this surface.
+    printf '%s' "$skill_vis" | grep -qiE 'PCT_OVERRIDE=30|PCT_OVERRIDE=`?30' \
+        && missing="$missing retired-pct30-pairing"
+    if [ -z "$missing" ]; then
+        pass "#520: shipped skill states the sub-200000 mechanic correctly, and the PCT=30 pairing is gone"
     else
-        fail "skills/sdlc/SKILL.md must warn against PCT_OVERRIDE + AUTO_COMPACT_WINDOW compound (#207)"
+        fail "#520: shipped skill must state that a smaller window compacts SOONER (it does not disable), and must not re-add the PCT_OVERRIDE=30 pairing — missing:$missing"
     fi
 }
 
@@ -588,8 +832,9 @@ test_wizard_doc_real_browser_trigger_examples() {
 test_wizard_doc_recommends_opus_1m
 test_wizard_doc_frames_opus_1m_as_opt_in
 test_wizard_doc_no_default_opus_1m_wording
-test_wizard_doc_warns_against_compound_autocompact_config
-test_sdlc_skill_warns_against_compound_autocompact_config
+test_wizard_doc_states_the_sub_200k_window_mechanic
+test_wizard_doc_has_no_harmful_opus46_autocompact_pairing
+test_sdlc_skill_states_the_sub_200k_window_mechanic
 test_sdlc_skill_frames_model_as_recommendation
 test_wizard_doc_has_browser_tooling_policy_section
 test_wizard_doc_browser_policy_covers_three_way_split
