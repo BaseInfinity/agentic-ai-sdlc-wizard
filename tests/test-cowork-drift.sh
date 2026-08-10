@@ -410,12 +410,19 @@ fi
 #
 # NOT covered, and this is a real future-release boundary rather than an excuse:
 # a mechanism using a key NOT named `hooks` inside a format already scanned.
-# Undocumented today. The release-time `claude plugin details` check covers it —
-# that command reports EFFECTIVE hooks however registered, and is the only thing
-# in this system that has never been wrong about the surface set. It cannot run
-# in CI (no claude CLI) and cannot read a working tree, so it is a release gate,
-# not a push gate.
-if python3 - "$PROJECT_ROOT" <<'PYEOF' 2>/dev/null
+# Undocumented today, and NOTHING mechanical here covers it. Division of labor,
+# stated honestly: this walk = every documented surface in the source tree, fail
+# closed, every push. Release-time `claude plugin details` = manifest-registered
+# hooks in the INSTALLED artifact only — empirically blind to frontmatter hooks
+# (2026-08-10: an active frontmatter UserPromptSubmit hook did not appear in its
+# inventory), so it is not an oracle. Undocumented mechanisms: cross-model
+# review, which found surfaces 2, 3 and 4 when every mechanical check missed
+# them.
+# Wrapped in a function so the heredoc stays at statement level: it cannot live
+# inside a command substitution, and a temp file would make the test fail in
+# environments where TMPDIR is not writable.
+_cowork_hooks_scan() {
+python3 - "$PROJECT_ROOT" <<'PYEOF' 
 import json, os, re, subprocess, sys
 try:
     import yaml
@@ -427,8 +434,11 @@ ROOT = sys.argv[1]
 EXEMPT = "cowork/hooks/hooks.json"
 FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.S)
 
-tracked = subprocess.check_output(
-    ["git", "-C", ROOT, "ls-files", "--", "cowork/"]).decode().split()
+# -z / NUL split, NOT .split(): a tracked filename containing whitespace would
+# otherwise be shredded into nonexistent paths, both skipped, silent green. The
+# round-4 review proved it with `cowork/skills/extra skill/SKILL.md`.
+tracked = [f for f in subprocess.check_output(
+    ["git", "-C", ROOT, "ls-files", "-z", "--", "cowork/"]).decode().split("\0") if f]
 tracked.append(".claude-plugin/marketplace.json")
 
 bad = []
@@ -469,10 +479,11 @@ for rel in tracked:
 
 assert not bad, "; ".join(bad)
 PYEOF
-then
+}
+if hooks_scan_err=$(_cowork_hooks_scan 2>&1 >/dev/null); then
   pass "no \`hooks\` declaration outside cowork/hooks/hooks.json in any tracked shipped file (.json keys, .yaml docs, .md frontmatter; unknown formats fail closed)"
 else
-  fail "a \`hooks\` declaration exists outside cowork/hooks/hooks.json, or a tracked shipped file has a format this scan cannot read — either way a hook could be registered where Tests 12 and 13 cannot see it (GH #561)"
+  fail "a \`hooks\` declaration exists outside cowork/hooks/hooks.json, or a tracked shipped file has a format this scan cannot read — either way a hook could be registered where Tests 12 and 13 cannot see it (GH #561): $(printf '%s' "$hooks_scan_err" | tail -1)"
 fi
 
 # Test 14: All hooks are prompt type (no command type — Cowork has no shell)
