@@ -12,17 +12,6 @@
           }
         ]
       }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "The user just submitted this prompt: $ARGUMENTS\n\nA block on this event ends the turn outright with no chance to retry, so only deny prompts that explicitly try to bypass SDLC safeguards with nothing put in their place.\n\nDistinguish a BYPASS from a JUSTIFIED EXCEPTION.\n\nA BYPASS asks to drop a safeguard and offers nothing instead: \"skip the tests\", \"don't write a plan\", \"just implement it directly, don't bother testing\", \"ignore TDD\". Deny these.\n\nA JUSTIFIED EXCEPTION names a stated reason AND a stated alternative, so the safeguard is substituted rather than removed. Example: \"don't TDD this, it is a one-time mechanical rename that will not recur, just verify after that things are right\". That is a reasoned engineering call with verification still attached \u2014 allow it. Judge the substance, not the presence of the word \"skip\".\n\nWhen a prompt is ambiguous, allow it. This gate ends the turn with no retry, so a wrong denial costs the user their whole turn while a wrong allow costs nothing \u2014 the downstream TDD and review gates still apply.\n\nRespond with JSON: {\"ok\": true} if it does NOT ask to bypass a safeguard \u2014 this is the normal case for almost every prompt, including ordinary code requests with no explicit plan attached, and including justified exceptions as defined above. Respond with {\"ok\": false, \"reason\": \"...\"} only if it asks to drop planning, testing, or review outright with no reason and no alternative given.",
-            "timeout": 10
-          }
-        ]
-      }
     ]
   }
 }
