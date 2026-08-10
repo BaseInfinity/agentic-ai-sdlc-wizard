@@ -4,6 +4,92 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.97.0] - 2026-08-10
+
+### Removed — a hook that denied its own maintainer, twice
+
+- **The Cowork `UserPromptSubmit` prompt classifier is deleted.** It blocked the maintainer's
+  own instruction to codify a policy change, classifying a *description* of policy as an attempt
+  to *evade* it. That was the second denial, not the first: on 2026-08-07 it refused "do the
+  prose rename now, dont TDD something like this... just verify after" — a stated reason plus a
+  stated alternative, a safeguard being **substituted**, not removed. A justified-exception
+  carve-out shipped in response and a test pinned its text. The test passed. The hook denied the
+  maintainer anyway.
+
+  No prompt wording guarantees an LLM classification outcome, so it is unsatisfiable by
+  narrowing, and it is unfalsifiable from inside — reporting the false positive requires a
+  prompt it may block. Same class and same remedy as the `Stop` hook removed in v1.92.0.
+  Blocking hooks fire on **acts** (`PreToolUse`), never on turn-level subject matter. (#561)
+
+- **The honest cost, stated rather than hidden.** In Cowork, a prompt asking to skip planning or
+  review, followed by edits to files that already exist, now hits **no gate at all** —
+  `PreToolUse` fails open for edits, and the CLI's commit and merge gates cannot run there.
+  That loss is preferable to a classifier that denied its maintainer twice, but it is real and
+  it is written down in `cowork/README.md`, not buried. (#561)
+
+### Changed — TDD RED is scoped to where a RED mutation is writable
+
+- **An unqualified test-first mandate does not produce more testing. It produces fake testing.**
+  This repo shipped **six guards that passed on every input, including the ones they existed to
+  reject** — every one green in CI for its whole life. A seventh was found *inside this release*:
+  the new guard protecting the hook deletion was itself dead on arrival, caught by a reviewer
+  mutating the file rather than reading the assertion. When the driver must satisfy the rule
+  and the only satisfying artifact for meaning-level prose is a grep that cannot fail, that is
+  what gets written.
+
+  The boundary is now mechanical: write the wrong version the test must catch **before** writing
+  the test. If catching it requires understanding meaning, no assertion can. That gives a
+  three-way call for every change — **EVAL it**, **plain-assert it**, or **DON'T TEST IT** and
+  let cross-model review be the guard. Two loopholes were closed before shipping: the meaning
+  exception applies only to prose judged by a reader (any observable input/output difference
+  means RED *is* writable), and implement-first requires a gate that blocked the RED or evidence
+  act itself — a gate refusing implementation because RED is missing is the gate working, not an
+  entry ticket. (#561)
+
+### Added — a guard that covers surfaces nobody knew existed
+
+- **Hook-registration absence is now checked over the shipped file set, not a list of
+  mechanisms.** Three enumerations of "where a hook can be registered" were each declared
+  complete and each disproven within a review round, every miss found by reading Anthropic's
+  documentation rather than ours — because each attempt quantified over *Anthropic's* set of
+  registration mechanisms, which they own and extend.
+
+  The check now quantifies over a set this repo owns: every tracked shipped file, rejecting any
+  `hooks` declaration outside `cowork/hooks/hooks.json`, and **failing closed** on any format it
+  has no parser for. Review then found that Anthropic also documents hooks in **agent frontmatter
+  and command frontmatter** — a fifth and sixth surface no enumeration ever named — and the walk
+  already covered both. It guards surfaces nobody involved knew existed. (#561)
+
+- **"Fixed" now means observed.** Name the observable that would differ if a change were not
+  fixed, then go look at it. Out-of-repo changes — global `settings.json`, env vars, shell rc,
+  scheduler entries — get no gate at all: no diff, no PR, no reviewer. They need the verification
+  command stated in the same message as the change. (#525)
+
+- **The review pass budget is cumulative per root task, and planning requires a scope card**
+  naming one issue, an estimated diff, and allowed paths. A budget that resets on re-freeze is
+  not a budget. (#539, #538)
+
+- **The wizard's own autocompact guidance was breaking compaction.** It recommended setting two
+  knobs that multiply, so a 1M-token window compacted at a fraction of it. (#531)
+
+- **`/sdlc` carries the standing setup itself.** Fable decides the approach, and a guard may not
+  outgrow the change it guards — both were instructions the maintainer had been retyping every
+  session. (#530)
+
+- **The unmeasured 20,000-byte ceiling gate on `skills/sdlc/SKILL.md` is deleted**, not raised.
+  It was never measured against anything, and every edit had begun by degrading something else to
+  stay under it. (#489)
+
+- **Install guidance recommends the native Claude Code installer** and warns off the
+  `sudo npm install -g` footgun. (#476)
+
+### Note on delivery
+
+Merging delivered none of this. **Updating does.** Cowork users remain on whatever plugin
+version is in their local cache until it refreshes past v1.93.0 — the release is what moves it.
+To verify the classifier is actually gone rather than assuming: `claude plugin details
+sdlc-wizard-cowork` should report one hook, `PreToolUse`.
+
 ## [1.96.0] - 2026-08-09
 
 ### Fixed — the wizard doc shipped a second, diverged copy of the SDLC skill

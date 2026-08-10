@@ -128,4 +128,4 @@ This plugin is for Cowork-only users who want methodology guidance without the f
 
 ## Version
 
-Tracks the main wizard version: **1.96.0**
+Tracks the main wizard version: **1.97.0**
