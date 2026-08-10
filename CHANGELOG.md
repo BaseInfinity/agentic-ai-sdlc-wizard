@@ -32,8 +32,9 @@ All notable changes to the SDLC Wizard.
 - **An unqualified test-first mandate does not produce more testing. It produces fake testing.**
   This repo shipped **six guards that passed on every input, including the ones they existed to
   reject** — every one green in CI for its whole life. A seventh was found *inside this release*:
-  the new guard protecting the hook deletion was itself dead on arrival, caught by a reviewer
-  mutating the file rather than reading the assertion. When the driver must satisfy the rule
+  the new guard protecting the hook deletion was itself *partially* dead — it caught a populated
+  re-add and missed an empty one — found by a reviewer mutating the file rather than reading the
+  assertion. When the driver must satisfy the rule
   and the only satisfying artifact for meaning-level prose is a grep that cannot fail, that is
   what gets written.
 
@@ -85,8 +86,9 @@ All notable changes to the SDLC Wizard.
 
 ### Note on delivery
 
-Merging delivered none of this. **Updating does.** Cowork users remain on whatever plugin
-version is in their local cache until it refreshes past v1.93.0 — the release is what moves it.
+Merging delivered none of this. **Updating does.** The `UserPromptSubmit` classifier shipped in
+every Cowork plugin version up to and including v1.96.0, so Cowork users remain on whatever
+version is in their local cache **until it refreshes to v1.97.0** — the release is what moves it.
 To verify the classifier is actually gone rather than assuming: `claude plugin details
 sdlc-wizard-cowork` should report one hook, `PreToolUse`.
 
