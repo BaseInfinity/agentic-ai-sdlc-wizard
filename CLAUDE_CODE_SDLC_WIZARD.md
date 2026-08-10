@@ -246,6 +246,16 @@ When Anthropic provides official plugins or tools that handle something:
 | **Claude Code v2.1.69+** | Required for InstructionsLoaded hook, skill directory variable, and Tasks system |
 | **Git repository** | Files should be committed for team sharing |
 
+**Installing Claude Code itself.** Use the native installer — it is what [the official setup docs](https://code.claude.com/docs/en/setup) label *Recommended*, and it auto-updates in the background with no `claude update` step to remember:
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+**Never** install it with `sudo npm install -g @anthropic-ai/claude-code` — the official docs warn against that in those words, because sudo can leave the global module directory root-owned. When it does, the damage compounds, as observed on a real machine (#476): `claude update` refused with "Insufficient permissions to install update"; `npm uninstall -g` then failed with `EACCES`, because a normal user cannot rename a root-owned directory; and switching to the native install left *two* `claude` binaries on `PATH` at once, resolved by `PATH` order — so a reordering downgrades you to the stale pinned version. An npm install *without* sudo is not dangerous, just worse: if the global npm directory is not writable it stops auto-updating, with only a one-time notice at startup.
+
+Run `which -a claude` to check for conflicting installations — that is the official docs' own procedure, and it is the one that catches a stale binary shadowing a newer one by `PATH` order. Use `claude doctor` for install health, but do not rely on it for this: when run with a decoy binary placed earlier on `PATH`, it reported no conflict.
+
 **Blank repos (no CLAUDE.md, no code):** The wizard works on empty repos. Run `npx -y agentic-sdlc-wizard@latest init` — it installs hooks, skills, and the wizard doc. (The `@latest` pin guards against stale npx caches per #358.) On first session, the hooks detect missing SDLC files and redirect to `/claude-setup-wizard`, which generates CLAUDE.md, SDLC.md, TESTING.md, and ARCHITECTURE.md interactively. You do NOT need to run Claude's built-in `/init` first — the setup wizard handles everything.
 
 ---

@@ -3668,6 +3668,66 @@ $out"
 }
 test_guard_selftests_actually_run
 
+# #476: the wizard documented how to install ITSELF and never how to install
+# Claude Code, the thing it runs on. A real machine hit the footgun the official
+# setup docs warn about in those words: `sudo npm install -g` left the global
+# module dir root-owned, which killed `claude update` ("Insufficient
+# permissions"), then killed `npm uninstall -g` (EACCES on a root-owned rename),
+# and finally left two `claude` binaries on PATH at once — resolved by PATH
+# order, so a reordering would have downgraded the user with no warning.
+#
+# Scoped to the Prerequisites SECTION on purpose. "the installer is named
+# somewhere in a 4,900-line file" is the #493 failure mode — it passes on a doc
+# that mentions the installer in an unrelated aside about version pinning, which
+# this doc already contains at the version-test benchmark procedure. The claim
+# under test is narrower and is the one that matters: a reader standing at the
+# install moment is told which installer to use.
+#
+# The recommendation half exists because round 1 asserted only that the URL
+# appeared. Rewriting the prose to "Do not use the native installer" while
+# keeping the URL still passed — the guard proved a string, not a stance.
+test_wizard_prereqs_recommend_native_claude_install() {
+    local DOC="$REPO_ROOT/CLAUDE_CODE_SDLC_WIZARD.md"
+    if [ ! -f "$DOC" ]; then fail "CLAUDE_CODE_SDLC_WIZARD.md not found"; return; fi
+    local section tmp negated
+    section=$(awk '/^## Prerequisites$/ { f = 1; next } /^## / { f = 0 } f' "$DOC")
+    if [ -z "$section" ]; then
+        fail "#476: no '## Prerequisites' section in the wizard doc to carry install guidance"
+        return
+    fi
+    tmp=$(mktemp "${TMPDIR:-/tmp}/prereq-XXXXXX")
+    printf '%s\n' "$section" > "$tmp"
+
+    if ! grep -qE 'claude\.ai/install\.sh' "$tmp"; then
+        fail "#476: wizard Prerequisites gives no Claude Code install command, so a reader at the install moment is never steered off sudo-npm"
+        rm -f "$tmp"; return
+    fi
+    if ! grep -qiE 'recommend' "$tmp"; then
+        fail "#476: wizard Prerequisites shows an install command but never says it is the recommended one — a bare command is not a recommendation"
+        rm -f "$tmp"; return
+    fi
+    # A negation reaching the installer without crossing a clause boundary.
+    # This is the whole inversion attack that was made against this test: keep
+    # the URL, flip the sentence to "Do not use the native installer". One grep
+    # closes it, because the negation has to sit right on the phrase.
+    #
+    # Deliberately NOT a general negation-scope engine. A companion guard that
+    # tried to be one cost four review rounds chasing sentence forms and one
+    # more chasing spellings of `sudo`, and was dropped for it — see #551. The
+    # docs are what #476 asked for; this test guards the stance the docs take,
+    # and cross-model review covers what a regex cannot.
+    negated=$(grep -inE "(do not|don't|never|avoid)[^.;,]*native install" "$tmp" || true)
+    rm -f "$tmp"
+    if [ -n "$negated" ]; then
+        fail "#476: wizard Prerequisites negates the native installer it is supposed to recommend:
+$negated"
+        return
+    fi
+    pass "#476: wizard Prerequisites recommends the native Claude Code installer, unnegated"
+}
+test_wizard_prereqs_recommend_native_claude_install
+
+
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
 if [ "$FAILED" -gt 0 ]; then
