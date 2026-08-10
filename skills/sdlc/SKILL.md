@@ -18,7 +18,7 @@ Operational checklist — **complete on its own**. Full protocol (optional depth
 
 ## Full SDLC Checklist
 
-Your FIRST action must be a task list covering every phase below — `TodoWrite`, or `TaskCreate` where that is what your harness exposes (they are not both present everywhere). Compact form (omit `activeForm` to use the subject as the spinner label):
+Your FIRST action must be a task list covering every phase below — `TodoWrite`, or `TaskCreate` where that is what your harness exposes. Compact form (omit `activeForm` to use the subject as the spinner label):
 
 ```
 TodoWrite([
@@ -55,8 +55,8 @@ TodoWrite([
   { content: "Post-deploy verification (if deploy task)", status: "pending" },
   // FINAL
   { content: "Present summary: changes, tests, CI status", status: "pending" },
-  { content: "Capture learnings (after session — TESTING.md, CLAUDE.md, or feature docs)", status: "pending" },
-  { content: "Close out plan files: if task came from a plan, mark complete or delete", status: "pending" }
+  { content: "Capture learnings (TESTING.md, CLAUDE.md, or feature docs)", status: "pending" },
+  { content: "Close out plan files: mark complete or delete", status: "pending" }
 ])
 ```
 
@@ -104,7 +104,7 @@ State your confidence before presenting an approach:
 
 **Confidence ramp:** Opus research → Fable batch review → 95% list → /goal TDD → Codex.
 
-**Uncertainty ≠ a human question.** Use the model/tool evidence available before interrupting a human — escalate to Fable (`advisor()`; if down, a Fable subagent at `high`), then Codex `high`; reserve the user for priority/risk/scope/spend or irreversible calls. **Confidence is not authorization**: a high score never overrides approval, external-effect, production, release/merge, or policy gates, and merge protections are non-overridable. **Standing instructions stay in force** (wizard doc).
+**Uncertainty ≠ a human question.** Use the model/tool evidence available before interrupting a human — escalate to Fable (`advisor()`; if down, a Fable subagent at `high`), then Codex `high`; reserve the user for priority/risk/scope/spend or irreversible calls. **Confidence is not authorization**: a high score never overrides approval, external-effect, production, release/merge or policy gates; merge protections are non-overridable. **Standing instructions stay in force** (wizard doc).
 
 ## Plan Mode
 
@@ -112,31 +112,29 @@ Use plan mode for: multi-file changes, new features, LOW confidence, bug investi
 
 ## Long-Running Goals (`/goal`)
 
-Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript per turn. **NEVER invoke below HIGH 95%** — below that it rubber-stamps flailing as progress. **Condition MUST name the DLC** (`/sdlc`, `/gdlc`, etc.) so the evaluator anchors on "doing it right." **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` off. **Condition = contract:** end state + check + constraints + hard turn/time bound; e.g. `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. Evaluator can't call tools. `--resume` resets counters.
+Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript per turn. **NEVER invoke below HIGH 95%** — below that it rubber-stamps flailing as progress. **Condition MUST name the DLC** (`/sdlc` etc.) so the evaluator anchors on "doing it right." **Pre-flight:** trusted workspace; `disableAllHooks`/`allowManagedHooksOnly` off. **Condition = contract:** end state + check + constraints + hard bound; e.g. `/goal "tests pass + clean tree following /sdlc, stop after 20 turns"`. Evaluator can't call tools; `--resume` resets counters.
 
 ## Recommended Model
 
-**Recommended: Opus 5 `high`** for complex projects, `medium` for routine web/CRUD. Escalate `xhigh` only for genuinely hard/long runs — not the default. Pin `claude-opus-4-8` for a same-family escape. **Sonnet 5 `medium`** for simple work.
-
-**Effort is model-aware, not blanket `max`** — `max` overthinks on Sonnet 5/Opus 4.8. Set via `/effort` per session, not a shell-rc env var (overrides post-switch — see SDLC.md). `/model` persists; picker `s` does not.
+**Recommended: Opus 5 `high`** for complex projects, `medium` for routine web/CRUD; escalate `xhigh` only for genuinely hard runs. **Sonnet 5 `medium`** for simple work. Pin `claude-opus-4-8` for a same-family escape. **Effort is model-aware, not blanket `max`** — set via `/effort` per session, never a shell-rc env var (overrides post-switch). `/model` persists; picker `s` does not.
 
 **Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone — a smaller window compacts sooner, and nothing in that range switches compaction off. On **current Opus** a percentage alone is inert unless the window is also set, and then the two multiply; on Sonnet 5 and on a 200K Opus 4.6 pin it is live, so size it against THAT window (#520). **Advisor (v2.1.170+):** `advisorModel: "fable"` works with all drivers above; set in `/claude-setup-wizard` Step 9.5.
 
 ## Cross-Model Review (REQUIRED for High-Stakes)
 
-**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **When to skip (log justification):** trivial, hotfixes, risk < review cost. **Prerequisites:** Codex CLI + OpenAI API key. **Reviewer:** `gpt-5.6-sol` `high` — adversarial diversity. **Cadence:** Fable during design, Codex once before commit — don't stack both per task unless the decision itself needs two independent reviewers.
+**When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **Skip (log justification):** trivial, hotfixes, risk < review cost. **Reviewer:** `gpt-5.6-sol` `high` — adversarial diversity. **Cadence:** Fable during design, Codex once before commit; don't stack both unless the decision needs two independent reviewers.
 
 PROTOCOL is universal across domains; only `review_instructions` and `verification_checklist` change.
 
-**Handoff/preflight file mechanics live in the wizard doc.** These two steps stay here because improvising them has cost this repo real time: the codex flags below prevent a stdin hang and a 70-minute foreground kill (#364), and the `commit_sha` rule is what the merge gate checks for staleness (#437).
+**Handoff/preflight mechanics: wizard doc.** These two stay; improvising them cost real time (#364, #437).
 
-1. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`. Bash tool requires `run_in_background: true` + `dangerouslyDisableSandbox: true`; always append `< /dev/null`. **Why:** `< /dev/null` prevents codex stdin-hang at S/0% CPU; background avoids the Bash 10-min `timeout` cap that force-kills foreground codex (bundles take 5–30 min; no wrapper timeout). Foreground burned 70 min on a 7-min review (#364).
-2. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Don't hunt new surfaces, but report every defect; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — always run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
+1. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`, `run_in_background: true` + `dangerouslyDisableSandbox: true`, always `< /dev/null`. **Why:** `< /dev/null` prevents a stdin hang at 0% CPU; background avoids the Bash 10-min cap that kills foreground codex (bundles run 5–30 min). Foreground burned 70 min on a 7-min review (#364).
+2. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Report every defect you see; don't hunt new surfaces; any new P0/P1/P2 BLOCKS." **NEVER unilaterally dismiss** — run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
 
-**Convergence:** judge by max severity per round. Escalate, never ship.
-**Loop autonomy — no per-round check-ins.** While findings are landing, the loop is WORKING — fix, push, launch the next reviewer round in the SAME turn. Mid-loop, every turn ends with the next round already running in background; ending a turn with no pending work IS a stop decision and must cite one of: **CONVERGED** (required verdicts in on head SHA, zero unresolved findings), **DEADLOCK** (same finding unmoved after 2 rechecks, or a non-waivable gate after 2 fix attempts), **BOUND** (context ceiling near, or a gate that mechanically requires a human). Every round must carry a delta — new commits or a new per-finding response; resubmitting an unchanged round is reviewer-shopping. No fixed round cap: rounds still finding real defects are the system working (#497: five rounds, all real). A one-line status between rounds is fine; handing the turn back is not.
+**Convergence — TWO PASSES PER FROZEN SCOPE.** One review, one verify (verify reads only the diff since the last verdict). A fix adding code or promises beyond the reviewed diff is NEW SCOPE — the planner records continue/stop with the builder's cost line (diff vs defect size, passes used); human only on cross-model disagreement. **Blame the line** (`git blame` vs base): a blocker born INSIDE the PR means the round found nothing wrong with the change — cut the accretion, don't repair it. Review committed increments, not a mutable tree. #520: 20 rounds, 46 lines shipped.
+**Loop autonomy — no per-round check-ins.** While a pass is owed, don't hand the turn back: fix, push, launch it in the SAME turn. Ending a turn with no pending work IS a stop decision and must cite **CONVERGED** (verdicts in on head SHA, zero unresolved), **DEADLOCK** (finding unmoved after 2 rechecks, or a non-waivable gate after 2 attempts), **BOUND** (context ceiling, or a gate needing a human), or **SCOPE** (two passes used — planner decision required). Every pass carries a delta; resubmitting unchanged is reviewer-shopping.
 
-**Multi-reviewer:** respond to each independently. **Non-code domains:** add `"audience"`/`"stakes"` keys.
+**Multi-reviewer — RECONCILE, don't collect.** Answer each independently, then show each the other's position and re-ask. The gain is in the aggregation, not the second opinion. Only a split SURVIVING that reaches the user — as a decision, not a question. **Non-code domains:** add `"audience"`/`"stakes"` keys.
 
 **Full protocol** (rationale, full JSON example, anti-patterns like "find at least N", convergence diagrams): `CLAUDE_CODE_SDLC_WIZARD.md` → "Cross-Model Review Loop".
 
@@ -167,34 +165,38 @@ Mandatory steps:
 6. CI passes → `gh api .../pulls/PR/comments` for review feedback
 7. Implement valid suggestions (bugs, perf, dedup). Skip opinions. Max 3 iterations
 8. **Clearance, once CI green.** Ask reviewers *"safe to merge?"* — NOT "can you break this" (unsatisfiable; #478). Each posts `**CROSS-MODEL-CLEARANCE**` + one fenced json `{"reviewer","verdict":"YES","confidence","sha"}`. **`verdict` decides; confidence only qualifies it.** YES <95 names a residual → one focused round, never a human ask; re-asking unchanged is shopping.
-9. Explicit `gh pr merge --squash` (repo wrapper if any) — never auto-merge. Needs 2 YES ≥95 on head SHA AND: CI `validate` green; Codex `high` CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) with **zero unresolved findings** after **≥1 dialogue round**. Merge-evidence paths (workflows, `hooks/`, `.claude/`, merge script) need a human — **unless** your repo has a merge gate that mechanically checks CI, test deletions and the clearance, and the gate you run is the *merged* copy, not this branch's edited one. No such gate: human. Version bumps and reviewer deadlocks: always human. Tell the user after — never silent.
+9. Explicit `gh pr merge --squash` (repo wrapper if any) — never auto-merge. Needs 2 YES ≥95 on head SHA AND: CI `validate` green; Codex `high` CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) with **zero unresolved findings** after **≥1 dialogue round**. Merge-evidence paths (workflows, `hooks/`, `.claude/`, merge script) need a human — **unless** your repo has a merge gate mechanically checking CI, test deletions and the clearance, and you run the *merged* copy, not this branch's edited one. No such gate: human. Version bumps and reviewer deadlocks: always human. Tell the user after — never silent.
 
 **Evidence:** PR #145 auto-merged, shipped a P1 bug. v1.92.0: two YES (97/93) dead-ended (#478).
 
 ## Scope, DRY, Patterns, Legacy
 
-- **Scope guard** — only task-related changes. Notice something else → NOTE in summary, don't fix unless asked. AI drift into "helpful" changes breaks unrelated things.
+- **Scope guard** — only task-related changes. Notice something else → NOTE in summary, don't fix unless asked.
+- **CLOSED ALLOWLIST** — the issue's requested behaviors are the whole job. No runtime behavior, enforcement, automation, computed output or new mechanisms unasked. Findings correct allowed work, never expand the allowlist. #520 asked for a doc line, got two hand-written parsers.
+- **CLAIM RULE** — before printing a value computed from parsed input, state the domain it is promised correct over; out-of-domain → NO claim. Can't enumerate or fuzz it? Print the inputs, not the number. **Scope is measured in promises, not lines.**
+- **EXISTENCE RULE** — a guard/fix does not exist until observed producing BOTH outcomes on live input. Every guard ships a negative fixture: RED proves it fires, never that it does not overfire.
+- **PROCESS BUDGET scales with observability, not confidence** — watched it → ship; predicting it → one fact-check pass; ships to others → full gate.
 - **DRY** — before coding: "what patterns exist to reuse?" After: "did I duplicate anything?"
 - **New patterns** require human approval: search first, propose if no equivalent, get explicit approval.
 - **DELETE legacy code** — backwards-compat shims, "just in case" fallbacks → gone. If it breaks, fix properly.
 
 ## Debugging Workflow (Systematic)
 
-Reproduce → Isolate → Root Cause → Fix → Regression Test. Do not skip steps. `git bisect` for regressions. 2 failed attempts → escalate (see Confidence Check), not straight to the user.
+Reproduce → Isolate → Root Cause → Fix → Regression Test. No skipping. `git bisect` for regressions. 2 failed attempts → escalate (Confidence Check), not straight to the user.
 
 ## Release Planning (Task Ships a Release)
 
-List all items from ROADMAP, plan each at 95% confidence, identify dependencies, present all plans together (catches conflicts/scope creep), pre-release CI audit across merged PRs (warnings, degraded scores, skipped suites — green checkmark insufficient), user approves, then implement in priority order.
+All ROADMAP items planned at 95%, dependencies identified, presented together (catches conflicts), pre-release CI audit across merged PRs — a green checkmark is insufficient. User approves, then implement in priority order.
 
 ## Deployment Tasks
 
-Read `ARCHITECTURE.md` Environments table + Deployment Checklist. **Production requires HIGH (90%+); ANY doubt → ASK USER.** **Post-deploy verification:** health check, log scan, smoke tests, monitor 15 min (prod only). Issues → rollback first, then new SDLC loop.
+Read `ARCHITECTURE.md` Environments table + Deployment Checklist. **Production requires HIGH (90%+); ANY doubt → ASK USER.** **Post-deploy verification:** health check, log scan, smoke tests, monitor 15 min (prod only). Issues → rollback first, then a new SDLC loop.
 
 ## Test Review (Harder Than Implementation)
 
-Critique tests harder than app code: testing the right things? Tests prove correctness or just verify current behavior? Follow TESTING.md (Testing Diamond, minimal mocking, real-captured fixtures).
+Critique tests harder than app code: testing the right things? Proving correctness, or just pinning current behaviour? Follow TESTING.md.
 
-**Testing Diamond:** E2E ~5% (slow, proves real thing) → Integration ~90% (best bang for buck — real DB/cache/services via API, no UI) → Unit ~5% (pure logic only). If no UI/browser, it's integration, not E2E.
+**Testing Diamond:** E2E ~5% → Integration ~90% (best value — real DB/cache/services via API, no UI) → Unit ~5% (pure logic only). No UI/browser = integration, not E2E.
 
 **Mocking:**
 
@@ -211,7 +213,7 @@ Mocks MUST come from real captured data — never guess shapes. Unit tests quali
 
 ## Prove It Gate (New Additions Only)
 
-New skill/hook/workflow/PRACTICE? Default answer is NO. Prove it: (1) **Absorption check** — can this be a section in an existing skill? (2) Research existing equivalents (native CC, third-party, existing skill). (3) If yes — why is yours better with evidence. (4) If no — real gap or theoretical? (5) **Quality tests** must prove OUTPUT QUALITY (existence tests prove nothing). (6) Less is more — every addition is burden.
+New skill/hook/workflow/PRACTICE? Default answer is NO. Prove it: (1) **Absorption check** — can this be a section in an existing skill? (2) Research equivalents (native CC, third-party, existing skill). (3) If one exists — why is yours better, with evidence. (4) If not — real gap or theoretical? (5) **Quality tests** must prove OUTPUT QUALITY (existence tests prove nothing). (6) Less is more — every addition is burden.
 
 If you can't write a quality test for it, you can't prove it works.
 
@@ -227,7 +229,7 @@ If you can't write a quality test for it, you can't prove it works.
 
 ### Memory Audit Protocol
 
-End of release: audit `~/.claude/projects/<proj>/memory/` and promote portable lessons into shared docs. **A process rule saved only to memory is a /sdlc gap** — memory changes one agent, docs change everyone. Type-based denylist, destinations and the MANDATORY human gate: `CLAUDE_CODE_SDLC_WIZARD.md`.
+End of release: audit `~/.claude/projects/<proj>/memory/`, promote portable lessons to shared docs. **A process rule saved only to memory is a /sdlc gap** — memory changes one agent, docs change everyone. Denylist, destinations and the MANDATORY human gate: `CLAUDE_CODE_SDLC_WIZARD.md`.
 
 ## Post-Mortem: Process Failures Become Rules
 
@@ -239,16 +241,15 @@ Don't fix only the symptom. Add a gate so it can't happen again. Example: PR #14
 
 ## Context Management & Subagents
 
-- `/compact` between planning and implementation (plan preserved in summary)
-- `/clear` between unrelated tasks, after a PR, or after 2+ failed corrections
+- `/compact` between planning and implementation; `/clear` between unrelated tasks, after a PR, or after 2+ failed corrections
 - **Work under ~350K tokens** (~35% of a 1M window). Compact well before autocompact (~95%). `/usage` = spend.
-- **Run the test — a completion claim is not a test result.** Applies at any context size, not past a threshold
-- `--bare` (v2.1.81+) skips ALL hooks/skills/LSP/plugins. Headless scripts only.
-- Custom subagents (`.claude/agents/`) run autonomously. Skills guide; agents do. Use for parallel work or fresh context.
+- **Run the test — a completion claim is not a test result.** At any context size, not past a threshold
+- `--bare` (v2.1.81+) skips ALL hooks/skills/LSP/plugins. Headless only.
+- Custom subagents (`.claude/agents/`) run autonomously. Skills guide; agents do. Use for parallel work or fresh context. **Two at once → reconcile them.**
 
 ## Design System Check (UI Changes Only)
 
-Read `DESIGN_SYSTEM.md` if exists. Verify colors/fonts/spacing match tokens; flag new patterns not in design system. Skip on backend/config/non-visual code.
+Read `DESIGN_SYSTEM.md` if present: colors/fonts/spacing match tokens; flag new patterns. Skip backend/config code.
 
 ---
-**Full reference:** `CLAUDE_CODE_SDLC_WIZARD.md` (cross-model review, deployment, debugging, post-mortem, memory audit, design system). `TESTING.md` (testing diamond + mocking). `ARCHITECTURE.md` (environments + post-deploy).
+**Full reference:** `CLAUDE_CODE_SDLC_WIZARD.md` (protocol depth, deployment, memory). `TESTING.md` (diamond + mocking). `ARCHITECTURE.md` (environments, post-deploy).
