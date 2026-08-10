@@ -329,18 +329,34 @@ else
   fail "hooks.json not found (skipping PreToolUse check)"
 fi
 
-# Test 12: hooks.json has UserPromptSubmit SDLC baseline hook
+# Test 12: hooks.json has NO UserPromptSubmit hook
+# GH #561: the UserPromptSubmit prompt classifier was REMOVED. It denied the
+# maintainer TWICE, and the second denial came after a repair:
+#   2026-08-07 — denied "do the prose rename now, dont TDD something like this,
+#     it will most likely only ever happen once so just verify after". That is a
+#     stated reason plus a stated alternative: a safeguard being SUBSTITUTED,
+#     not removed. A justified-exception carve-out was shipped in response, and
+#     old Test 18 pinned its text.
+#   2026-08-10 — denied an instruction to CODIFY a policy change, classifying a
+#     description of policy as an attempt to evade policy.
+# The first repair was textually pinned by a passing test and still failed
+# operationally. That is what makes deletion the answer rather than a third
+# narrowing: no prompt wording guarantees an LLM classification outcome, and
+# the hook is unfalsifiable from inside — reporting the false positive requires
+# a prompt it may block. Same class as the #484 Stop hook (Test 13). Blocking
+# hooks fire on ACTS (PreToolUse), never on turn-level subject matter.
+# Honest cost: in Cowork, "skip planning/review" followed by edits to
+# EXISTING files now hits no gate at all — PreToolUse fails open for edits
+# and the CLI's commit/merge gates cannot run there. Guidance, not gates.
 if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
   if python3 -c "
 import json
 d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-ups=d.get('UserPromptSubmit',[])
-assert len(ups)>0, 'no UserPromptSubmit hooks'
-assert any(hk.get('type')=='prompt' for h in ups for hk in h.get('hooks',[])), 'no prompt type'
+assert not d.get('UserPromptSubmit'), 'UserPromptSubmit hook is back'
 " 2>/dev/null; then
-    pass "hooks.json has UserPromptSubmit SDLC baseline prompt hook"
+    pass "hooks.json has NO UserPromptSubmit hook (GH #561 — it blocked the maintainer's own policy instruction)"
   else
-    fail "hooks.json missing UserPromptSubmit SDLC baseline prompt hook"
+    fail "a UserPromptSubmit hook returned to cowork/hooks.json — GH #561 removed it; turn-level subject-matter classification is not a gate"
   fi
 else
   fail "hooks.json not found (skipping UserPromptSubmit check)"
@@ -467,27 +483,10 @@ else
   fail "hooks.json not found (skipping substring-guard check)"
 fi
 
-# Test 14e (#456 Codex round-1 finding 3): UserPromptSubmit must NOT deny plain
-# code requests just for lacking a user-authored plan — a block on this event
-# ends the turn with no retry, so denying ordinary prompts (e.g. "write a
-# function to sort a list", the exact prompt from the #432 E2E test) would be
-# actively disruptive. It must instead only deny prompts that explicitly try to
-# bypass safeguards.
-if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
-  if python3 -c "
-import json
-d = json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-prompt = next((hk.get('prompt','') for m in d.get('UserPromptSubmit',[]) for hk in m.get('hooks',[]) if hk.get('type')=='prompt'), '')
-assert 'skip' in prompt.lower() or 'bypass' in prompt.lower(), 'no explicit-bypass framing found'
-assert 'already state a plan' not in prompt.lower(), 'still requires the USER to pre-state a plan (denies ordinary requests)'
-" 2>/dev/null; then
-    pass "UserPromptSubmit denies only explicit bypass requests, not ordinary code prompts"
-  else
-    fail "UserPromptSubmit still denies ordinary code prompts for lacking a user-stated plan, or lost the bypass framing"
-  fi
-else
-  fail "hooks.json not found (skipping UserPromptSubmit scope check)"
-fi
+# GH #561: Test 14e is GONE with its subject. It pinned properties of the
+# UserPromptSubmit prompt's TEXT — which framing it must use, what it must not
+# demand. Contract assertions on a deleted prompt die with it, same as the #484
+# deletion note directly below.
 
 # GH #484: the Stop prompt hook is GONE, so its contract assertions are gone
 # with it. ~90 lines here pinned properties of that prompt's TEXT — which
@@ -522,49 +521,11 @@ else
   fail "ROADMAP missing Dynamic Workflows evaluation entry"
 fi
 
-# Test 18: the UserPromptSubmit gate distinguishes a BYPASS from a JUSTIFIED
-# exception.
-#
-# Incident 2026-08-07: the maintainer wrote "do the prose rename now, dont TDD
-# something like this, it will most likely only ever happen once so just verify
-# after". The gate denied it and ended the turn. That prompt is not a bypass —
-# it states a reason (one-time mechanical change) AND an alternative (verify
-# after). The safeguard was being substituted, not removed.
-#
-# The gate could not tell the difference because it only ever asked "does this
-# ask to skip something". A rule with no sanctioned exception path is one people
-# route around; this is the same shape as the merge gate before --user-approved.
-# Assert the prompt carries BOTH halves: the allowance, and the bare-skip denial
-# it must keep.
-if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
-  ups_prompt=$(python3 -c "
-import json
-d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-print(' '.join(hk.get('prompt','') for h in d.get('UserPromptSubmit',[]) for hk in h.get('hooks',[])))
-" 2>/dev/null)
-
-  if [ -z "$ups_prompt" ]; then
-    fail "could not extract the UserPromptSubmit prompt — this assertion would be vacuous"
-  else
-    missing=""
-    # "stated reason", not bare "reason" — the latter matches the JSON response
-    # field name `"reason"` that the prompt already contained, so it passed
-    # without the clause existing. Caught while writing this test.
-    printf '%s' "$ups_prompt" | grep -qi "stated reason" || missing="$missing no-reason-clause"
-    # "stated alternative", mirroring "stated reason". The looser
-    # alternative|verify matched the word "alternative" elsewhere in the prompt,
-    # so deleting the clause still passed.
-    printf '%s' "$ups_prompt" | grep -qi "stated alternative" || missing="$missing no-alternative-clause"
-    printf '%s' "$ups_prompt" | grep -qiE "substitut|replac" || missing="$missing no-substitution-framing"
-    # It must still deny an unjustified skip, or the fix has gutted the gate.
-    printf '%s' "$ups_prompt" | grep -qi "ok.*false" || missing="$missing no-denial-path"
-    if [ -z "$missing" ]; then
-      pass "UserPromptSubmit gate allows a justified exception and still denies a bare bypass"
-    else
-      fail "UserPromptSubmit gate cannot distinguish a justified exception from a bypass:$missing"
-    fi
-  fi
-fi
+# GH #561: Test 18 is GONE with its subject. It pinned the text of the
+# justified-exception carve-out added after the 2026-08-07 denial — the
+# first repair to this hook. It passed while the hook went on to deny the
+# maintainer a second time (see Test 12). Contract assertions on a deleted
+# prompt die with it, same as Test 14e and the #484 note above.
 
 # Test 19: the skill must declare what happens when the wizard doc is absent.
 #
