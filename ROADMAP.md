@@ -43,7 +43,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **`v1.98.0 — PR-A: the review contract`** — #558, #557, #573, #574, #564, #556, plus #566 riding standalone. **Prose, zero new tests.** The round-eater is test surface, not prose: #557's exhibit had *seven blocking findings, all in the test, zero in the deliverable.* A batch that ships no guards removes that surface by construction.
 >
-> **`v1.99.0 — PR-B: the gate`** — #533 → #547, then #540 → #563. Normal TDD; these have writable REDs. Sequenced **after** PR-A so the gate edits are reviewed under the new contract. #540's design is ruled: smallest fix — `merge-pr.sh` re-verifies the artifact's sha equals the merging sha. No redesign.
+> **`v1.99.0 — PR-B: the gate`** — #533 → #547, then #540 → #563. Normal TDD; these have writable REDs. Sequenced **after** PR-A so the gate edits are reviewed under the new contract. **#540's design is ruled — see DO THIS NOW above for the current statement of it.** This blockquote's earlier version said the fix was re-verifying the artifact's sha against the merging sha; #540 later refuted that outright and ruled that staleness keys on certified content, never on SHA.
 >
 > **How PR-A is reviewed:** zero new guards; the only empirical check is executing every command the prose instructs and pasting the output; **per-item verdicts with a pre-registered ejection rule** (a P1 on item *k* ejects item *k*, the batch ships with the rest); one structured round; **no semantic regexes, no prose mutations, no root-cause archaeology — record known unknowns rather than chasing them.**
 >
