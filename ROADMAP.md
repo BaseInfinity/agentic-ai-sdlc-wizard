@@ -4,6 +4,37 @@
 
 Cold-open pointer: if you're picking this repo back up and don't know where to look, start here before scrolling the tables below.
 
+> ## DO THIS NOW
+>
+> **Take the first open, unblocked issue under DO THIS NOW. Read the issue and its latest comments, implement only its acceptance criteria, open a PR with `Closes #N`, and keep going until it merges.** Do not re-plan the order — it was triaged by both review legs on 2026-08-11 and they reconciled. Do not widen the scope; anything you notice that is not in the issue becomes a new issue.
+>
+> ### Active milestone: `v1.99.0 — PR-B: the gate`
+>
+> **Chain, in dependency order: #533 → #547, then #540 → #563.** Code, normal TDD — unlike PR-A these have writable REDs.
+>
+> **The literal next action: start #533.** Its implementation design is in its own latest comments; [#558](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558) records the sequencing, not the design.
+>
+> **#540's design is already ruled — do not redesign the gate. Read the ruling on the issue before writing any code.** In one line: **staleness keys on certified content, never on SHA.** The clearance pins the branch's patch-id rather than a `commit_sha`, so a content-identical rebase or amend stays valid and a commit that changes the diff invalidates correctly. It lands together with #558's CUT C, which makes `.reviews/merge-clearance-<PR>.json` the single artifact the gate parses.
+>
+> **No riders.** Both legs were asked what else belongs in v1.99.0 and both answered *none*. #515 is the one thematically adjacent issue and it stays out; check whether #540 subsumes it **after** PR-B is stable.
+>
+> ### Then: `v2.0.0 — Consumer Safety Repairs`
+>
+> 1. **#516** — `cli/init.js:229` `removeObsoletePaths()` calls `fs.rmSync(..., { recursive: true, force: true })` on every retired path with **no content-hash check**, while the install path marks a modified file `PRESERVE`. A consumer who customized a now-retired skill loses it silently on update. Preserve customized retired files instead of deleting them.
+> 2. **#554** — Claude Code drift review. The issue carries the current gap; the last time this gap was reviewed it surfaced a live shipped defect (`src/**` silently stopped matching in 2.1.214, killing the TDD hook for every consumer whose source is not at repo-root `src/`). Repair anything it demonstrates. **#456 rides this session** — retest the Cowork hook against the current baseline, then keep it or delete it.
+>
+> ### Then: the consumer-truth prose batch
+>
+> #491 Class 1 (the phantom `STALL_SECONDS` watchdog we document and never built), #544, #499, #537, #579. Same contract that made PR-A cheap: one PR, zero new tests, per-item verdicts with a pre-registered ejection rule. Every item is a shipped file asserting something that is not true.
+>
+> ### Backlog — do not start
+>
+> #515 (verify against #540 first), #501, #542 (record PR-B's data point, then close), #555, #488, #480, #498 (re-judge under #556), #485 (rescope under #556), #481, #504, #545. Links only — the issue bodies are authoritative.
+>
+> ### Standing rulings
+>
+> GitHub Issues is the store; this file is the ordered view. No gate redesign in PR-B. No new guard or tooling surface. One independently closable issue at a time.
+
 > ### 2026-08-10 — RULED: batch the meta changes. Two PRs, prose first.
 >
 > **Milestones now mirror the two PRs. Full ruling: [#558 comment 5249401013](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558#issuecomment-5249401013).** Both review legs answered independently and converged.
@@ -12,7 +43,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **`v1.98.0 — PR-A: the review contract`** — #558, #557, #573, #574, #564, #556, plus #566 riding standalone. **Prose, zero new tests.** The round-eater is test surface, not prose: #557's exhibit had *seven blocking findings, all in the test, zero in the deliverable.* A batch that ships no guards removes that surface by construction.
 >
-> **`v1.99.0 — PR-B: the gate`** — #533 → #547, then #540 → #563. Normal TDD; these have writable REDs. Sequenced **after** PR-A so the gate edits are reviewed under the new contract. #540's design is ruled: smallest fix — `merge-pr.sh` re-verifies the artifact's sha equals the merging sha. No redesign.
+> **`v1.99.0 — PR-B: the gate`** — #533 → #547, then #540 → #563. Normal TDD; these have writable REDs. Sequenced **after** PR-A so the gate edits are reviewed under the new contract. **#540's design is ruled — see DO THIS NOW above for the current statement of it.** This blockquote's earlier version said the fix was re-verifying the artifact's sha against the merging sha; #540 later refuted that outright and ruled that staleness keys on certified content, never on SHA.
 >
 > **How PR-A is reviewed:** zero new guards; the only empirical check is executing every command the prose instructs and pasting the output; **per-item verdicts with a pre-registered ejection rule** (a P1 on item *k* ejects item *k*, the batch ships with the rest); one structured round; **no semantic regexes, no prose mutations, no root-cause archaeology — record known unknowns rather than chasing them.**
 >
@@ -69,60 +100,6 @@ longer forced trades. (No byte figure here on purpose: it was written wrong thre
 one branch. `wc -c skills/sdlc/SKILL.md` is the authority.) Milestones now exist (v1.96–v1.99) and are the source of order;
 this list is being superseded by them per GH #482.
 
-**Start here next, in this order:**
-
-**Row #485 was NOT implemented, despite this section claiming otherwise for
-nine days.** Verified 2026-08-07: branch `fix/485-single-tier-merge-gate` is **0
-commits ahead of main** — its tip is already-merged #474 and it carries nothing — and
-`HARD_DENY` is alive in `scripts/merge-pr.sh` with 5 occurrences. Both halves of
-the old claim were false, and they sat at the top of the list a cold session reads
-first, sending it to work that does not exist on a branch that is empty. Recorded
-rather than quietly deleted: this is the same defect class as GH #491, one level
-up — a stated fact with nothing checking it.
-
-**Revised order — both reviewers, consulted blind on 2026-07-29, independently
-said the previous list was wrong because the maintainer's actual goal (Codex
-drives Claude Desktop, installs the plugin as a user, proves the skill invokes)
-did not appear in it at all.** Fable ranked #485 first; Codex would have deferred
-it as not on the goal's critical path. It was implemented anyway on the
-maintainer's explicit direction — recorded so the dissent is not lost.
-
-1. **Run the repaired E2E oracle.** *This is the goal's critical path.* The runbook
-   `tests/e2e/codex-cowork-install.md` was **repaired in v1.90.0** — its hook expectations
-   now match the shipped contract, Method A is the `owner/repo` marketplace flow that #455
-   is actually about, and a `stop_hook_active` loop-guard step was added. It has not been
-   RUN since. Running it answers #455 and refreshes #456 in one session.
-   **Blocker cleared 2026-08-01:** Step 5c was numbered 1,2,3,4,4,5 — the duplicate `4`
-   was the in-flight case, the one check v1.90.0's Stop-hook fix exists to prove and the
-   one no static test can cover, sitting where a model executing the list would most
-   likely skip it. Fixed, and `tests/test-doc-consistency.sh` now asserts every ordered
-   list in the runbook counts 1..N (generic rule, not a line anchor — anchors in that
-   file have drifted four times). **`cowork/.claude-plugin/plugin.json` tracks the wizard
-   version and `sdlc-wizard-cowork` is a live marketplace entry, so the install is ready to
-   test.** Carries no version literal by design: this line sat at v1.90.0 through three
-   releases, the third of three such markers found in one release review. The authoritative
-   value is `package.json`. A guard asserting every live marker equals it is deferred to
-   GH #493 — three attempts were each proven vacuous by review and pulled from v1.94.0.
-2. **Row #477 `/doctor`** — folding in GH #476's native-install note, per both
-   reviewers. Cheap, and its output is evidence for #476.
-3. **Row #476** — context-engineering realignment, with row #471 and GH #463
-   absorbed as phases. The largest open item; its `local-shepherd` A/B makes it
-   long, so it goes after the one-session retest.
-4. **Row #486** — decide the name freely, but **do not migrate identifiers until
-   the E2E passes.** Both reviewers flagged this independently: the rename's blast
-   radius is exactly the marketplace ID, plugin names, and npm package the E2E
-   installs, so renaming mid-E2E invalidates the evidence being gathered.
-
-**Issue triage agreed by both reviewers:** close GH #477 (fixed in v1.89.0), GH
-#435 (superseded by row #434), GH #463 (already covered). Do **not** close GH #455
-or #456 — both need the live Desktop retest above, not more code.
-
-**Unblocked but not started:**
-
-- **Row #469** — write the "Fable Pre-Review (Situational)" subsection into `AI_SETUP_LANES.md`. Deferred until #468 merged; it has, so this is actionable now.
-- **Row #470** — runtime lane verification. **Partially done 2026-07-24:** preconditions all pass (`claude --version` 2.1.219; `ANTHROPIC_DEFAULT_OPUS_MODEL` / `CLAUDE_CODE_SUBAGENT_MODEL` / `EFFORT_LEVEL` all unset) and Setup A's `/model`→Opus 5 + `/effort`→xhigh resolution was confirmed in a live session. **Still unverified: the advisor-fallback checks in both lanes, and all of Setup B.**
-- **Row #424** — the Cowork plugin's **skills** have still never run in a real Cowork session. Its *hooks* were field-tested 2026-07-24 (one over-fires → row #475). This one needs the maintainer, not an agent.
-
 **Tracked in sibling repos (not actionable here):** Codex GUI plugin support is parked as [`codex-sdlc-wizard#63`](https://github.com/BaseInfinity/codex-sdlc-wizard/issues/63), investigation-only, expiry 2026-09-21 — the GUI's plugin manifest format is still unknown, so nothing gets built until it is understood. Note this repo's own issue #433 is a *different* target: Codex **CLI**, not the GUI.
 
 ## Entry gate (Demand-Signal-First, added 2026-05-24)
@@ -160,55 +137,6 @@ Add entries when a candidate is mid-evidence (one signal exists but doesn't yet 
 | Server-side required-check enforcement for the merge-safety gate | A local hook/wrapper (#462) can verify CI status, a policy-adjacency denylist, and a SHA-bound clearance artifact, but can never be a full security boundary against a determined agent willing to forge the clearance artifact (that env bypass was deleted in #479; the same agent can equally post its own clearance comment). Real fake-resistance needs a GitHub branch-protection required status check or Action that independently re-verifies the clearance artifact server-side before allowing merge — Fable's explicit recommendation during the #462 design consult, deliberately deferred as future-only rather than built into the same change. | A forged/stale clearance artifact actually causes an unwanted merge, OR a second repo asks for this mechanism and wants it tamper-resistant | 2026-09-19 | #462 design consult, 2026-07-21 |
 
 > **Maintenance rule:** during quarterly ROADMAP triage, prune any row past expiry. Logged removals go in the commit message (`docs(roadmap): prune parking lot — <N> expired entries`) so deletions are traceable.
-
-## Next Release Queue (GH issues, priority-ordered 2026-08-02)
-
-Triage of the 8 open GitHub issues against what should actually ship next. The ordering principle is **live consumer harm first**, not age or effort.
-
-### SHIP NEXT — GH #475, and it is not the version bump
-
-**GH #475 is filed as "CC version drift: baseline v2.1.210, latest v2.1.220". Reviewing those ten releases on 2026-08-01 found a live shipped defect, and that — not the baseline bump — is why this ships first.**
-
-`hooks/hooks.json:20` gates the TDD hook with `"if": "Write(src/**) Edit(src/**) MultiEdit(src/**)"`. Claude Code **2.1.214** changed single-segment `dir/**` conditions to match only `<cwd>/dir`; any-depth matching now requires `**/src/**`. `hooks/` is in `package.json`'s `files`, so this ships to every consumer.
-
-**Consequence:** for any consumer whose source is not at repo-root `src/` — every monorepo, every `packages/*/src/`, every `apps/web/src/` — **the TDD hook silently stopped firing as of 2.1.214.** No error, no warning; the gate simply does nothing. This repo is unaffected only because its own `.claude/settings.json` paths (`hooks/`, `cli/`) genuinely sit at the root, which is exactly why it went unnoticed.
-
-Scope for the release: (a) the one-word fix `src/**` → `**/src/**`, with a regression test that executes the condition rather than grepping for it; (b) audit the other `if:` conditions in `.claude/settings.json` for the same pattern; (c) bump the `SDLC.md` baseline marker from v2.1.210; (d) fold in the other genuinely relevant 2.1.211–2.1.220 findings — prompt-hook default timeout is 30s, `PreToolUse` deny ends the turn since 2.1.210 unless `continueOnBlock: true`, subagent nesting flip-flopped twice, and transcripts now record reasoning effort per message (a free measurement instrument for effort questions).
-
-**Verified but NOT exposed, state it so nobody re-derives it:** 2.1.214 also fixed "hooks with exit code 2 not blocking when stdout JSON fails schema validation". All four of our exit-2 hooks write to stderr, so we were never exposed.
-
-### Also worth including if the release has room
-
-**GH #476 — native install vs the sudo-npm footgun.** Consumer-facing, small, and it pairs naturally with a hooks-and-install release. No blocker.
-
-**ROADMAP #495(b) — the phantom watchdog.** `skills/sdlc/SKILL.md` and the wizard doc both tell consumers that `scripts/codex-review.sh`'s `STALL_SECONDS=1800` governs review timeouts. Neither the script nor the variable exists anywhere in this repo, and the wrapper that does exist has no watchdog. We ship instructions for a mechanism nobody built. Implement it or delete the claim — both are small, and shipping a false operational promise is worse than shipping neither.
-
-### Explicitly NOT in the next release
-
-**GH #455 and #456 (Cowork hooks).** Investigated 2026-08-01/02. Both hooks were proven CORRECT by execution under Claude Code CLI 2.1.220 with byte-identical config — they fire, deny, and render their reason. They are inert in Cowork for host-side reasons, and the host logs record neither hook decisions nor tool calls, so the layer cannot be identified from outside. **There is nothing to fix in this repo**, and shipping a speculative workaround would be the compatibility hack the repo bans. Keep open; they need one instrumented Cowork session, not code.
-
-**GH #478** (the "delete your CLAUDE.md every 6 months" claim) — research, no shipping surface.
-**GH #434** (36 pending API features) — backlog sweep, its own session.
-**GH #433** (Codex CLI parity) and **GH #429** (portable sdlc-mcp) — architecture questions on their own track; #429 in particular could restructure the whole ecosystem and must not ride along with a hotfix.
-
-**ROADMAP #493** (the three prompting guides, incl. the Fable one never read) — **its own branch and its own release**, per maintainer direction, because it touches every shipped `.md` and needs a clean rollback path.
-
----
-
-## Next Up (v1.37.0 queue, priority-ordered 2026-04-23)
-
-0. **#212 — Local-Max E2E shepherd (zero-API)** — ✅ **ENGINEERING COMPLETE; PROVE-IT GATE DEFERRED 2026-05-05** ("just defer prove it who cares" — maintainer pragmatic call). Sim/eval/orchestration all on Max subscription per #228 (v1.59.0) + #230 + #231 phases 1-4 (v1.50.0–v1.55.0). Weekly+monthly workflow porting deleted ~$25-55/week of API cron burn. Docs reference `tests/e2e/local-shepherd.sh --compare-baseline` as the default path (`CLAUDE_CODE_SDLC_WIZARD.md` lines 42, 102, 1325, 2570). **Codex cross-model review** runs against ChatGPT/Codex subscription auth (`codex login`, "Logged in using ChatGPT" 2026-05-05) — also $0 marginal. Net: **$0/release** (was $20+/release in API burn). **Prove-It Gate parked** — would require ~$20 one-time API spend to run paired N=15 local-Max vs CI-API trials for 95% CI overlap proof. Not worth the spend; engineering signal works fine in practice. Reopen if local scoring drifts vs known-good baselines. Original scope archived below for history. <details><summary>Original scope (archived)</summary>**TOP PRIORITY** after 2026-04-23 live-fire proved the pain. Today's shepherding blew through the Anthropic API credit cap mid-release (PR #222 e2e-quick-check failed with "Credit balance is too low"), blocking v1.36.1 until admin-merge. Current CI spends ~$0.62 (Tier 1) + $0.82 (Tier 2) per PR on `anthropics/claude-code-action@v1`. Across today's 12 PRs that's **$20+ in API burn** just for simulations. **Architecture** (tri-split billing): (a) **Simulation** — `claude --print` via local Bash tool runs against **Max subscription** ($0 after monthly cap, tests wizard behavior ON Claude which is the whole point); (b) **Cross-model review of PR diff** — `codex exec -c model_reasoning_effort=xhigh` via local Bash tool uses **OpenAI API** (separate bill, ~$3-5/PR — REVISED 2026-05-05: $0 if Codex authed via ChatGPT subscription); (c) **Orchestration** (watching CI, pulling logs, posting PR comments, merging) — me running in local terminal on **Max quota** ($0). **Scope:** (1) replace `claude-code-action@v1` invocation in `run-simulation.sh` with `claude --print "$prompt" --output-format json`; (2) confirm execution-output JSON shape matches (SDK format); (3) keep CI path as fallback for external contributors without a Max sub; (4) new `./tests/e2e/local-shepherd.sh <PR>` orchestrator runs Tier 1+2 locally, posts summary; (5) update SDLC skill + CLAUDE_CODE_SDLC_WIZARD.md docs to reference local shepherd as the default path. **Prove-It Gate** (CRITICAL — unchanged): demonstrate statistical score parity (local-Max vs CI-API) on **at least 3 PRs** before trusting local signal. Both paths hit same model (Opus 4.7), same prompt, same scoring — expected differences are only stochastic variance (±1-2 pts typical), so prove via overlapping 95% CIs, not byte-equality. If parity fails, investigate whether Max routing differs from raw-API before declaring. User call-out 2026-04-23: "why are we using API credits for CI instead of us being CI shepherd?"</details>
-1. **#215 — Tier 2 persist dead code** ~~DONE v1.36.0~~ — Closed by PR #214.
-2. **#214 — Adaptive-thinking A/B Prove-It** (strategic, ~$12 API). Unblocks #213. Run 10× with adaptive-thinking, 10× with `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1`, compare 95% CI. Decision rule in the item. **Gated on #212 shipping first** — adaptive-thinking A/B should run via local-Max shepherd, not API, or it'll burn $12 every calibration cycle.
-3. **#210 — Node 24 false-green** ~~DONE v1.36.0~~ — Closed by PR #217.
-4. **#211 — Tier 1 "11/10" score leak** ~~DONE v1.36.0~~ — Closed by PR #216.
-5. **#217 — `model-effort-check.sh` loud warning below xhigh** ✅ DONE 2026-04-24. Hook now: `max`/`xhigh` → silent; `high`/`medium`/`low`/unset → LOUD WARNING block recommending `/effort max`, mentioning SDLC compliance + Opus 4.7 shallow-reasoning gotchas. 2 new TDD tests (118 total hook tests passing).
-6. ~~**#207 — Community feature-discovery scanner**~~ ✅ DONE — scanner shipped v1.39.0, fetcher v1.56.0 (PR #286). Paperwork close v1.62.0.
-7. ~~**#216 — Repo rename**~~ DONE in v1.36.1 — renamed `agentic-ai-sdlc-wizard` → `claude-sdlc-wizard` (matches sibling pattern, npm package kept as `agentic-sdlc-wizard`).
-8. **Token bloat audit** (P2, zero-API). ✅ **FULLY DONE.** Phase 1 (2026-04-24): `dedupe_plugin_or_project()` helper kills 2× SDLC BASELINE injection (dual-channel hook registration). Phase 2 (2026-04-27, v1.47.0 PR #272): `scripts/audit-session-load.sh` inventories every session-loaded asset, ranks by char count, flags >5K-token candidates. Phase 3 (2026-04-27, v1.48.0 PR #273): trimmed `skills/sdlc/SKILL.md` 12,427 → 4,995 tokens (-60%) and `skills/update/SKILL.md` 8,555 → 4,044 tokens (-53%). Audit reports 0 trim candidates. Codex round 1 CERTIFIED 10/10.
-9. **OpenCode port — TRACKED ELSEWHERE 2026-05-24** in [`BaseInfinity/opencode-sdlc-wizard`](https://github.com/BaseInfinity/opencode-sdlc-wizard). All Phase A/B/C work, the v0.8.3 npm-publish E404, and the npm-2FA-mode decision live there. No claude-sdlc-wizard scope remains. Per [`.reviews/roadmap-prio-codex.md`](.reviews/roadmap-prio-codex.md) excise list. Original entry archived below for history. <details><summary>Archived (excised 2026-05-24)</summary>**OpenCode port — privacy-first, any-backend portability** (strategic, multi-phase; supersedes backlog #194). **Phase A + early Phase B shipped 2026-05-03 → 2026-05-06.** Sibling repo at `BaseInfinity/opencode-sdlc-wizard` is at v0.8.3 locally. **Releases shipped (in repo):** v0.2.0 (privacy-first 4-tier backend picker + Codex round-3 CERTIFIED 9/10, 113 tests), v0.3.0 (`npx opencode-sdlc-wizard init` CLI), v0.3.1 (`cross-model-review` skill), v0.4.0 (domain-adaptive TESTING.md), v0.4.1 (plugin shim fix), v0.5.0 (SDLC.md + ARCHITECTURE.md templates), v0.6.0 (more templates), v0.7.0 (JSON schemas for review artifacts + zero-dep validator), v0.8.0 (free-tier-first cascade + 5 providers + cost ladder), v0.8.1/v0.8.2 (Codex round-1/round-2 cross-model-review fixes). **npm publish state:** only `0.2.0` is on npm. Releases v0.6.0–v0.8.2 all failed `release.yml` at the test step — `tests/test-review-schemas.sh` T14 hard-failed when live `.reviews/response.json` was absent (file is gitignored, CI clean checkout never has it). **Fixed 2026-05-06 (PR #1):** T13/T14 now use validate-if-present semantics. **v0.8.3 cut 2026-05-06 (PR #2)** to ship the test fix as a real release. v0.8.3 is the first tag to clear the test step — but `npm publish` then failed with E404 on the 2FA-on-writes documented in `RELEASING.md`. **Pending — maintainer action only:** either run `npm publish --access public --otp=<6-digit>` manually against the workflow's tarball, OR switch the npm account 2FA mode from "writes" to "auth-only" so the automation token works alone. Phase B (backend matrix proof — Ollama/Azure/Together/Anthropic) and Phase C (hardware scout) remain deferred per scope. Full pickup state in [HANDOFF.md](https://github.com/BaseInfinity/opencode-sdlc-wizard/blob/main/HANDOFF.md). <details><summary>Original scope (archived)</summary>Port the wizard to [`sst/opencode`](https://github.com/sst/opencode) so users can run the full SDLC harness against **whatever model backend their privacy/compliance constraints allow** — not just Anthropic. OpenCode is the right target because it already speaks many providers out of the box: local (Ollama, LM Studio, llama.cpp, vLLM), enterprise (Azure OpenAI, AWS Bedrock, internal AI gateways), hosted OSS (Together, Groq, OpenRouter), plus the usual OpenAI/Anthropic. Driver: (a) Opus 4.7 token burn + API-credit cap pain — single-vendor lock-in is expensive and fragile; (b) real enterprise + privacy use cases — e.g. route through a work Azure OpenAI tenant with zero-retention, or run fully offline on a local model, without giving up the wizard's enforcement. **Phase A — port the wizard:** spawn `opencode-sdlc-wizard` sibling mirroring the Codex port pattern (`agentic-sdlc-wizard` writes `.claude/`, `codex-sdlc-wizard` writes `.codex/` + `AGENTS.md`; new sibling writes `.opencode/`). Map hooks → OpenCode's pre/post-tool primitives, port instructions-loaded-check + sdlc-prompt-check + tdd-pretool-check + precompact-seam-check + model-effort-check, port all 4 skills (SKILL.md is already portable per #91), non-destructive config merge in install.sh, quality tests proving hooks actually fire under OpenCode. **Phase B — backend matrix proof:** run an E2E SDLC scenario (plan → TDD → self-review) against at least one from each category: local (Ollama + Qwen-Coder or DeepSeek-Coder, 16–24GB VRAM class), enterprise gateway (Azure OpenAI), hosted OSS (Together/Groq). Score each against the Claude Code baseline; document which backends hold SDLC compliance and which degrade. **Capability-floor note** — "just works on every LLM" is the dream but not the spec: expect small local models (7–13B) to fail the full plan→TDD→self-review protocol (instruction-following + long-context reasoning + tool-use are all load-bearing). The 30B+ code-tuned class (Qwen-Coder, DeepSeek-Coder) is the likely local sweet spot. A failed run on an undersized model is a capability result, not a port bug — log it in the matrix and move on. **Phase C — hardware scout for local tier:** test gaming laptop + Windows laptop first (zero cost); if insufficient, evaluate $200/$300/$400 rig or cloud-GPU rental. **Success criterion:** a user can pick their backend (local for privacy, Azure for enterprise, OSS-hosted for cost, Anthropic for ceiling) and get the same SDLC enforcement — giving agentic-harness power to people the Anthropic-only path excludes. Reserve Anthropic for high-stakes cross-model review in low-trust backends.</details></details>
-
-Blocked: **#213** (ship degradation env vars by default) gates on #214 result.
 
 ## Archived history
 
