@@ -28,15 +28,20 @@ PASSED=0
 FAILED=0
 
 # GH #566 — FAIL CLOSED. `mktemp -d` can fail (an unwritable TMPDIR under
-# sandbox does it), leaving $root empty. `mkdir -p ""` and `cd ""` then BOTH
-# fail — `cd` reports "null directory" and returns 1 — but with no `set -e` and
-# no `||` guard, nothing checked either status, so execution simply carried on
-# in the caller's working directory and every git command below ran against the
+# sandbox does it), leaving $root empty. Execution then carried straight on in
+# the caller's working directory and every git command below ran against the
 # real repo. Observed, not theorised: the fixture created ci-clone/, README.md
 # and tests/e2e/score-history.jsonl in the caller's cwd.
 #
-# The defect was never an exotic shell behaviour. It was unchecked exit status
-# on two adjacent lines.
+# `cd ""` DOES NOT reliably stop this, and the version split matters — see the
+# header of tests/test-fixtures-fail-closed.sh for the full account. Short
+# version: under bash 3.2, which is `/bin/bash` on macOS and therefore what this
+# script's shebang selects, `cd ""` returns 0 silently and does not move. It
+# returns 1 only under bash 5.x, which is what Linux CI runs.
+#
+# So `cd "$root" || exit 1` is a real guard on CI and a no-op on the machine
+# where the incident happened. The load-bearing guard on macOS is the
+# per-call-site `root=$(new_root) || exit 1`. Both are kept.
 #
 # Callers MUST use `root=$(new_root) || exit 1`. The `exit 1` inside this
 # function only leaves the command-substitution subshell; the `||` is what
