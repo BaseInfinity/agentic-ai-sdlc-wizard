@@ -84,6 +84,40 @@ An undocumented future registration mechanism is uncovered by any check here —
 cross-model diff review is the guard, and it found every missing surface to
 date.
 
+**Update commands — run both, at release time (#573).** Every command this repo
+tells a reader to run must itself have been run. These are the ones the shipped
+docs instruct, so they belong in this list.
+
+```
+claude plugin update sdlc-wizard-cowork@sdlc-wizard-marketplace
+claude plugin update sdlc-wizard-cowork
+```
+
+Observed 2026-08-10 on an install already at the latest version:
+
+```
+$ claude plugin update sdlc-wizard-cowork@sdlc-wizard-marketplace
+Checking for updates for plugin "sdlc-wizard-cowork@sdlc-wizard-marketplace" at user scope…
+✔ sdlc-wizard-cowork is already at the latest version (1.97.0).
+
+$ claude plugin update sdlc-wizard-cowork
+Checking for updates for plugin "sdlc-wizard-cowork" at user scope…
+✘ Failed to update plugin "sdlc-wizard-cowork": Plugin "sdlc-wizard-cowork" not found
+```
+
+**The marketplace-qualified form is the only one that resolves. The bare name
+fails.** That is what the second command is here to keep proving.
+
+**Known unknown, and the docs must not overstate it:** the qualified form has
+been observed to *resolve*, never to *move a version*. Confirming movement needs
+a genuinely stale install. Until someone runs it against one, `cowork/README.md`
+says exactly that and names `/reload-plugins` as the only step observed to move
+a version (1.93.0 → 1.97.0, `Hooks (2)` → `Hooks (1)`).
+
+The version is on the **header line** of `claude plugin details`
+(`sdlc-wizard-cowork 1.97.0`) — that command prints no `Version:` field.
+`claude plugin list` is where the `Version:` label lives.
+
 Note it reads the installed cache, not the working tree, so installing first is
 mandatory: run it against an unupdated cache and it reports the OLD plugin.
 

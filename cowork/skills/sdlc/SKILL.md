@@ -120,6 +120,29 @@ Native `/goal <condition>` (**v2.1.143+**). Haiku evaluator re-checks transcript
 
 **Autocompact: set neither override by default.** For a deliberately earlier boundary use `CLAUDE_CODE_AUTO_COMPACT_WINDOW` alone — a smaller window compacts sooner, and nothing in that range switches compaction off. On **current Opus** a percentage alone is inert unless the window is also set, and then the two multiply; on Sonnet 5 and on a 200K Opus 4.6 pin it is live, so size it against THAT window (#520). **Advisor (v2.1.170+):** `advisorModel: "fable"` works with all drivers above; set in `/claude-setup-wizard` Step 9.5.
 
+## The Review Contract (give BOTH reviewers this, verbatim)
+
+**Grade severity by impact if it shipped.** Not by how hard the fix is. Not by which round found it. Either one gets gamed to open or close a round.
+
+| | |
+|---|---|
+| **P0** | Stop the world. Prod broken, data loss, secret leaked. Preempts the task. |
+| **P1** | This PR does not merge. It doesn't work, or it broke something that did. |
+| **P2** | Real, should fix, ships fine without it. |
+| **P3** | Nit. |
+
+**A finding blocks only if it is P0 or P1 and inside the scope card.** Fix a P2 or P3 here only if the diff is small and you already touched the file. Otherwise file it.
+
+**Also answer: is this the right way to build it?** Should this code exist? Is it proportionate? Return **SOUND**, **CONCERN** (ship it, here's the debt), or **WRONG SHAPE** (stop, redesign). No severity level says "this should not exist", so nobody says it. *(#539: four rounds, seven real P1s, guard deleted at the end. WRONG SHAPE ends that at round 1.)*
+
+**File anything outside the scope card as a GitHub issue. Never build it here.** This binds reviewers too: an out-of-card finding gets reported and filed, and does not block certification. *(#520: 20 rounds, 46 lines, nothing to compare growth against.)*
+
+**Do not certify a doc that instructs commands unless the output is pasted.** The other leg can check this, which is the point. Reading catches judgement defects; only running catches wrong commands. *(#572: both legs certified a doc whose update command fails outright.)*
+
+**Review against the issue's acceptance criteria, verbatim.** A stricter bar you invented in your own prompt is self-inflicted scope. *(#553: two rounds on a bar #530 never contained.)*
+
+Ship good code, not perfect code. No glaring issues, right shape. Otherwise you never ship.
+
 ## Cross-Model Review (REQUIRED for High-Stakes)
 
 **When to run:** high-stakes changes (auth, payments, data), releases/publishes, complex refactors. **Skip (log justification):** trivial, hotfixes, risk < review cost. **Reviewer:** `gpt-5.6-sol` `high` — adversarial diversity. **Cadence:** Fable during design, Codex once per frozen scope; don't stack both unless the decision needs two independent reviewers.
@@ -133,12 +156,23 @@ PROTOCOL is universal across domains; only `review_instructions` and `verificati
 **Handoff/preflight mechanics: wizard doc.** These two stay; improvising them cost real time (#364, #437).
 
 1. **Run reviewer:** `codex exec -c 'model_reasoning_effort="high"' -s danger-full-access -o .reviews/latest-review.md "<prompt>" < /dev/null`. Always `high`, `run_in_background: true` + `dangerouslyDisableSandbox: true`, always `< /dev/null`. **Why:** `< /dev/null` prevents a stdin hang at 0% CPU; background avoids the Bash 10-min cap that kills foreground codex (bundles run 5–30 min). Foreground burned 70 min on a 7-min review (#364).
-2. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Report every defect; don't hunt new surfaces; new P0/P1/P2 blocks only if a REQUESTED behavior is wrong." **NEVER unilaterally dismiss** — run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
+2. **Dialogue loop:** per-finding response (`{"finding":"1","action":"FIXED|DISPUTED|ACCEPTED","summary":"..."}` in `.reviews/response.json`). Bump round, set `PENDING_RECHECK`, add `fixes_applied` (numbered, file:line). Recheck prompt: "TARGETED RECHECK. FIXED → verify certify condition. DISPUTED → ACCEPT if sound, REJECT with reasoning. ACCEPTED → verify applied. Report every defect at any severity; don't hunt new surfaces. A finding blocks only if it is P0/P1 AND against a REQUESTED behavior — and a finding showing a requested behavior is wrong IS P1, whatever label it arrived with." **NEVER unilaterally dismiss** — run the recheck; the reviewer may accept your dispute or counter with evidence you missed. **On CERTIFIED write `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — the gate hook (#437) treats a missing/mismatched SHA as stale, not just the status string.
 
 **Convergence — TWO PASSES PER FROZEN SCOPE, COUNTED CUMULATIVELY PER ROOT TASK.** One review, one verify (verify reads only the diff since last verdict). A fix adding code or promises beyond the reviewed diff is NEW SCOPE — log continue/stop + cost in `handoff.json` `scope_decisions` BEFORE the pass; single driver records its own, next pass ratifies; human only on a cross-model split. **The count is cumulative and never resets when scope is re-frozen** — record `root_task` (the verbatim request) and `base_sha` once, then let `round` accumulate across every re-freeze; new scopes **append** to `scope_decisions`, never replace it. Re-freezing after each fix is how two-per-scope becomes unlimited (#520: 20 rounds). This is accounting, not a cap: continuing stays the recorded decision's call. **Blame the line:** a blocker in code nobody asked for — cut it, don't repair it. Review committed SHAs, not a mutable tree. #520: 20 rounds, 46 lines.
 **Loop autonomy — no per-round check-ins.** While a pass is owed, don't hand the turn back: fix, push, launch it in the SAME turn. Ending a turn with no pending work IS a stop decision; cite **CONVERGED** (verdicts in on head SHA, zero unresolved in-allowlist), **DEADLOCK** (finding unmoved after 2 rechecks, or non-waivable gate after 2 attempts), **BOUND** (context ceiling, or gate needing a human), or **SCOPE** (two passes used — recorded decision required). Every pass carries a delta; resubmitting unchanged = reviewer-shopping.
 
-**Multi-reviewer — RECONCILE, don't collect.** Answer each blind; once all verdicts are in, show each the other's surviving position and re-ask once. The gain is the aggregation, not a second opinion. Only a split SURVIVING that reaches the user — as a decision, not a question. **Non-code domains:** add `"audience"`/`"stakes"` keys.
+**Multi-reviewer: let the reviewers reconcile with each other. You relay. You never merge their words.**
+
+1. **Review blind.** No shared draft, no summary of the other. A reviewer who saw the first one confirms it instead of looking elsewhere, and you paid for two reviews to get one.
+2. **Cross-feed verbatim.** Pass each the other's position as written. Paraphrase restates a position into something its author would not sign.
+3. **Let them argue.** Concede what's right. Hold what's wrong with a file, a line, or command output — never an opinion.
+4. **They hand back one position. You report it.** The user sees a settled answer, not two transcripts to referee.
+
+You are the lowest-ranked reviewer of your own work: most context, least independence, and you wrote it. Merging their words is grading yourself through a paraphrase you control.
+
+**On deadlock, route by where the position started.** A split that started as a design question belongs to the planner. One that started in a verdict, defect list, or recheck belongs to the reviewer, and the lower verdict applies. A split spanning both goes with the verdict. Only what survives that goes to the user, as one question. *(#561: the attacker opened with four P1s, the planner conceded all four and then found three surfaces the attacker missed. Neither produced that list alone.)*
+
+**Non-code domains:** add `"audience"`/`"stakes"` keys.
 
 **Full protocol** (rationale, full JSON example, anti-patterns like "find at least N", convergence diagrams): `CLAUDE_CODE_SDLC_WIZARD.md` → "Cross-Model Review Loop".
 
@@ -168,8 +202,8 @@ Mandatory steps:
 5. CI fails → fix, push (max 2 attempts)
 6. CI passes → `gh api .../pulls/PR/comments` for review feedback
 7. Implement valid suggestions (bugs, perf, dedup). Skip opinions. Max 3 iterations
-8. **Clearance, once CI green.** Ask reviewers *"safe to merge?"* — NOT "can you break this" (unsatisfiable; #478). Each posts `**CROSS-MODEL-CLEARANCE**` + one fenced json `{"reviewer","verdict":"YES","confidence","sha"}`. **`verdict` decides; confidence only qualifies it.** YES <95 names a residual → one focused round, never a human ask; re-asking unchanged is shopping.
-9. Explicit `gh pr merge --squash` (repo wrapper if any) — never auto-merge. Needs 2 YES ≥95 on head SHA AND: CI `validate` green, Codex `high` CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) with **zero unresolved findings** in-allowlist after **≥1 dialogue round**. Merge-evidence paths (workflows, `hooks/`, `.claude/`, merge script) need a human — **unless** your repo has a merge gate mechanically checking CI, test deletions, clearance, and you run the *merged* copy, not this branch's edited one. No gate: human. Version bumps, reviewer deadlocks: always human. Tell the user after — never silent.
+8. **Clearance, once CI green.** Ask reviewers *"safe to merge?"* — NOT "can you break this" (unsatisfiable; #478). Each posts `**CROSS-MODEL-CLEARANCE**` + one fenced json `{"reviewer","verdict":"YES","confidence","sha"}`. **The verdict decides. Ignore the confidence number.** It does not separate certified-correct from certified-wrong, so never route a decision through it and don't spend output defending it. The field stays only because the merge gate still requires it (#574). *(#572: one leg certified at 100%, the other then found a P1 it had passed three times; the second certified at 96%, the first then found a P1 that only appeared by running the command. What discriminated was executing it.)*
+9. Explicit `gh pr merge --squash` (repo wrapper if any) — never auto-merge. Needs 2 YES ≥95 on head SHA (the ≥95 is the gate's mechanical requirement until PR-B, not a review signal — see #574 above) AND: CI `validate` green, Codex `high` CERTIFIED via full dialogue; **fresh Fable subagent** (diff only) with **zero unresolved findings** in-allowlist after **≥1 dialogue round**. Merge-evidence paths (workflows, `hooks/`, `.claude/`, merge script) need a human — **unless** your repo has a merge gate mechanically checking CI, test deletions, clearance, and you run the *merged* copy, not this branch's edited one. No gate: human. Version bumps, reviewer deadlocks: always human. Tell the user after — never silent.
 
 **Evidence:** PR #145 auto-merged, shipped a P1 bug. v1.92.0: two YES (97/93) dead-ended (#478).
 
@@ -194,6 +228,10 @@ Reproduce → Isolate → Root Cause → Fix → Regression Test. No skipping. `
 Before reporting a fix, name the observable that would differ if it were NOT fixed — then go look at it. Settings file edited → read the live process env, not the file. Hook changed → fire it. Threshold changed → measure it against the real files. If the only evidence is "I made the edit", the state is *submitted*, not fixed.
 
 **Out-of-repo changes get no gate** (global `settings.json`, env vars, shell rc, scheduler entries): no diff, no PR, no reviewer ever sees them. Before editing, check `.reviews/` artifacts and memory for prior findings on the subject; state the verification command in the same message as the change; if a live process won't pick up the edit (env vars need a restart), say so instead of "fixed". **Evidence:** 2026-08-08 (#525) — a settings fix was reported fixed while the bug was still live; the answer was already in `.reviews/` from PR #468.
+
+**An instruction is not a claim.** Never tell a reader to run a command you have not run. Labeling saves a claim, because the reader evaluates it. It cannot save an instruction, because the reader executes it. Delete it instead.
+
+Run the exact string you ship, and fill in every placeholder at least once. **Check that the output shows the promised behavior, not just exit 0** — `✔ already at the latest version` proves the name resolves, not that the command updates. If you can't observe the behavior, narrow the instruction to what you did see. A command you genuinely cannot run may be described, never instructed. *(#572: 24 doc lines, five P1s, every one a claim wider than its evidence — including an update command that fails outright. That doc labeled its evidence honestly and still shipped broken.)*
 
 ## Release Planning (Task Ships a Release)
 
@@ -221,6 +259,18 @@ Critique tests harder than app code: testing the right things? Proving correctne
 Mocks MUST come from real captured data — never guess shapes. Unit tests qualify ONLY for pure I→O (no DB, API, FS, cache).
 
 **TDD proves:** RED (fails — bug or missing feature), GREEN (passes — fix works), Forever (regression protection). **TDD RED applies only where a RED mutation is writable** — write the wrong version the test must catch BEFORE writing the test. If catching the wrong version requires understanding meaning (a reversal, a negation, a contradicting sentence nearby), no assertion can do it: DO NOT write the test. That exception is for prose judged by a reader — for executable behavior, any observable input/output or side-effect difference means a RED mutation IS writable. Three-way call for every change: **EVAL it** (agent-facing guidance a real scenario can observe), **plain-assert it** (mechanical contract only — byte parity, a JSON key, a version, a heading; proves structure, never meaning), or **DON'T TEST IT** (prose whose correctness is a judgement call — cross-model review is the guard). **Implement-first** is allowed ONLY when a named gate blocked the required RED/evidence act itself — a gate refusing implementation because RED is missing is the gate working, not an entry ticket. Quote the refusal verbatim in the issue/PR, get a cross-model ruling that APPROVES that same act and scope BEFORE the edit, and name — before editing — the observable that would differ if the change were wrong, then go look at it after (#525). No quoted refusal or no approving ruling — no entry.
+
+**List every observation the check promises, then break each one separately.** Mutate a copy of the live deliverable, not the base. The run fails unless every expected failure reports. Can't list them? Don't write the guard.
+
+**Make the nearest wrong version fail, not just a deletion.** Deletion is the easiest mutation to survive, because a branch that pre-existing text already satisfies never notices it. *(Five dead checks in one session. #550's runner ran 30 of 65 suites and reported green.)*
+
+**Grep prose for exact strings or structure only. Never for meaning, denial, or polarity.** Review the prose instead, or delete the marker (#493 req 6).
+
+**The first time a reversed live instruction stays green, delete the guard. Do not patch it.** *(#539: three patches to one unfixable mechanism turned round 2 into round 4. Strikethrough won — `~~the count never resets~~` keeps the string byte-identical while teaching the opposite, suite green at 137/137.)*
+
+**Offer "delete the guard" as an outcome in any guard recheck.** Reviewers only pick outcomes the prompt offers. Rounds 1–3 kept it off the menu; round 4 put it on and it was taken immediately. If you are repairing a guard for the second time this cycle, ask whether it should exist.
+
+**Accepted residual:** no string check can catch a doc that lists the required fields and then contradicts them in prose. Cross-model review is the only guard for that.
 
 ## Prove It Gate (New Additions Only)
 

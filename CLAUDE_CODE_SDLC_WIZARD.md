@@ -2623,6 +2623,24 @@ PLANNING → DOCS → TDD RED → TDD GREEN → Tests Pass → Cross-Model Revie
 
 **TDD proves:** RED (fails — bug or missing feature), GREEN (passes — fix works), Forever (regression protection). **TDD RED applies only where a RED mutation is writable** — write the wrong version the test must catch BEFORE writing the test. If catching the wrong version requires understanding meaning (a reversal, a negation, a contradicting sentence nearby), no assertion can do it: DO NOT write the test. That exception is for prose judged by a reader — for executable behavior, any observable input/output or side-effect difference means a RED mutation IS writable. Three-way call for every change: **EVAL it** (agent-facing guidance a real scenario can observe), **plain-assert it** (mechanical contract only — byte parity, a JSON key, a version, a heading; proves structure, never meaning), or **DON'T TEST IT** (prose whose correctness is a judgement call — cross-model review is the guard). **Implement-first** is allowed ONLY when a named gate blocked the required RED/evidence act itself — a gate refusing implementation because RED is missing is the gate working, not an entry ticket. Quote the refusal verbatim in the issue/PR, get a cross-model ruling that APPROVES that same act and scope BEFORE the edit, and name — before editing — the observable that would differ if the change were wrong, then go look at it after (#525). No quoted refusal or no approving ruling — no entry.
 
+#### RED is a set of mutations, not one deletion
+
+**List every observation the check promises. Break each one separately on a copy of the live deliverable.** The run fails unless every expected failure actually reports. If you cannot list the observations, do not write the guard.
+
+**Make the nearest wrong version fail, not just a deletion.** Deletion is the maximal mutation and the easiest to survive: a branch that pre-existing text already satisfies is invisible to it. *(Five dead checks shipped or nearly shipped in one session, several caught only when an independent reviewer mutated the deliverable instead of the base. #550's runner silently ran 30 of 65 suites and reported green.)*
+
+#### Never grep prose for meaning
+
+**A regex over prose may check an exact string or a structure. It may never check meaning, denial, or polarity.** Review the prose instead, or delete the marker (#493 requirement 6).
+
+**The first time a reversed live instruction stays green, delete the guard. Do not patch it.** Patching an unfixable mechanism is what turns round 2 into round 4.
+
+**Offer "delete the guard" as an outcome in any recheck of a guard.** Reviewers converge only to outcomes the prompt puts on the menu. And if you are repairing the same guard a second time in one cycle, the question is whether it should exist, not how to fix it.
+
+*Evidence (#539): a 23-line doc change, correct at round 1 and never changed again, carried a 197-line grep guard over prose. Four rounds, seven blocking findings — all seven in the test, none in the deliverable. Rounds 2–4 were the same defect three times, because a text-presence check cannot detect polarity. The final defeat was Markdown strikethrough: `~~the count never resets~~` keeps the searched string byte-identical while the live sentence teaches the opposite, and the suite stayed 137/137 green. Rounds 1–3 forbade expanding the surface, so "delete the guard" was off the menu. Round 4 offered it and it was taken immediately.*
+
+**Accepted residual:** nothing detects a document that states the required fields and then contradicts them in prose — by reversal, by strikethrough, or by an added "sanctioned exception" clause. No string check can close this. Cross-model review is the guard.
+
 Practices that outlive any one task: keeping the suite trustworthy, and finding a cause
 instead of guessing at one.
 
@@ -2790,6 +2808,20 @@ Reproduce → Isolate → Root Cause → Fix → Regression Test
 Before reporting a fix, name the observable that would differ if it were NOT fixed — then go look at it. Settings file edited → read the live process env, not the file. Hook changed → fire it. Threshold changed → measure it against the real files. If the only evidence is "I made the edit", the state is *submitted*, not fixed.
 
 **Out-of-repo changes get no gate** (global `settings.json`, env vars, shell rc, scheduler entries): no diff, no PR, no reviewer ever sees them. Before editing, check `.reviews/` artifacts and memory for prior findings on the subject; state the verification command in the same message as the change; if a live process won't pick up the edit (env vars need a restart), say so instead of "fixed". **Evidence:** 2026-08-08 (#525) — a settings fix was reported fixed while the bug was still live; the answer was already in `.reviews/` from PR #468.
+
+### An Instruction Is Not a Claim
+
+**Never tell a reader to run a command you have not run.** Labeling can save a claim, because the reader evaluates it. It cannot save an instruction, because the reader executes it. Delete it instead.
+
+Run the exact string you are going to ship, and fill in every placeholder at least once.
+
+**Check that the output shows the promised behavior, not just exit 0.** This is the part that gets skipped. `✔ already at the latest version (1.97.0)` proves the identifier resolves; it does not prove the command updates anything. If you cannot observe the behavior, narrow the instruction to what you did observe rather than shipping the wider promise. A command you genuinely cannot run — destructive, or the environment is unavailable — may be *described*, never *instructed*.
+
+**Reviewers enforce this: do not certify a doc containing imperative commands without pasted execution output.** The other leg can check that, which is the point. Two-leg reading is the right instrument for judgement defects and the wrong one for empirical claims about a command.
+
+*Evidence (#572): 24 lines of documentation produced five P1s, every one a claim wider than any observation of it — including a documented update command that fails outright. That doc had labeled its evidence honestly, stating the semantics came from help text and that the command had not been run, and the broken instruction shipped anyway. Both legs certified it.*
+
+**Do not build a static guard for this.** Extracting command strings and requiring an adjacent output block passes on pasted, fabricated or stale output, and cannot tell an instruction from an illustration — it would pass on everything it exists to reject. The live guard is executing the commands. Put them in the repo's own release-verification list, which a maintainer runs, not in CI.
 
 ## Step 8: Create CLAUDE.md
 
@@ -4053,8 +4085,10 @@ codex exec \
   -o .reviews/latest-review.md \
   "You are an independent code reviewer. Read .reviews/handoff.json, \
    review the listed files. Output each finding with: an ID (1, 2, ...), \
-   severity (P0/P1/P2), description, and a 'certify condition' stating \
-   what specific change would resolve it. \
+   severity (P0/P1/P2/P3, graded by impact if it shipped), description, and \
+   a 'certify condition' stating what specific change would resolve it. \
+   Then give an architecture verdict for the change as a whole: \
+   SOUND, CONCERN, or WRONG SHAPE. \
    End with CERTIFIED or NOT CERTIFIED." \
   < /dev/null
 ```
@@ -4118,14 +4152,16 @@ codex exec \
    FIXED → verify the fix against the original certify condition. \
    DISPUTED → evaluate the justification (ACCEPT if sound, REJECT if not). \
    ACCEPTED → verify it was applied. \
-   Do NOT expand the review surface. Report every new P0, P1 or P2. A new finding BLOCKS when it shows a REQUESTED behavior is incorrect; one outside the requested behaviors is reported as a linked follow-up, not a blocker. Lesser observations go in 'Notes for next review' (non-blocking). \
+   Do NOT expand the review surface. Report every defect you find, at any severity. A finding BLOCKS only when it is P0 or P1 AND it shows a REQUESTED behavior is incorrect — and a finding that shows a requested behavior is incorrect IS P1, whatever label it arrived with. Anything outside the requested behaviors is reported as a linked follow-up, never a blocker. Lesser observations go in 'Notes for next review' (non-blocking). \
    End with CERTIFIED or NOT CERTIFIED." \
   < /dev/null
 ```
 
 **The key constraint:** Rechecks are scoped to previous findings only — a reviewer should not go hunting for unrelated new material during a recheck round, which is how a 3-round review becomes an 11-round one.
 
-**But scoped does not mean muzzled — and not everything it sees may block.** A recheck reports every defect it finds, at any severity. What **blocks** is bounded by the closed allowlist: a finding blocks when it shows a **requested** behavior is incorrect. A P2 outside the requested behaviors is reported and becomes a linked follow-up issue, not a certification blocker. Certification means *zero unresolved findings against the requested behaviors*, not *zero findings raised after round 1* — and not *zero defects anywhere*, which is unsatisfiable and is the shape that turned #520 into 20 rounds. Report-everything and block-on-scope are different questions; conflating them is how an invariant escalates. An earlier revision of this paragraph said new P2s could never block certification; that let a real defect through on the grounds of what round it was found in, which is not a property of the defect. What the scoping rule actually forbids is expanding the review's *surface*, not silencing what the reviewer sees.
+**But scoped does not mean muzzled — and not everything it sees may block.** A recheck reports every defect it finds, at any severity. What **blocks** is bounded by the closed allowlist: a finding blocks when it shows a **requested** behavior is incorrect. A finding outside the requested behaviors is reported and becomes a linked follow-up issue, not a certification blocker. Certification means *zero unresolved findings against the requested behaviors*, not *zero findings raised after round 1* — and not *zero defects anywhere*, which is unsatisfiable and is the shape that turned #520 into 20 rounds. Report-everything and block-on-scope are different questions; conflating them is how an invariant escalates. What the scoping rule actually forbids is expanding the review's *surface*, not silencing what the reviewer sees.
+
+**This is the blocking rule stated from the recheck's side.** A finding that shows a requested behavior is wrong means the thing does not work, so it is P1 — no matter who labelled it P2, or when it appeared. Grade by impact and the rule needs no exception.
 
 **Convergence:** the default is **two passes per frozen scope, counted cumulatively per root task** (see "When to stop" above); this section's older max-3-rechecks heuristic is the ceiling, not the target. If still NOT CERTIFIED after the budget, that is a **recorded continue/stop decision**, not an automatic escalation — see the Exception below for where the decision is written. A human is woken only when the two reviewers disagree, or a non-waivable gate has failed twice. Never ship uncertified; but running out of budget is not by itself a reason to interrupt the maintainer.
 
@@ -4148,8 +4184,8 @@ Claude writes code → handoff.json (round 1)
     |                                FIXED / DISPUTED / ACCEPTED
     |                                          |
     |                              Reviewer: TARGETED RECHECK
-    |                          (scoped surface; a new P0/P1/P2 blocks
-    |                           only if a REQUESTED behavior is wrong)
+    |                          (scoped surface; a new finding blocks only
+    |                           if P0/P1 AND a REQUESTED behavior is wrong)
     |                                          |
     |                              All resolved? → YES → CERTIFIED (write commit_sha)
     |                                          |
@@ -4213,7 +4249,7 @@ CLI-distributed file parity (skills, hooks, settings).
 
 #### Multiple reviewers (Claude review + Codex + human)
 
-Run them in parallel; collect feedback via `gh api repos/OWNER/REPO/pulls/PR/comments` (single source of truth). Respond per-reviewer (different blind spots — don't merge feedback). On conflicts, pick the stronger argument with reasoning, not the louder voice. Cap iterations at 3 per reviewer to avoid infinite loops.
+Run them in parallel; collect feedback via `gh api repos/OWNER/REPO/pulls/PR/comments` (single source of truth). Respond per-reviewer (different blind spots — don't merge feedback). On a conflict between two model reviewers, cross-feed their positions verbatim and let them reconcile — you relay, you do not pick a winner. A human-vs-model split goes to the human as one question. Cap iterations at 3 per reviewer to avoid infinite loops.
 
 #### Non-code domains (research, persuasion, medical content)
 
@@ -4229,12 +4265,27 @@ When two models review the same change, **run them in parallel and blind to each
 
 **Give both reviewers the SAME contract.** Same diff, same preflight, same severity scale, same fix policy — otherwise you cannot merge their findings or compare their verdicts, and you will not notice when one is grading on a different curve. Measured here 2026-07-29: one reviewer was given P0-P3 and the other HIGH/MEDIUM/LOW on the same change, which made two genuine reviews look like disagreement.
 
+**The review bar is the issue's acceptance criteria, verbatim.** A stricter criterion you invent while writing your own review prompt is self-inflicted scope, and it is invisible because it looks like rigour. *(#553: two rounds spent on a bar #530's acceptance never contained, retired only by a zero-diff dispute.)*
+
+**Grade severity by impact if it shipped.** Not by how hard the fix is. Not by which round found it. Either one gets gamed — a late finding inflated to buy another round, or deflated to close one out.
+
+This is also what lets P2 stop being a merge blocker without letting real defects through. A defect that means the thing does not work is P1, whatever round surfaced it.
+
 | Severity | Meaning | Action |
 |---|---|---|
-| P0/P1 | Wrong behaviour, security, data loss, or a test that passes against broken code | **Against a requested behavior: fix before merge, restarts the cycle. Outside the allowlist: linked follow-up issue.** |
-| P2 | Real defect, bounded blast radius. Inaccurate shipped prose belongs here | **Fix before merge.** Re-gate, no full restart |
+| P0 | Stop the world — prod broken, data loss, secret leaked | **Preempts the current task.** |
+| P1 | This PR does not merge: it doesn't work, or it breaks something that did | **Against a requested behavior: fix before merge, restarts the cycle. Outside the allowlist: linked follow-up issue.** |
+| P2 | Real, should fix, ships fine without it | Fix in this PR **only** if the diff is small and the file is already touched. Otherwise a linked issue |
 | P3 | Correctness or accuracy nit — a stale comment, an unclear message | Fix if cheap and it is about being *right* |
 | P3 (style) | Preference, naming, formatting with no correctness content | **Not review's job — encode it as a lint rule instead.** |
+
+**A finding blocks only if it is P0 or P1 and inside the issue's scope card.** An earlier revision of this table made P2 blocking, after an in-scope defect was waved through. The fix for that was the severity rule above, not a blocking P2 — the defect did not work, so it was P1.
+
+**Ask a second question, separate from the defect list: is this the right way to build it?** Should this code exist? Is it proportionate? The reviewer returns **SOUND**, **CONCERN** (ship it, here is the debt), or **WRONG SHAPE** (stop, redesign).
+
+No severity level says "this should not exist", so nobody says it. On #539 all seven findings across four rounds were legitimate P1s — the guard really was broken — and the right answer was that the guard should never have been written. It was deleted at round four. WRONG SHAPE ends that at round one.
+
+**File anything outside the scope card as a GitHub issue. Never build it in the current PR.** This binds reviewers on the same terms as the driver: an out-of-card finding gets reported and filed, and does not block certification. Without it the card describes a boundary nothing enforces, and growth is invisible because there is nothing to compare against. *(#520: 20 rounds, 46 lines.)*
 
 **Style findings become lint rules, not review findings.** A cross-model round is expensive, slow, and non-deterministic; a linter is free, instant and total. If a reviewer raises a style point worth honouring, the fix is not "change this line" — it is *add the rule so nothing can ever violate it again*, then let the linter enforce it in every repo that installs this. That converts a recurring review cost into a one-time one. Run the linters **before** requesting review (`shellcheck -s bash` on changed `.sh` files, plus whatever your language uses) so no reviewer round is spent on what a deterministic tool already reports. Review exists for **correctness** — behaviour, security, and whether the tests actually test anything. If you find yourself lacking a standard rather than lacking a fix, the deliverable is the rule.
 
@@ -4242,7 +4293,22 @@ Tell both reviewers this in the prompt, and tell them explicitly: **do not manuf
 
 **Diminishing returns — how to actually tell.** Judge by the *maximum severity per round*, never by finding count: count rises when a reviewer looks somewhere new, which is the opposite of a stopping signal (the round that found the most here also found the most serious bugs). You are converged when two consecutive rounds produce nothing above P3 **from reviewers that had not already cleared this code**. A single reviewer's own trend flattening means only that it has run out of defects *it* can see — one reviewer certified at high confidence here immediately before a fresh reviewer found six P1s in the same code.
 
-**Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other. **Blindness governs finding-generation and recheck only.** Once every reviewer has returned a verdict, reconciliation is a distinct, final phase: show each the other's *surviving disagreement* and re-ask once. Anchoring is only a hazard while defects are still being discovered; after the verdicts are in, the whole value is in the aggregation. Reconcile once, not per round.
+**Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other. **Blindness governs finding-generation and recheck only.** Once every reviewer has returned a verdict, reconciliation is a distinct, final phase. Reconcile once, not per round.
+
+### Reconciliation: the reviewers reconcile with each other
+
+**You relay their positions. You never merge their words.** Four phases:
+
+1. **Review blind.** No shared draft, no summary of the other's position. A reviewer who sees the first one confirms and extends it instead of looking somewhere new — you pay for two reviews and get one plus a proofread. Divergence here is the signal.
+2. **Cross-feed verbatim.** Pass each the other's position exactly as written. Paraphrase is where a position gets restated into something its author would not sign.
+3. **Let them argue.** Each concedes what is right and holds what is wrong with repo-verifiable evidence: a file, a line, a command output. Not an opinion. A concession to a misread is worse than a hold.
+4. **They return one position. You report it.** The user sees the settled answer and any surviving split — not two transcripts to referee.
+
+**Why the driver must not merge.** You are the lowest-ranked participant in a review of your own work: the most context, the least independence, and you wrote the thing. Merging two reviewers' words is grading yourself through a paraphrase you control. They outrank you here precisely because they did not write it.
+
+**Deadlock routes by where the position started.** A split that first appeared as a design question or a recorded scope decision belongs to the planner. One that first appeared in a verdict line, a defect list or a recheck response belongs to the reviewer, and the lower verdict applies. If a split spans both, the verdict's surface governs. Only what survives that reaches the human, and it goes as one question rather than two positions.
+
+*Evidence (#561): the adversarial leg opened with four P1 blockers against the planner's spec. The planner conceded all four, retracted a deferral it had defended, then found three more contradictory surfaces the attacker had missed. Neither model produced that list alone. The driver produced none of it.*
 
 **Cost control.** This is not free — each round costs wall-clock and, for a paid API reviewer, real money. Scale it to blast radius:
 
@@ -4278,7 +4344,7 @@ implement  →  fix in-allowlist findings  →  re-review with the ITERATION mod
 
 1. **Every finding gets a response before the next round** — FIXED, DISPUTED with reasoning, or ACCEPTED. Never silently drop one.
 2. **A dispute is a claim you owe evidence for.** If the reviewer rejects it and offers a concrete alternative, implement the alternative — you asked for an adversary, not an audience.
-3. **Any P0/P1 finding *against a requested behavior* restarts the cycle from the top** — one outside the closed allowlist becomes a linked follow-up issue and does not restart anything. A gate round that surfaces a real defect was not a gate round, it was an iteration round. In-allowlist P2/P3-only findings do not need a full restart: fix them and re-run the gate. Either way the gate must eventually return nothing unresolved *against the requested behaviors* — "findings?" in the diagram means any finding against those, and what differs is only whether you re-enter at iteration or at the gate. Findings outside the allowlist are logged as follow-up issues and never gate anything; the unsatisfiable version of this condition — zero defects anywhere — is what turned #520 into 20 rounds.
+3. **Any P0/P1 finding *against a requested behavior* restarts the cycle from the top** — one outside the closed allowlist becomes a linked follow-up issue and does not restart anything. A gate round that surfaces a real defect was not a gate round, it was an iteration round. In-allowlist P2/P3-only findings do not block at all — fix them here if the diff is small and the file is already touched, otherwise file them and let the gate return. Either way the gate must eventually return nothing unresolved *against the requested behaviors* — "findings?" in the diagram means any finding against those, and what differs is only whether you re-enter at iteration or at the gate. Findings outside the allowlist are logged as follow-up issues and never gate anything; the unsatisfiable version of this condition — zero defects anywhere — is what turned #520 into 20 rounds.
 4. **Fixes need their own verification.** A fix shipped on the strength of "the reviewer suggested it" is unverified code — the reviewer proposed it, nobody has yet shown it works. A test that passes against broken code was never a test.
 
    **TDD, applied to the fix: RED → GREEN** — where a RED mutation is writable; a meaning-level prose fix gets cross-model re-review instead (see "When TDD RED Applies"). Write the assertion, run it, watch **that specific assertion** fail, then implement and watch it pass. The common miss is observing red at the *suite* level — one assertion fails, the suite is red, you implement, the suite goes green, and any assertion that was green from birth is never noticed.
@@ -4306,7 +4372,7 @@ When multiple reviewers comment on a PR (Claude, Codex, human reviewers), addres
 
 1. **Read all reviews** — collect feedback from every active reviewer
 2. **Respond per-reviewer** — each reviewer has different blind spots. Address each one's findings separately
-3. **Resolve conflicts** — if reviewers disagree, pick the stronger argument, note why
+3. **Do not resolve conflicts yourself** — when two model reviewers disagree, cross-feed their positions verbatim and let them reconcile (see "Reconciliation: the reviewers reconcile with each other"). You relay; you never pick a winner. A human reviewer cannot be put in that loop, so a human-vs-model split goes to the human as one question, and the human decides
 4. **Iterate until all approve** — don't merge until every active reviewer is satisfied
 5. **Two passes per reviewer per frozen scope**, counted cumulatively per root task so a re-freeze does not reset it — past that, a recorded continue/stop decision, not a user interrupt
 
