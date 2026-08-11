@@ -90,6 +90,34 @@ In Claude Desktop's UI, this is Customize > Plugins > Add marketplace, entering 
 
 **Fallback (local ZIP upload):** if the marketplace/install flow isn't available in your Claude Desktop build, zip this `cowork/` directory (root must contain `.claude-plugin/`, `hooks/`, `skills/`, `README.md`) and use Customize > Plugins > Add plugin > Upload plugin instead.
 
+### Updating an installed plugin
+
+**Cowork Desktop:** update through the same plugin UI you installed from (Customize > Plugins). **This path is not yet verified end-to-end** — tracked in GH #571. The commands below apply only to Claude Code CLI installs.
+
+**Claude Code CLI.** The step observed to actually move an installed plugin to a new version is `/reload-plugins`, run inside a session — it took this plugin from 1.93.0 to 1.97.0 and `Hooks (2)` to `Hooks (1)`.
+
+There is also a CLI command, and **it needs the marketplace-qualified identifier**. The bare plugin name fails:
+
+```
+$ claude plugin update sdlc-wizard-cowork
+✘ Failed to update plugin "sdlc-wizard-cowork": Plugin "sdlc-wizard-cowork" not found
+
+$ claude plugin update sdlc-wizard-cowork@sdlc-wizard-marketplace
+✔ sdlc-wizard-cowork is already at the latest version (1.97.0).
+```
+
+`--scope user` does not help; the qualified form is what resolves. Both observed on Claude Code 2.1.221. Note what the second line does and does not prove: the identifier **resolves**. It was run against an already-current install, so **this command has not been observed performing an actual version change** — only `/reload-plugins` has. The CLI's help says "restart required to apply," so restart the session after it either way.
+
+Then verify — do not assume:
+
+```
+claude plugin details sdlc-wizard-cowork
+```
+
+The version is in the **header line**, not on a labelled field — `details` prints `sdlc-wizard-cowork 1.97.0` and has no `Version:` line at all (that label belongs to `claude plugin list`). Check that header and the full expected component set. As of v1.97.0 that is `1.97.0` and `Hooks (1)  PreToolUse`. If it still reports `Hooks (2)`, you are on an older build and the update did not apply.
+
+**One command looks like it updates the plugin and does not.** `claude plugin marketplace update <marketplace>` prints `✔ Successfully updated marketplace` but refreshes the **catalog** only — the installed plugin stays where it was. `claude plugin disable` / `enable` also print success without re-resolving. All three observed on Claude Code 2.1.221. Verifying afterwards is the only way to know an update actually landed.
+
 ### Local testing
 
 ```bash
