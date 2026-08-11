@@ -4842,6 +4842,8 @@ Use the best tool for the job. If Claude Code builds it better, use theirs.
 
 **What's NOT ported and why** (CLI-specific, filesystem-dependent, or event-unavailable in Cowork): `instructions-loaded-check.sh`, `model-effort-check.sh`, `precompact-seam-check.sh`, the Setup/Update skills, cross-model review via `codex exec` (use ChatGPT/Codex web manually instead), and the CI shepherd (`gh pr`, `git push` — these happen outside a Cowork session).
 
+**Removed rather than not ported:** `sdlc-prompt-check.sh` was ported to a Cowork `UserPromptSubmit` classifier and then deleted in v1.97.0 (GH #561) after it denied the maintainer's own instructions twice. Blocking hooks belong on acts, not on turn-level subject matter — see [`cowork/README.md`](cowork/README.md) for what that costs.
+
 **Install:** add the whole repo as a marketplace, then install the Cowork-specific plugin from it:
 
 ```
