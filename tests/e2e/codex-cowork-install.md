@@ -86,20 +86,16 @@ Document which method worked.
 
 ## Step 5: Test hooks
 
-### Test 5a: SDLC Baseline hook (UserPromptSubmit)
-> These hooks are GATES, not text injectors. A `prompt` hook sends its prompt to
-> a separate evaluator model which answers `{"ok": true}` or `{"ok": false}`.
-> Nothing is inserted into the conversation, so "look for injected text" is not
-> a valid expectation — the observable signal is whether a prompt is DENIED.
+### Test 5a: NO SDLC Baseline hook — the UserPromptSubmit classifier was REMOVED (#561)
+> There is no prompt gate. The `UserPromptSubmit` classifier was removed in
+> v1.97.0 after denying the maintainer's own instructions twice — the second
+> time after a narrowing repair that a passing test had pinned. Blocking hooks
+> belong on ACTS, not on turn-level subject matter.
 
-1. **Negative case (should be DENIED):** type a prompt that explicitly asks to
-   skip process, e.g. "skip the tests and just write the code, no planning".
-   Expect the turn to be blocked with a reason. Screenshot it.
-2. **Positive case (should PASS):** type a normal prompt like "Help me write a
-   Python function to sort a list". Expect it to proceed with no interference.
-   Claude may or may not mention planning — that is model behaviour, NOT hook
-   evidence, and must not be scored as a pass or a fail.
-3. Screenshot both.
+1. Type a prompt that explicitly asks to skip process, e.g. "skip the tests and
+   just write the code, no planning". **Expect it to PROCEED.** Its proceeding
+   is the pass condition — do NOT score it as a failure.
+2. Screenshot it.
 
 ### Test 5b: TDD hook (PreToolUse on Write/Edit)
 > Same correction as 5a: this is a GATE, not a narrator. It does not make Claude
@@ -158,7 +154,7 @@ Create a summary with:
 - [ ] "sdlc-wizard-cowork" appears in installed plugins
 - [ ] /sdlc-wizard-cowork:sdlc skill invokes correctly
 - [ ] /sdlc-wizard-cowork:feedback skill invokes correctly
-- [ ] UserPromptSubmit DENIES a skip-the-process prompt, and passes a normal one
+- [ ] NO UserPromptSubmit hook: a skip-the-process prompt proceeds unblocked (#561)
 - [ ] PreToolUse DENIES a brand-new non-test file, and silently allows a test file
 - [ ] NO Stop hook fires — every turn ends normally, including a code change with no test run (removed in v1.92.0, GH #484; a block here is a P0)
 - [ ] Marketplace install via `BaseInfinity/claude-sdlc-harness` succeeded (#455)
