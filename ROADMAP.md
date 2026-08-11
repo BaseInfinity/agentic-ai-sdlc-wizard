@@ -12,20 +12,20 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **Chain, in dependency order: #533 → #547, then #540 → #563.** Code, normal TDD — unlike PR-A these have writable REDs.
 >
-> **The literal next action: start #533.** Its design ruling is on [#558](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558).
+> **The literal next action: start #533.** Its implementation design is in its own latest comments; [#558](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558) records the sequencing, not the design.
 >
-> **#540's design is already ruled — do not redesign the gate.** Smallest fix: `scripts/merge-pr.sh` re-verifies that the clearance artifact's `commit_sha` equals the SHA actually merging.
+> **#540's design is already ruled — do not redesign the gate. Read the ruling on the issue before writing any code.** In one line: **staleness keys on certified content, never on SHA.** The clearance pins the branch's patch-id rather than a `commit_sha`, so a content-identical rebase or amend stays valid and a commit that changes the diff invalidates correctly. It lands together with #558's CUT C, which makes `.reviews/merge-clearance-<PR>.json` the single artifact the gate parses.
 >
 > **No riders.** Both legs were asked what else belongs in v1.99.0 and both answered *none*. #515 is the one thematically adjacent issue and it stays out; check whether #540 subsumes it **after** PR-B is stable.
 >
 > ### Then: `v2.0.0 — Consumer Safety Repairs`
 >
 > 1. **#516** — `cli/init.js:229` `removeObsoletePaths()` calls `fs.rmSync(..., { recursive: true, force: true })` on every retired path with **no content-hash check**, while the install path marks a modified file `PRESERVE`. A consumer who customized a now-retired skill loses it silently on update. Preserve customized retired files instead of deleting them.
-> 2. **#554** — Claude Code drift review. The baseline is seven releases behind; the last time this gap was reviewed it surfaced a live shipped defect (`src/**` silently stopped matching in 2.1.214, killing the TDD hook for every monorepo consumer). Repair anything it demonstrates. **#456 rides this session** — retest the Cowork hook against the current baseline, then keep it or delete it.
+> 2. **#554** — Claude Code drift review. The issue carries the current gap; the last time this gap was reviewed it surfaced a live shipped defect (`src/**` silently stopped matching in 2.1.214, killing the TDD hook for every consumer whose source is not at repo-root `src/`). Repair anything it demonstrates. **#456 rides this session** — retest the Cowork hook against the current baseline, then keep it or delete it.
 >
 > ### Then: the consumer-truth prose batch
 >
-> #491 Class 1 (the phantom `STALL_SECONDS` watchdog we document and never built), #544, #499, #537. Same contract that made PR-A cheap: one PR, zero new tests, per-item verdicts with a pre-registered ejection rule.
+> #491 Class 1 (the phantom `STALL_SECONDS` watchdog we document and never built), #544, #499, #537, #579. Same contract that made PR-A cheap: one PR, zero new tests, per-item verdicts with a pre-registered ejection rule. Every item is a shipped file asserting something that is not true.
 >
 > ### Backlog — do not start
 >
