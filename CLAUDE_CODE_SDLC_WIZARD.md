@@ -4829,12 +4829,11 @@ Use the best tool for the job. If Claude Code builds it better, use theirs.
 
 **Claude Cowork** is a separate product from Claude Code — a desktop application for knowledge workers, not developers. It shares Claude Code's plugin format, so this wizard ships a Cowork-native subset: [`cowork/`](cowork/README.md).
 
-**What it provides:** 2 portable skills (`/sdlc-wizard-cowork:sdlc`, `/sdlc-wizard-cowork:feedback`) plus 2 **prompt-based hooks** — the Cowork equivalents of this wizard's bash hooks, since Cowork sessions have no shell access:
+**What it provides:** 2 portable skills (`/sdlc-wizard-cowork:sdlc`, `/sdlc-wizard-cowork:feedback`) plus 1 **prompt-based hook** — the Cowork equivalent of this wizard's bash hooks, since Cowork sessions have no shell access:
 
 | Cowork Hook | Claude Code Equivalent | Event |
 |-------------|------------------------|-------|
 | TDD check | `tdd-pretool-check.sh` | `PreToolUse` (Write/Edit/MultiEdit) |
-| SDLC baseline | `sdlc-prompt-check.sh` | `UserPromptSubmit` |
 
 
 **What's NOT ported and why** (CLI-specific, filesystem-dependent, or event-unavailable in Cowork): `instructions-loaded-check.sh`, `model-effort-check.sh`, `precompact-seam-check.sh`, the Setup/Update skills, cross-model review via `codex exec` (use ChatGPT/Codex web manually instead), and the CI shepherd (`gh pr`, `git push` — these happen outside a Cowork session).
