@@ -179,6 +179,6 @@ Only after the plugin is verified working, consider submitting to the marketplac
 ## Notes
 
 - Plugin validates clean: `claude plugin validate cowork/` passes
-- 17/17 drift tests pass in `tests/test-cowork-drift.sh`
-- Plugin uses prompt-based hooks only (no bash/shell — works without filesystem access)
+- 30/30 drift tests pass in `tests/test-cowork-drift.sh`
+- Plugin uses one prompt-based hook only (no bash/shell — works without filesystem access)
 - Skills are copies of canonical skills, kept in sync by CI drift test

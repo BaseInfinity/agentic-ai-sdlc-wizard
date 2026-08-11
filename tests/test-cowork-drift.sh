@@ -383,45 +383,96 @@ else
   fail "hooks.json not found"
 fi
 
-# Test 13b (#561): hooks/hooks.json is the plugin's ONLY hook registration
-# surface. Tests 12 and 13 assert that two specific events are absent from that
-# file — which proves nothing if a hook can be registered somewhere else, and it
-# can. Per code.claude.com/docs/en/plugins-reference there are three surfaces:
-#   1. hooks/hooks.json          — the only auto-loaded location (Tests 12, 13)
-#   2. the `hooks` field in plugin.json   — string | array | object, inline or a
-#      path. A stray hooks/extra.json is inert unless routed through this field.
-#   3. the `hooks` field on a MARKETPLACE ENTRY — takes precedence over
-#      plugin.json.
-# Round 2 of the #561 review registered a valid inline UserPromptSubmit hook via
-# surface 2: `claude plugin validate --strict` passed and this suite stayed
-# 29/29. Surface 3 was missed by that enumeration too.
+# Test 13b (#561): NO `hooks` declaration in any tracked shipped file except
+# cowork/hooks/hooks.json.
 #
-# Whitelisting the surface beats blacklisting the key on more files: this closes
-# surfaces 2 and 3 for EVERY hook event at once, so Tests 12 and 13 are complete
-# rather than needing a per-event sweep of three manifests.
+# Tests 12 and 13 assert two events are absent from ONE file. That proves
+# nothing if a hook can be declared elsewhere — and it can. Three successive
+# enumerations of "where hooks can be registered" were each declared complete
+# and each disproven within a round:
+#   1. hooks/hooks.json only          -> broken by an inline `hooks` in plugin.json
+#   2. + plugin.json                  -> a marketplace ENTRY's `hooks` takes precedence
+#   3. + both marketplace manifests   -> broken by a hook in SKILL.md YAML frontmatter
+# Every miss was found by reading Anthropic's docs, not ours, because each
+# attempt quantified over ANTHROPIC'S set of registration mechanisms — an open
+# set they own and extend. A fourth hand-enumeration is the same method.
 #
-# What this does NOT catch, stated rather than hidden: a registration surface
-# added by a future Claude Code release is outside its reach. Cross-model diff
-# review is the guard there — the three-way call's own residue rule (#561).
+# So this quantifies over a set THIS REPO owns instead: a hook must be declared
+# in bytes the plugin ships, and `git ls-files` closes that set. A new shipped
+# file is scanned automatically rather than silently missed.
 #
-# NOT a substitute: `claude plugin validate --strict` is schema-only and passed
-# the mutation above. `claude plugin details` does enumerate effective hooks
-# across all paths, but CI installs no claude CLI, so it cannot be the CI guard.
-if python3 -c "
-import json,sys
-bad=[]
-d=json.load(open('$PROJECT_ROOT/cowork/.claude-plugin/plugin.json'))
-if 'hooks' in d: bad.append('plugin.json')
-for mf in ('cowork/.claude-plugin/marketplace.json','.claude-plugin/marketplace.json'):
-    m=json.load(open('$PROJECT_ROOT/'+mf))
-    if 'hooks' in m: bad.append(mf+' (top level)')
-    for p in m.get('plugins',[]):
-        if 'hooks' in p: bad.append(mf+' entry '+str(p.get('name')))
-assert not bad, 'hook registration outside hooks/hooks.json: '+', '.join(bad)
-" 2>/dev/null; then
-  pass "hooks/hooks.json is the only hook registration surface (no \`hooks\` field in plugin.json or any marketplace entry)"
+# FAIL-CLOSED is the load-bearing clause. A tracked file whose format has no
+# parser here FAILS. Without it the format list is just a hand-enumeration one
+# level down, with the same silent-green shape, and round 5 finds it.
+#
+# tests/test-stop-hook-terminates.sh learned this same lesson over four rounds
+# (see its header); this reuses that traversal deliberately.
+#
+# NOT covered, and this is a real future-release boundary rather than an excuse:
+# a mechanism using a key NOT named `hooks` inside a format already scanned.
+# Undocumented today. The release-time `claude plugin details` check covers it —
+# that command reports EFFECTIVE hooks however registered, and is the only thing
+# in this system that has never been wrong about the surface set. It cannot run
+# in CI (no claude CLI) and cannot read a working tree, so it is a release gate,
+# not a push gate.
+if python3 - "$PROJECT_ROOT" <<'PYEOF' 2>/dev/null
+import json, os, re, subprocess, sys
+try:
+    import yaml
+except ImportError:
+    print("python3 yaml module missing - it is a stated test dependency", file=sys.stderr)
+    sys.exit(1)
+
+ROOT = sys.argv[1]
+EXEMPT = "cowork/hooks/hooks.json"
+FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.S)
+
+tracked = subprocess.check_output(
+    ["git", "-C", ROOT, "ls-files", "--", "cowork/"]).decode().split()
+tracked.append(".claude-plugin/marketplace.json")
+
+bad = []
+
+def scan(node, rel, trail):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "hooks":
+                bad.append("%s at %s/%s" % (rel, trail, k))
+            scan(v, rel, "%s/%s" % (trail, k))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            scan(v, rel, "%s[%d]" % (trail, i))
+
+for rel in tracked:
+    if rel == EXEMPT:
+        continue
+    path = os.path.join(ROOT, rel)
+    if not os.path.exists(path):
+        continue
+    ext = os.path.splitext(path)[1]
+    raw = open(path, encoding="utf-8").read()
+    try:
+        if ext == ".json":
+            scan(json.loads(raw), rel, "")
+        elif ext in (".yaml", ".yml"):
+            for d in yaml.safe_load_all(raw):
+                scan(d, rel, "")
+        elif ext == ".md":
+            m = FRONTMATTER.match(raw)
+            if m:
+                scan(yaml.safe_load(m.group(1)), rel, "frontmatter")
+        else:
+            bad.append("%s (UNSCANNABLE shipped format '%s' - no parser, so a "
+                       "hooks declaration in it would be invisible)" % (rel, ext))
+    except Exception as e:
+        bad.append("%s (unparseable: %s)" % (rel, str(e)[:60]))
+
+assert not bad, "; ".join(bad)
+PYEOF
+then
+  pass "no \`hooks\` declaration outside cowork/hooks/hooks.json in any tracked shipped file (.json keys, .yaml docs, .md frontmatter; unknown formats fail closed)"
 else
-  fail "a \`hooks\` field appeared in plugin.json or a marketplace entry — that registers hooks OUTSIDE hooks/hooks.json, where Tests 12 and 13 cannot see them (GH #561)"
+  fail "a \`hooks\` declaration exists outside cowork/hooks/hooks.json, or a tracked shipped file has a format this scan cannot read — either way a hook could be registered where Tests 12 and 13 cannot see it (GH #561)"
 fi
 
 # Test 14: All hooks are prompt type (no command type — Cowork has no shell)

@@ -57,6 +57,20 @@ table. Run any suite directly; a few common ones:
 Run the whole suite before any release. It takes minutes, not seconds, and
 some fixtures need `dangerouslyDisableSandbox` to create their temp dirs.
 
+**Also before any release, verify the Cowork plugin's EFFECTIVE hooks natively**
+(GH #561). Install the working-tree plugin from the local marketplace, then:
+
+```
+claude plugin details sdlc-wizard-cowork
+```
+
+It must report exactly `Hooks (1)  PreToolUse` — whitelist the full expected
+set, never the absence of one name. `claude plugin details` reports effective
+hooks *however registered*, so it is the only check that sees a registration
+surface the CI walk does not know about. It cannot run in CI (no `claude` CLI)
+and reads the installed cache rather than the working tree, so installing first
+is required — run it against an unupdated cache and it reports the OLD plugin.
+
 ## Code Style
 
 ### Markdown
