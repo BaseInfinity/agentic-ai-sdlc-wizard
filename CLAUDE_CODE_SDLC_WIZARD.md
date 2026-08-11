@@ -4057,6 +4057,7 @@ written. The rules above bind because each names a **trigger** and an
   "review_id": "feature-xyz-001",
   "status": "PENDING_REVIEW",
   "round": 1,
+  "branch": "feat/xyz",
   "mission": "What changed and why — context for the reviewer",
   "success": "What 'correctly reviewed' looks like",
   "failure": "What gets missed if the reviewer is superficial",
@@ -4073,6 +4074,8 @@ written. The rules above bind because each names a **trigger** and an
 ```
 
 The `mission/success/failure` fields give the reviewer context. Without them, you get generic "looks good" feedback. With them, reviewers dig into source files and verify specific claims. The `verification_checklist` tells the reviewer exactly what to verify — not "review this" but specific items with file:line references.
+
+`branch` is the branch the round's work sits on (`git symbolic-ref --short HEAD`). It is what lets an in-flight round commit at all — see the dialogue loop below.
 
 `pr_number` (optional) is the PreCompact self-heal opt-in (ROADMAP #209). Set it when the review tracks a specific PR — the `precompact-seam-check.sh` hook queries `gh pr view N --json state` on every manual `/compact` and treats MERGED as implicit CERTIFIED, so a forgotten PENDING handoff doesn't lock you out of compaction after the PR ships. Omit for ad-hoc reviews not tied to a PR.
 
@@ -4138,7 +4141,9 @@ Three response types:
 - **DISPUTED**: "This is intentional/incorrect. Here is why." Reviewer accepts or rejects the reasoning.
 - **ACCEPTED**: "You are right. Fixing now." (Same outcome as FIXED, used when batching fixes.)
 
-Then update `handoff.json` to `"status": "PENDING_RECHECK"`, increment `round`, add `"response_path"` and `"previous_review"` fields. Run a targeted recheck:
+Then update `handoff.json` to `"status": "PENDING_RECHECK"`, increment `round`, add `"response_path"` and `"previous_review"` fields, and write `"branch": "<git symbolic-ref --short HEAD>"`. Run a targeted recheck:
+
+> **Why `branch` is not optional (ROADMAP #533).** `hooks/codex-gate-check.sh` used to accept only `CERTIFIED`/`REVIEWED`, so the status the protocol mandates for a whole dialogue round could not commit — every round was forced onto an uncommitted working tree, which is the mutable tree the "review committed increments" rule exists to avoid. It cost a real round: a reviewer read a tree that a concurrent harness had mutated and filed a correct P1 against a defect that existed only in that mutation. The gate now lets a `PENDING_RECHECK` round commit **on the branch it declares here** — so a round that declares nothing still cannot save its work. The hook deliberately does not try to work out whether you are on the default branch: that is server-side state, and `refs/remotes/*/HEAD` is a cache with no freshness bound. The round already knows which branch it is about.
 
 ```bash
 codex exec \
