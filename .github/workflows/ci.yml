@@ -225,6 +225,9 @@ jobs:
       - name: Run persist score history tests
         run: ./tests/test-persist-score-history.sh
 
+      - name: Run fixture fail-closed tests (#566)
+        run: ./tests/test-fixtures-fail-closed.sh
+
       - name: Run local shepherd tests
         run: ./tests/test-local-shepherd.sh
 
