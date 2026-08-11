@@ -45,6 +45,7 @@ Thank you for your interest in improving the SDLC Harness!
    ./tests/test-memory-audit-protocol.sh && \
    ./tests/test-community-paths.sh && \
    ./tests/test-persist-score-history.sh && \
+   ./tests/test-fixtures-fail-closed.sh && \
    ./tests/test-local-shepherd.sh && \
    ./tests/test-repo-complexity.sh && \
    ./tests/test-prompt-hook-fires-once.sh && \
