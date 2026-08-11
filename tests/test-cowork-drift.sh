@@ -415,14 +415,15 @@ fi
 # closed, every push. Release-time `claude plugin details` = manifest-registered
 # hooks in the INSTALLED artifact only — empirically blind to frontmatter hooks
 # (2026-08-10: an active frontmatter UserPromptSubmit hook did not appear in its
-# inventory), so it is not an oracle. Undocumented mechanisms: cross-model
-# review, which found surfaces 2, 3 and 4 when every mechanical check missed
-# them.
+# inventory), so it is not an oracle. The interactive `/hooks` command DOES see
+# frontmatter hooks, but it is session-bound and cannot gate anything.
+# Undocumented mechanisms: cross-model review, which found surfaces 2, 3 and 4
+# when every mechanical check missed them.
 # Wrapped in a function so the heredoc stays at statement level: it cannot live
 # inside a command substitution, and a temp file would make the test fail in
 # environments where TMPDIR is not writable.
 _cowork_hooks_scan() {
-python3 - "$PROJECT_ROOT" <<'PYEOF' 
+python3 - "$PROJECT_ROOT" <<'PYEOF'
 import json, os, re, subprocess, sys
 try:
     import yaml
