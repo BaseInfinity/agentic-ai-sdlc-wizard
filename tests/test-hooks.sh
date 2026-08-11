@@ -3997,6 +3997,186 @@ test_codex_gate_blocks_commit_with_quoted_value_containing_space() {
     fi
 }
 
+# ---- #533: the in-flight review-dialogue lane ----
+#
+# The shipped protocol MANDATES status PENDING_RECHECK for the whole duration
+# of a dialogue round (skills/sdlc/SKILL.md), and the gate accepted only
+# CERTIFIED|REVIEWED — so nothing could be committed during exactly the window
+# in which review work is produced. That made "review committed increments,
+# not a mutable tree" unreachable by construction, and it burned a real round:
+# on #520 round 18 a reviewer read a working tree that a concurrent harness
+# mutated underneath it, and filed a correct P1 against a defect that existed
+# only in that mutation.
+#
+# The lane is keyed on a branch the round DECLARES, not on a branch the hook
+# tries to prove is not the default. Default-branch-ness is remote state; an
+# offline hook has only `refs/remotes/*/HEAD`, a cache with no freshness bound.
+# Two prior rounds were spent failing to answer that harder question. The round
+# already knows which branch it is about, so it writes it down.
+test_codex_gate_allows_in_flight_commit_on_declared_branch() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init && git checkout -qB feat/533-lane) > /dev/null 2>&1
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING_RECHECK","round":2,"branch":"feat/533-lane"}' > "$tmpdir/.reviews/handoff.json"
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"round 2 fixes\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate ALLOWS (exit 0) an in-flight PENDING_RECHECK commit on the branch the handoff declares"
+    else
+        fail "codex gate should exit 0 silent for PENDING_RECHECK on the declared branch, got exit=$exit_code out: $out"
+    fi
+}
+
+# The declared branch is the whole check — if HEAD is somewhere else, the
+# commit is not the round's work and the lane must not carry it.
+test_codex_gate_blocks_in_flight_commit_on_branch_mismatch() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init && git checkout -qB some/other-branch) > /dev/null 2>&1
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING_RECHECK","round":2,"branch":"feat/533-lane"}' > "$tmpdir/.reviews/handoff.json"
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"round 2 fixes\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "branch"; then
+        pass "codex gate BLOCKS (exit 2) an in-flight commit when HEAD is not the declared branch"
+    else
+        fail "codex gate should exit 2 + mention the branch when HEAD differs from the declared branch, got exit=$exit_code out: $out"
+    fi
+}
+
+# A handoff with no `branch` field is a pre-#533 handoff (or a round that never
+# declared one). Fail closed — a missing declaration must never read as a
+# forever-pass on every branch. Same posture as #437's missing commit_sha.
+test_codex_gate_blocks_in_flight_commit_with_no_branch_field() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init && git checkout -qB feat/533-lane) > /dev/null 2>&1
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING_RECHECK","round":2}' > "$tmpdir/.reviews/handoff.json"
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"round 2 fixes\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "branch"; then
+        pass "codex gate BLOCKS (exit 2) an in-flight commit when the handoff declares no branch"
+    else
+        fail "codex gate should exit 2 + mention the branch when the handoff has no branch field, got exit=$exit_code out: $out"
+    fi
+}
+
+# Detached HEAD has no symbolic ref to compare, so the equality the lane rests
+# on cannot be evaluated at all. Not a repo behaves identically.
+test_codex_gate_blocks_in_flight_commit_on_detached_head() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init && git checkout -qB feat/533-lane && git checkout -q --detach) > /dev/null 2>&1
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING_RECHECK","round":2,"branch":"feat/533-lane"}' > "$tmpdir/.reviews/handoff.json"
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"round 2 fixes\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "branch"; then
+        pass "codex gate BLOCKS (exit 2) an in-flight commit on a detached HEAD"
+    else
+        fail "codex gate should exit 2 + mention the branch on detached HEAD, got exit=$exit_code out: $out"
+    fi
+}
+
+# Accident-catcher, not a soundness claim: `main`/`master` matching itself
+# would otherwise satisfy the equality check and let in-flight work land on a
+# trunk. This catches the accident; it does not prove the branch is not the
+# remote's default, and nothing offline can.
+test_codex_gate_blocks_in_flight_commit_declared_on_trunk() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init && git checkout -qB main) > /dev/null 2>&1
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING_RECHECK","round":2,"branch":"main"}' > "$tmpdir/.reviews/handoff.json"
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"round 2 fixes\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ]; then
+        pass "codex gate BLOCKS (exit 2) an in-flight commit that declares a trunk branch, even when HEAD matches it"
+    else
+        fail "codex gate should exit 2 when the declared branch is main/master, got exit=$exit_code out: $out"
+    fi
+}
+
+# Accident-catcher, not a soundness claim: the lane compares the handoff's
+# branch against HEAD in the HOOK's cwd, so a command that relocates git
+# elsewhere is judged by a branch it will not commit to. Read on the RAW
+# command value — masking exists so detection can ignore prose, and it
+# destroys exactly what this needs to see.
+test_codex_gate_blocks_in_flight_commit_with_relocation_token() {
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init && git checkout -qB feat/533-lane) > /dev/null 2>&1
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING_RECHECK","round":2,"branch":"feat/533-lane"}' > "$tmpdir/.reviews/handoff.json"
+    local out exit_code
+    out=$(printf '%s' '{"tool_input":{"command":"git -C /tmp/elsewhere commit -m \"fix\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ]; then
+        pass "codex gate BLOCKS (exit 2) an in-flight commit carrying -C <dir>"
+    else
+        fail "codex gate should exit 2 for an in-flight commit carrying -C <dir>, got exit=$exit_code out: $out"
+    fi
+}
+
+# The equals forms of the same two relocation flags. These are single tokens,
+# so the structural detector consumes them and they DO reach the catcher —
+# unlike their space-separated spellings, which fail the match upstream and
+# never reach any lane (a hole that predates this lane; filed as #582). The
+# coverage claimed here is exactly the coverage that exists.
+test_codex_gate_blocks_in_flight_commit_with_equals_relocation_tokens() {
+    local tmpdir cmd out exit_code failures
+    failures=""
+    for cmd in 'git --work-tree=/tmp commit --dry-run' 'git --git-dir=/tmp/x/.git commit --dry-run'; do
+        tmpdir=$(mktemp -d)
+        (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init && git checkout -qB feat/533-lane) > /dev/null 2>&1
+        mkdir -p "$tmpdir/.reviews"
+        printf '{"status":"PENDING_RECHECK","round":2,"branch":"feat/533-lane"}' > "$tmpdir/.reviews/handoff.json"
+        out=$(printf '{"tool_input":{"command":"%s"}}' "$cmd" | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+        rm -rf "$tmpdir"
+        [ "$exit_code" -eq 2 ] || failures="$failures [$cmd -> exit=$exit_code]"
+    done
+    if [ -z "$failures" ]; then
+        pass "codex gate BLOCKS (exit 2) an in-flight commit carrying --work-tree=/--git-dir= equals forms"
+    else
+        fail "codex gate should exit 2 for equals-form relocation flags, got:$failures"
+    fi
+}
+
+# #533 acceptance criterion 2: every block message ended with "Set
+# CODEX_GATE_SKIP=1 to bypass with justification", and that instruction does
+# not work from where the caller reads it. The check is a PreToolUse hook — it
+# runs in the agent host's process, before the shell that would carry an
+# inline prefix, so `CODEX_GATE_SKIP=1 git commit ...` is blocked identically.
+# The variable itself is legitimate (a settings env block sets it), so the
+# check stays; the false instruction goes. Both reachable messages are
+# asserted behaviourally below; the file-level grep covers the two that a test
+# cannot reach here (the stdin-timeout path is exercised in
+# test-hook-stdin-bounded.sh).
+test_codex_gate_does_not_advertise_an_inline_bypass() {
+    local tmpdir out_missing out_status advert
+    tmpdir=$(mktemp -d)
+    out_missing=$(printf '%s' '{"tool_input":{"command":"git commit -m \"x\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING"}' > "$tmpdir/.reviews/handoff.json"
+    out_status=$(printf '%s' '{"tool_input":{"command":"git commit -m \"x\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) || true
+    rm -rf "$tmpdir"
+    advert=$(grep -c 'Set CODEX_GATE_SKIP=1 to bypass' "$HOOKS_DIR/codex-gate-check.sh" || true)
+    if ! echo "$out_missing" | grep -q 'Set CODEX_GATE_SKIP=1 to bypass' \
+        && ! echo "$out_status" | grep -q 'Set CODEX_GATE_SKIP=1 to bypass' \
+        && [ "$advert" -eq 0 ]; then
+        pass "codex gate block messages no longer instruct callers to set CODEX_GATE_SKIP=1 inline"
+    else
+        fail "codex gate still advertises an inline bypass callers cannot take ($advert occurrence(s) in the hook)"
+    fi
+}
+
 test_codex_gate_blocks_commit_without_review
 test_codex_gate_allows_commit_with_certified_review
 test_codex_gate_allows_commit_with_reviewed_status
@@ -4011,6 +4191,14 @@ test_codex_gate_silent_when_only_description_mentions_commit
 test_codex_gate_blocks_commit_with_quoted_value_containing_space
 test_codex_gate_blocks_stale_certification_after_new_commit
 test_codex_gate_blocks_missing_commit_sha_as_stale
+test_codex_gate_allows_in_flight_commit_on_declared_branch
+test_codex_gate_blocks_in_flight_commit_on_branch_mismatch
+test_codex_gate_blocks_in_flight_commit_with_no_branch_field
+test_codex_gate_blocks_in_flight_commit_on_detached_head
+test_codex_gate_blocks_in_flight_commit_declared_on_trunk
+test_codex_gate_blocks_in_flight_commit_with_relocation_token
+test_codex_gate_blocks_in_flight_commit_with_equals_relocation_tokens
+test_codex_gate_does_not_advertise_an_inline_bypass
 
 # ---- codex-review-stop-check.sh tests ----
 # Fable self-enforcement audit finding: a full SDLC workflow can complete —
