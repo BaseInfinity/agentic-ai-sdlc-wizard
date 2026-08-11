@@ -27,6 +27,38 @@ PERSIST="$REPO_ROOT/scripts/persist-score-history.sh"
 PASSED=0
 FAILED=0
 
+# GH #566 — FAIL CLOSED. `mktemp -d` can fail (an unwritable TMPDIR under
+# sandbox does it), leaving $root empty. Execution then carried straight on in
+# the caller's working directory and every git command below ran against the
+# real repo. Observed, not theorised: the fixture created ci-clone/, README.md
+# and tests/e2e/score-history.jsonl in the caller's cwd.
+#
+# `cd ""` DOES NOT reliably stop this, and the version split matters — see the
+# header of tests/test-fixtures-fail-closed.sh for the full account. Short
+# version: under bash 3.2, which is `/bin/bash` on macOS and therefore what this
+# script's shebang selects, `cd ""` returns 0 silently and does not move. It
+# returns 1 only under bash 5.x, which is what Linux CI runs.
+#
+# So `cd "$root" || exit 1` is a real guard on CI and a no-op on the machine
+# where the incident happened. The load-bearing guard on macOS is the
+# per-call-site `root=$(new_root) || exit 1`. Both are kept.
+#
+# Callers MUST use `root=$(new_root) || exit 1`. The `exit 1` inside this
+# function only leaves the command-substitution subshell; the `||` is what
+# stops the script.
+new_root() {
+    local d
+    d=$(mktemp -d "${TMPDIR:-/tmp}/persist-score-history.XXXXXX") || {
+        echo "FATAL: could not create a temp sandbox (mktemp failed)" >&2
+        exit 1
+    }
+    if [ -z "$d" ] || [ ! -d "$d" ]; then
+        echo "FATAL: temp sandbox path is empty or not a directory: '$d'" >&2
+        exit 1
+    fi
+    printf '%s' "$d"
+}
+
 pass() {
     echo -e "\033[0;32mPASS\033[0m: $1"
     PASSED=$((PASSED + 1))
@@ -44,13 +76,13 @@ fail() {
 make_fixture() {
     local root=$1
     mkdir -p "$root"
-    cd "$root"
+    cd "$root" || exit 1
 
     git init --bare --initial-branch=main remote.git > /dev/null
 
     # Seed the remote with an initial commit on main and a branch feature/x
     git clone -q remote.git seed
-    cd seed
+    cd seed || exit 1
     git config user.email "seed@example.com"
     git config user.name "seed"
     echo "initial" > README.md
@@ -63,26 +95,26 @@ make_fixture() {
     git add tests/e2e/score-history.jsonl
     git commit -q -m "seed history"
     git push -q origin feature/x
-    cd ..
+    cd .. || exit 1
     rm -rf seed
 
     # The CI's pr-branch working dir — checkout feature/x, then put HEAD on
     # the merge ref like actions/checkout@v4 does on pull_request events.
     git clone -q remote.git ci-clone
-    cd ci-clone
+    cd ci-clone || exit 1
     git config user.email "ci@example.com"
     git config user.name "ci"
     git checkout -q feature/x
     # Detach to mimic refs/pull/N/merge behavior
     git checkout -q --detach HEAD
-    cd ..
+    cd .. || exit 1
 }
 
 # Simulate a concurrent commit landing on feature/x after the CI clone started.
 advance_remote_branch() {
     local root=$1
     git clone -q "$root/remote.git" "$root/adv-clone"
-    cd "$root/adv-clone"
+    cd "$root/adv-clone" || exit 1
     git config user.email "other@example.com"
     git config user.name "other"
     git checkout -q feature/x
@@ -90,7 +122,7 @@ advance_remote_branch() {
     git add tests/e2e/score-history.jsonl
     git commit -q -m "other score"
     git push -q origin feature/x
-    cd - > /dev/null
+    cd - > /dev/null || exit 1
 }
 
 # Append a new local score in the CI clone's detached HEAD
@@ -101,9 +133,9 @@ append_local_score() {
 
 test_persist_succeeds_on_clean_push() {
     local root
-    root=$(mktemp -d)
+    root=$(new_root) || exit 1
     make_fixture "$root"
-    cd "$root/ci-clone"
+    cd "$root/ci-clone" || exit 1
     append_local_score "2026-04-18T12:00:00Z"
     if "$PERSIST" feature/x tests/e2e/score-history.jsonl > /tmp/persist-out 2>&1; then
         # Verify the commit landed on the remote branch
@@ -119,17 +151,17 @@ test_persist_succeeds_on_clean_push() {
     else
         fail "clean push returned non-zero. Output: $(cat /tmp/persist-out)"
     fi
-    cd /
+    cd / || exit 1
     rm -rf "$root"
 }
 
 test_persist_recovers_from_nonfastforward() {
     local root
-    root=$(mktemp -d)
+    root=$(new_root) || exit 1
     make_fixture "$root"
     # CI clone is on feature/x seed commit; now advance the remote feature/x.
     advance_remote_branch "$root"
-    cd "$root/ci-clone"
+    cd "$root/ci-clone" || exit 1
     append_local_score "2026-04-18T12:00:00Z"
     if "$PERSIST" feature/x tests/e2e/score-history.jsonl > /tmp/persist-out 2>&1; then
         # Both entries (from the concurrent commit AND from this run) should be present on remote.
@@ -144,22 +176,22 @@ test_persist_recovers_from_nonfastforward() {
     else
         fail "persist returned non-zero on recoverable non-fast-forward. Output: $(cat /tmp/persist-out)"
     fi
-    cd /
+    cd / || exit 1
     rm -rf "$root"
 }
 
 test_persist_no_op_when_nothing_to_append() {
     local root
-    root=$(mktemp -d)
+    root=$(new_root) || exit 1
     make_fixture "$root"
-    cd "$root/ci-clone"
+    cd "$root/ci-clone" || exit 1
     # No change to score-history.jsonl
     if "$PERSIST" feature/x tests/e2e/score-history.jsonl > /tmp/persist-out 2>&1; then
         pass "persist is a no-op when nothing changed"
     else
         fail "persist returned non-zero with no changes. Output: $(cat /tmp/persist-out)"
     fi
-    cd /
+    cd / || exit 1
     rm -rf "$root"
 }
 
@@ -168,7 +200,7 @@ test_persist_no_op_when_nothing_to_append() {
 # exit 1 on the FIRST attempt and not waste budget retrying 3 times.
 test_persist_exits_once_on_hook_rejected_push() {
     local root
-    root=$(mktemp -d)
+    root=$(new_root) || exit 1
     make_fixture "$root"
     # Install a pre-receive hook that always declines.
     cat > "$root/remote.git/hooks/pre-receive" <<'HOOK'
@@ -177,7 +209,7 @@ echo "pushes are disabled for this test"
 exit 1
 HOOK
     chmod +x "$root/remote.git/hooks/pre-receive"
-    cd "$root/ci-clone"
+    cd "$root/ci-clone" || exit 1
     append_local_score "2026-04-18T12:00:00Z"
     local exit_code=0
     "$PERSIST" feature/x tests/e2e/score-history.jsonl > /tmp/persist-out 2>&1 || exit_code=$?
@@ -188,7 +220,7 @@ HOOK
     else
         fail "persist should exit 1 on first attempt for hook rejection (exit=$exit_code, attempts=$attempts). Output: $(cat /tmp/persist-out)"
     fi
-    cd /
+    cd / || exit 1
     rm -rf "$root"
 }
 
