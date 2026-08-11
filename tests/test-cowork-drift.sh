@@ -373,7 +373,7 @@ if [ -f "$PROJECT_ROOT/cowork/hooks/hooks.json" ]; then
   if python3 -c "
 import json
 d=json.load(open('$PROJECT_ROOT/cowork/hooks/hooks.json'))['hooks']
-assert not d.get('Stop'), 'Stop hook is back'
+assert 'Stop' not in d, 'Stop key is back'
 " 2>/dev/null; then
     pass "hooks.json has NO Stop hook (GH #484 — a blocking Stop hook fires every turn)"
   else
@@ -381,6 +381,47 @@ assert not d.get('Stop'), 'Stop hook is back'
   fi
 else
   fail "hooks.json not found"
+fi
+
+# Test 13b (#561): hooks/hooks.json is the plugin's ONLY hook registration
+# surface. Tests 12 and 13 assert that two specific events are absent from that
+# file — which proves nothing if a hook can be registered somewhere else, and it
+# can. Per code.claude.com/docs/en/plugins-reference there are three surfaces:
+#   1. hooks/hooks.json          — the only auto-loaded location (Tests 12, 13)
+#   2. the `hooks` field in plugin.json   — string | array | object, inline or a
+#      path. A stray hooks/extra.json is inert unless routed through this field.
+#   3. the `hooks` field on a MARKETPLACE ENTRY — takes precedence over
+#      plugin.json.
+# Round 2 of the #561 review registered a valid inline UserPromptSubmit hook via
+# surface 2: `claude plugin validate --strict` passed and this suite stayed
+# 29/29. Surface 3 was missed by that enumeration too.
+#
+# Whitelisting the surface beats blacklisting the key on more files: this closes
+# surfaces 2 and 3 for EVERY hook event at once, so Tests 12 and 13 are complete
+# rather than needing a per-event sweep of three manifests.
+#
+# What this does NOT catch, stated rather than hidden: a registration surface
+# added by a future Claude Code release is outside its reach. Cross-model diff
+# review is the guard there — the three-way call's own residue rule (#561).
+#
+# NOT a substitute: `claude plugin validate --strict` is schema-only and passed
+# the mutation above. `claude plugin details` does enumerate effective hooks
+# across all paths, but CI installs no claude CLI, so it cannot be the CI guard.
+if python3 -c "
+import json,sys
+bad=[]
+d=json.load(open('$PROJECT_ROOT/cowork/.claude-plugin/plugin.json'))
+if 'hooks' in d: bad.append('plugin.json')
+for mf in ('cowork/.claude-plugin/marketplace.json','.claude-plugin/marketplace.json'):
+    m=json.load(open('$PROJECT_ROOT/'+mf))
+    if 'hooks' in m: bad.append(mf+' (top level)')
+    for p in m.get('plugins',[]):
+        if 'hooks' in p: bad.append(mf+' entry '+str(p.get('name')))
+assert not bad, 'hook registration outside hooks/hooks.json: '+', '.join(bad)
+" 2>/dev/null; then
+  pass "hooks/hooks.json is the only hook registration surface (no \`hooks\` field in plugin.json or any marketplace entry)"
+else
+  fail "a \`hooks\` field appeared in plugin.json or a marketplace entry — that registers hooks OUTSIDE hooks/hooks.json, where Tests 12 and 13 cannot see them (GH #561)"
 fi
 
 # Test 14: All hooks are prompt type (no command type — Cowork has no shell)
