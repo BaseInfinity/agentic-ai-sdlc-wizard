@@ -4,6 +4,22 @@
 
 Cold-open pointer: if you're picking this repo back up and don't know where to look, start here before scrolling the tables below.
 
+> ### 2026-08-10 — RULED: batch the meta changes. Two PRs, prose first.
+>
+> **Milestones now mirror the two PRs. Full ruling: [#558 comment 5249401013](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558#issuecomment-5249401013).** Both review legs answered independently and converged.
+>
+> **Why:** the harness's fixed per-PR toll (handoff, preflight, review, recheck, clearance, merge artifact, CI) is roughly constant regardless of change size. #572 was **30 lines of documentation and cost six review rounds**. These changes edit the same files and the same protocol sections, so N PRs means N reviews of a moving target.
+>
+> **`v1.98.0 — PR-A: the review contract`** — #558, #557, #573, #574, #564, #556, plus #566 riding standalone. **Prose, zero new tests.** The round-eater is test surface, not prose: #557's exhibit had *seven blocking findings, all in the test, zero in the deliverable.* A batch that ships no guards removes that surface by construction.
+>
+> **`v1.99.0 — PR-B: the gate`** — #533 → #547, then #540 → #563. Normal TDD; these have writable REDs. Sequenced **after** PR-A so the gate edits are reviewed under the new contract. #540's design is ruled: smallest fix — `merge-pr.sh` re-verifies the artifact's sha equals the merging sha. No redesign.
+>
+> **How PR-A is reviewed:** zero new guards; the only empirical check is executing every command the prose instructs and pasting the output; **per-item verdicts with a pre-registered ejection rule** (a P1 on item *k* ejects item *k*, the batch ships with the rest); one structured round; **no semantic regexes, no prose mutations, no root-cause archaeology — record known unknowns rather than chasing them.**
+>
+> **Also settled:** the second review leg is **conditional, with no npm-path carve-out** — nearly every meaningful PR here touches consumer-shipped `files`, so a path carve-out nullifies conditionality. The trigger is the **risk-tier field the scope cards already carry**: HIGH → leg 2 mandatory, low/medium → single leg. **This is not live yet** — `scripts/merge-pr.sh` still requires two clearances on every PR, and making the risk-tier trigger real is PR-B's work (#540 → #563). Until PR-B ships, the gate wins. The post-review confidence percentages are **cut** (#574): they did not discriminate — one leg certified at 100% and another at 96%, and a real P1 followed each.
+>
+> **Moved to backlog, premise changed:** #545 and #542's outside-repo consumption framing, and #504. The work is here, in this repo — not in sibling repos.
+
 **Two rules, both enforced by [`tests/test-roadmap-integrity.sh`](tests/test-roadmap-integrity.sh)** — this section sat stale for two days in July 2026, so its freshness is now machine-checked rather than trusted:
 
 1. Every bullet under **Open PRs** must be written as ``- **PR #N** …``. A bullet in any other form fails the test, so a stale entry cannot be spelled around.
