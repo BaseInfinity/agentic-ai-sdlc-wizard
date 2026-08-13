@@ -73,6 +73,125 @@ COMMAND_FIELD=$(printf '%s' "$TOOL_INPUT" \
 # never look like more than one word to it.
 COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
     | sed -E 's/^"command"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')
+
+# #581: COMMAND_VALUE is still JSON-escaped, so a real newline in the command
+# is the two characters `\` `n` and a tab is `\` `t`. Neither is whitespace to
+# the checks below, and the `n` of `\n` supplies a word character immediately
+# before "git" — so `\bgit` has no boundary left to match and any command whose
+# INVOCATION WAS SPLIT BY one of those escapes walked past the gate. Not every
+# multi-line command: an intact `git commit` sitting before some unrelated
+# newline was always caught, on origin/main and here alike. Measured against
+# shipped origin/main (57ec6cf): all four invocation-split shapes in the test
+# escape, none are caught.
+#
+# A naive `s/\\[nrt]/ /g` is WRONG, and Sol caught it: it cannot tell a JSON
+# control escape from an escaped literal backslash. In `echo x\ngit commit` the
+# backslash escapes the letter n — there is no invocation there at all — but the
+# naive pass rewrites it to a space and MANUFACTURES the word boundary that
+# `\bgit` needs, denying a harmless command that shipped main allowed.
+#
+# So pair the backslashes first, exactly as JSON does, left to right:
+#
+#   run of 1  \n      -> control escape        -> becomes `;` (see below)
+#   run of 2  \\n     -> literal backslash + n -> leave alone
+#   run of 3  \\\n    -> literal backslash + newline, i.e. a shell line
+#                        continuation          -> DELETED, see below
+#   run of 4  \\\\n   -> two literal backslashes + n -> leave alone
+#
+# Pass 1 replaces each PAIR of backslashes with a sentinel, and sed's global
+# substitution consumes pairs left to right, which is precisely JSON's own rule.
+# After that, any backslash still standing is by definition the start of a
+# control escape, so the later passes can act without ambiguity.
+#
+# The run-3 case is DELETED, not spaced, because that is what the shell does:
+# bash removes a backslash-newline pair entirely, so `echo x\<newline>git commit`
+# executes as `echo xgit commit` — one word, no invocation anywhere in it.
+# Replacing it with a space instead would join `x` and `git` into two words and
+# manufacture the boundary `\bgit` needs, denying a harmless command. Deleting
+# keeps the real bypass detectable, because `git \<newline>  commit` still has
+# its own surrounding spaces.
+#
+# For the same reason a run-3 before `t` is stripped of its escape rather than
+# converted: bash treats an escaped tab as part of the word, not as a separator,
+# so turning it into whitespace would invent a split the shell never makes.
+#
+# Each surviving control escape is then mapped to what bash actually does with
+# that character, which is NOT uniformly "whitespace":
+#
+#   \n  -> `;`   a bare newline TERMINATES a command. Mapping it to a space
+#                would fuse two commands into one: `git<newline>commit` is
+#                `git` then a separate `commit`, never a `git commit`. With `;`
+#                there is no `\s+` after `git` so it correctly does not match,
+#                while `cd foo<newline>git commit` still does — `;` is itself a
+#                word boundary.
+#   \t  -> ` `   a bare tab IS a token separator, so whitespace is faithful.
+#   \r  -> left alone. A carriage return is NOT a bash separator; it is ordinary
+#                word content. `cd foo<CR>git commit` runs `cd` with the argument
+#                `foogit` and never invokes git at all. Leaving `\r` intact keeps
+#                the `r` as a word character, so `\bgit` cannot fire — which is
+#                the truth. CRLF still blocks, via the `\n` half.
+#
+# Never decode to REAL newlines. Every consumer below greps line-by-line, so a
+# real newline would split `git \` from `commit` across lines and leave both
+# continuation forms permanently undetectable.
+#
+# Order is load-bearing: pairing precedes everything; the continuation and
+# escaped-tab forms are handled BEFORE the general pass, so that pass cannot eat
+# their trailing escape and strand a backslash mid-command.
+#
+# Normalizing here — once, upstream of both MASKED_COMMAND and the relocation
+# check in the PENDING_RECHECK lane — is what closes it in both places.
+#
+# Known limits, stated rather than implied.
+#
+# This decodes the `\n`/`\r`/`\t` short forms the Bash tool actually emits, NOT
+# the equivalent six-character unicode escapes (backslash-u-0-0-0-a and
+# friends). An accident-catcher, not an adversary barrier.
+#
+# BACKSLASH RUNS OF k = 3 (mod 4) before `n` — 7, 11, 15 — produce a FALSE
+# DENIAL. Such a run decodes to literal backslashes plus a newline; bash keeps a
+# backslash as word content, so `echo x\git commit` is one word that invokes
+# nothing, yet the leftover backslash is a non-word character and lets `\bgit`
+# fire here. Note it is specifically k = 3 (mod 4): k = 9 and k = 13 DO invoke
+# git and are correctly blocked. Verified against a bash oracle through k = 16.
+#
+# DECLINED, on complexity grounds — not impossibility. An earlier version of
+# this comment claimed the only cure was bypass-shaped, on the reasoning that
+# telling this apart from a source `\git` needs command position, which sed
+# cannot decide. Sol disproved that: after the pairing pass above these are
+# already textually distinct — k=7 leaves three sentinels then `\n`, whereas a
+# source `\git` leaves one sentinel then `git` — and demonstrated a sed-only
+# second pairing pass that separates them, prototyped through k = 16.
+#
+# So this is a choice, with a known fix path recorded on #581. It is declined
+# because the input is pathological (three or more literal backslashes abutting
+# a line continuation immediately before `git`), the failure is CLOSED, and the
+# cost is a rephrase — not worth another state machine inside a hook that ships
+# to every consumer as plain bash.
+#
+# Unquoted PROSE that merely names the verb can match. That class predates this
+# change and is tracked as #588. Its edge moves here, in both directions, and
+# measured against origin/main it is:
+#
+#   single-line prose      blocked before, blocked now   — unchanged
+#   newline-separated      allowed before, allowed now   — unchanged, because
+#                          `\n` becomes `;` rather than a space, so the words
+#                          are separated rather than fused
+#   tab-separated          allowed before, BLOCKED now   — WIDENED
+#
+# So this is not the no-change it would be convenient to claim. Tab-separated
+# prose is newly caught, because a tab genuinely IS a bash separator and the
+# detector cannot see that the surrounding text is prose. Accepted as part of
+# the already-accepted #588 class: it fails closed and costs a rephrase.
+ESC_SENTINEL=$(printf '\001')
+COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" \
+    | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
+             -e "s/$ESC_SENTINEL\\\\n//g" \
+             -e "s/$ESC_SENTINEL\\\\t/${ESC_SENTINEL}t/g" \
+             -e 's/\\n/;/g' \
+             -e 's/\\t/ /g' \
+             -e "s/$ESC_SENTINEL/\\\\/g")
+
 MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
     | sed -E -e 's/\\"[^\\]*\\"/Q/g' -e "s/'[^']*'/Q/g")
 
