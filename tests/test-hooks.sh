@@ -4177,6 +4177,265 @@ test_codex_gate_does_not_advertise_an_inline_bypass() {
     fi
 }
 
+# #581: the hook matches against the JSON-ESCAPED command value, where a real
+# newline is the two characters `\` `n` and a tab is `\` `t`. Neither is
+# whitespace to the regex, and worse, the `n` of `\n` supplies a word character
+# immediately before "git", so `\bgit` has no boundary left to match. Net
+# effect: a multi-line command whose invocation was SPLIT BY the escape escaped
+# the gate entirely. Not every multi-line command — an intact `git commit`
+# sitting before some unrelated newline was always caught. Measured against
+# shipped origin/main (57ec6cf, hook blob a958b0d): all four shapes below
+# escape and none are caught — the hole predates this fix and is not opened
+# by it.
+#
+# The fix decodes each escape to what bash does with that character — `\n` to
+# `;`, `\t` to a space, `\r` left alone as word content — and never to a real
+# newline: every downstream check greps line-by-line, so a real newline would
+# split `git \` and `commit` onto separate lines and leave both continuation
+# forms permanently undetectable. Measured over these same shapes:
+# `printf '%b'` lets both line-continuation forms through; this pass blocks
+# every one of them.
+test_codex_gate_blocks_commit_split_across_lines() {
+    local tmpdir cmd out exit_code failures label
+    failures=""
+    for label in 'newline-separated:cd foo\ngit commit -m \"x\"' \
+                 'line-continuation:git \\\n  commit -m \"x\"' \
+                 'tab-separated:git\tcommit -m \"x\"' \
+                 'dashC-continuation:git -C /tmp/repo \\\n  commit -m \"x\"'; do
+        cmd="${label#*:}"
+        tmpdir=$(mktemp -d)
+        out=$(printf '{"tool_input":{"command":"%s"}}' "$cmd" | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+        rm -rf "$tmpdir"
+        [ "$exit_code" -eq 2 ] || failures="$failures [${label%%:*} -> exit=$exit_code]"
+    done
+    if [ -z "$failures" ]; then
+        pass "codex gate BLOCKS (exit 2) a real commit split up by a JSON-escaped \\n/\\t"
+    else
+        fail "codex gate should exit 2 for every invocation-split commit shape, got:$failures"
+    fi
+}
+
+# The two shapes this loop USED to contain, moved here because bash says they
+# are not git invocations at all. Established with a fake `git` on PATH that
+# prints its own argv, so the shell answered rather than any of us:
+#
+#   git<newline>commit      -> `git` with no args, THEN a separate bare
+#                              `commit`. Never a `git commit`.
+#   cd foo<CR>git commit    -> `cd: foogit: No such file or directory`. A
+#                              carriage return is not a bash separator; it is
+#                              ordinary word content.
+#
+# Both were previously asserted as bypasses that must be blocked, which
+# codified two false denials as correct behavior in a green suite. That oracle
+# is now the admission criterion for the block loop above: a shape belongs
+# there only if bash actually invokes git.
+test_codex_gate_silent_on_shapes_that_do_not_invoke_git() {
+    local tmpdir out exit_code failures label cmd
+    failures=""
+    for label in 'verb-on-its-own-line:git\ncommit -m \"x\"' \
+                 'carriage-return-is-word-content:cd foo\rgit commit -m \"x\"'; do
+        cmd="${label#*:}"
+        tmpdir=$(mktemp -d)
+        out=$(printf '{"tool_input":{"command":"%s"}}' "$cmd" | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+        rm -rf "$tmpdir"
+        { [ "$exit_code" -eq 0 ] && [ -z "$out" ]; } || failures="$failures [${label%%:*} -> exit=$exit_code]"
+    done
+    if [ -z "$failures" ]; then
+        pass "codex gate silent on multi-line shapes that bash does not turn into a git invocation"
+    else
+        fail "codex gate should exit 0 silent for non-invocation shapes, got:$failures"
+    fi
+}
+
+# The allow-path mirror of the test above. Every new shape asserts exit 2 in an
+# UNcertified repo, which alone cannot tell "the gate now sees the commit" from
+# "the gate now denies multi-line input on principle". This pins the other half:
+# with a CERTIFIED handoff matching HEAD, the same four shapes must still pass
+# through silently.
+test_codex_gate_allows_certified_commit_split_across_lines() {
+    local tmpdir head_sha out exit_code failures label cmd
+    failures=""
+    for label in 'newline-separated:cd foo\ngit commit -m \"x\"' \
+                 'line-continuation:git \\\n  commit -m \"x\"' \
+                 'tab-separated:git\tcommit -m \"x\"' \
+                 'dashC-continuation:git -C . \\\n  commit -m \"x\"'; do
+        cmd="${label#*:}"
+        tmpdir=$(mktemp -d)
+        (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
+        head_sha=$(cd "$tmpdir" && git rev-parse HEAD)
+        mkdir -p "$tmpdir/.reviews"
+        printf '{"status":"CERTIFIED","score":9,"commit_sha":"%s"}' "$head_sha" > "$tmpdir/.reviews/handoff.json"
+        out=$(printf '{"tool_input":{"command":"%s"}}' "$cmd" | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+        rm -rf "$tmpdir"
+        { [ "$exit_code" -eq 0 ] && [ -z "$out" ]; } || failures="$failures [${label%%:*} -> exit=$exit_code]"
+    done
+    if [ -z "$failures" ]; then
+        pass "codex gate ALLOWS (exit 0) every invocation-split commit shape when CERTIFIED against HEAD"
+    else
+        fail "codex gate should exit 0 silent for certified invocation-split commits, got:$failures"
+    fi
+}
+
+# Sol's P1 against the first cut of #581, now pinned as a regression. A naive
+# `s/\\[nrt]/ /g` cannot tell a JSON control escape from an ESCAPED LITERAL
+# BACKSLASH. On the wire, `echo x\ngit commit` arrives as `echo x\\ngit commit`:
+# the backslash escapes the letter n, the shell reads it as `echo xngit`, and
+# there is no invocation anywhere in it. Rewriting that backslash to a space
+# does not manufacture letters — it manufactures the WORD BOUNDARY that `\bgit`
+# needs, which is how a harmless command that shipped main allowed became a
+# denial. Verified against origin/main: allowed there, so this was ours.
+#
+# The fix pairs backslashes left to right the way JSON does before decoding
+# anything, so run-length decides what a backslash run means.
+#
+# NOTE ON THE LITERALS BELOW, because getting this wrong is what let the first
+# cut ship: these are SINGLE-quoted, so bash preserves every backslash exactly
+# as written and `printf '%s'` puts that same count on the wire. `\\n` here is
+# a run of TWO. An earlier version of this test doubled all of them — it read
+# run-2 and was actually exercising run-4, so the case it claimed to pin was
+# never pinned at all. Count the backslashes in the source, not in a probe you
+# wrote in double quotes.
+#
+# The run-3 cases are the shell-semantics half, and they are not obvious:
+# `echo x\<newline>git commit` is a line continuation, which bash REMOVES
+# entirely, executing `echo xgit commit` — one word, no invocation. An escaped
+# tab or CR is likewise part of the word, not a separator. Normalizing any of
+# them to whitespace would invent a split the shell never makes, and that split
+# is exactly the word boundary `\bgit` needs.
+test_codex_gate_silent_on_escaped_literal_backslashes() {
+    local tmpdir out exit_code failures label cmd
+    failures=""
+    for label in 'run2-backslash-n:echo x\\ngit commit' \
+                 'run2-backslash-t:echo x\\tgit commit' \
+                 'run4-two-backslashes:echo x\\\\ngit commit' \
+                 'windows-path:cd C:\\temp' \
+                 'run3-continuation-joins-words:echo x\\\ngit commit' \
+                 'run3-escaped-tab:echo x\\\tgit commit' \
+                 'run3-escaped-cr:echo x\\\rgit commit'; do
+        cmd="${label#*:}"
+        tmpdir=$(mktemp -d)
+        out=$(printf '{"tool_input":{"command":"%s"}}' "$cmd" | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+        rm -rf "$tmpdir"
+        { [ "$exit_code" -eq 0 ] && [ -z "$out" ]; } || failures="$failures [${label%%:*} -> exit=$exit_code]"
+    done
+    if [ -z "$failures" ]; then
+        pass "codex gate silent when a backslash escapes a literal letter rather than encoding whitespace"
+    else
+        fail "codex gate should exit 0 silent for escaped literal backslashes, got:$failures"
+    fi
+}
+
+# The allow-side mirror for the in-flight lane. Its block-path twin proves the
+# gate now SEES a relocation flag split across lines; this proves normalization
+# did not make the lane paranoid — a plain multi-line round-2 commit, on the
+# branch the handoff declares and carrying no relocation flag, still passes.
+test_codex_gate_allows_in_flight_multi_line_commit_on_declared_branch() {
+    local tmpdir out exit_code
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init && git checkout -qB feat/581-lane) > /dev/null 2>&1
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING_RECHECK","round":2,"branch":"feat/581-lane"}' > "$tmpdir/.reviews/handoff.json"
+    out=$(printf '%s' '{"tool_input":{"command":"cd .\ngit commit -m \"round 2 fixes\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate ALLOWS (exit 0) an in-flight multi-line commit on the declared branch"
+    else
+        fail "codex gate should exit 0 silent for a multi-line PENDING_RECHECK commit on the declared branch, got exit=$exit_code out: $out"
+    fi
+}
+
+# The full backslash-run contract, k = 1..16, as a CANARY.
+#
+# Rows marked `2` are real invocations bash would run, and must block. Rows
+# marked `0` are not invocations, and must stay silent. Three rows — k = 7, 11,
+# 15, i.e. k = 3 (mod 4) — are ACCEPTED FALSE DENIALS: bash invokes nothing
+# there, but a literal backslash survives normalization and gives `\bgit` the
+# non-word character it needs.
+#
+# Those three rows assert wrong-but-accepted behavior ON PURPOSE, and that is
+# why this is a canary rather than a guard. If one of them starts ALLOWING, the
+# limitation has been fixed — this test fails, and whoever fixed it is forced to
+# update the known-limits paragraph in the hook and this table together. An
+# acceptance that is not pinned outlives the reason for accepting it.
+#
+# Sol demonstrated a sed-only second pairing pass that would close k = 3 (mod 4)
+# without needing command position; it is declined on complexity grounds, not
+# impossibility, and recorded on #581 as the fix path.
+test_codex_gate_backslash_run_contract() {
+    local tmpdir out exit_code failures k bs expected verb
+    failures=""
+    verb="com""mit"
+    for k in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+        case $((k % 4)) in
+            1) expected=2 ;;   # control escape survives -> real invocation
+            3) expected=2 ;;   # k=3 is a continuation (0); 7/11/15 are the accepted FPs
+            *) expected=0 ;;
+        esac
+        [ "$k" -eq 3 ] && expected=0
+        bs=$(printf '%*s' "$k" '' | tr ' ' '\\')
+        tmpdir=$(mktemp -d)
+        out=$(printf '{"tool_input":{"command":"echo x%sngit %s -m y"}}' "$bs" "$verb" \
+            | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+        rm -rf "$tmpdir"
+        [ "$exit_code" -eq "$expected" ] || failures="$failures [k=$k want=$expected got=$exit_code]"
+    done
+    if [ -z "$failures" ]; then
+        pass "codex gate matches the k=1..16 backslash-run contract, including the three accepted false denials"
+    else
+        fail "backslash-run contract drifted (a k=3-mod-4 row flipping to 0 means the limitation was FIXED — update the hook comment and this table):$failures"
+    fi
+}
+
+# Control for the fix above: decoding \n to `;` must NOT start blocking
+# multi-line commands that never commit. This is the regression the
+# normalization most plausibly causes.
+test_codex_gate_silent_on_multi_line_non_commit_command() {
+    local tmpdir out exit_code
+    tmpdir=$(mktemp -d)
+    out=$(printf '%s' '{"tool_input":{"command":"cd foo\nls -la"}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate silent on a multi-line command that never commits"
+    else
+        fail "codex gate should exit 0 silent for a multi-line non-commit command, got exit=$exit_code out: $out"
+    fi
+}
+
+# Control for the ORDER of the two transforms: normalization runs BEFORE the
+# quoted-span masking, so a verb living inside a quoted string still collapses
+# to the Q placeholder and stays allowed. Without this ordering the fix would
+# widen the prose false-positive class (#588) past the accepted margin.
+test_codex_gate_silent_when_multi_line_verb_is_inside_quotes() {
+    local tmpdir out exit_code
+    tmpdir=$(mktemp -d)
+    out=$(printf '%s' '{"tool_input":{"command":"echo \"cd foo\ngit commit\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && [ -z "$out" ]; then
+        pass "codex gate silent when a multi-line quoted string merely contains the verb"
+    else
+        fail "codex gate should exit 0 silent when the verb is inside a quoted span, got exit=$exit_code out: $out"
+    fi
+}
+
+# The #533 in-flight lane reads the same COMMAND_VALUE, so it inherited the same
+# bypass: a relocation flag separated from `git` by a JSON-escaped newline never
+# reached the catcher, because the structural match failed upstream first.
+# Normalizing once, before both consumers, closes it in both places.
+test_codex_gate_blocks_in_flight_relocation_token_across_lines() {
+    local tmpdir out exit_code
+    tmpdir=$(mktemp -d)
+    (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init && git checkout -qB feat/581-lane) > /dev/null 2>&1
+    mkdir -p "$tmpdir/.reviews"
+    printf '{"status":"PENDING_RECHECK","round":2,"branch":"feat/581-lane"}' > "$tmpdir/.reviews/handoff.json"
+    out=$(printf '%s' '{"tool_input":{"command":"git --work-tree=/tmp \\\n  commit -m \"x\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 2 ]; then
+        pass "codex gate BLOCKS (exit 2) an in-flight relocation flag split from git by \\n"
+    else
+        fail "codex gate should exit 2 for a line-split in-flight relocation flag, got exit=$exit_code out: $out"
+    fi
+}
+
 test_codex_gate_blocks_commit_without_review
 test_codex_gate_allows_commit_with_certified_review
 test_codex_gate_allows_commit_with_reviewed_status
@@ -4199,6 +4458,15 @@ test_codex_gate_blocks_in_flight_commit_declared_on_trunk
 test_codex_gate_blocks_in_flight_commit_with_relocation_token
 test_codex_gate_blocks_in_flight_commit_with_equals_relocation_tokens
 test_codex_gate_does_not_advertise_an_inline_bypass
+test_codex_gate_blocks_commit_split_across_lines
+test_codex_gate_silent_on_shapes_that_do_not_invoke_git
+test_codex_gate_backslash_run_contract
+test_codex_gate_allows_certified_commit_split_across_lines
+test_codex_gate_silent_on_escaped_literal_backslashes
+test_codex_gate_allows_in_flight_multi_line_commit_on_declared_branch
+test_codex_gate_silent_on_multi_line_non_commit_command
+test_codex_gate_silent_when_multi_line_verb_is_inside_quotes
+test_codex_gate_blocks_in_flight_relocation_token_across_lines
 
 # ---- codex-review-stop-check.sh tests ----
 # Fable self-enforcement audit finding: a full SDLC workflow can complete —
