@@ -252,6 +252,31 @@ run_row ""        INVOKES "" 'env FOO=a\;b git commit -m x'
 run_row ""        INVOKES "" 'env FOO=a\&b git commit -m x'
 run_row ""        INVOKES "" 'env FOO=a\|b git commit -m x'
 
+echo "--- Sol round 13: operators missing from the redirection set ---"
+# The SEVENTH narrowing instance, and the first outside GATE_ASSIGN. The
+# operator enumeration omitted `<<`, `<<-` and `<>`. An ATTACHED operand still
+# matched by accident through a shorter operator; a SEPARATED one escaped.
+run_row ""        INVOKES "" '<< EOF git commit -m x
+body
+EOF'
+run_row ""        INVOKES "" '<<- EOF git commit -m x
+body
+EOF'
+run_row ""        INVOKES "" '<> /dev/null git commit -m x'
+
+echo "--- Sol round 13: the double-quote masker was not escape-aware ---"
+# The EIGHTH instance. The masker assumed a double-quoted span contains no
+# backslash, so a Windows path or an escaped char left the span unmasked and the
+# whitespace inside it broke the assignment and git-option chains downstream.
+run_row ""        INVOKES "" 'FOO="C:\Program Files" git commit -m x'
+run_row ""        INVOKES "" 'git -c user.name="A\B C" commit -m x'
+# The escape alternative must NOT swallow the closing quote. `\.` does, and
+# under POSIX longest-match this whole command masks to `cd Q` — the invocation
+# vanishes. That was the reviewer's own suggested fix, and test-hooks.sh caught
+# it in the same commit that applied it. Pinned here so it cannot come back.
+run_row ""        INVOKES "" 'cd sub && git commit -m "message"'
+run_row ""        INVOKES "" 'git -c user.name="A B" commit -m x'
+
 echo "--- redirection operand separated from its operator (Sol round 2) ---"
 # `< /dev/null git commit` is an ordinary invocation; the space after the
 # operator is legal and GATE_REDIR used to require the operand to touch it.
@@ -320,7 +345,7 @@ run_row ""        INVOKES "" 'A["foo bar"]=x git commit -m x'
 # Bash's assignment lexer KEEPS whitespace inside an arithmetic subscript — the
 # word does not split. Bounding the span by whitespace on the opposite reasoning
 # was the sixth instance of the narrowing pattern, and these are why the span is
-# now deliberately unbounded.
+# now unbounded — there is no whitespace bound any more.
 run_row ""        INVOKES "" 'A[1 + 2]=x git commit -m x'
 run_row ""        INVOKES "" 'A[1\ +\ 2]=x git commit -m x'
 run_row ""        INVOKES "" 'A[1\ +\ 2]+=x git commit -m x'
@@ -341,6 +366,18 @@ run_row ""        inert "" 'A[0]-B=1 git commit -m x'
 # the hook comment claimed a safety they were not providing.
 # Asserted in the opposite direction from the rows around it — it is a false
 # POSITIVE, so run_row (which wants inert => ALLOW) does not fit.
+# The unbounded span is greedy across a real command boundary too: it fuses two
+# balanced array-looking fragments either side of a `;` into one fictional
+# assignment. Materially different from merely tolerating unbalanced brackets,
+# so it is pinned separately rather than folded into the row below.
+xcmd='A[0]=x; echo A[1]=y git commit -m x'
+truth=$(oracle "$xcmd"); g=$(gate "$xcmd")
+if [ "$truth" = "inert" ] && [ "$g" = "BLOCK" ]; then
+    pass "ACCEPTED LIMIT still holds (inert, blocked — the unbounded span reaches across a ';') — $xcmd"
+else
+    fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — $xcmd"
+fi
+
 ubs='A[0]-B[1]=x git commit -m x'
 truth=$(oracle "$ubs"); g=$(gate "$ubs")
 if [ "$truth" = "inert" ] && [ "$g" = "BLOCK" ]; then

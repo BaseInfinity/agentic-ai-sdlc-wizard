@@ -71,6 +71,14 @@ COMMAND_FIELD=$(printf '%s' "$TOOL_INPUT" \
 # quoted sub-span — both JSON-escaped `\"..\"` and plain `'..'` — to a single
 # placeholder token before the structural match runs, so a quoted value can
 # never look like more than one word to it.
+#
+# The double-quote masker is ESCAPE-AWARE but must NOT let the escape
+# alternative swallow the closing quote. `\\.` would, and under POSIX
+# longest-match `cd \"$dir\" && git commit -m \"message\"` then masks
+# ENTIRELY to `Q` — the invocation vanishes and the gate fails open. That was
+# the reviewer's own suggested fix this round, and tests/test-hooks.sh caught it
+# in the same commit that applied it. `\\[^"]` covers a backslash inside the
+# span (a Windows path, an escaped char) while still stopping at the closer.
 COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
     | sed -E 's/^"command"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')
 
@@ -222,7 +230,7 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" \
              -e "s/$ESC_SENTINEL/\\\\/g")
 
 MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
-    | sed -E -e 's/\\"[^\\]*\\"/Q/g' -e "s/'[^']*'/Q/g")
+    | sed -E -e 's/\\"([^"\\]|\\[^"])*\\"/Q/g' -e "s/'[^']*'/Q/g")
 
 # An ESCAPED separator is word content, not a command boundary: `echo \; git
 # commit` is one command printing three words. Neutralising it to `E` here —
@@ -317,7 +325,12 @@ MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" \
 #
 # REDIRECTIONS. bash permits redirections before the command word, so
 # `</dev/null git commit` and `2>/dev/null git commit` are ordinary invocations.
-# They are transparent here, in any order with assignments.
+# They are transparent here, in any order with assignments — for the operators
+# ENUMERATED in GATE_REDIR. That enumeration is the seventh narrowing instance
+# in this file's history: it omitted `<<`, `<<-` and `<>`, and a SEPARATED
+# operand escaped through the gap while an attached one matched by accident via
+# a shorter operator. The set is closed, so an operator nobody enumerated is a
+# false NEGATIVE, on the same footing as the closed wrapper set below.
 #
 # WRAPPER OPTION GRAMMAR. The first cut allowed only flags and bare numbers
 # after a wrapper, so `env -u FOO`, `xargs -I X`, `sudo -u USER` and `timeout 5s`
@@ -405,8 +418,9 @@ GATE_ANCHOR="(${GATE_SEP}|${GATE_SEP}[[:space:]]*(if|elif|while|until|then|do|el
 #
 # and the reviewer's own proposed `(\[([^]]|\][^=])*\])?` was a fifth,
 # admitting `=` while re-excluding nesting. The honest model is that a subscript
-# is an arbitrary arithmetic expression and a regex has no business enumerating
-# its contents.
+# is not enumerable by a regex: an INDEXED subscript is an arithmetic
+# expression, and an ASSOCIATIVE one is an arbitrary string after expansion.
+# Between them there is no character a regex can rely on excluding.
 #
 # THE COST, disclosed rather than discovered: an unbounded span OVERMATCHES.
 # It does not validate bracket balance and cannot — POSIX ERE cannot without a
@@ -415,13 +429,18 @@ GATE_ANCHOR="(${GATE_SEP}|${GATE_SEP}[[:space:]]*(if|elif|while|until|then|do|el
 # prefix and BLOCKED. `A[0]-B[1]=x git commit` is exactly that: oracle-inert,
 # blocked, failing CLOSED, and pinned as a row rather than described.
 #
+# It is also greedy ACROSS A COMMAND BOUNDARY, which is a materially different
+# cost and is pinned separately: in `A[0]=x; echo A[1]=y git commit` the span
+# runs over the `;` and fuses two balanced fragments into one fictional
+# assignment. Inert, blocked, fails CLOSED.
+#
 # The ONLY safety claim made here is the real NAME requirement, which is what
 # keeps `A-B=1` and `1A=1` out. Three earlier versions of this comment claimed
 # more than that and each claim was measured false.
 GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*(\\[.*\\])?\\+?=${GATE_WORD}*"
 # The operand may be separated from the operator: `< /dev/null git commit` runs.
 # `>|` is bash's clobber-override and belongs in the operator set.
-GATE_REDIR="[0-9]*(<<<|>>|<&|>&|>\\||&>|<|>)[[:space:]]*${GATE_WORD}+"
+GATE_REDIR="[0-9]*(<<<|<<-|<<|<>|>>|<&|>&|>\\||&>>|&>|<|>)[[:space:]]*${GATE_WORD}+"
 # `builtin` is NOT a wrapper in its own right: it runs only shell BUILTINS, so
 # `builtin git commit` and `builtin env git commit` are both inert and blocking
 # them would be false positives. It is a prefix to exactly the builtin members
