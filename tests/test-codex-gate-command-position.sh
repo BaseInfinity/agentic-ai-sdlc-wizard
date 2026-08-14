@@ -173,11 +173,15 @@ run_row() {
         truth=$(oracle "$cmd")
         source="oracle"
         ORACLE_ROWS=$((ORACLE_ROWS + 1))
-        if [ "$truth" != "$declared" ]; then
+        if [ "$declared" != "ORACLE_REQUIRED" ] && [ "$truth" != "$declared" ]; then
             fail "oracle/declared disagree for [$cmd]: oracle says $truth, table declares $declared — one of them is wrong"
             return
         fi
     else
+        if [ "$declared" = "ORACLE_REQUIRED" ]; then
+            fail "oracle-result canary became unmeasurable for [$cmd] — it can no longer prove anything"
+            return
+        fi
         truth="$declared"
         source="declared (${needs#!} unmeasurable here: $reason)"
     fi
@@ -220,6 +224,18 @@ done
 ORACLE_ROWS=0
 
 echo "=== #588: gate agrees with the shell about what invokes git commit ==="
+
+# THE ORACLE-RESULT CANARY. The two guards above prove the helpers EXIST and
+# that rows ENTER the oracle. Neither proves the oracle's OUTPUT controls the
+# assertion: Sol mutated run_row to call oracle, discard the result and use the
+# declared value instead, and both guards passed at a green
+# `164 passed, 0 failed (129 rows oracle-measured)`. That was the THIRD distinct
+# route to green-while-measuring-nothing found in three rounds.
+#
+# `ORACLE_REQUIRED` is a deliberately poisoned declared value: it is not a legal
+# truth, so this row can only pass if `truth` came from the oracle. It also
+# fails loudly if the row ever becomes unmeasurable, rather than degrading.
+run_row "" ORACLE_REQUIRED "" 'git commit -m oracle-result-canary'
 
 echo "--- real invocations (oracle: INVOKES, want BLOCK) ---"
 run_row ""        INVOKES "" 'git commit -m x'
@@ -527,6 +543,21 @@ run_row ""        INVOKES "" 'cat <<EOF
 $(git commit -m x)
 EOF'
 
+echo "--- Sol round 17: the escape between a path and the basename ---"
+# THIRTEENTH narrowing instance. The regex allowed a backslash BEFORE the path
+# and before a bare `git`, but not between the path and the basename. Blocked on
+# the PR base, allowed here until this fix.
+run_row ""        INVOKES "" './\git commit -m x'
+run_row ""        INVOKES "" 'env ./\git commit -m x'
+run_row ""        INVOKES "" 'command ./\git commit -m x'
+# FOURTEENTH, found by probing Sol's finding rather than taking the shape as
+# given: the escape can sit INSIDE the basename, not only before it. `\?git`
+# closes only the reviewer's spelling; each letter needs its own optional
+# escape. All three invoke, and all three were allowed before this fix.
+run_row ""        INVOKES "" './g\it commit -m x'
+run_row ""        INVOKES "" './gi\t commit -m x'
+run_row ""        INVOKES "" 'g\it commit -m x'
+
 echo "--- GATE_WORD consumers pinned BEHAVIOURALLY (Sol round 16) ---"
 # The self-hunt below probed shapes; it did not prove that each SITE uses the
 # shared atom. Sol replaced GATE_WORD independently at the redirection operand,
@@ -755,5 +786,5 @@ if [ "$ORACLE_ROWS" -lt "$ORACLE_FLOOR" ]; then
 fi
 
 echo
-echo "=== $PASS passed, $FAIL failed ($ORACLE_ROWS rows oracle-measured) ==="
+echo "=== $PASS passed, $FAIL failed ($ORACLE_ROWS run_row rows oracle-measured) ==="
 [ "$FAIL" -eq 0 ]

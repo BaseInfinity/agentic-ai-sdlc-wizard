@@ -465,7 +465,7 @@ GATE_WRAPPER="(${GATE_BUILTIN}|\\\\?${GATE_EXTERNAL})"
 # separated form broke the chain: `git --git-dir .git commit` is an ordinary
 # invocation. The separated alternative is listed first so it wins the match.
 GATE_GIT_LONGVAL='--(git-dir|work-tree|namespace|exec-path|config-env|super-prefix)'
-GATE_GIT="\\\\?(${GATE_WORD}*/)?git(\\s+(${GATE_GIT_LONGVAL}\\s+${GATE_WORD}+|-C\\s+${GATE_WORD}+|-c\\s+${GATE_WORD}+|--${GATE_WORD}+|-[A-Za-z]))*\\s+commit\\b"
+GATE_GIT="\\\\?(${GATE_WORD}*/)?\\\\?g\\\\?i\\\\?t(\\s+(${GATE_GIT_LONGVAL}\\s+${GATE_WORD}+|-C\\s+${GATE_WORD}+|-c\\s+${GATE_WORD}+|--${GATE_WORD}+|-[A-Za-z]))*\\s+commit\\b"
 GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
 # The skip stops at a REAL separator only. `\;` is word content, not a boundary,
 # and neither is the `&` or `|` inside a redirection operator — `env 2>&1 git
