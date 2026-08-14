@@ -188,7 +188,7 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
 # A previous cut of this PR masked heredoc bodies with an awk pass, to fix the
 # false POSITIVE on `cat > script.sh <<'EOF' ... git commit ... EOF` — a shape
 # #588's own defect description names. Sol's round-6 review measured that the
-# pass introduced FIVE fail-opens, each oracle-confirmed and each blocked before
+# pass introduced SIX fail-opens, each oracle-confirmed and each blocked before
 # it landed:
 #
 #   # documentation: use <<EOF below      a comment mentioning the operator
@@ -196,10 +196,15 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
 #   cat <<< EOF                           the regex restarts inside `<<<`
 #   (( x = 1 << EOF ))                    a left-shift in arithmetic
 #   cat <<-EOF ... <tab>EOF               the tab is still `\t` at that stage
+#   cat <<EOF / $(git commit) / EOF       an unquoted body is NOT inert: the
+#                                         substitution runs while the
+#                                         redirection is being constructed
 #
-# and one claim in it was simply FALSE: an unquoted heredoc body is not inert.
-# `cat <<EOF` / `$(git commit -m x)` / `EOF` executes the substitution while
-# constructing the redirection.
+# That last one also falsified a claim in the reverted comment, which had said
+# the body never runs. The count read FIVE until Sol's round 7 observed that the
+# sixth was described in prose but never counted — and that the row pinned as
+# `(( x = 1 << 2 ))` did not demonstrate the defect at all, because the pass
+# blocked that one too. `<< EOF` is the shape that actually escaped.
 #
 # Recognising a heredoc correctly means ignoring `<<` inside quotes, comments,
 # arithmetic and escapes, excluding `<<<`, queueing multiple delimiters, and

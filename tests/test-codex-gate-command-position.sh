@@ -312,21 +312,35 @@ git commit -m x
 EOF"
 truth=$(oracle "$hd"); g=$(gate "$hd")
 if [ "$truth" = "inert" ] && [ "$g" = "BLOCK" ]; then
-    pass "ACCEPTED LIMIT still holds (inert, blocked — heredoc body; masking it cost five fail-opens) — heredoc writing a script"
+    pass "ACCEPTED LIMIT still holds (inert, blocked — heredoc body; masking it cost six fail-opens) — heredoc writing a script"
 else
     fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — heredoc writing a script"
 fi
 
-echo "--- Sol round 6: shapes the reverted heredoc masker let through ---"
-# Every one of these invokes git and was ALLOWED by the awk masking pass. They
-# are the evidence for the revert, and they must stay BLOCKED.
+echo "--- Sol round 6: the SIX shapes the reverted heredoc masker let through ---"
+# Every one of these invokes git, was ALLOWED by the awk masking pass, and is
+# BLOCKED here. They are the evidence for the revert and must stay blocked.
+#
+# Sol's round 7 corrected this block twice, and both corrections are why it is
+# worth having: the original `(( x = 1 << 2 ))` row did NOT demonstrate the
+# defect — the reverted pass blocked it too, because `2` is not delimiter-like.
+# `<< EOF` is the shape that actually escaped. And the count was six, not five:
+# the expanding-body row was described in prose but never counted.
 run_row ""        INVOKES "" '# documentation: use <<EOF below
 git commit -m x'
-run_row ""        INVOKES "" 'echo "<<EOF"
+# The exact single-quoted spelling, not just its double-quoted equivalent.
+run_row ""        INVOKES "" 'echo '"'"'<<EOF'"'"'
 git commit -m x'
 run_row ""        INVOKES "" 'cat <<< EOF
 git commit -m x'
-run_row ""        INVOKES "" '(( x = 1 << 2 ))
+run_row ""        INVOKES "" '(( x = 1 << EOF ))
+git commit -m x'
+# `<<-` with a TAB-indented terminator. At the masking stage the tab was still
+# the escape `\t`, so `[[:space:]]*` never matched the terminator and the pass
+# swallowed the real command after it. The tab below is literal and load-bearing.
+run_row ""        INVOKES "" 'cat <<-EOF
+body
+	EOF
 git commit -m x'
 # An unquoted heredoc body is NOT inert: the substitution runs while the
 # redirection is built. The reverted pass claimed otherwise.
@@ -337,8 +351,14 @@ $(git commit -m x)
 EOF'
 
 echo "--- GATE_WORD self-hunt: 25 shapes probed, these are the distinct ones ---"
-# GATE_WORD is the load-bearing abstraction of this fix and it is used at six
-# sites, so it got its own hunt. These are the structurally distinct survivors:
+# GATE_WORD is the load-bearing abstraction of this fix and it is used at all
+# six sites that consume a word:
+#
+#   1. assignment values          4. the path prefix on `git`
+#   2. redirection operands       5. git's own global-option operands
+#   3. the wholesale skip         6. the path prefix on a WRAPPER
+#
+# so it got its own hunt. These are the structurally distinct survivors:
 # loop and case bodies, a tab separator, an end-of-options marker, stacked
 # wrappers, and an assignment/redirection/assignment interleave. None was a
 # fail-open; they are pinned so a later change to GATE_WORD cannot quietly
