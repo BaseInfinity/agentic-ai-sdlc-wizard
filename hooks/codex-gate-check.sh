@@ -258,10 +258,43 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 # masking pass collapses the quoted payload to `Q` before any matching happens.
 # Measured against origin/main, not assumed. Out of scope for #588 and filed
 # separately rather than fixed silently in a PR about prose false-positives.
-GATE_ANCHOR='(^|[;&|(){}!]|\$\(|`|\b(then|do|else)[[:space:]])'
-GATE_TRANSPARENT='([^ =]*=[^ ]*|env|command|eval|exec|time|nice|nohup|xargs|timeout|sudo|stdbuf|-[A-Za-z-][^ ]*|[0-9]+)'
-if ! printf '%s' "$MASKED_COMMAND" \
-    | grep -qE "${GATE_ANCHOR}[[:space:]]*(${GATE_TRANSPARENT}[[:space:]]+)*\\\\?(\\S*/)?git(\\s+(-C\\s+\\S+|-c\\s+\\S+|--\\S+|-[A-Za-z]))*\\s+commit\\b"; then
+# Sol's round 1 found three more fail-open classes in the first cut of this
+# anchor, all of which shipped BLOCKED on origin/main. Each is covered below and
+# pinned by an oracle row:
+#
+#   if git commit -m x; then :; fi      reserved words other than then/do/else
+#   </dev/null git commit -m x          a leading redirection is a valid prefix
+#   env -u FOO git commit -m x          a wrapper option that takes an argument
+#
+# RESERVED WORDS. bash begins a command after `if`, `elif`, `while`, `until` and
+# `coproc` exactly as it does after `then`, `do` and `else`.
+#
+# REDIRECTIONS. bash permits redirections before the command word, so
+# `</dev/null git commit` and `2>/dev/null git commit` are ordinary invocations.
+# They are transparent here, in any order with assignments.
+#
+# WRAPPER OPTION GRAMMAR. The first cut allowed only flags and bare numbers
+# after a wrapper, so `env -u FOO`, `xargs -I X`, `sudo -u USER` and `timeout 5s`
+# all broke the chain. Enumerating each wrapper's real option grammar is not
+# winnable — the grammars differ per tool and per platform. So once one of the
+# ENUMERATED wrappers appears in command position, the tokens between it and
+# `git` are skipped wholesale, stopping at `;`, `&` or `|` so the skip cannot
+# reach across into a separate command.
+#
+# That deliberately trades a narrow FALSE POSITIVE for closing a fail-open:
+# `time echo git commit` is inert yet blocked here, because the text cannot say
+# whether `echo` is a wrapper's option argument or a new command word. It fails
+# CLOSED and the cost is a rephrase, which is the same bargain every other
+# accepted limit on this hook takes — and the opposite direction from the one
+# that actually matters for a review gate.
+GATE_ANCHOR='(^|[;&|(){}!]|\$\(|`|\b(if|elif|while|until|then|do|else|coproc)[[:space:]])'
+GATE_ASSIGN='[^ =]*=[^ ]*'
+GATE_REDIR='[0-9]*(<<<|<&|>&|>>|<|>)[^ ]+'
+GATE_WRAPPER='(env|command|eval|exec|time|nice|nohup|xargs|timeout|sudo|stdbuf)'
+GATE_GIT="\\\\?(\\S*/)?git(\\s+(-C\\s+\\S+|-c\\s+\\S+|--\\S+|-[A-Za-z]))*\\s+commit\\b"
+GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
+if ! printf '%s' "$MASKED_COMMAND" | grep -qE \
+    "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+([^;&|]*[[:space:]]+)?)*${GATE_GIT}"; then
     exit 0
 fi
 
