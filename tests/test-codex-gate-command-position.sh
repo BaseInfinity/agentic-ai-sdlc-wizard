@@ -189,6 +189,49 @@ git commit -m x'
 run_row ""        inert   "" 'echo x
 echo git commit'
 
+echo "--- ACCEPTED LIMITS: rows that pin behaviour we know is wrong ---"
+# A detector needs known-FAILURE rows, not only known-success ones. These assert
+# the CURRENT, deliberately-accepted behaviour, so that a later change which
+# either fixes or worsens one of them shows up as a diff rather than passing
+# silently. Each is recorded on #588.
+#
+# Every row here is a false NEGATIVE — the shape really does invoke git and the
+# gate allows it. That is the direction that matters, and it is why the wrapper
+# set had to be enumerated at all rather than the anchor shipping bare.
+limit_row() {
+    local why="$1" cmd="$2" truth g
+    truth=$(oracle "$cmd")
+    g=$(gate "$cmd")
+    if [ "$truth" = "INVOKES" ] && [ "$g" = "ALLOW" ]; then
+        pass "ACCEPTED LIMIT still holds (invokes, allowed) — $why: $cmd"
+    else
+        fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — $why: $cmd. If this was deliberate, update #588 and this row; if not, it is a regression."
+    fi
+}
+
+# An un-enumerated wrapper. `caffeinate` is macOS-only, so the row is skipped
+# where it does not exist rather than asserted vacuously.
+if command -v caffeinate > /dev/null 2>&1; then
+    limit_row "wrapper outside the closed set" 'caffeinate git commit -m x'
+else
+    echo "  SKIP: caffeinate absent — un-enumerated-wrapper row not measurable here"
+fi
+
+# A real commit into a throwaway repo outside the working tree. This is the
+# second half of #588 and it is NOT fixed: deciding WHERE a command commits
+# needs the cd-tracking that #533 ruled out. The gate blocks it today on text
+# alone, so it is a false POSITIVE rather than a negative — asserted as such.
+tmpfix="$WORK/throwaway"
+mkdir -p "$tmpfix"
+throwaway_cmd="cd $tmpfix && git commit -m x"
+truth=$(oracle "$throwaway_cmd")
+g=$(gate "$throwaway_cmd")
+if [ "$truth" = "INVOKES" ] && [ "$g" = "BLOCK" ]; then
+    pass "ACCEPTED LIMIT still holds (out-of-tree commit is a true positive by text, still blocked) — $throwaway_cmd"
+else
+    fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — out-of-tree commit: $throwaway_cmd"
+fi
+
 echo "--- backslash runs k=1..16, oracle-derived (#581's contract, re-measured) ---"
 # The shape is the JSON string `echo x<k backslashes>ngit commit -m y`. What the
 # SHELL does with it depends on the PARITY of the decoded backslash run sitting
