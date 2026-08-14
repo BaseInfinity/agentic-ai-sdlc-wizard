@@ -6,34 +6,21 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 
 > ## DO THIS NOW
 >
-> **Take the first open, unblocked issue under DO THIS NOW. Read the issue and its latest comments, implement only its acceptance criteria, open a PR with `Closes #N`, and keep going until it merges.** Do not re-plan the order — it was triaged by both review legs on 2026-08-11 and they reconciled. Do not widen the scope; anything you notice that is not in the issue becomes a new issue.
+> **The order lives on [#593](https://github.com/BaseInfinity/claude-sdlc-harness/issues/593), Rung 1. Read it there.** This file does not restate it — #580 ruled that a copied sequence goes stale, and it did: this block said "start #533" for two days after #533 merged in #583.
 >
-> ### Active milestone: `v1.99.0 — PR-B: the gate`
+> **Take the first open, unblocked issue in #593 Rung 1. Read the issue and its latest comments, implement only its acceptance criteria, open a PR with `Closes #N`, and keep going until it merges.** Do not re-plan the order — both review legs triaged and reconciled it. Do not widen the scope; anything you notice that is not in the issue becomes a new issue.
 >
-> **Chain, in dependency order: #533 → #547, then #540 → #563.** Code, normal TDD — unlike PR-A these have writable REDs.
+> **#593 is the ladder, and Rung 1 is the harness repairs.** Rungs 2-5 are the model experiments; they do not start until Rung 1's stop condition holds.
 >
-> **The literal next action: start #533.** Its implementation design is in its own latest comments; [#558](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558) records the sequencing, not the design.
+> ### Release sequence
 >
-> **#540's design is already ruled — do not redesign the gate. Read the ruling on the issue before writing any code.** In one line: **staleness keys on certified content, never on SHA.** The clearance pins the branch's patch-id rather than a `commit_sha`, so a content-identical rebase or amend stays valid and a commit that changes the diff invalidates correctly. It lands together with #558's CUT C, which makes `.reviews/merge-clearance-<PR>.json` the single artifact the gate parses.
+> `v1.99.0 — PR-B: the gate` → `v1.99.1 — the consumer-truth prose batch` → `v2.0.0`. Milestone membership on GitHub is authoritative; this line fixes only the order they ship in.
 >
-> **No riders.** Both legs were asked what else belongs in v1.99.0 and both answered *none*. #515 is the one thematically adjacent issue and it stays out; check whether #540 subsumes it **after** PR-B is stable.
->
-> ### Then: `v2.0.0 — Consumer Safety Repairs`
->
-> 1. **#516** — `cli/init.js:229` `removeObsoletePaths()` calls `fs.rmSync(..., { recursive: true, force: true })` on every retired path with **no content-hash check**, while the install path marks a modified file `PRESERVE`. A consumer who customized a now-retired skill loses it silently on update. Preserve customized retired files instead of deleting them.
-> 2. **#554** — Claude Code drift review. The issue carries the current gap; the last time this gap was reviewed it surfaced a live shipped defect (`src/**` silently stopped matching in 2.1.214, killing the TDD hook for every consumer whose source is not at repo-root `src/`). Repair anything it demonstrates. **#456 rides this session** — retest the Cowork hook against the current baseline, then keep it or delete it.
->
-> ### Then: the consumer-truth prose batch
->
-> #491 Class 1 (the phantom `STALL_SECONDS` watchdog we document and never built), #544, #499, #537, #579. Same contract that made PR-A cheap: one PR, zero new tests, per-item verdicts with a pre-registered ejection rule. Every item is a shipped file asserting something that is not true.
->
-> ### Backlog — do not start
->
-> #515 (verify against #540 first), #501, #542 (record PR-B's data point, then close), #555, #488, #480, #498 (re-judge under #556), #485 (rescope under #556), #481, #504, #545. Links only — the issue bodies are authoritative.
+> **v2.0.0's terminal gate is #545, not issue closure.** The major release is authorized when the maintainer has personally consumed the harness in another repo and it worked. Every other issue closing is necessary and not sufficient.
 >
 > ### Standing rulings
 >
-> GitHub Issues is the store; this file is the ordered view. No gate redesign in PR-B. No new guard or tooling surface. One independently closable issue at a time.
+> GitHub Issues is the store; this file routes to it. No gate redesign in PR-B. No new guard or tooling surface. One independently closable issue at a time.
 
 > ### 2026-08-10 — RULED: batch the meta changes. Two PRs, prose first.
 >
