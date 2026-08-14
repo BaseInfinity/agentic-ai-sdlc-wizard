@@ -297,9 +297,25 @@ echo "--- Sol round 9: array-element assignment prefixes (all fail-open) ---"
 run_row ""        INVOKES "" 'A[0]=x git commit -m x'
 run_row ""        INVOKES "" 'A[foo]=x git commit -m x'
 run_row ""        INVOKES "" 'A[0]+=x git commit -m x'
+# A subscript is an ARITHMETIC EXPRESSION, not an identifier: it nests, and it
+# may be empty (`A[]` is index 0). A first cut bounded it to a nonempty,
+# non-nested span and left all four of these fail-open — the third time in this
+# review that tightening a grammar against a false positive left a fail-open in
+# the same expression.
+run_row ""        INVOKES "" 'A[]=x git commit -m x'
+run_row ""        INVOKES "" 'A[B[0]]=x git commit -m x'
+run_row ""        INVOKES "" 'A[B[0]]+=x git commit -m x'
+run_row ""        INVOKES "" 'A[1+A[0]]=x git commit -m x'
 # CANARY: the round-4 false-positive class must not come back with it. A
-# malformed name is still not an assignment, subscript or no subscript.
+# malformed name is still not an assignment, subscript or no subscript. This
+# row also BLOCKS against the pre-round-4 `[^ =]*=` grammar, so it fails if the
+# old malformed-name grammar returns — it proves NAME protection, which is what
+# actually carries the safety here, rather than the subscript bound.
 run_row ""        inert "" 'A[0]-B=1 git commit -m x'
+# LATENT DEPENDENCY, pinned for #603: this blocks only through the unconditional
+# `)` anchor, NOT because GATE_ASSIGN consumes a compound value. #603 narrows
+# the punctuation anchors; without this row that change silently re-opens it.
+run_row ""        INVOKES "" 'A=(x y) git commit -m x'
 
 echo "--- Sol round 5 false positives (oracle: inert, want ALLOW) ---"
 # A reserved word is only a command-position marker when the reserved word is

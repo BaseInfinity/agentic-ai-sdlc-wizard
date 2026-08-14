@@ -373,9 +373,20 @@ GATE_ANCHOR="(${GATE_SEP}|${GATE_SEP}[[:space:]]*(if|elif|while|until|then|do|el
 # `NAME=` does.
 # An ARRAY-ELEMENT assignment is a command prefix too: `A[0]=x git commit` runs
 # git. Narrowing this to scalar names (to kill the `A-B=1` / `1A=1` false
-# positives) excluded them and opened a fail-open — the subscript is bounded to
-# a single bracketed span so an invalid NAME is still rejected.
-GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*(\\[[^][]+\\])?\\+?=${GATE_WORD}*"
+# positives) excluded them and opened a fail-open.
+#
+# THE SUBSCRIPT IS NOT AN IDENTIFIER. A bash indexed subscript is an ARITHMETIC
+# EXPRESSION: it may nest brackets (`A[B[0]]=x`) and it may be empty (`A[]=x`
+# evaluates to index 0). Both run git. A first cut bounded it to a nonempty,
+# non-nested span and kept all four of those shapes fail-open — the THIRD time
+# in this review that tightening a grammar against a false positive left a
+# fail-open in the same expression.
+#
+# So the subscript admits anything but `=`, which is what actually terminates
+# it here. What carries the safety is unchanged and is NOT the subscript bound:
+# a real NAME before the bracket, and the `]` sitting immediately against the
+# `=` / `+=`. `A[0]-B=1` is still not an assignment, and is pinned as a canary.
+GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*(\\[[^=]*\\])?\\+?=${GATE_WORD}*"
 # The operand may be separated from the operator: `< /dev/null git commit` runs.
 # `>|` is bash's clobber-override and belongs in the operator set.
 GATE_REDIR="[0-9]*(<<<|>>|<&|>&|>\\||&>|<|>)[[:space:]]*${GATE_WORD}+"
