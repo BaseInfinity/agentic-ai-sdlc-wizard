@@ -72,19 +72,6 @@ limit_row() {
     fi
 }
 
-# A row that calls an UNDEFINED helper prints to stderr and counts as neither
-# pass nor fail — it vanishes silently. That happened: a limit_row call sat
-# above limit_row's definition and did nothing, the same "row that proves
-# nothing" class the reviewer caught in the mutation audit. bash 3.2 (macOS,
-# and this file's shebang) has no command_not_found_handle, so the portable fix
-# is structural — every helper is defined HERE, above every row — plus this
-# assertion, which fails loudly if one ever moves back below its call sites.
-for _h in pass fail limit_row; do
-    if [ "$(type -t "$_h" 2>/dev/null)" != "function" ]; then
-        echo "FATAL: helper '$_h' is not defined before the rows — rows calling it would vanish" >&2
-        exit 1
-    fi
-done
 
 WORK=$(mktemp -d) || { echo "FATAL: could not create temp dir" >&2; exit 1; }
 case "$WORK" in
@@ -149,6 +136,14 @@ gate() {
 mkdir -p "$WORK/sub"          # so `cd sub && ...` does not short-circuit on &&
 cp "$WORK/bin/git" "$WORK/git" # so `./git commit` resolves to the fake
 
+# A path containing an ESCAPED SPACE, for the rows that pin the git and wrapper
+# path-prefix consumers of GATE_WORD. Without these the oracle reports `inert`
+# for a shape that genuinely invokes, and the row would assert nothing.
+mkdir -p "$WORK/path with spaces"
+cp "$WORK/bin/git" "$WORK/path with spaces/git"
+printf '#!/bin/bash\nexec "$@"\n' > "$WORK/path with spaces/env"
+chmod +x "$WORK/path with spaces/env"
+
 # A row the oracle cannot measure here. Two causes, both real:
 #   - the named wrapper is not installed on this box
 #   - the shape names an ABSOLUTE path to git, which by construction bypasses
@@ -177,6 +172,7 @@ run_row() {
     if oracle_can_measure "$needs"; then
         truth=$(oracle "$cmd")
         source="oracle"
+        ORACLE_ROWS=$((ORACLE_ROWS + 1))
         if [ "$truth" != "$declared" ]; then
             fail "oracle/declared disagree for [$cmd]: oracle says $truth, table declares $declared — one of them is wrong"
             return
@@ -195,6 +191,33 @@ run_row() {
         fail "[$source: $truth] gate $g, want $want — $cmd"
     fi
 }
+
+# A row that calls an UNDEFINED helper prints to stderr and counts as neither
+# pass nor fail — it vanishes silently. bash 3.2 (macOS, and this file's
+# shebang) has no command_not_found_handle, so the fix is structural: every
+# helper is defined ABOVE every row, and this assertion sits below ALL of them.
+#
+# It must list EVERY helper. An earlier version named only three, and Sol
+# measured the gap: moving `run_row` below its calls exited 0 at 30/0 despite
+# 131 "command not found" errors, and moving `oracle_can_measure` below its
+# calls exited 0 at a green 161/0 while every ordinary row silently degraded
+# from oracle-measured to declared. A guard whose comment claims more than it
+# checks is the same vacuous-proof class it exists to catch.
+for _h in pass fail oracle gate oracle_can_measure run_row limit_row; do
+    if [ "$(type -t "$_h" 2>/dev/null)" != "function" ]; then
+        echo "FATAL: helper '$_h' is not defined above the rows — rows calling it would vanish" >&2
+        exit 1
+    fi
+done
+
+# Second, independent guard on the SAME failure: the assertion above proves the
+# helpers exist, not that they did their job. If `oracle_can_measure` were
+# neutered rather than moved, every row would fall back to `declared` and the
+# suite would still be green. So count the rows that actually reached the
+# oracle, and fail if that collapses. Five rows are legitimately declared on
+# macOS (two timeout, stdbuf, sudo, /usr/bin/git); the floor is set well below
+# the real count so it catches collapse, not drift.
+ORACLE_ROWS=0
 
 echo "=== #588: gate agrees with the shell about what invokes git commit ==="
 
@@ -504,6 +527,17 @@ run_row ""        INVOKES "" 'cat <<EOF
 $(git commit -m x)
 EOF'
 
+echo "--- GATE_WORD consumers pinned BEHAVIOURALLY (Sol round 16) ---"
+# The self-hunt below probed shapes; it did not prove that each SITE uses the
+# shared atom. Sol replaced GATE_WORD independently at the redirection operand,
+# the git path prefix and the wrapper path prefix, and the suite stayed green at
+# 161/0 for all three — the hook argues that correctness at five of six sites is
+# insufficient, and the suite could not have caught the sixth. These three rows
+# make each of those mutants fail.
+run_row ""        INVOKES "" '>out\ file git commit -m x'
+run_row ""        INVOKES "" './path\ with\ spaces/git commit -m x'
+run_row ""        INVOKES "" './path\ with\ spaces/env git commit -m x'
+
 echo "--- GATE_WORD self-hunt: 25 shapes probed, these are the distinct ones ---"
 # GATE_WORD is the load-bearing abstraction of this fix and it is used at all
 # six sites that consume a word:
@@ -711,6 +745,15 @@ for k in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
     fi
 done
 
+# The oracle-collapse guard. If `oracle_can_measure` is neutered rather than
+# moved, every row falls back to `declared` and the suite stays green while
+# measuring nothing. The floor is deliberately far below the real count — it is
+# here to catch collapse, not to track drift.
+ORACLE_FLOOR=100
+if [ "$ORACLE_ROWS" -lt "$ORACLE_FLOOR" ]; then
+    fail "only $ORACLE_ROWS rows reached the oracle (floor $ORACLE_FLOOR) — the want column is no longer measured"
+fi
+
 echo
-echo "=== $PASS passed, $FAIL failed ==="
+echo "=== $PASS passed, $FAIL failed ($ORACLE_ROWS rows oracle-measured) ==="
 [ "$FAIL" -eq 0 ]
