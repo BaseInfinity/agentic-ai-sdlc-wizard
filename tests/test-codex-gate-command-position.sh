@@ -306,16 +306,42 @@ run_row ""        INVOKES "" 'A[]=x git commit -m x'
 run_row ""        INVOKES "" 'A[B[0]]=x git commit -m x'
 run_row ""        INVOKES "" 'A[B[0]]+=x git commit -m x'
 run_row ""        INVOKES "" 'A[1+A[0]]=x git commit -m x'
+# A subscript is ARITHMETIC, so `=` is valid inside it too. Bounding the span to
+# "anything but =" (round 10's fix) closed the nesting hole and opened this one —
+# the two cuts were exact mirrors, and the fourth instance of the pattern.
+run_row ""        INVOKES "" 'A[B=1]=x git commit -m x'
+run_row ""        INVOKES "" 'A[1==1]=x git commit -m x'
+run_row ""        INVOKES "" 'A[B+=1]=x git commit -m x'
+run_row ""        INVOKES "" 'A[B<=1]=x git commit -m x'
+run_row ""        INVOKES "" 'A[B[0]=1]=x git commit -m x'
+run_row ""        INVOKES "" 'declare -A A; A[x=y]=z git commit -m x'
+# A quoted key containing a space arrives already masked to `A[Q]=x`.
+run_row ""        INVOKES "" 'A["foo bar"]=x git commit -m x'
 # CANARY: the round-4 false-positive class must not come back with it. A
 # malformed name is still not an assignment, subscript or no subscript. This
 # row also BLOCKS against the pre-round-4 `[^ =]*=` grammar, so it fails if the
 # old malformed-name grammar returns — it proves NAME protection, which is what
 # actually carries the safety here, rather than the subscript bound.
 run_row ""        inert "" 'A[0]-B=1 git commit -m x'
+# DECLARED FAIL-CLOSED. The whitespace bound does not validate bracket balance —
+# POSIX ERE cannot without a bounded nesting limit or the scanner #533 ruled out.
+# So this unbalanced span, which is not an assignment at all, is read as one and
+# blocked. Pinned as a row rather than described, because two earlier versions of
+# the hook comment claimed a safety they were not providing.
+# Asserted in the opposite direction from the rows around it — it is a false
+# POSITIVE, so run_row (which wants inert => ALLOW) does not fit.
+ubs='A[0]-B[1]=x git commit -m x'
+truth=$(oracle "$ubs"); g=$(gate "$ubs")
+if [ "$truth" = "inert" ] && [ "$g" = "BLOCK" ]; then
+    pass "ACCEPTED LIMIT still holds (inert, blocked — unbalanced bracket span; ERE cannot validate balance) — $ubs"
+else
+    fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — $ubs"
+fi
 # LATENT DEPENDENCY, pinned for #603: this blocks only through the unconditional
 # `)` anchor, NOT because GATE_ASSIGN consumes a compound value. #603 narrows
 # the punctuation anchors; without this row that change silently re-opens it.
 run_row ""        INVOKES "" 'A=(x y) git commit -m x'
+run_row ""        INVOKES "" 'A+=(x y) git commit -m x'
 
 echo "--- Sol round 5 false positives (oracle: inert, want ALLOW) ---"
 # A reserved word is only a command-position marker when the reserved word is
