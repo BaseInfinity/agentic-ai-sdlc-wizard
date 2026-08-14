@@ -183,47 +183,30 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
 # prose is newly caught, because a tab genuinely IS a bash separator and the
 # detector cannot see that the surrounding text is prose. Accepted as part of
 # the already-accepted #588 class: it fails closed and costs a rephrase.
-# HEREDOC BODIES ARE DATA, NOT COMMANDS. `cat > script.sh <<'EOF' ... EOF` is
-# how a person writes a script that contains the verb, and #588's own defect
-# description names it. The body never runs at this moment, so it is masked to
-# `H` before anything else looks at the text. This has to happen BEFORE the
-# `\n` -> `;` rewrite below, because after that rewrite there are no lines left
-# to find a heredoc delimiter on.
+# HEREDOC BODIES: NOT masked, and that is a deliberate reversal.
 #
-# `<<<` is a here-string, not a heredoc — its operand IS on the command line and
-# is deliberately left alone.
-COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" | awk '
-{
-    n = split($0, part, /\\n/)
-    out = ""; sep = ""; delim = ""
-    for (i = 1; i <= n; i++) {
-        line = part[i]
-        if (delim != "") {
-            if (line ~ ("^[[:space:]]*" delim "[[:space:]]*$")) {
-                delim = ""
-                out = out sep line
-            } else {
-                out = out sep "H"
-            }
-        } else {
-            rest = line
-            while (match(rest, /<<-?[[:space:]]*("[A-Za-z_][A-Za-z0-9_]*"|'"'"'[A-Za-z_][A-Za-z0-9_]*'"'"'|[A-Za-z_][A-Za-z0-9_]*)/)) {
-                tok = substr(rest, RSTART, RLENGTH)
-                after = substr(rest, RSTART + RLENGTH)
-                if (substr(rest, RSTART, 3) == "<<<") { rest = after; continue }
-                d = tok
-                sub(/^<<-?[[:space:]]*/, "", d)
-                gsub(/["'"'"']/, "", d)
-                delim = d
-                rest = after
-            }
-            out = out sep line
-        }
-        sep = "\\n"
-    }
-    printf "%s", out
-}')
-
+# A previous cut of this PR masked heredoc bodies with an awk pass, to fix the
+# false POSITIVE on `cat > script.sh <<'EOF' ... git commit ... EOF` — a shape
+# #588's own defect description names. Sol's round-6 review measured that the
+# pass introduced FIVE fail-opens, each oracle-confirmed and each blocked before
+# it landed:
+#
+#   # documentation: use <<EOF below      a comment mentioning the operator
+#   echo '<<EOF'                          the operator inside quotes
+#   cat <<< EOF                           the regex restarts inside `<<<`
+#   (( x = 1 << EOF ))                    a left-shift in arithmetic
+#   cat <<-EOF ... <tab>EOF               the tab is still `\t` at that stage
+#
+# and one claim in it was simply FALSE: an unquoted heredoc body is not inert.
+# `cat <<EOF` / `$(git commit -m x)` / `EOF` executes the substitution while
+# constructing the redirection.
+#
+# Recognising a heredoc correctly means ignoring `<<` inside quotes, comments,
+# arithmetic and escapes, excluding `<<<`, queueing multiple delimiters, and
+# distinguishing quoted from expanding bodies. That is a partial shell parser,
+# which is exactly what #533 ruled out — the same ruling this PR has refused to
+# re-litigate everywhere else. So it is reverted rather than deepened, and the
+# heredoc false positive goes back to being an accepted limit that fails CLOSED.
 ESC_SENTINEL=$(printf '\001')
 COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" \
     | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
@@ -351,10 +334,15 @@ MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" \
 # commit` and `env FOO=a\;b git commit` are all single words to bash and all
 # invoke git. Modelling a word as "runs to the next space or separator" splits
 # every one of them early and lets the invocation through. GATE_WORD is that
-# model, and it is used at all FIVE sites that consume a word — assignments,
-# redirection operands, the wholesale skip, the path prefix on `git`, and git's
-# own global-option operands — because a word atom that is right in four places
-# out of five is a fail-open in the fifth.
+# model, and it is used at all SIX sites that consume a word:
+#
+#   1. assignment values          4. the path prefix on `git`
+#   2. redirection operands       5. git's own global-option operands
+#   3. the wholesale skip         6. the path prefix on a WRAPPER
+#
+# because a word atom that is right at five sites out of six is a fail-open at
+# the sixth. Site 6 was missing from this list until Sol's round-6 review — the
+# code had it, the prose did not, which is a claim-rule violation either way.
 #
 # WHAT GATE_WORD DOES NOT MODEL, stated plainly because the comment it replaced
 # overclaimed: it models ESCAPES, not nested shell syntax. A separator inside
@@ -401,7 +389,7 @@ GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
 # invoke git. Those operators are admitted atomically; a BARE `&` or `|` still
 # ends the skip, so `cmd & git commit` does not get swallowed (and is caught
 # independently by the `&` anchor either way). GATE_WORD is interpolated here
-# rather than re-inlined, so the five sites cannot drift apart.
+# rather than re-inlined, so the six sites cannot drift apart.
 GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
 if ! printf '%s' "$MASKED_COMMAND" | grep -qE \
     "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+${GATE_SKIP})*${GATE_GIT}"; then

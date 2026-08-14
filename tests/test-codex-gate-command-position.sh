@@ -302,26 +302,42 @@ run_row ""        inert "" 'echo coproc git commit'
 run_row ""        inert "" 'echo \; git commit'
 run_row ""        inert "" 'echo \& git commit'
 run_row ""        inert "" 'echo \| git commit'
-# A heredoc body is data. Writing a script that contains the verb is named in
-# #588's own defect description, and this hook blocked it until now.
-run_row ""        inert "" 'cat > script.sh <<'"'"'EOF'"'"'
+# HEREDOCS ARE NOT MASKED — see the reverted-pass note in the hook. A heredoc
+# writing a script that contains the verb is blocked. It is a false POSITIVE and
+# it fails CLOSED; the masker that fixed it introduced five fail-opens and is
+# reverted. These rows pin the fail-closed behaviour so the revert cannot be
+# undone silently, and Sol's five repros are pinned below as the reason.
+hd="cat > script.sh <<'EOF'
 git commit -m x
-EOF'
-run_row ""        inert "" 'cat <<EOF
-git commit -m x
-EOF'
-# ...but a real invocation AFTER the heredoc is still caught: masking the body
-# must not blind the detector to the rest of the line.
+EOF"
+truth=$(oracle "$hd"); g=$(gate "$hd")
+if [ "$truth" = "inert" ] && [ "$g" = "BLOCK" ]; then
+    pass "ACCEPTED LIMIT still holds (inert, blocked — heredoc body; masking it cost five fail-opens) — heredoc writing a script"
+else
+    fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — heredoc writing a script"
+fi
+
+echo "--- Sol round 6: shapes the reverted heredoc masker let through ---"
+# Every one of these invokes git and was ALLOWED by the awk masking pass. They
+# are the evidence for the revert, and they must stay BLOCKED.
+run_row ""        INVOKES "" '# documentation: use <<EOF below
+git commit -m x'
+run_row ""        INVOKES "" 'echo "<<EOF"
+git commit -m x'
+run_row ""        INVOKES "" 'cat <<< EOF
+git commit -m x'
+run_row ""        INVOKES "" '(( x = 1 << 2 ))
+git commit -m x'
+# An unquoted heredoc body is NOT inert: the substitution runs while the
+# redirection is built. The reverted pass claimed otherwise.
+# shellcheck disable=SC2016  # the substitution must reach the gate unexpanded —
+# expanding it here would run the fixture's fake git instead of testing the text.
 run_row ""        INVOKES "" 'cat <<EOF
-git commit -m data
-EOF
-git commit -m real'
-# `<<<` is a here-string, not a heredoc: its operand is on the command line and
-# is deliberately left unmasked.
-run_row ""        inert "" 'grep -n foo <<< "git commit"'
+$(git commit -m x)
+EOF'
 
 echo "--- GATE_WORD self-hunt: 25 shapes probed, these are the distinct ones ---"
-# GATE_WORD is the load-bearing abstraction of this fix and it is used at five
+# GATE_WORD is the load-bearing abstraction of this fix and it is used at six
 # sites, so it got its own hunt. These are the structurally distinct survivors:
 # loop and case bodies, a tab separator, an end-of-options marker, stacked
 # wrappers, and an assignment/redirection/assignment interleave. None was a
