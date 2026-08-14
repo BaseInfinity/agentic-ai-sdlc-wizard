@@ -6,34 +6,21 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 
 > ## DO THIS NOW
 >
-> **Take the first open, unblocked issue under DO THIS NOW. Read the issue and its latest comments, implement only its acceptance criteria, open a PR with `Closes #N`, and keep going until it merges.** Do not re-plan the order — it was triaged by both review legs on 2026-08-11 and they reconciled. Do not widen the scope; anything you notice that is not in the issue becomes a new issue.
+> **The order lives on [#593](https://github.com/BaseInfinity/claude-sdlc-harness/issues/593), Rung 1. Read it there.** This file does not restate it — #580 ruled that a copied sequence goes stale, and it did: this block said "start #533" for two days after #533 merged in #583.
 >
-> ### Active milestone: `v1.99.0 — PR-B: the gate`
+> **Take the first open, unblocked issue in #593 Rung 1. Read the issue and its latest comments, implement only its acceptance criteria, open a PR with `Closes #N`, and keep going until it merges.** Do not re-plan the order — both review legs triaged and reconciled it. Do not widen the scope; anything you notice that is not in the issue becomes a new issue.
 >
-> **Chain, in dependency order: #533 → #547, then #540 → #563.** Code, normal TDD — unlike PR-A these have writable REDs.
+> **#593 is the ladder, and Rung 1 is the harness repairs.** Rungs 2-5 are the model experiments; they do not start until Rung 1's stop condition holds.
 >
-> **The literal next action: start #533.** Its implementation design is in its own latest comments; [#558](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558) records the sequencing, not the design.
+> ### Release sequence
 >
-> **#540's design is already ruled — do not redesign the gate. Read the ruling on the issue before writing any code.** In one line: **staleness keys on certified content, never on SHA.** The clearance pins the branch's patch-id rather than a `commit_sha`, so a content-identical rebase or amend stays valid and a commit that changes the diff invalidates correctly. It lands together with #558's CUT C, which makes `.reviews/merge-clearance-<PR>.json` the single artifact the gate parses.
+> `v1.99.0 — PR-B: the gate` → `v1.99.1 — the consumer-truth prose batch` → `v2.0.0`. Milestone membership on GitHub is authoritative; this line fixes only the order they ship in.
 >
-> **No riders.** Both legs were asked what else belongs in v1.99.0 and both answered *none*. #515 is the one thematically adjacent issue and it stays out; check whether #540 subsumes it **after** PR-B is stable.
->
-> ### Then: `v2.0.0 — Consumer Safety Repairs`
->
-> 1. **#516** — `cli/init.js:229` `removeObsoletePaths()` calls `fs.rmSync(..., { recursive: true, force: true })` on every retired path with **no content-hash check**, while the install path marks a modified file `PRESERVE`. A consumer who customized a now-retired skill loses it silently on update. Preserve customized retired files instead of deleting them.
-> 2. **#554** — Claude Code drift review. The issue carries the current gap; the last time this gap was reviewed it surfaced a live shipped defect (`src/**` silently stopped matching in 2.1.214, killing the TDD hook for every consumer whose source is not at repo-root `src/`). Repair anything it demonstrates. **#456 rides this session** — retest the Cowork hook against the current baseline, then keep it or delete it.
->
-> ### Then: the consumer-truth prose batch
->
-> #491 Class 1 (the phantom `STALL_SECONDS` watchdog we document and never built), #544, #499, #537, #579. Same contract that made PR-A cheap: one PR, zero new tests, per-item verdicts with a pre-registered ejection rule. Every item is a shipped file asserting something that is not true.
->
-> ### Backlog — do not start
->
-> #515 (verify against #540 first), #501, #542 (record PR-B's data point, then close), #555, #488, #480, #498 (re-judge under #556), #485 (rescope under #556), #481, #504, #545. Links only — the issue bodies are authoritative.
+> **v2.0.0's terminal gate is #545, not issue closure.** The major release is authorized when the maintainer has personally consumed the harness in another repo and it worked. Every other issue closing is necessary and not sufficient.
 >
 > ### Standing rulings
 >
-> GitHub Issues is the store; this file is the ordered view. No gate redesign in PR-B. No new guard or tooling surface. One independently closable issue at a time.
+> GitHub Issues is the store; this file routes to it. No gate redesign in PR-B. No new guard or tooling surface. One independently closable issue at a time.
 
 > ### 2026-08-10 — RULED: batch the meta changes. Two PRs, prose first.
 >
@@ -43,11 +30,11 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **`v1.98.0 — PR-A: the review contract`** — #558, #557, #573, #574, #564, #556, plus #566 riding standalone. **Prose, zero new tests.** The round-eater is test surface, not prose: #557's exhibit had *seven blocking findings, all in the test, zero in the deliverable.* A batch that ships no guards removes that surface by construction.
 >
-> **`v1.99.0 — PR-B: the gate`** — #533 → #547, then #540 → #563. Normal TDD; these have writable REDs. Sequenced **after** PR-A so the gate edits are reviewed under the new contract. **#540's design is ruled — see DO THIS NOW above for the current statement of it.** This blockquote's earlier version said the fix was re-verifying the artifact's sha against the merging sha; #540 later refuted that outright and ruled that staleness keys on certified content, never on SHA.
+> **`v1.99.0 — PR-B: the gate`** — membership and dependency order are on the [milestone](https://github.com/BaseInfinity/claude-sdlc-harness/milestones) and in the [#558 ruling](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558#issuecomment-5249401013). Normal TDD; these have writable REDs. Sequenced **after** PR-A so the gate edits are reviewed under the new contract. **[#540](https://github.com/BaseInfinity/claude-sdlc-harness/issues/540)'s design is ruled — read the ruling on the issue.** This blockquote's earlier version said the fix was re-verifying the artifact's sha against the merging sha; #540 later refuted that outright and ruled that staleness keys on certified content, never on SHA.
 >
 > **How PR-A is reviewed:** zero new guards; the only empirical check is executing every command the prose instructs and pasting the output; **per-item verdicts with a pre-registered ejection rule** (a P1 on item *k* ejects item *k*, the batch ships with the rest); one structured round; **no semantic regexes, no prose mutations, no root-cause archaeology — record known unknowns rather than chasing them.**
 >
-> **Also settled:** the second review leg is **conditional, with no npm-path carve-out** — nearly every meaningful PR here touches consumer-shipped `files`, so a path carve-out nullifies conditionality. The trigger is the **risk-tier field the scope cards already carry**: HIGH → leg 2 mandatory, low/medium → single leg. **This is not live yet** — `scripts/merge-pr.sh` still requires two clearances on every PR, and making the risk-tier trigger real is PR-B's work (#540 → #563). Until PR-B ships, the gate wins. The post-review confidence percentages are **cut** (#574): they did not discriminate — one leg certified at 100% and another at 96%, and a real P1 followed each.
+> **Also settled:** the second review leg is **conditional, with no npm-path carve-out** — nearly every meaningful PR here touches consumer-shipped `files`, so a path carve-out nullifies conditionality. The trigger is the **risk-tier field the scope cards already carry**: HIGH → leg 2 mandatory, low/medium → single leg. **This is not live yet** — `scripts/merge-pr.sh` still requires two clearances on every PR, and making the risk-tier trigger real is PR-B's work, tracked on #540 and #563. Until PR-B ships, the gate wins. The post-review confidence percentages are **cut** (#574): they did not discriminate — one leg certified at 100% and another at 96%, and a real P1 followed each.
 >
 > **Moved to backlog, premise changed:** #545 and #542's outside-repo consumption framing, and #504. The work is here, in this repo — not in sibling repos.
 
