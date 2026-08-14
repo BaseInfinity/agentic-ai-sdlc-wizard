@@ -148,26 +148,26 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
 # the equivalent six-character unicode escapes (backslash-u-0-0-0-a and
 # friends). An accident-catcher, not an adversary barrier.
 #
-# BACKSLASH RUNS OF k = 3 (mod 4) before `n` — 7, 11, 15 — produce a FALSE
-# DENIAL. Such a run decodes to literal backslashes plus a newline; bash keeps a
-# backslash as word content, so `echo x\git commit` is one word that invokes
-# nothing, yet the leftover backslash is a non-word character and lets `\bgit`
-# fire here. Note it is specifically k = 3 (mod 4): k = 9 and k = 13 DO invoke
-# git and are correctly blocked. Verified against a bash oracle through k = 16.
+# PARITY IS LOAD-BEARING, and #588 fixed it. The continuation and escaped-tab
+# passes above match `(^|[^S])(SS)*S\n` rather than a bare `S\n`, so they fire
+# only on an ODD decoded backslash run — which is what a line continuation
+# actually is. An even run leaves the newline real, a command separator, so git
+# genuinely runs.
 #
-# DECLINED, on complexity grounds — not impossibility. An earlier version of
-# this comment claimed the only cure was bypass-shaped, on the reasoning that
-# telling this apart from a source `\git` needs command position, which sed
-# cannot decide. Sol disproved that: after the pairing pass above these are
-# already textually distinct — k=7 leaves three sentinels then `\n`, whereas a
-# source `\git` leaves one sentinel then `git` — and demonstrated a sed-only
-# second pairing pass that separates them, prototyped through k = 16.
+# The earlier bare-`S\n` form treated EVERY run as a continuation. The old
+# `\bgit` detector still blocked k = 1 (mod 4) — the real invocations — but for
+# the wrong reason: the leftover literal backslash it produced is a non-word
+# character, so it supplied the boundary `\b` needed. Requiring `git` in command
+# position (below) removed that accident and exposed the fail-OPEN underneath.
 #
-# So this is a choice, with a known fix path recorded on #581. It is declined
-# because the input is pathological (three or more literal backslashes abutting
-# a line continuation immediately before `git`), the failure is CLOSED, and the
-# cost is a rephrase — not worth another state machine inside a hook that ships
-# to every consumer as plain bash.
+# So the three FALSE DENIALS this comment used to record as declined — k = 3
+# (mod 4): 7, 11, 15 — are gone, closed as a side effect of getting the parity
+# right rather than by the second pairing pass #581 prototyped.
+#
+# The contract is now exactly parity, with no exceptions: BLOCK at k = 1 (mod 4),
+# ALLOW everywhere else. Ground truth is DERIVED FROM A BASH ORACLE through
+# k = 16 in tests/test-codex-gate-command-position.sh, and pinned in
+# tests/test-hooks.sh.
 #
 # Unquoted PROSE that merely names the verb can match. That class predates this
 # change and is tracked as #588. Its edge moves here, in both directions, and
@@ -186,8 +186,8 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
 ESC_SENTINEL=$(printf '\001')
 COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" \
     | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
-             -e "s/$ESC_SENTINEL\\\\n//g" \
-             -e "s/$ESC_SENTINEL\\\\t/${ESC_SENTINEL}t/g" \
+             -e "s/(^|[^$ESC_SENTINEL])(($ESC_SENTINEL$ESC_SENTINEL)*)$ESC_SENTINEL\\\\n/\\1\\2/g" \
+             -e "s/(^|[^$ESC_SENTINEL])(($ESC_SENTINEL$ESC_SENTINEL)*)$ESC_SENTINEL\\\\t/\\1\\2${ESC_SENTINEL}t/g" \
              -e 's/\\n/;/g' \
              -e 's/\\t/ /g' \
              -e "s/$ESC_SENTINEL/\\\\/g")
@@ -200,8 +200,45 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 # never contain that exact two-word substring, and previously sailed through
 # unreviewed. Regex allows any number of -C/-c (with their required value),
 # --long-flag, or single-letter-flag tokens between "git" and "commit".
+# #588: `\bgit` matched the verb ANYWHERE, so a command that merely NAMED it was
+# blocked — `echo the git commit gate` and `grep -rn git commit hooks/` both
+# denied, neither invoking anything. (Quoted mentions were already fine: the
+# masking pass above collapses them to Q. Only unquoted ones false-fired.)
+#
+# The fix is to require `git` in COMMAND POSITION. That is not the positive
+# command parsing #533 ruled out — nothing here decides what the command DOES.
+# It anchors the existing negative detector to the places bash can begin a
+# command, which is decidable from the text.
+#
+# Anchors: start of string, or after `;` `&` `|` `(` `)` `{` `}` `!`, `$(`, a
+# backtick, or a `then`/`do`/`else` keyword. The `\n` -> `;` normalization above
+# is what keeps #581's line-split shapes caught — `;` is itself an anchor — so
+# that is a load-bearing dependency, pinned by its own fixture row.
+#
+# TRANSPARENT PREFIXES. Anchoring alone would open a fail-OPEN hole: bash runs
+# `env X=1 git commit`, `nice git commit` and `echo -m x | xargs git commit` for
+# real, and after anchoring `git` in those is an argument. Measured with a bash
+# oracle, all four escaped. So a closed, enumerated set of prefixes is treated
+# as transparent — assignments (bash runs an assignment-prefixed command
+# directly; this repo's own workflow uses the shape) plus the wrappers below,
+# with their own flags and numeric arguments.
+#
+# The set is CLOSED, and that is the accepted limit. A wrapper nobody enumerated
+# — doas, setsid, caffeinate, unbuffer, flock — is a false NEGATIVE, recorded on
+# #588. This hook says of itself that it is an accident-catcher, not an
+# adversary barrier, and #588 concedes deliberate bypass is trivial; an
+# open-ended enumeration cannot be won and is not attempted.
+#
+# `(\S*/)?git` keeps a path-prefixed invocation caught — `/usr/bin/git commit`
+# was blocked by the old `\bgit` and must not regress. It does not re-open
+# prose: `echo see docs/git commit-policy.md` has no anchor before `docs/git`.
+#
+# Every shape named here is pinned in tests/test-codex-gate-command-position.sh,
+# whose expected column is GENERATED BY THE ORACLE rather than hand-written.
+GATE_ANCHOR='(^|[;&|(){}!]|\$\(|`|\b(then|do|else)[[:space:]])'
+GATE_TRANSPARENT='([^ =]*=[^ ]*|env|command|nice|nohup|xargs|timeout|sudo|stdbuf|-[A-Za-z-][^ ]*|[0-9]+)'
 if ! printf '%s' "$MASKED_COMMAND" \
-    | grep -qE '\bgit(\s+(-C\s+\S+|-c\s+\S+|--\S+|-[A-Za-z]))*\s+commit\b'; then
+    | grep -qE "${GATE_ANCHOR}[[:space:]]*(${GATE_TRANSPARENT}[[:space:]]+)*(\\S*/)?git(\\s+(-C\\s+\\S+|-c\\s+\\S+|--\\S+|-[A-Za-z]))*\\s+commit\\b"; then
     exit 0
 fi
 

@@ -4366,12 +4366,27 @@ test_codex_gate_backslash_run_contract() {
     failures=""
     verb="com""mit"
     for k in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+        # #588: the table is now PARITY, with no exceptions. A decoded run of m
+        # literal backslashes sits in front of the newline; m even leaves the
+        # newline real (a separator, so git runs) and m odd makes it a line
+        # continuation (the words fuse, nothing is invoked). k = 4j+1 is exactly
+        # the m-even case.
+        #
+        # The three accepted false denials at k = 3 (mod 4) are GONE. They were
+        # not fixed on purpose: requiring `git` in command position removed the
+        # accident that had been blocking k = 1 (mod 4) — a leftover literal
+        # backslash supplying the word boundary `\b` needed — which exposed a
+        # real fail-OPEN in the normalization, which had treated every run as a
+        # continuation regardless of parity. Making the parity correct closed
+        # both directions at once.
+        #
+        # Ground truth for every row here is DERIVED FROM A BASH ORACLE in
+        # tests/test-codex-gate-command-position.sh. This table is the pinned
+        # copy; that suite is where it is measured.
         case $((k % 4)) in
-            1) expected=2 ;;   # control escape survives -> real invocation
-            3) expected=2 ;;   # k=3 is a continuation (0); 7/11/15 are the accepted FPs
-            *) expected=0 ;;
+            1) expected=2 ;;   # m even -> real newline -> real invocation
+            *) expected=0 ;;   # m odd, or no control escape at all -> inert
         esac
-        [ "$k" -eq 3 ] && expected=0
         bs=$(printf '%*s' "$k" '' | tr ' ' '\\')
         tmpdir=$(mktemp -d)
         out=$(printf '{"tool_input":{"command":"echo x%sngit %s -m y"}}' "$bs" "$verb" \
@@ -4380,9 +4395,9 @@ test_codex_gate_backslash_run_contract() {
         [ "$exit_code" -eq "$expected" ] || failures="$failures [k=$k want=$expected got=$exit_code]"
     done
     if [ -z "$failures" ]; then
-        pass "codex gate matches the k=1..16 backslash-run contract, including the three accepted false denials"
+        pass "codex gate matches the k=1..16 backslash-run parity contract (#588 closed the three former false denials)"
     else
-        fail "backslash-run contract drifted (a k=3-mod-4 row flipping to 0 means the limitation was FIXED — update the hook comment and this table):$failures"
+        fail "backslash-run parity contract drifted — the gate and the shell now disagree about what invokes git. Re-measure with tests/test-codex-gate-command-position.sh before touching this table:$failures"
     fi
 }
 
