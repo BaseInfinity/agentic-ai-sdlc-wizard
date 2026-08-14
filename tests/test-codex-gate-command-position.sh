@@ -9,16 +9,22 @@
 # actually invoked. That is ground truth for what the shell does; the gate's job
 # is to agree with it.
 #
-# TWO ROWS ARE NOT ORACLE-GENERATED, and saying otherwise would break this
-# repo's own claim rule (Sol caught an earlier version of this comment doing
-# exactly that). They are `declared`, and each prints its reason when it runs:
+# FOUR ROWS ARE NOT ORACLE-GENERATED on this box, and saying otherwise would
+# break this repo's own claim rule (Sol caught an earlier version of this
+# comment doing exactly that). They are `declared`, and each prints its reason
+# when it runs:
 #
-#   timeout 5 git commit     `timeout` is not installed on macOS
+#   timeout 5s git commit    `timeout` is not installed on macOS
+#   stdbuf -oL git commit    `stdbuf` is not installed on macOS
+#   sudo git commit          sudo cannot run unattended in a fixture
 #   /usr/bin/git commit      an absolute path bypasses the PATH interposition
 #                            the oracle works by, so it is declared on EVERY
 #                            platform, not just this one
 #
-# Everything else in the suite is measured.
+# `timeout` and `stdbuf` are named by bare name, so they measure for real on any
+# box that has them — including the Linux CI runner. `sudo` and `/usr/bin/git`
+# carry the `!` marker and are declared on EVERY platform. Everything else in
+# the suite is measured here.
 #
 # This method is not decoration. The first hand-written want column for these
 # shapes had 2 of 9 rows wrong, and BOTH errors under-counted the regression:
@@ -60,9 +66,12 @@ trap 'rm -rf "$WORK"' EXIT
 
 # ---------------------------------------------------------------- the oracle
 #
-# A fake `git` that records an invocation whose first non-flag argument chain
-# reaches the `commit` subcommand. It never touches a real repository, so a row
-# that genuinely invokes git cannot create a commit anywhere.
+# A fake `git` that records an invocation when ANY argument is exactly `commit`
+# — it does not parse the subcommand chain, and claiming it did would break this
+# repo's own claim rule. That is deliberately coarse: this oracle answers "did
+# the shell run git with the verb in its argv", which is the question the gate
+# is deciding, not "what would git have done". It never touches a real
+# repository, so a row that genuinely invokes git cannot create a commit.
 mkdir -p "$WORK/bin"
 cat > "$WORK/bin/git" <<'ORACLE_GIT'
 #!/bin/bash
@@ -231,12 +240,60 @@ run_row ""        INVOKES "" '/usr/bin/env git commit -m x'
 run_row ""        INVOKES "" '/usr/bin/nice git commit -m x'
 run_row ""        INVOKES "" '/usr/bin/env -u FOO git commit -m x'
 
+echo "--- backslash-escaped word content (Sol round 2, all fail-open) ---"
+# A backslash makes the next character ordinary word content. Modelling a word
+# as "runs to the next space or separator" splits each of these early and lets
+# the invocation through. All four block on origin/main.
+run_row ""        INVOKES "" 'FOO=a\ b git commit -m x'
+run_row ""        INVOKES "" 'env FOO=a\;b git commit -m x'
+run_row ""        INVOKES "" 'env FOO=a\&b git commit -m x'
+run_row ""        INVOKES "" 'env FOO=a\|b git commit -m x'
+
+echo "--- redirection operand separated from its operator (Sol round 2) ---"
+# `< /dev/null git commit` is an ordinary invocation; the space after the
+# operator is legal and GATE_REDIR used to require the operand to touch it.
+run_row ""        INVOKES "" '< /dev/null git commit -m x'
+run_row ""        INVOKES "" '2> /dev/null git commit -m x'
+
+echo "--- remaining enumerated wrappers and reserved words, pinned (Sol round 2) ---"
+# Named in the hook's comment as covered, so they are pinned here rather than
+# left as an untested claim. sudo is unmeasurable: it prompts or refuses.
+run_row "!sudo"   INVOKES "sudo cannot run unattended in a test fixture" 'sudo git commit -m x'
+run_row "stdbuf"  INVOKES "not installed on macOS; present on the Linux runner" 'stdbuf -oL git commit -m x'
+run_row ""        INVOKES "" 'if false; then :; elif git commit -m x; then :; fi'
+
 echo "--- coproc (oracle: INVOKES, want BLOCK) ---"
 # `coproc NAME { ...; }` blocks through the `{` anchor; bare `coproc git commit`
 # blocks through the coproc keyword itself. Both need the oracle's trailing
 # `wait` to be measurable at all — see the note on oracle().
 run_row ""        INVOKES "" 'coproc git commit -m x'
 run_row ""        INVOKES "" 'coproc G { git commit -m x; }'
+
+echo "--- redirections inside the wrapper skip (Sol round 3, all fail-open) ---"
+# The skip stopped at any `&`, so the `&` of a redirection operator ended it
+# early and the invocation walked. Both of these run git.
+run_row "env"     INVOKES "" 'env 2>&1 git commit -m x'
+run_row "env"     INVOKES "" 'env &>/dev/null git commit -m x'
+
+echo "--- escaped wrapper names and builtin (Sol round 3, all fail-open) ---"
+# `\env` is the same escape rule the detector already applied to `git` but
+# never to the wrapper. `builtin` was simply missing from the enumerated set.
+run_row "env"     INVOKES "" '\env git commit -m x'
+run_row "env"     INVOKES "" '/usr/bin/\env git commit -m x'
+run_row ""        inert   "" 'builtin git commit -m x'
+run_row ""        INVOKES "" 'builtin command git commit -m x'
+run_row ""        INVOKES "" 'builtin exec git commit -m x'
+run_row ""        INVOKES "" 'builtin eval git commit -m x'
+
+echo "--- more redirection operand shapes (Sol round 3, these already held) ---"
+run_row ""        INVOKES "" '> /dev/null git commit -m x'
+run_row ""        INVOKES "" '<<< x git commit -m x'
+
+# `coproc NAME cmd` is NOT the coprocess form: with a simple command bash takes
+# the first word as the command, so `G` is run and git never is. Sol declared
+# this INVOKES in round 3; the oracle says otherwise and the oracle is ground
+# truth. Pinned so the disagreement is settled in the file rather than re-argued.
+run_row ""        inert "" 'coproc G git commit -m x'
 
 echo "--- prose and arguments (oracle: inert, want ALLOW) ---"
 run_row ""        inert "" 'echo the git commit gate'

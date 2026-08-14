@@ -220,8 +220,9 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 # real, and after anchoring `git` in those is an argument. Measured with a bash
 # oracle, all four escaped. So a closed, enumerated set of prefixes is treated
 # as transparent — assignments (bash runs an assignment-prefixed command
-# directly; this repo's own workflow uses the shape) plus the wrappers below,
-# with their own flags and numeric arguments.
+# directly; this repo's own workflow uses the shape) plus the wrappers below.
+# Whatever a wrapper takes before `git` is skipped wholesale — see the WRAPPER
+# OPTION GRAMMAR note further down; this hook does not model per-wrapper flags.
 #
 # The set is CLOSED, and that is the accepted limit. A wrapper nobody enumerated
 # — doas, setsid, caffeinate, unbuffer, flock — is a false NEGATIVE, recorded on
@@ -287,14 +288,35 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 # CLOSED and the cost is a rephrase, which is the same bargain every other
 # accepted limit on this hook takes — and the opposite direction from the one
 # that actually matters for a review gate.
+#
+# SHELL WORDS ARE NOT `[^ ]*`. A backslash escape makes the next character
+# ordinary word content, so `FOO=a\ b git commit`, `/path\ with\ spaces/git
+# commit` and `env FOO=a\;b git commit` are all single words to bash and all
+# invoke git. Modelling a word as "runs to the next space or separator" splits
+# every one of them early and lets the invocation through. GATE_WORD is that
+# model, and it is used at ALL FOUR sites — assignments, redirection operands,
+# the wholesale skip, and the path prefix on `git` — because a word atom that
+# is right in three places out of four is a fail-open in the fourth.
+GATE_WORD='(\\.|[^[:space:];&|])'
 GATE_ANCHOR='(^|[;&|(){}!]|\$\(|`|\b(if|elif|while|until|then|do|else|coproc)[[:space:]])'
-GATE_ASSIGN='[^ =]*=[^ ]*'
-GATE_REDIR='[0-9]*(<<<|<&|>&|>>|<|>)[^ ]+'
-GATE_WRAPPER='(\S*/)?(env|command|eval|exec|time|nice|nohup|xargs|timeout|sudo|stdbuf)'
-GATE_GIT="\\\\?(\\S*/)?git(\\s+(-C\\s+\\S+|-c\\s+\\S+|--\\S+|-[A-Za-z]))*\\s+commit\\b"
+GATE_ASSIGN="[^ =]*=${GATE_WORD}*"
+# The operand may be separated from the operator: `< /dev/null git commit` runs.
+GATE_REDIR="[0-9]*(<<<|<&|>&|>>|<|>)[[:space:]]*${GATE_WORD}+"
+# `builtin` is NOT a wrapper in its own right: it only runs shell builtins, so
+# `builtin git commit` is inert and blocking it would be a false positive. It is
+# a prefix to the builtin members of the set — `builtin command git commit` and
+# `builtin exec git commit` both invoke git for real.
+GATE_WRAPPER="\\\\?(builtin[[:space:]]+)?(${GATE_WORD}*/)?\\\\?(env|command|eval|exec|time|nice|nohup|xargs|timeout|sudo|stdbuf)"
+GATE_GIT="\\\\?(${GATE_WORD}*/)?git(\\s+(-C\\s+\\S+|-c\\s+\\S+|--\\S+|-[A-Za-z]))*\\s+commit\\b"
 GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
+# The skip stops at a REAL separator only. `\;` is word content, not a boundary,
+# and neither is the `&` inside a redirection — `env 2>&1 git commit` and
+# `env &>/dev/null git commit` both invoke git. `&` is admitted ONLY as part of
+# a redirection operator, not bare, so a genuine `cmd & git commit` still ends
+# the skip (and is caught independently by the `&` anchor either way).
+GATE_SKIP="((\\\\.|[<>]&|&>|[^;&|])*[[:space:]]+)?"
 if ! printf '%s' "$MASKED_COMMAND" | grep -qE \
-    "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+([^;&|]*[[:space:]]+)?)*${GATE_GIT}"; then
+    "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+${GATE_SKIP})*${GATE_GIT}"; then
     exit 0
 fi
 
