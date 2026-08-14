@@ -262,6 +262,23 @@ run_row "!sudo"   INVOKES "sudo cannot run unattended in a test fixture" 'sudo g
 run_row "stdbuf"  INVOKES "not installed on macOS; present on the Linux runner" 'stdbuf -oL git commit -m x'
 run_row ""        INVOKES "" 'if false; then :; elif git commit -m x; then :; fi'
 
+echo "--- Sol round 4 fail-opens (>|, stacked builtin, git option operands) ---"
+run_row ""        INVOKES "" '>|/dev/null git commit -m x'
+run_row ""        INVOKES "" '2>| /dev/null git commit -m x'
+run_row ""        INVOKES "" 'builtin builtin command git commit -m x'
+# Pre-existing on origin/main rather than an anchor regression, but it made the
+# hook's own "every site uses the word atom" comment false, so it is fixed here.
+run_row ""        INVOKES "" 'git -c user.name=A\ b commit -m x'
+
+echo "--- Sol round 4 false positives (oracle: inert, want ALLOW) ---"
+# `builtin` runs only shell builtins, so neither of these reaches git. The
+# assignment grammar accepted any non-space left side; bash does not — it runs
+# `A-B=1` and `1A=1` as commands, so treating them as prefixes was wrong.
+run_row ""        inert "" 'builtin env git commit -m x'
+run_row ""        inert "" 'builtin /usr/bin/command git commit -m x'
+run_row ""        inert "" 'A-B=1 git commit -m x'
+run_row ""        inert "" '1A=1 git commit -m x'
+
 echo "--- GATE_WORD self-hunt: 25 shapes probed, these are the distinct ones ---"
 # GATE_WORD is the load-bearing abstraction of this fix and it is used at four
 # sites, so it got its own hunt. These are the structurally distinct survivors:
@@ -366,6 +383,29 @@ fi
 # separately rather than fixed inside a PR about prose false-positives.
 limit_row "quoted payload is masked before matching (pre-existing on origin/main)" "bash -c 'git commit -m x'"
 limit_row "quoted payload is masked before matching (pre-existing on origin/main)" "eval 'git commit -m x'"
+limit_row "quoted wrapper name is masked before matching (same #599 class)" '"/usr/bin/env" git commit -m x'
+
+# NESTED SHELL SUBSTITUTIONS (Sol round 4). A separator inside ${...}, $(...),
+# $((...)) or backticks is not an outer command boundary, but GATE_WORD stops
+# there anyway. Substitutions nest arbitrarily, so no regex closes this — it is
+# the same constraint as the quoted-payload rows above and #533's ruling against
+# positive command parsing, and it is dispositioned the same way rather than
+# chased. origin/main "blocks" these only because \bgit blocked every string
+# containing the verb, prose included, which is the defect #588 exists to fix.
+limit_row "separator inside a parameter expansion (nests arbitrarily; #599 class)" 'FOO=${UNSET:-a;b}x git commit -m x'
+limit_row "separator inside an arithmetic expansion (nests arbitrarily; #599 class)" 'FOO=$((1|2))x git commit -m x'
+limit_row "separator inside a command substitution (nests arbitrarily; #599 class)" 'FOO=$(printf a; :)x git commit -m x'
+
+# A malformed redirection target. bash rejects `2>&notafd` and never reaches
+# git, but the text is indistinguishable from a valid one. Fails CLOSED, and
+# engineering around a shape that cannot run is not worth a grammar.
+nfp='2>&notafd git commit -m x'
+truth=$(oracle "$nfp"); g=$(gate "$nfp")
+if [ "$truth" = "inert" ] && [ "$g" = "BLOCK" ]; then
+    pass "ACCEPTED LIMIT still holds (inert, blocked — malformed redirection target) — $nfp"
+else
+    fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — $nfp"
+fi
 
 # An un-enumerated wrapper. `caffeinate` is macOS-only, so the row is skipped
 # where it does not exist rather than asserted vacuously.
