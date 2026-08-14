@@ -183,6 +183,47 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
 # prose is newly caught, because a tab genuinely IS a bash separator and the
 # detector cannot see that the surrounding text is prose. Accepted as part of
 # the already-accepted #588 class: it fails closed and costs a rephrase.
+# HEREDOC BODIES ARE DATA, NOT COMMANDS. `cat > script.sh <<'EOF' ... EOF` is
+# how a person writes a script that contains the verb, and #588's own defect
+# description names it. The body never runs at this moment, so it is masked to
+# `H` before anything else looks at the text. This has to happen BEFORE the
+# `\n` -> `;` rewrite below, because after that rewrite there are no lines left
+# to find a heredoc delimiter on.
+#
+# `<<<` is a here-string, not a heredoc — its operand IS on the command line and
+# is deliberately left alone.
+COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" | awk '
+{
+    n = split($0, part, /\\n/)
+    out = ""; sep = ""; delim = ""
+    for (i = 1; i <= n; i++) {
+        line = part[i]
+        if (delim != "") {
+            if (line ~ ("^[[:space:]]*" delim "[[:space:]]*$")) {
+                delim = ""
+                out = out sep line
+            } else {
+                out = out sep "H"
+            }
+        } else {
+            rest = line
+            while (match(rest, /<<-?[[:space:]]*("[A-Za-z_][A-Za-z0-9_]*"|'"'"'[A-Za-z_][A-Za-z0-9_]*'"'"'|[A-Za-z_][A-Za-z0-9_]*)/)) {
+                tok = substr(rest, RSTART, RLENGTH)
+                after = substr(rest, RSTART + RLENGTH)
+                if (substr(rest, RSTART, 3) == "<<<") { rest = after; continue }
+                d = tok
+                sub(/^<<-?[[:space:]]*/, "", d)
+                gsub(/["'"'"']/, "", d)
+                delim = d
+                rest = after
+            }
+            out = out sep line
+        }
+        sep = "\\n"
+    }
+    printf "%s", out
+}')
+
 ESC_SENTINEL=$(printf '\001')
 COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" \
     | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
@@ -194,6 +235,22 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" \
 
 MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
     | sed -E -e 's/\\"[^\\]*\\"/Q/g' -e "s/'[^']*'/Q/g")
+
+# An ESCAPED separator is word content, not a command boundary: `echo \; git
+# commit` is one command printing three words. Neutralising it to `E` here —
+# rather than asking the anchor for "a separator not preceded by a backslash" —
+# is what keeps PARITY right. A regex lookbehind cannot count backslashes, and
+# `\\;` is an escaped BACKSLASH followed by a REAL separator, which is exactly
+# the k = 1 (mod 4) case the backslash-run contract is built on. Getting this
+# wrong re-opened k = 5, 9 and 13 as fail-opens, caught by those rows.
+#
+# Same sentinel technique as the normalisation above: pair off `\\` first, so
+# only a backslash that genuinely escapes something is left to act on. Escaped
+# whitespace is deliberately untouched — `FOO=a\ b` is still one word.
+MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" \
+    | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
+             -e 's/\\[;&|(){}!]/E/g' \
+             -e "s/$ESC_SENTINEL/\\\\\\\\/g")
 
 # #236(b): literal substring "git commit" misses git's own global-flag forms
 # — `git -C <dir> commit` and `git -c k=v commit` are valid invocations that
@@ -294,7 +351,7 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 # commit` and `env FOO=a\;b git commit` are all single words to bash and all
 # invoke git. Modelling a word as "runs to the next space or separator" splits
 # every one of them early and lets the invocation through. GATE_WORD is that
-# model, and it is used at EVERY site that consumes a word — assignments,
+# model, and it is used at all FIVE sites that consume a word — assignments,
 # redirection operands, the wholesale skip, the path prefix on `git`, and git's
 # own global-option operands — because a word atom that is right in four places
 # out of five is a fail-open in the fifth.
@@ -308,11 +365,20 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 # dispositioned the same way, as a pinned accepted limit. Nobody reaches those
 # shapes by accident, and this hook's own header calls it an accident-catcher.
 GATE_WORD='(\\.|[^[:space:];&|])'
-GATE_ANCHOR='(^|[;&|(){}!]|\$\(|`|\b(if|elif|while|until|then|do|else|coproc)[[:space:]])'
+# A separator only counts if it is REAL. `echo \; git commit` is one command
+# printing three words — the `;` is escaped, so it is not a boundary. And a
+# reserved word is only a command-position marker when the reserved word is
+# ITSELF at a boundary: in `echo if git commit`, `if` is an argument to echo,
+# not a keyword, so it must not open a command position. Both were false
+# POSITIVES, which is the direction this detector is weakest in.
+GATE_SEP='(^|[;&|(){}!]|\$\(|`)'
+GATE_ANCHOR="(${GATE_SEP}|${GATE_SEP}[[:space:]]*(if|elif|while|until|then|do|else|coproc)[[:space:]])"
 # A real assignment name, not "any run of non-space". `A-B=1` and `1A=1` are not
 # assignments to bash — it runs them as commands — so treating them as prefixes
 # was a false positive.
-GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*=${GATE_WORD}*"
+# `NAME+=` is a valid bash assignment form and prefixes a command exactly as
+# `NAME=` does.
+GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*\\+?=${GATE_WORD}*"
 # The operand may be separated from the operator: `< /dev/null git commit` runs.
 # `>|` is bash's clobber-override and belongs in the operator set.
 GATE_REDIR="[0-9]*(<<<|>>|<&|>&|>\\||&>|<|>)[[:space:]]*${GATE_WORD}+"
@@ -320,10 +386,14 @@ GATE_REDIR="[0-9]*(<<<|>>|<&|>&|>\\||&>|<|>)[[:space:]]*${GATE_WORD}+"
 # `builtin git commit` and `builtin env git commit` are both inert and blocking
 # them would be false positives. It is a prefix to exactly the builtin members
 # of the set, and it stacks — `builtin builtin command git commit` invokes git.
-GATE_BUILTIN="(builtin[[:space:]]+)+(command|eval|exec)"
+GATE_BUILTIN="(\\\\?builtin[[:space:]]+(--[[:space:]]+)?)+\\\\?(command|eval|exec)"
 GATE_EXTERNAL="(${GATE_WORD}*/)?\\\\?(env|command|eval|exec|time|nice|nohup|xargs|timeout|sudo|stdbuf)"
 GATE_WRAPPER="(${GATE_BUILTIN}|\\\\?${GATE_EXTERNAL})"
-GATE_GIT="\\\\?(${GATE_WORD}*/)?git(\\s+(-C\\s+${GATE_WORD}+|-c\\s+${GATE_WORD}+|--${GATE_WORD}+|-[A-Za-z]))*\\s+commit\\b"
+# git's value-taking LONG options accept `--opt=v` and `--opt v` alike, and the
+# separated form broke the chain: `git --git-dir .git commit` is an ordinary
+# invocation. The separated alternative is listed first so it wins the match.
+GATE_GIT_LONGVAL='--(git-dir|work-tree|namespace|exec-path|config-env|super-prefix)'
+GATE_GIT="\\\\?(${GATE_WORD}*/)?git(\\s+(${GATE_GIT_LONGVAL}\\s+${GATE_WORD}+|-C\\s+${GATE_WORD}+|-c\\s+${GATE_WORD}+|--${GATE_WORD}+|-[A-Za-z]))*\\s+commit\\b"
 GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
 # The skip stops at a REAL separator only. `\;` is word content, not a boundary,
 # and neither is the `&` or `|` inside a redirection operator — `env 2>&1 git
@@ -331,7 +401,7 @@ GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
 # invoke git. Those operators are admitted atomically; a BARE `&` or `|` still
 # ends the skip, so `cmd & git commit` does not get swallowed (and is caught
 # independently by the `&` anchor either way). GATE_WORD is interpolated here
-# rather than re-inlined, so the four sites cannot drift apart.
+# rather than re-inlined, so the five sites cannot drift apart.
 GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
 if ! printf '%s' "$MASKED_COMMAND" | grep -qE \
     "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+${GATE_SKIP})*${GATE_GIT}"; then

@@ -9,12 +9,13 @@
 # actually invoked. That is ground truth for what the shell does; the gate's job
 # is to agree with it.
 #
-# FOUR ROWS ARE NOT ORACLE-GENERATED on this box, and saying otherwise would
+# FIVE ROWS ARE NOT ORACLE-GENERATED on this box, and saying otherwise would
 # break this repo's own claim rule (Sol caught an earlier version of this
 # comment doing exactly that). They are `declared`, and each prints its reason
 # when it runs:
 #
-#   timeout 5s git commit    `timeout` is not installed on macOS
+#   timeout 5 git commit     `timeout` is not installed on macOS
+#   timeout 5s git commit    same
 #   stdbuf -oL git commit    `stdbuf` is not installed on macOS
 #   sudo git commit          sudo cannot run unattended in a fixture
 #   /usr/bin/git commit      an absolute path bypasses the PATH interposition
@@ -22,9 +23,11 @@
 #                            platform, not just this one
 #
 # `timeout` and `stdbuf` are named by bare name, so they measure for real on any
-# box that has them — including the Linux CI runner. `sudo` and `/usr/bin/git`
-# carry the `!` marker and are declared on EVERY platform. Everything else in
-# the suite is measured here.
+# box that has them — including the Linux CI runner, where the count drops to
+# two. `sudo` and `/usr/bin/git` carry the `!` marker and are declared on EVERY
+# platform. Everything else in the suite is measured here. The count above is
+# what THIS suite printed on macOS, not a recollection: grep the run for
+# `declared (`.
 #
 # This method is not decoration. The first hand-written want column for these
 # shapes had 2 of 9 rows wrong, and BOTH errors under-counted the regression:
@@ -279,8 +282,46 @@ run_row ""        inert "" 'builtin /usr/bin/command git commit -m x'
 run_row ""        inert "" 'A-B=1 git commit -m x'
 run_row ""        inert "" '1A=1 git commit -m x'
 
+echo "--- Sol round 5 fail-opens (+=, separated --git-dir, builtin spellings) ---"
+run_row ""        INVOKES "" 'FOO+=1 git commit -m x'
+run_row ""        INVOKES "" 'git --git-dir .git commit -m x'
+run_row ""        INVOKES "" 'builtin -- command git commit -m x'
+run_row ""        INVOKES "" '\builtin command git commit -m x'
+run_row ""        INVOKES "" 'builtin \command git commit -m x'
+
+echo "--- Sol round 5 false positives (oracle: inert, want ALLOW) ---"
+# A reserved word is only a command-position marker when the reserved word is
+# ITSELF at a boundary. In `echo if git commit` the `if` is an argument.
+run_row ""        inert "" 'echo if git commit'
+run_row ""        inert "" 'echo then git commit'
+run_row ""        inert "" 'echo do git commit'
+run_row ""        inert "" 'echo coproc git commit'
+# An escaped separator is word content. Neutralised in the masking pass rather
+# than by asking the anchor for "a separator not preceded by a backslash" —
+# that phrasing cannot count parity and re-opened k=5,9,13 as fail-opens.
+run_row ""        inert "" 'echo \; git commit'
+run_row ""        inert "" 'echo \& git commit'
+run_row ""        inert "" 'echo \| git commit'
+# A heredoc body is data. Writing a script that contains the verb is named in
+# #588's own defect description, and this hook blocked it until now.
+run_row ""        inert "" 'cat > script.sh <<'"'"'EOF'"'"'
+git commit -m x
+EOF'
+run_row ""        inert "" 'cat <<EOF
+git commit -m x
+EOF'
+# ...but a real invocation AFTER the heredoc is still caught: masking the body
+# must not blind the detector to the rest of the line.
+run_row ""        INVOKES "" 'cat <<EOF
+git commit -m data
+EOF
+git commit -m real'
+# `<<<` is a here-string, not a heredoc: its operand is on the command line and
+# is deliberately left unmasked.
+run_row ""        inert "" 'grep -n foo <<< "git commit"'
+
 echo "--- GATE_WORD self-hunt: 25 shapes probed, these are the distinct ones ---"
-# GATE_WORD is the load-bearing abstraction of this fix and it is used at four
+# GATE_WORD is the load-bearing abstraction of this fix and it is used at five
 # sites, so it got its own hunt. These are the structurally distinct survivors:
 # loop and case bodies, a tab separator, an end-of-options marker, stacked
 # wrappers, and an assignment/redirection/assignment interleave. None was a
@@ -392,8 +433,13 @@ limit_row "quoted wrapper name is masked before matching (same #599 class)" '"/u
 # positive command parsing, and it is dispositioned the same way rather than
 # chased. origin/main "blocks" these only because \bgit blocked every string
 # containing the verb, prose included, which is the defect #588 exists to fix.
+# shellcheck disable=SC2016  # (applies to all three rows) the single quotes are the POINT: these shapes
+# must reach the gate as literal text, unexpanded, or the row stops testing the
+# substitution syntax it names.
 limit_row "separator inside a parameter expansion (nests arbitrarily; #599 class)" 'FOO=${UNSET:-a;b}x git commit -m x'
+# shellcheck disable=SC2016
 limit_row "separator inside an arithmetic expansion (nests arbitrarily; #599 class)" 'FOO=$((1|2))x git commit -m x'
+# shellcheck disable=SC2016
 limit_row "separator inside a command substitution (nests arbitrarily; #599 class)" 'FOO=$(printf a; :)x git commit -m x'
 
 # A malformed redirection target. bash rejects `2>&notafd` and never reaches
@@ -448,6 +494,8 @@ echo "--- backslash runs k=1..16, oracle-derived (#581's contract, re-measured) 
 # DENIALS that the hook previously declined as too costly to fix.
 verb="com""mit"
 for k in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+    # shellcheck disable=SC1003  # '\\' is a literal backslash for tr, not an
+    # attempt to escape a quote — building a run of k backslashes is the test.
     bs=$(printf '%*s' "$k" '' | tr ' ' '\\')
     json_cmd=$(printf 'echo x%sngit %s -m y' "$bs" "$verb")
     # Decode the JSON string escape to the real shell text the tool would run.
