@@ -81,7 +81,11 @@ oracle() {
     ORACLE_LOG="$WORK/oracle.log"
     export ORACLE_LOG
     : > "$ORACLE_LOG"
-    ( cd "$WORK" && PATH="$WORK/bin:$PATH" bash -c "$1" ) > /dev/null 2>&1
+    # The trailing `wait` is load-bearing for backgrounding shapes: `coproc git
+    # commit` genuinely invokes, but the coprocess runs asynchronously and
+    # `bash -c` exits before it writes the log. Without the wait the oracle
+    # reports `inert` for a shape that really runs git — a false ALLOW want.
+    ( cd "$WORK" && PATH="$WORK/bin:$PATH" bash -c "$1"$'\n''wait' ) > /dev/null 2>&1
     if [ -s "$ORACLE_LOG" ]; then echo INVOKES; else echo inert; fi
 }
 
@@ -218,6 +222,21 @@ run_row ""        INVOKES "" 'GIT_AUTHOR_NAME="A B" git commit -m x'
 echo "--- path-prefixed git (oracle: INVOKES, want BLOCK) ---"
 run_row "!absolute path" INVOKES "an absolute path bypasses the PATH interposition the oracle works by" '/usr/bin/git commit -m x'
 run_row ""        INVOKES "" './git commit -m x'
+
+echo "--- path-prefixed WRAPPERS (oracle: INVOKES, want BLOCK) ---"
+# The `(\S*/)?` prefix went on `git` in the first cut but not on the wrapper
+# alternation, so a wrapper named by path escaped while its bare name was
+# caught. `/usr/bin/env` is a shape people type without thinking about it.
+run_row ""        INVOKES "" '/usr/bin/env git commit -m x'
+run_row ""        INVOKES "" '/usr/bin/nice git commit -m x'
+run_row ""        INVOKES "" '/usr/bin/env -u FOO git commit -m x'
+
+echo "--- coproc (oracle: INVOKES, want BLOCK) ---"
+# `coproc NAME { ...; }` blocks through the `{` anchor; bare `coproc git commit`
+# blocks through the coproc keyword itself. Both need the oracle's trailing
+# `wait` to be measurable at all — see the note on oracle().
+run_row ""        INVOKES "" 'coproc git commit -m x'
+run_row ""        INVOKES "" 'coproc G { git commit -m x; }'
 
 echo "--- prose and arguments (oracle: inert, want ALLOW) ---"
 run_row ""        inert "" 'echo the git commit gate'

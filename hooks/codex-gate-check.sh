@@ -290,7 +290,7 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 GATE_ANCHOR='(^|[;&|(){}!]|\$\(|`|\b(if|elif|while|until|then|do|else|coproc)[[:space:]])'
 GATE_ASSIGN='[^ =]*=[^ ]*'
 GATE_REDIR='[0-9]*(<<<|<&|>&|>>|<|>)[^ ]+'
-GATE_WRAPPER='(env|command|eval|exec|time|nice|nohup|xargs|timeout|sudo|stdbuf)'
+GATE_WRAPPER='(\S*/)?(env|command|eval|exec|time|nice|nohup|xargs|timeout|sudo|stdbuf)'
 GATE_GIT="\\\\?(\\S*/)?git(\\s+(-C\\s+\\S+|-c\\s+\\S+|--\\S+|-[A-Za-z]))*\\s+commit\\b"
 GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
 if ! printf '%s' "$MASKED_COMMAND" | grep -qE \
