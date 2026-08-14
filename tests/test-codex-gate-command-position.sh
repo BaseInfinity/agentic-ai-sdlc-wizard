@@ -289,6 +289,18 @@ run_row ""        INVOKES "" 'builtin -- command git commit -m x'
 run_row ""        INVOKES "" '\builtin command git commit -m x'
 run_row ""        INVOKES "" 'builtin \command git commit -m x'
 
+echo "--- Sol round 9: array-element assignment prefixes (all fail-open) ---"
+# An array-element assignment is a command prefix exactly as a scalar one is.
+# Narrowing GATE_ASSIGN to scalar names in round 4 — to kill the `A-B=1` false
+# positives — excluded these and opened a fail-open. BLOCK on origin/main,
+# ALLOW from 27bf763 until this fix.
+run_row ""        INVOKES "" 'A[0]=x git commit -m x'
+run_row ""        INVOKES "" 'A[foo]=x git commit -m x'
+run_row ""        INVOKES "" 'A[0]+=x git commit -m x'
+# CANARY: the round-4 false-positive class must not come back with it. A
+# malformed name is still not an assignment, subscript or no subscript.
+run_row ""        inert "" 'A[0]-B=1 git commit -m x'
+
 echo "--- Sol round 5 false positives (oracle: inert, want ALLOW) ---"
 # A reserved word is only a command-position marker when the reserved word is
 # ITSELF at a boundary. In `echo if git commit` the `if` is an argument.

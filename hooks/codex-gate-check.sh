@@ -371,7 +371,11 @@ GATE_ANCHOR="(${GATE_SEP}|${GATE_SEP}[[:space:]]*(if|elif|while|until|then|do|el
 # was a false positive.
 # `NAME+=` is a valid bash assignment form and prefixes a command exactly as
 # `NAME=` does.
-GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*\\+?=${GATE_WORD}*"
+# An ARRAY-ELEMENT assignment is a command prefix too: `A[0]=x git commit` runs
+# git. Narrowing this to scalar names (to kill the `A-B=1` / `1A=1` false
+# positives) excluded them and opened a fail-open — the subscript is bounded to
+# a single bracketed span so an invalid NAME is still rejected.
+GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*(\\[[^][]+\\])?\\+?=${GATE_WORD}*"
 # The operand may be separated from the operator: `< /dev/null git commit` runs.
 # `>|` is bash's clobber-override and belongs in the operator set.
 GATE_REDIR="[0-9]*(<<<|>>|<&|>&|>\\||&>|<|>)[[:space:]]*${GATE_WORD}+"
