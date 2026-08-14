@@ -60,6 +60,32 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
+
+limit_row() {
+    local why="$1" cmd="$2" truth g
+    truth=$(oracle "$cmd")
+    g=$(gate "$cmd")
+    if [ "$truth" = "INVOKES" ] && [ "$g" = "ALLOW" ]; then
+        pass "ACCEPTED LIMIT still holds (invokes, allowed) — $why: $cmd"
+    else
+        fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — $why: $cmd. If this was deliberate, update #588 and this row; if not, it is a regression."
+    fi
+}
+
+# A row that calls an UNDEFINED helper prints to stderr and counts as neither
+# pass nor fail — it vanishes silently. That happened: a limit_row call sat
+# above limit_row's definition and did nothing, the same "row that proves
+# nothing" class the reviewer caught in the mutation audit. bash 3.2 (macOS,
+# and this file's shebang) has no command_not_found_handle, so the portable fix
+# is structural — every helper is defined HERE, above every row — plus this
+# assertion, which fails loudly if one ever moves back below its call sites.
+for _h in pass fail limit_row; do
+    if [ "$(type -t "$_h" 2>/dev/null)" != "function" ]; then
+        echo "FATAL: helper '$_h' is not defined before the rows — rows calling it would vanish" >&2
+        exit 1
+    fi
+done
+
 WORK=$(mktemp -d) || { echo "FATAL: could not create temp dir" >&2; exit 1; }
 case "$WORK" in
     /*) ;;
@@ -385,7 +411,7 @@ run_row ""        INVOKES "" 'A[$((1 + 2))]=x git commit -m x'
 # old malformed-name grammar returns — it proves NAME protection, which is what
 # actually carries the safety here, rather than the subscript bound.
 run_row ""        inert "" 'A[0]-B=1 git commit -m x'
-# DECLARED FAIL-CLOSED. The whitespace bound does not validate bracket balance —
+# DECLARED FAIL-CLOSED. The unbounded span does not validate bracket balance —
 # POSIX ERE cannot without a bounded nesting limit or the scanner #533 ruled out.
 # So this unbalanced span, which is not an assignment at all, is read as one and
 # blocked. Pinned as a row rather than described, because two earlier versions of
@@ -557,16 +583,6 @@ echo "--- ACCEPTED LIMITS: rows that pin behaviour we know is wrong ---"
 # Every row here is a false NEGATIVE — the shape really does invoke git and the
 # gate allows it. That is the direction that matters, and it is why the wrapper
 # set had to be enumerated at all rather than the anchor shipping bare.
-limit_row() {
-    local why="$1" cmd="$2" truth g
-    truth=$(oracle "$cmd")
-    g=$(gate "$cmd")
-    if [ "$truth" = "INVOKES" ] && [ "$g" = "ALLOW" ]; then
-        pass "ACCEPTED LIMIT still holds (invokes, allowed) — $why: $cmd"
-    else
-        fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — $why: $cmd. If this was deliberate, update #588 and this row; if not, it is a regression."
-    fi
-}
 
 # The FALSE POSITIVE bought by skipping wrapper option arguments wholesale. The
 # text cannot say whether `echo` is `time`'s option argument or a new command
@@ -589,6 +605,17 @@ fi
 limit_row "quoted payload is masked before matching (pre-existing on origin/main)" "bash -c 'git commit -m x'"
 limit_row "quoted payload is masked before matching (pre-existing on origin/main)" "eval 'git commit -m x'"
 limit_row "quoted wrapper name is masked before matching (same #599 class)" '"/usr/bin/env" git commit -m x'
+
+# PRE-EXISTING, tracked on #605. The double-quote and single-quote passes run
+# independently, so a literal `"` in one single-quoted argument pairs with
+# another in a later one and the mask swallows the text between them —
+# including a direct, unquoted invocation. Identical on origin/main, so this PR
+# neither introduces nor fixes it. Distinct from #599: nothing is handed to
+# `bash -c` or `eval` here, so enumerating shell-invoking forms would not close
+# it. Asserted as a fail-OPEN limit, which is why limit_row fits.
+# shellcheck disable=SC2016
+limit_row "cross-quote masking swallows a real invocation (pre-existing; #605)" 'printf '"'"'%s\n'"'"' '"'"'"'"'"' && git commit -m '"'"'fix "quoted" handling'"'"''
+
 
 # NESTED SHELL SUBSTITUTIONS (Sol round 4). A separator inside ${...}, $(...),
 # $((...)) or backticks is not an outer command boundary, but GATE_WORD stops

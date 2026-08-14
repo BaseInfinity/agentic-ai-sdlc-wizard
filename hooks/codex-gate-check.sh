@@ -74,11 +74,20 @@ COMMAND_FIELD=$(printf '%s' "$TOOL_INPUT" \
 #
 # The double-quote masker is ESCAPE-AWARE but must NOT let the escape
 # alternative swallow the closing quote. `\\.` would, and under POSIX
-# longest-match `cd \"$dir\" && git commit -m \"message\"` then masks
-# ENTIRELY to `Q` — the invocation vanishes and the gate fails open. That was
+# longest-match `cd \"$dir\" && git commit -m \"message\"` then masks to
+# `cd Q` — the invocation vanishes and the gate fails open. That was
 # the reviewer's own suggested fix this round, and tests/test-hooks.sh caught it
 # in the same commit that applied it. `\\[^"]` covers a backslash inside the
 # span (a Windows path, an escaped char) while still stopping at the closer.
+#
+# STILL OPEN and PRE-EXISTING, tracked on #605: the two passes are independent,
+# so a literal `"` inside one single-quoted argument and another inside a later
+# one are paired as if they were a single double-quoted span. In
+# `printf '%s\n' '"' && git commit -m 'fix "quoted" handling'` the mask
+# swallows `&& git commit` and the gate allows a direct, unquoted invocation.
+# Measured identical on origin/main, so this PR neither introduces nor fixes it.
+# Closing it needs the two passes to scan jointly and honour whichever quote
+# opens first — not another alternative bolted onto either regex.
 COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
     | sed -E 's/^"command"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')
 
