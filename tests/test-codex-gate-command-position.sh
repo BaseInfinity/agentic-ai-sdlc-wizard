@@ -162,6 +162,20 @@ run_row "nohup"   INVOKES "" 'nohup git commit -m x'
 run_row "xargs"   INVOKES "" 'echo -m x | xargs git commit'
 run_row "timeout" INVOKES "not installed on macOS; present on the Linux runner and on consumer machines" 'timeout 5 git commit -m x'
 
+echo "--- eval/exec/time and escaped git (oracle: INVOKES, want BLOCK) ---"
+# Every row here was found by hunting fail-opens with the oracle BEFORE review,
+# and every one shipped blocked on origin/main. Anchoring alone would have let
+# them through — the regression these rows exist to prevent.
+run_row ""        INVOKES "" 'eval git commit -m x'
+run_row ""        INVOKES "" 'exec git commit -m x'
+run_row ""        INVOKES "" 'time git commit -m x'
+# `\git` runs git — the escape only suppresses alias expansion.
+run_row ""        INVOKES "" '\git commit -m x'
+# `builtin` is deliberately NOT transparent: it only runs shell builtins, and
+# git is not one, so the shape is inert and allowing it is correct. origin/main
+# denied it; that false positive is fixed here.
+run_row ""        inert   "" 'builtin git commit -m x'
+
 echo "--- assignment prefixes (oracle: INVOKES, want BLOCK) ---"
 # bash runs an assignment-prefixed command directly — there is no wrapper here
 # at all. This repo's own workflow uses the shape (AFTERHOURS_SKIP=1 git push).
@@ -208,6 +222,14 @@ limit_row() {
         fail "ACCEPTED LIMIT changed [oracle=$truth gate=$g] — $why: $cmd. If this was deliberate, update #588 and this row; if not, it is a regression."
     fi
 }
+
+# A quoted payload handed to a shell or to eval. The masking pass collapses the
+# quoted span to `Q` before any matching runs, so the verb is invisible to the
+# detector. Measured against origin/main: ALLOWED there too, so this is NOT
+# introduced by the command-position change — it predates it, and it is filed
+# separately rather than fixed inside a PR about prose false-positives.
+limit_row "quoted payload is masked before matching (pre-existing on origin/main)" "bash -c 'git commit -m x'"
+limit_row "quoted payload is masked before matching (pre-existing on origin/main)" "eval 'git commit -m x'"
 
 # An un-enumerated wrapper. `caffeinate` is macOS-only, so the row is skipped
 # where it does not exist rather than asserted vacuously.
