@@ -262,6 +262,20 @@ run_row "!sudo"   INVOKES "sudo cannot run unattended in a test fixture" 'sudo g
 run_row "stdbuf"  INVOKES "not installed on macOS; present on the Linux runner" 'stdbuf -oL git commit -m x'
 run_row ""        INVOKES "" 'if false; then :; elif git commit -m x; then :; fi'
 
+echo "--- GATE_WORD self-hunt: 25 shapes probed, these are the distinct ones ---"
+# GATE_WORD is the load-bearing abstraction of this fix and it is used at four
+# sites, so it got its own hunt. These are the structurally distinct survivors:
+# loop and case bodies, a tab separator, an end-of-options marker, stacked
+# wrappers, and an assignment/redirection/assignment interleave. None was a
+# fail-open; they are pinned so a later change to GATE_WORD cannot quietly
+# break one.
+run_row ""        INVOKES "" 'for i in 1; do git commit -m x; done'
+run_row ""        INVOKES "" 'case x in x) git commit -m x;; esac'
+run_row ""        INVOKES "" 'env	git commit -m x'
+run_row ""        INVOKES "" 'env -- git commit -m x'
+run_row ""        INVOKES "" 'nohup env nice git commit -m x'
+run_row ""        INVOKES "" 'env A=1 </dev/null B=2 git commit -m x'
+
 echo "--- coproc (oracle: INVOKES, want BLOCK) ---"
 # `coproc NAME { ...; }` blocks through the `{` anchor; bare `coproc git commit`
 # blocks through the coproc keyword itself. Both need the oracle's trailing
