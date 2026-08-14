@@ -390,28 +390,35 @@ GATE_ANCHOR="(${GATE_SEP}|${GATE_SEP}[[:space:]]*(if|elif|while|until|then|do|el
 #   [^][]+   excluded empty and nested subscripts, admitted `=`
 #   [^=]*    admitted empty and nested subscripts, excluded `=`
 #
-# The bound that works is neither: it is WHITESPACE. An assignment prefix is a
-# single shell WORD, so its subscript cannot contain unquoted whitespace — if it
-# did, the word would split and it would stop being a prefix. Bounding on that
-# admits nesting and `=` together, which no character class over `]` or `=` can
-# do. (A quoted key with a space, `A["foo bar"]=x`, arrives here already masked
-# to `A[Q]=x` by the pass above, so it is covered too — verified, not assumed.)
+# A third cut bounded it by WHITESPACE, on the reasoning that an assignment
+# prefix is a single shell word so its subscript could not contain unquoted
+# whitespace. That reasoning is FALSE — bash's assignment lexer keeps whitespace
+# inside an arithmetic subscript, and `A[1 + 2]=x git commit`, `A[1\ +\ 2]=x`
+# and `declare -A A; A[foo\ bar]=x` all run git. That was the SIXTH instance.
 #
-# The reviewer's own suggested pattern for this round, `(\[([^]]|\][^=])*\])?`,
-# was itself a FIFTH instance: it admits `=` but re-excludes `A[B[0]]=x`,
-# because `\][^=]` consumes the inner `]]` and then cannot find the closing
-# bracket. Measured, not assumed — which is why every proposed fix here gets
-# probed against origin/main and the parent before it is believed.
+# So the span is DELIBERATELY UNBOUNDED. Every attempt to characterise what a
+# subscript may not contain has been wrong, in both directions, six times:
 #
-# WHAT THIS DOES NOT DO, stated because two earlier versions of this comment
-# claimed safety they did not provide: it does NOT validate bracket balance.
-# POSIX ERE cannot, without a bounded nesting limit or a real scanner, and #533
-# ruled out the scanner. So `A[0]-B[1]=x git commit` — an unbalanced span that
-# is not an assignment at all — is read as one and BLOCKED. That is a false
-# POSITIVE, it fails CLOSED, and it is pinned as a row rather than described.
-# The real NAME requirement is what keeps `A-B=1` and `1A=1` out, and that is
-# the only safety claim made here.
-GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*(\\[[^[:space:]]*\\])?\\+?=${GATE_WORD}*"
+#   [^][]+          excluded empty and nested, admitted `=`
+#   [^=]*           admitted empty and nested, excluded arithmetic `=`
+#   [^[:space:]]*   excluded arithmetic whitespace
+#
+# and the reviewer's own proposed `(\[([^]]|\][^=])*\])?` was a fifth,
+# admitting `=` while re-excluding nesting. The honest model is that a subscript
+# is an arbitrary arithmetic expression and a regex has no business enumerating
+# its contents.
+#
+# THE COST, disclosed rather than discovered: an unbounded span OVERMATCHES.
+# It does not validate bracket balance and cannot — POSIX ERE cannot without a
+# bounded nesting limit or the scanner #533's ruling puts out of reach. So
+# malformed text that merely looks like `NAME[...]=` is read as an assignment
+# prefix and BLOCKED. `A[0]-B[1]=x git commit` is exactly that: oracle-inert,
+# blocked, failing CLOSED, and pinned as a row rather than described.
+#
+# The ONLY safety claim made here is the real NAME requirement, which is what
+# keeps `A-B=1` and `1A=1` out. Three earlier versions of this comment claimed
+# more than that and each claim was measured false.
+GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*(\\[.*\\])?\\+?=${GATE_WORD}*"
 # The operand may be separated from the operator: `< /dev/null git commit` runs.
 # `>|` is bash's clobber-override and belongs in the operator set.
 GATE_REDIR="[0-9]*(<<<|>>|<&|>&|>\\||&>|<|>)[[:space:]]*${GATE_WORD}+"

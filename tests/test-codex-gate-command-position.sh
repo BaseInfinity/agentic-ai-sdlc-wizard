@@ -317,6 +317,17 @@ run_row ""        INVOKES "" 'A[B[0]=1]=x git commit -m x'
 run_row ""        INVOKES "" 'declare -A A; A[x=y]=z git commit -m x'
 # A quoted key containing a space arrives already masked to `A[Q]=x`.
 run_row ""        INVOKES "" 'A["foo bar"]=x git commit -m x'
+# Bash's assignment lexer KEEPS whitespace inside an arithmetic subscript — the
+# word does not split. Bounding the span by whitespace on the opposite reasoning
+# was the sixth instance of the narrowing pattern, and these are why the span is
+# now deliberately unbounded.
+run_row ""        INVOKES "" 'A[1 + 2]=x git commit -m x'
+run_row ""        INVOKES "" 'A[1\ +\ 2]=x git commit -m x'
+run_row ""        INVOKES "" 'A[1\ +\ 2]+=x git commit -m x'
+run_row ""        INVOKES "" 'declare -A A; A[foo\ bar]=x git commit -m x'
+# shellcheck disable=SC2016  # must reach the gate unexpanded — expanding it
+# here would test the arithmetic result, not the subscript text.
+run_row ""        INVOKES "" 'A[$((1 + 2))]=x git commit -m x'
 # CANARY: the round-4 false-positive class must not come back with it. A
 # malformed name is still not an assignment, subscript or no subscript. This
 # row also BLOCKS against the pre-round-4 `[^ =]*=` grammar, so it fails if the
