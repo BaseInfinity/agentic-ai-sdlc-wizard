@@ -230,7 +230,11 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" \
              -e "s/$ESC_SENTINEL/\\\\/g")
 
 MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
-    | sed -E -e 's/\\"([^"\\]|\\[^"])*\\"/Q/g' -e "s/'[^']*'/Q/g")
+    | sed -E -e 's/\\"([^"\\]|\\\\"|\\[^"])*\\"/Q/g' \
+             -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
+             -e "s/\\\\'/E/g" \
+             -e "s/'[^']*'/Q/g" \
+             -e "s/$ESC_SENTINEL/\\\\\\\\/g")
 
 # An ESCAPED separator is word content, not a command boundary: `echo \; git
 # commit` is one command printing three words. Neutralising it to `E` here —

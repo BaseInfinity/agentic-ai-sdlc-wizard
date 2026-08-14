@@ -274,8 +274,34 @@ run_row ""        INVOKES "" 'git -c user.name="A\B C" commit -m x'
 # under POSIX longest-match this whole command masks to `cd Q` — the invocation
 # vanishes. That was the reviewer's own suggested fix, and test-hooks.sh caught
 # it in the same commit that applied it. Pinned here so it cannot come back.
+# These need a quoted span on BOTH sides of the invocation, or the row does not
+# pin the over-mask at all. Sol mutation-tested an earlier version of these rows
+# against the rejected `\.` expression and this suite stayed GREEN — the claim
+# that they pinned it was false. Verified by mutation this time, not by reading.
+run_row ""        INVOKES "" 'cd "sub" && git commit -m "message"'
+run_row ""        INVOKES "" 'git -c user.name="A B" commit -m "fix"'
 run_row ""        INVOKES "" 'cd sub && git commit -m "message"'
 run_row ""        INVOKES "" 'git -c user.name="A B" commit -m x'
+
+echo "--- Sol round 14: escaped quotes inside a quoted span (10th and 11th) ---"
+# The masker handled a backslash before a NON-quote but not an escaped quote,
+# so it paired the wrong quotes and left whitespace that broke the prefix chain.
+run_row ""        INVOKES "" 'FOO="a b\" c" git commit -m x'
+run_row ""        INVOKES "" 'git -c user.name="A B\" C" commit -m x'
+run_row ""        INVOKES "" '> "a b\" c" git commit -m x'
+# shellcheck disable=SC1003  # (applies to the three rows below) the backslash
+# before the apostrophe is the SHAPE UNDER TEST, not a quoting mistake.
+# The single-quote masker had the analogous hole. `'"'"'a b'"'"'\'"'"''"'"'c d'"'"'` is the ordinary
+# shell idiom for an apostrophe inside single quotes.
+run_row ""        INVOKES "" 'FOO='"'"'a b'"'"'\'"'"''"'"'c d'"'"' git commit -m x'
+# shellcheck disable=SC1003
+run_row ""        INVOKES "" 'git -c user.name='"'"'A B'"'"'\'"'"''"'"' C'"'"' commit -m x'
+# PARITY CANARY: neutralising every `\'"'"'` would break an EVEN backslash run,
+# where the apostrophe is a real quote. Pairs are set aside first, and the
+# restore must emit the PAIR — restoring one backslash collapsed the run and
+# broke k=5 and k=13 in the backslash contract below.
+# shellcheck disable=SC1003
+run_row ""        INVOKES "" 'FOO=\\'"'"'a b'"'"' git commit -m x'
 
 echo "--- redirection operand separated from its operator (Sol round 2) ---"
 # `< /dev/null git commit` is an ordinary invocation; the space after the
