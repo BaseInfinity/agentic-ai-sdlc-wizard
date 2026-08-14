@@ -295,7 +295,7 @@ done
 MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" \
     | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
              -e 's/\\[;&|(){}!]/E/g' \
-             -e "s/(^|[[:space:];&|(){}!])(${GATE_KW_ALT})([^A-Za-z0-9_]|\$)/\\1K\\2\\3/g" \
+             -e "s/(^|[[:space:];&|(){}!\`])(${GATE_KW_ALT})([^A-Za-z0-9_]|\$)/\\1K\\2\\3/g" \
              -e 's/\\([A-Za-z0-9./:,@%^~-])/\1/g' \
              -e "s/$ESC_SENTINEL/\\\\\\\\/g")
 

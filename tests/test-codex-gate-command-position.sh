@@ -51,6 +51,27 @@
 
 set -u
 
+# THE EXIT-STATUS GUARD, and the sixth route to green-while-measuring-nothing.
+# Every other guard proves something about what happens INSIDE the run, and none
+# of them survives the last line becoming `true`: rows still measure, `fail`
+# still records, the count still prints — and CI reads the exit status.
+#
+# It cannot be guarded from inside a single run, because the mutation IS the
+# statement that reports the result. So re-run the whole suite in a child with
+# one failure forced, and require the CHILD to exit nonzero.
+#
+# It sits HERE, above every definition, rather than at the footer where it was
+# first written. Sol round 21: an `exit 0` at the top of `run_row` exits green
+# with no rows and no summary, and a footer guard is simply never reached. A
+# guard placed after the thing it guards can be skipped by anything that exits
+# early. The forced failure itself stays at the footer.
+if [ -z "${GATE_SUITE_FORCE_FAILURE:-}" ]; then
+    if GATE_SUITE_FORCE_FAILURE=1 "$0" > /dev/null 2>&1; then
+        echo "FATAL: a forced failure still exited 0 — the suite cannot report a regression to CI" >&2
+        exit 1
+    fi
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -567,6 +588,11 @@ run_row ""        INVOKES "" 'su\do git commit -m x'
 run_row ""        inert "" 'FOO\=1 git commit -m x'
 run_row ""        inert "" 'FOO\+=1 git commit -m x'
 run_row ""        inert "" 'F\_OO=1 git commit -m x'
+# The shield's left-boundary class must carry every character GATE_SEP treats as
+# a command anchor, and the backtick was missing from it (Sol round 21). Legacy
+# backtick substitution opens a command position, so the escaped keyword inside
+# one has to be shielded there too.
+run_row ""        inert "" 'echo `i\f git commit -m x`'
 # HEREDOCS ARE NOT MASKED — see the reverted-pass note in the hook. A heredoc
 # writing a script that contains the verb is blocked. It is a false POSITIVE and
 # it fails CLOSED; the masker that fixed it introduced six fail-opens and is
@@ -893,24 +919,6 @@ fi
 
 if [ -n "${GATE_SUITE_FORCE_FAILURE:-}" ]; then
     fail "forced failure: the child run of the exit-status guard must exit nonzero"
-fi
-
-# THE EXIT-STATUS GUARD, and the sixth route to green-while-measuring-nothing.
-# The five guards above all prove things about what happens INSIDE the run. None
-# of them survives the last line being replaced with `true`: every row still
-# measures, `fail` still records, the counter still prints — and CI reads the
-# exit status, which is now 0 no matter what failed.
-#
-# It cannot be guarded from inside a single run, because the mutation is the
-# very statement that reports the result. So re-run the whole suite in a child
-# with one failure forced, and require the CHILD to exit nonzero. Under the
-# mutation the child exits 0 and this fires. The child does not recurse: the
-# variable that forces its failure also suppresses this block.
-if [ -z "${GATE_SUITE_FORCE_FAILURE:-}" ]; then
-    if GATE_SUITE_FORCE_FAILURE=1 "$0" > /dev/null 2>&1; then
-        echo "FATAL: a forced failure still exited 0 — the suite cannot report a regression to CI" >&2
-        exit 1
-    fi
 fi
 
 echo
