@@ -120,7 +120,10 @@ oracle() {
 # reports ALLOW there for reasons that have nothing to do with #588.
 mkdir -p "$WORK/clean/hooks"
 cp "$REPO_ROOT/hooks/codex-gate-check.sh" "$REPO_ROOT/hooks/_find-sdlc-root.sh" "$WORK/clean/hooks/"
-gate() {
+# shellcheck disable=SC2329  # invoked indirectly, and deliberately swappable:
+# the gate-result canary below replaces `gate` to make it lie once.
+gate() { gate_impl "$@"; }
+gate_impl() {
     local json
     json=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1],"description":"fixture"}}))' "$1")
     if printf '%s' "$json" | ( cd "$WORK/clean" && ./hooks/codex-gate-check.sh ) > /dev/null 2>&1; then
@@ -240,6 +243,26 @@ if [ "$FAIL" -ne $((_fail_before + 1)) ]; then
     exit 1
 fi
 FAIL=$_fail_before
+
+# THE GATE-RESULT CANARY, and the fifth route to green-while-measuring-nothing.
+# It is the exact mirror of the ORACLE_REQUIRED row: Sol mutated run_row to call
+# `gate` and DISCARD its result, using `g=$want`, while reverting a production
+# rule. All four earlier guards passed and the suite reported
+# `178 passed, 0 failed (143 run_row rows oracle-measured)` — the oracle was
+# measured and drove `want`, `fail` worked, and the thing actually under test
+# was thrown away.
+#
+# So force `gate` to lie once, and require run_row to notice. `gate` is a thin
+# wrapper over gate_impl precisely so this swap is possible on bash 3.2.
+_gate_before=$FAIL
+gate() { echo ALLOW; }
+run_row "" INVOKES "" 'git commit -m gate-result-canary' > /dev/null
+gate() { gate_impl "$@"; }
+if [ "$FAIL" -ne $((_gate_before + 1)) ]; then
+    echo "FATAL: run_row did not act on the gate result — a lying gate went unnoticed" >&2
+    exit 1
+fi
+FAIL=$_gate_before
 
 echo "=== #588: gate agrees with the shell about what invokes git commit ==="
 
@@ -587,6 +610,25 @@ run_row ""        INVOKES "" 'e\nv git commit -m x'
 run_row ""        INVOKES "" 'builtin c\ommand git commit -m x'
 run_row ""        INVOKES "" 'git -\c user.name=A commit -m x'
 run_row ""        INVOKES "" 'git --git-\dir .git commit -m x'
+# SIXTEENTH: unescaping is not enough on its own. Quote removal does NOT
+# retroactively turn a quoted token into a RESERVED WORD — `\if git commit`
+# runs a command named `if`, so it must not open a command position. Stripping
+# the escape and letting GATE_ANCHOR see a keyword was a regression I introduced
+# with the unescape rule. Escaped keywords are shielded before the unescape.
+run_row ""        inert "" '\if git commit -m x'
+run_row ""        inert "" '\then git commit -m x'
+run_row ""        inert "" '\coproc git commit -m x'
+run_row ""        inert "" '\else git commit -m x'
+# ...while a REAL keyword still anchors.
+run_row ""        INVOKES "" 'if git commit -m x; then :; fi'
+# The unescape class is not alphanumerics only: bash drops the backslash before
+# an escaped hyphen too, and escaping an option hyphen is a plausible spelling.
+# All three invoke; all three predate this PR and were undeclared fail-opens.
+run_row ""        INVOKES "" 'git \-c user.name=A commit -m x'
+run_row ""        INVOKES "" 'git --git\-dir .git commit -m x'
+run_row ""        INVOKES "" 'git \--git-dir .git commit -m x'
+# A quoted escape is shielded by the masking pass and stays inert.
+run_row ""        inert "" 'git "c\ommit" -m x'
 # ...but an escaped SPACE must NOT be unescaped, or the word would split and the
 # assignment would stop being a prefix. Alphanumerics only.
 run_row ""        INVOKES "" 'FOO=a\ b git commit -m x'

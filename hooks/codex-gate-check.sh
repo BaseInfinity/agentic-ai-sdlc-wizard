@@ -268,7 +268,8 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" \
     | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
              -e 's/\\[;&|(){}!]/E/g' \
-             -e 's/\\([A-Za-z0-9])/\1/g' \
+             -e 's/\\(if|elif|while|until|then|do|else|coproc)([^A-Za-z0-9_]|$)/K\1\2/g' \
+             -e 's/\\([A-Za-z0-9._/=+:,@%^~-])/\1/g' \
              -e "s/$ESC_SENTINEL/\\\\\\\\/g")
 
 # #236(b): literal substring "git commit" misses git's own global-flag forms
@@ -325,10 +326,13 @@ MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" \
 # inert, because `builtin` only runs shell builtins and git is not one. Allowing
 # it is the correct answer, and origin/main's false denial of it is fixed here.
 #
-# The optional leading backslash covers `\git commit`, which bash runs as git
-# (the escape only suppresses alias expansion). It cannot re-open prose, because
-# the anchor still has to match before it: in `echo x\git commit` the character
-# before the backslash is `x`, which is not an anchor.
+# `\git commit` is handled upstream now, not by an optional backslash in this
+# pattern: the normalisation pass REMOVES an escape before an ordinary
+# character, exactly as bash does, so by the time this regex runs there is no
+# backslash left. The optional-escape spelling that used to live here was
+# deleted — it produced a fail-open (the escape can sit anywhere in the
+# basename) and a false positive (`\\git` is a command named `\git`) in
+# consecutive review rounds.
 #
 # STILL OPEN, and NOT introduced here — `eval 'git commit'`, `bash -c 'git
 # commit'` and `sh -c "git commit"` are allowed on origin/main too, because the
