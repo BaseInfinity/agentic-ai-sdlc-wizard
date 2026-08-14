@@ -139,6 +139,14 @@ gate_impl() {
 mkdir -p "$WORK/sub"          # so `cd sub && ...` does not short-circuit on &&
 cp "$WORK/bin/git" "$WORK/git" # so `./git commit` resolves to the fake
 
+# A fake `sudo` that just execs its arguments. The real one is not usable as an
+# oracle: it resets PATH (so the fake git is unreachable) and its result depends
+# on whether a credential happens to be cached. The row that needs it —
+# `su\do git commit` — is pinning that the keyword shield does not reach INSIDE
+# a longer word, so what matters is only that the word runs something.
+printf '#!/bin/bash\nexec "$@"\n' > "$WORK/bin/sudo"
+chmod +x "$WORK/bin/sudo"
+
 # A path containing an ESCAPED SPACE, for the rows that pin the git and wrapper
 # path-prefix consumers of GATE_WORD. Without these the oracle reports `inert`
 # for a shape that genuinely invokes, and the row would assert nothing.
@@ -536,6 +544,29 @@ run_row ""        inert "" 'echo coproc git commit'
 run_row ""        inert "" 'echo \; git commit'
 run_row ""        inert "" 'echo \& git commit'
 run_row ""        inert "" 'echo \| git commit'
+# An escape ANYWHERE inside a reserved word strips its keyword-ness: `i\f` is
+# the ordinary word `if`, looked up as a COMMAND. No such command exists, so
+# nothing runs and the rest of the line is its arguments. The shield covers
+# every escape position in every reserved word, and requires BOTH token
+# boundaries so it cannot reach inside a longer word.
+run_row ""        inert "" 'i\f git commit -m x'
+run_row ""        inert "" 'e\lif git commit -m x'
+run_row ""        inert "" 'wh\ile git commit -m x'
+run_row ""        inert "" 'unt\il git commit -m x'
+run_row ""        inert "" 'th\en git commit -m x'
+run_row ""        inert "" 'd\o git commit -m x'
+run_row ""        inert "" 'el\se git commit -m x'
+run_row ""        inert "" 'co\proc git commit -m x'
+# The right-boundary half of that shield. Without it `\do` is shielded inside
+# `su\do`, which unescapes to a real `sudo git commit` — a FAIL-OPEN.
+run_row ""        INVOKES "" 'su\do git commit -m x'
+# An escape inside an assignment prefix breaks the assignment: the word is no
+# longer NAME=VALUE, so it is looked up as a command and nothing runs. The
+# unescape class therefore excludes `=`, `+` and `_` — unescaping any of them
+# would manufacture a GATE_ASSIGN prefix the shell never sees.
+run_row ""        inert "" 'FOO\=1 git commit -m x'
+run_row ""        inert "" 'FOO\+=1 git commit -m x'
+run_row ""        inert "" 'F\_OO=1 git commit -m x'
 # HEREDOCS ARE NOT MASKED — see the reverted-pass note in the hook. A heredoc
 # writing a script that contains the verb is blocked. It is a false POSITIVE and
 # it fails CLOSED; the masker that fixed it introduced six fail-opens and is
@@ -630,7 +661,7 @@ run_row ""        INVOKES "" 'git \--git-dir .git commit -m x'
 # A quoted escape is shielded by the masking pass and stays inert.
 run_row ""        inert "" 'git "c\ommit" -m x'
 # ...but an escaped SPACE must NOT be unescaped, or the word would split and the
-# assignment would stop being a prefix. Alphanumerics only.
+# assignment would stop being a prefix.
 run_row ""        INVOKES "" 'FOO=a\ b git commit -m x'
 
 echo "--- GATE_WORD consumers pinned BEHAVIOURALLY (Sol round 16) ---"
@@ -858,6 +889,28 @@ done
 ORACLE_FLOOR=100
 if [ "$ORACLE_ROWS" -lt "$ORACLE_FLOOR" ]; then
     fail "only $ORACLE_ROWS rows reached the oracle (floor $ORACLE_FLOOR) — the want column is no longer measured"
+fi
+
+if [ -n "${GATE_SUITE_FORCE_FAILURE:-}" ]; then
+    fail "forced failure: the child run of the exit-status guard must exit nonzero"
+fi
+
+# THE EXIT-STATUS GUARD, and the sixth route to green-while-measuring-nothing.
+# The five guards above all prove things about what happens INSIDE the run. None
+# of them survives the last line being replaced with `true`: every row still
+# measures, `fail` still records, the counter still prints — and CI reads the
+# exit status, which is now 0 no matter what failed.
+#
+# It cannot be guarded from inside a single run, because the mutation is the
+# very statement that reports the result. So re-run the whole suite in a child
+# with one failure forced, and require the CHILD to exit nonzero. Under the
+# mutation the child exits 0 and this fires. The child does not recurse: the
+# variable that forces its failure also suppresses this block.
+if [ -z "${GATE_SUITE_FORCE_FAILURE:-}" ]; then
+    if GATE_SUITE_FORCE_FAILURE=1 "$0" > /dev/null 2>&1; then
+        echo "FATAL: a forced failure still exited 0 — the suite cannot report a regression to CI" >&2
+        exit 1
+    fi
 fi
 
 echo

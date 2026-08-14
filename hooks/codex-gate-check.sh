@@ -264,12 +264,39 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 # produced both a fail-open (the escape can sit anywhere in the basename) and a
 # false positive (`\\git` is a command named `\git`, not git) in consecutive
 # rounds. Doing what the shell does closes the whole class in one rule.
-# Alphanumerics only: an escaped SPACE must stay escaped or the word splits.
+# The class is deliberately narrow, and each exclusion is load-bearing:
+#   - no SPACE: unescaping it would split the word, so an assignment prefix
+#     would stop being a prefix (`FOO=a\ b git commit`).
+#   - no `=`, `+` or `_`: unescaping any of them MANUFACTURES a GATE_ASSIGN
+#     prefix the shell never sees. `FOO\=1 git commit` runs nothing — the word
+#     is not NAME=VALUE, so it is looked up as a command.
+# THE ESCAPED-KEYWORD SHIELD, built rather than hand-written.
+#
+# An escape ANYWHERE in a reserved word stops bash recognising it as one:
+# `i\f`, `wh\ile` and `th\en` are all ordinary command names. Shielding only
+# the leading position missed seven of eight spellings.
+#
+# And the shield needs BOTH boundaries. With only a right boundary it matched
+# the `\do` inside `su\do`, which stopped that token normalising to the
+# enumerated `sudo` wrapper — a fail-OPEN I introduced, caught by the reviewer
+# running a PATH proxy for sudo. The left boundary is what keeps `su\do` a
+# wrapper spelling rather than a shielded keyword.
+GATE_KW_ALT=""
+for _kw in if elif while until "then" "do" "else" coproc; do
+    _i=0
+    while [ "$_i" -lt "${#_kw}" ]; do
+        _sp="${_kw:0:$_i}\\\\${_kw:$_i}"
+        GATE_KW_ALT="${GATE_KW_ALT:+$GATE_KW_ALT|}$_sp"
+        _i=$((_i + 1))
+    done
+done
+
+
 MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" \
     | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
              -e 's/\\[;&|(){}!]/E/g' \
-             -e 's/\\(if|elif|while|until|then|do|else|coproc)([^A-Za-z0-9_]|$)/K\1\2/g' \
-             -e 's/\\([A-Za-z0-9._/=+:,@%^~-])/\1/g' \
+             -e "s/(^|[[:space:];&|(){}!])(${GATE_KW_ALT})([^A-Za-z0-9_]|\$)/\\1K\\2\\3/g" \
+             -e 's/\\([A-Za-z0-9./:,@%^~-])/\1/g' \
              -e "s/$ESC_SENTINEL/\\\\\\\\/g")
 
 # #236(b): literal substring "git commit" misses git's own global-flag forms
