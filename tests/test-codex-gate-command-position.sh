@@ -304,9 +304,9 @@ run_row ""        inert "" 'echo \& git commit'
 run_row ""        inert "" 'echo \| git commit'
 # HEREDOCS ARE NOT MASKED — see the reverted-pass note in the hook. A heredoc
 # writing a script that contains the verb is blocked. It is a false POSITIVE and
-# it fails CLOSED; the masker that fixed it introduced five fail-opens and is
+# it fails CLOSED; the masker that fixed it introduced six fail-opens and is
 # reverted. These rows pin the fail-closed behaviour so the revert cannot be
-# undone silently, and Sol's five repros are pinned below as the reason.
+# undone silently, and Sol's six repros are pinned below as the reason.
 hd="cat > script.sh <<'EOF'
 git commit -m x
 EOF"
