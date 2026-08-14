@@ -256,9 +256,19 @@ MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
 # Same sentinel technique as the normalisation above: pair off `\\` first, so
 # only a backslash that genuinely escapes something is left to act on. Escaped
 # whitespace is deliberately untouched — `FOO=a\ b` is still one word.
+#
+# An escape before an ORDINARY character is then REMOVED, because that is what
+# bash does: `e\nv` is `env`, `git c\ommit` is `git commit`, `git --git-\dir`
+# is `git --git-dir`. Enumerating an optional escape between every letter of
+# every keyword instead is unwinnable — it was tried for `git` alone and
+# produced both a fail-open (the escape can sit anywhere in the basename) and a
+# false positive (`\\git` is a command named `\git`, not git) in consecutive
+# rounds. Doing what the shell does closes the whole class in one rule.
+# Alphanumerics only: an escaped SPACE must stay escaped or the word splits.
 MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" \
     | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
              -e 's/\\[;&|(){}!]/E/g' \
+             -e 's/\\([A-Za-z0-9])/\1/g' \
              -e "s/$ESC_SENTINEL/\\\\\\\\/g")
 
 # #236(b): literal substring "git commit" misses git's own global-flag forms
@@ -465,7 +475,7 @@ GATE_WRAPPER="(${GATE_BUILTIN}|\\\\?${GATE_EXTERNAL})"
 # separated form broke the chain: `git --git-dir .git commit` is an ordinary
 # invocation. The separated alternative is listed first so it wins the match.
 GATE_GIT_LONGVAL='--(git-dir|work-tree|namespace|exec-path|config-env|super-prefix)'
-GATE_GIT="\\\\?(${GATE_WORD}*/)?\\\\?g\\\\?i\\\\?t(\\s+(${GATE_GIT_LONGVAL}\\s+${GATE_WORD}+|-C\\s+${GATE_WORD}+|-c\\s+${GATE_WORD}+|--${GATE_WORD}+|-[A-Za-z]))*\\s+commit\\b"
+GATE_GIT="(${GATE_WORD}*/)?git(\\s+(${GATE_GIT_LONGVAL}\\s+${GATE_WORD}+|-C\\s+${GATE_WORD}+|-c\\s+${GATE_WORD}+|--${GATE_WORD}+|-[A-Za-z]))*\\s+commit\\b"
 GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
 # The skip stops at a REAL separator only. `\;` is word content, not a boundary,
 # and neither is the `&` or `|` inside a redirection operator — `env 2>&1 git

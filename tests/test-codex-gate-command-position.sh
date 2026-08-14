@@ -204,8 +204,8 @@ run_row() {
 # It must list EVERY helper. An earlier version named only three, and Sol
 # measured the gap: moving `run_row` below its calls exited 0 at 30/0 despite
 # 131 "command not found" errors, and moving `oracle_can_measure` below its
-# calls exited 0 at a green 161/0 while every ordinary row silently degraded
-# from oracle-measured to declared. A guard whose comment claims more than it
+# calls exited 0 at a green 161/0 while every ordinary run_row row silently
+# degraded from oracle-measured to declared. A guard whose comment claims more than it
 # checks is the same vacuous-proof class it exists to catch.
 for _h in pass fail oracle gate oracle_can_measure run_row limit_row; do
     if [ "$(type -t "$_h" 2>/dev/null)" != "function" ]; then
@@ -222,6 +222,24 @@ done
 # macOS (two timeout, stdbuf, sudo, /usr/bin/git); the floor is set well below
 # the real count so it catches collapse, not drift.
 ORACLE_ROWS=0
+
+# THE FAILURE-SINK CANARY, and the fourth distinct route to
+# green-while-measuring-nothing. The three guards above prove the helpers exist,
+# that rows reach the oracle, and that the oracle's result drives the assertion.
+# None of them proves that `fail` actually FAILS. Sol neutered it to `fail() { :; }`
+# alongside a revert of the six-case escape fix: the suite reported
+# `165 passed, 0 failed (136 run_row rows oracle-measured)` and exited 0 while
+# six real regressions vanished. Every other guard stayed satisfied.
+#
+# So call `fail` for real, once, and require the counter to move. Uses `exit 1`
+# directly rather than `fail` itself, because the thing under test is `fail`.
+_fail_before=$FAIL
+fail "canary: this failure is expected and is immediately retracted" > /dev/null
+if [ "$FAIL" -ne $((_fail_before + 1)) ]; then
+    echo "FATAL: fail() did not record a failure — the suite cannot report a regression" >&2
+    exit 1
+fi
+FAIL=$_fail_before
 
 echo "=== #588: gate agrees with the shell about what invokes git commit ==="
 
@@ -557,6 +575,21 @@ run_row ""        INVOKES "" 'command ./\git commit -m x'
 run_row ""        INVOKES "" './g\it commit -m x'
 run_row ""        INVOKES "" './gi\t commit -m x'
 run_row ""        INVOKES "" 'g\it commit -m x'
+# FIFTEENTH: the per-letter escape fix introduced a FALSE POSITIVE. `\\git` is
+# a command named `\git`, not git, and does not invoke. Fixed by dropping the
+# leading optional escape, which the upstream unescape below made redundant.
+run_row ""        inert "" '\\git commit -m x'
+# THE WHOLE ESCAPE CLASS, closed by one rule rather than per-keyword patches: an
+# escape before an ordinary character is REMOVED, because that is what bash
+# does. Three of these were regressions against the PR base, two pre-existing.
+run_row ""        INVOKES "" 'git c\ommit -m x'
+run_row ""        INVOKES "" 'e\nv git commit -m x'
+run_row ""        INVOKES "" 'builtin c\ommand git commit -m x'
+run_row ""        INVOKES "" 'git -\c user.name=A commit -m x'
+run_row ""        INVOKES "" 'git --git-\dir .git commit -m x'
+# ...but an escaped SPACE must NOT be unescaped, or the word would split and the
+# assignment would stop being a prefix. Alphanumerics only.
+run_row ""        INVOKES "" 'FOO=a\ b git commit -m x'
 
 echo "--- GATE_WORD consumers pinned BEHAVIOURALLY (Sol round 16) ---"
 # The self-hunt below probed shapes; it did not prove that each SITE uses the
@@ -777,7 +810,7 @@ for k in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
 done
 
 # The oracle-collapse guard. If `oracle_can_measure` is neutered rather than
-# moved, every row falls back to `declared` and the suite stays green while
+# moved, every run_row row falls back to `declared` and the suite stays green while
 # measuring nothing. The floor is deliberately far below the real count — it is
 # here to catch collapse, not to track drift.
 ORACLE_FLOOR=100
