@@ -49,7 +49,7 @@ Triage: **31 open → 22, unmilestoned 12 → 0.** Closed with reasons on each i
 
 Row 485 is **superseded by #511 and #517** — do not action it. Analysis lives on the issues, not here: #513 (the embedded install path), #482 (why this file stops being a store), #489 (byte ceiling).
 
-**Last release: v1.97.0, 2026-08-10** (`agentic-sdlc-wizard`). Deletes the Cowork
+**Last release: v1.98.0, 2026-08-15** (`agentic-sdlc-wizard`). Deletes the Cowork
 `UserPromptSubmit` prompt classifier, which denied the maintainer's own instructions twice — the
 second time after a repair that a passing test had pinned. Scopes TDD RED to where a RED mutation
 is writable, with the three-way call (EVAL it / plain-assert it / don't test it), after six guards
@@ -143,7 +143,7 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 
 | Project | Repo | Status |
 |---------|------|--------|
-| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.97.0 (living tracker — bump every release) |
+| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.98.0 (living tracker — bump every release) |
 | Codex SDLC Adapter | BaseInfinity/codex-sdlc-wizard | v0.7.x, shipped with SDLC workflow |
 | GDLC Wizard (games sibling) | BaseInfinity/claude-gdlc-wizard | v0.2.x, persona-driven playtest cycles |
 | _(add as projects are marked)_ | | |

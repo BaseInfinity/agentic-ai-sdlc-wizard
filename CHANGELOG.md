@@ -4,6 +4,67 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.98.0] - 2026-08-15
+
+### The review loop can now end, and a review leg can no longer silently fail to happen
+
+Everything in v1.97.0 and earlier assumed a review round would terminate on judgement. Six
+review rounds on one 30-line documentation change said otherwise. This release makes the
+loop's exit condition explicit and makes the mechanics of launching a review leg something
+the harness enforces rather than something a driver remembers.
+
+### Added
+
+- **A termination condition for the review loop** (#606). You are done when a fresh blind
+  round returns zero unresolved findings against the *requested behaviours* — not merely
+  "nothing new". After the budgeted passes, the loop continues only when the immediately
+  preceding completed pass recorded an open P0/P1 showing a requested behaviour is currently
+  wrong, or the first verification-evidence invalidation in this root task. A later
+  evidence-only finding is filed, not spent on another pass.
+
+- **A gate lane that refuses a hand-typed review leg** (#610), in the shipped
+  `hooks/codex-gate-check.sh`. `codex exec` reads stdin to EOF and appends it to the prompt,
+  so a leg handed an unclosed pipe blocks *before contacting the model* — indefinitely. Two
+  legs were waited on for 51 and 28 minutes against processes that had never started.
+
+  **The launcher this lane names is NOT in the npm package.** `scripts/` is not in
+  `package.json`'s `files`, so consumers receive the refusal without the
+  `scripts/run-review-leg.sh` it points them at. That is #594, it is open, and it is not
+  fixed here. Verified with `npm pack --dry-run`: zero files under `scripts/`.
+
+- **The review contract as one prose batch** (#558, #557, #573, #574, #564, #556): a severity
+  scale, what actually blocks a merge, reviewers reconciling with each other verbatim rather
+  than through the driver, and the post-review confidence percentages cut for carrying no
+  signal.
+
+- **Falsify-before-review is an executable step** (#596), not advice.
+
+### Fixed — three defects in the commit gate
+
+Two refused legitimate work; one failed open. Those are opposite failures and are not
+described here as if they were the same one.
+
+- **Refused work: the gate matched `git commit` in unquoted prose** (#588). It now fires on
+  command position. A commit whose *message* mentions the phrase is still refused — that is
+  #600, and it is open.
+- **Refused work: the review gate made the review protocol uncommittable** (#533) — the rule
+  and the mechanism enforcing it could not coexist.
+- **Failed open: a JSON-escaped newline hid an invocation** (#581). A command split by an
+  escaped newline walked past the gate entirely. The opposite failure to the two above, and
+  the more dangerous one, because nothing surfaced it.
+
+### Not in this release, stated because the shipped gate references it
+
+`scripts/run-review-leg.sh` and the CI-status preflight it carries (#590, #613) are
+repo-internal: they are why this project's own review legs no longer hang, and consumers do
+not receive them. #594 tracks shipping the launcher.
+
+### Changed
+
+- The plugin update path is scoped by surface, and the command that reports success without
+  moving a version is named as such (#572).
+
+
 ## [1.97.0] - 2026-08-10
 
 ### Removed — a hook that denied its own maintainer, twice
