@@ -120,6 +120,9 @@ jobs:
       - name: Run review-leg launcher requirement tests (#590)
         run: ./tests/test-review-leg-launcher-required.sh
 
+      - name: Run clearance-binds-to-tree tests (#540)
+        run: ./tests/test-clearance-binds-to-tree.sh
+
       - name: Run hook stdin boundedness tests (#491 Class 2)
         run: ./tests/test-hook-stdin-bounded.sh
 

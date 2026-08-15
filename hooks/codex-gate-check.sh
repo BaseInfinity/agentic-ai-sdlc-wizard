@@ -644,23 +644,105 @@ STATUS=$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$REVIEW_FILE" \
 
 case "$STATUS" in
     CERTIFIED|REVIEWED)
-        # #437: a CERTIFIED/REVIEWED status string alone doesn't mean the
-        # certification is still current — commits made after it was issued
-        # would otherwise sail through on the same stale status forever.
-        # commit_sha records HEAD at cert time; a mismatch (or a missing
-        # field, e.g. an old-format handoff.json predating this fix) means
-        # new commits landed since certification, so treat it as stale. This
-        # allows exactly one commit after certification (HEAD still equals
-        # the recorded SHA at that commit's PreToolUse check) and blocks the
-        # next one until re-cert. No legacy-compat fallback for missing SHA.
-        COMMIT_SHA=$(grep -o '"commit_sha"[[:space:]]*:[[:space:]]*"[^"]*"' "$REVIEW_FILE" \
+        # #540: staleness keys on the CONTENT certified, never on a SHA.
+        #
+        # THE HOLE THIS REPLACES. The old key was `commit_sha == HEAD`.
+        # PreToolUse runs BEFORE the commit, so at check time HEAD is still
+        # the certified commit and the gate allows — then the commit lands
+        # carrying whatever is in the index, reviewed or not. The resulting
+        # commit was by construction never the one that was reviewed. That is
+        # REVIEW UNIT being unenforceable by the mechanism meant to enforce
+        # it. Found by Sol at file:line; Fable withdrew its own recommendation
+        # to extend this gate once shown the counter-example.
+        #
+        # It also taxed every commit with a re-pin call — ~10 wasted tool
+        # calls in one measured PR cycle — to protect nothing a content pin
+        # does not.
+        #
+        # WHY TREE IDENTITY AND NOT patch-id. An earlier ruling chose
+        # `git patch-id --stable`; both advisors amended it after measuring
+        # two failures. Two diffs differing only in the indentation of an
+        # added Python line produce the IDENTICAL patch-id — it ignores
+        # whitespace by design, and whitespace is semantic in Python, YAML,
+        # Makefiles and string literals. And at the merge boundary the thing
+        # merged is the resulting TREE, not the diff, so a rebase onto moved
+        # upstream keeps patch-id identical while producing content nobody
+        # read. The goal was amended too, not just the primitive:
+        # certification must not automatically survive a changed base.
+        #
+        # WHAT STAYS FREE. Message-only amend, squash and reorder with no
+        # upstream movement all produce the same tree, so certification
+        # survives them at zero cost. Only a change in content invalidates.
+        CANDIDATE_TREE=$(grep -o '"candidate_tree"[[:space:]]*:[[:space:]]*"[^"]*"' "$REVIEW_FILE" \
             | head -1 \
-            | sed 's/.*"commit_sha"[[:space:]]*:[[:space:]]*"//; s/"$//')
-        CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null) || CURRENT_HEAD=""
-        if [ -z "$COMMIT_SHA" ] || [ "$COMMIT_SHA" != "$CURRENT_HEAD" ]; then
-            echo "CROSS-MODEL REVIEW REQUIRED: .reviews/handoff.json certification is stale (commit_sha does not match current HEAD — new commits landed since certification). Re-run Codex cross-model review. $BYPASS_NOTE" >&2
+            | sed 's/.*"candidate_tree"[[:space:]]*:[[:space:]]*"//; s/"$//')
+
+        # Fail closed on an artifact that declares no content, including the
+        # pre-#540 format that carried only commit_sha. Same posture #437 took
+        # for a missing commit_sha and #533 for a missing branch: no
+        # legacy-compat fallback, because a fallback here is the hole reopened
+        # under an older key.
+        if [ -z "$CANDIDATE_TREE" ]; then
+            echo "CROSS-MODEL REVIEW REQUIRED: .reviews/handoff.json is $STATUS but declares no 'candidate_tree'. A certification names the content it was issued over — record it with: git write-tree. $BYPASS_NOTE" >&2
             exit 2
         fi
+
+        # FROZEN INDEX, and this is what makes flag parsing unnecessary.
+        #
+        # `git commit -a` sweeps unstaged tracked changes into the commit, so
+        # with a dirty tracked worktree the committed tree is not the index's
+        # and no pre-commit check of the index can speak for it. The fix is
+        # NOT to look for `-a` on the command line: modelling git's option
+        # grammar in a regex is the #610 trap, where rounds 1-3 scored 3, 6,
+        # 4 — falling, the non-convergence signature — doing exactly that,
+        # and round 4 deleted all of it.
+        #
+        # Requiring a clean tracked worktree dissolves the case instead: with
+        # nothing unstaged, `git commit` and `git commit -a` commit the same
+        # tree, and the index speaks for both. Untracked files are NOT
+        # examined — they are not in the index and `-a` does not add them.
+        if ! git diff --quiet --ignore-submodules -- 2>/dev/null; then
+            echo "CROSS-MODEL REVIEW REQUIRED: tracked files differ between the working tree and the index, so the tree that would be committed is not the one certified (git commit -a would sweep them in). Stage or revert them, then commit. $BYPASS_NOTE" >&2
+            exit 2
+        fi
+
+        # The index IS the candidate: PreToolUse runs before the commit, so
+        # `git write-tree` is exactly the tree the commit is about to carry.
+        # It fails on an unmerged index, and that failure is left to fail
+        # closed — a conflicted tree is not a reviewed tree.
+        INDEX_TREE=$(git write-tree 2>/dev/null) || INDEX_TREE=""
+        if [ -z "$INDEX_TREE" ] || [ "$INDEX_TREE" != "$CANDIDATE_TREE" ]; then
+            echo "CROSS-MODEL REVIEW REQUIRED: the staged content is not what was certified (index tree ${INDEX_TREE:-unreadable}, certified candidate_tree $CANDIDATE_TREE). A certification authorizes the content it was issued over, not the next commit on the branch. Re-run cross-model review on the current content. $BYPASS_NOTE" >&2
+            exit 2
+        fi
+
+        # base_tree is deliberately NOT checked here. At the commit boundary
+        # "the base" is not observable without knowing the commit's kind — it
+        # is HEAD for a normal commit and HEAD^ for an amend — and telling
+        # those apart means reading `--amend` off the command line, which is
+        # the option-grammar trap again.
+        #
+        # An earlier version of this comment justified the deferral by claiming
+        # a rebase onto moved upstream always CHANGES the index tree, so the
+        # check above already refuses it. Sol falsified that in round 1 of #628
+        # with a running counter-example: when upstream independently produces
+        # the candidate's final content, the rebase drops the now-redundant
+        # branch change and the index tree is unchanged. `base_moved hook=0
+        # candidate_same=yes base_changed=yes`. The claim is false and is not
+        # repeated here.
+        #
+        # The deferral still holds, but for the narrower reason that survives:
+        # PreToolUse cannot observe post-command state, so the hook was never
+        # able to close this alone, and the base ref is only well-defined at
+        # the merge boundary. That makes `scripts/merge-pr.sh` the sole
+        # enforcement point for base_tree.
+        #
+        # An earlier version of this sentence said that boundary reads the base
+        # from the PR's `baseRefOid`. It did, and that was the round-2 defect:
+        # `baseRefOid` is the base commit ASSOCIATED WITH THE PR, a snapshot
+        # that does not move when the branch does (measured — PR #615 carried
+        # f8ba12b while main was at d0e1c7b). It now asks the server for the
+        # branch tip directly and fails closed when it cannot.
         exit 0
         ;;
     PENDING_RECHECK)
