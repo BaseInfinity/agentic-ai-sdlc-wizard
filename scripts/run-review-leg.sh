@@ -64,6 +64,76 @@ shift
 
 : > "$OUTPUT"
 
+# ---------------------------------------------------------------------------
+# THE BUILD GOES IN FRONT OF THE REVIEWER (#613)
+#
+# PR #610 ran EIGHT review rounds with two independent reviewers while CI
+# `validate` was red the entire time. Both reviewers ran the test suites
+# directly and correctly reported them green — the guard that was failing was
+# one nobody was asked about, and the merge gate is what finally caught it.
+# That is a gate step discovered mid-merge, which #593 Rung 1's stop condition
+# names as a failure in so many words.
+#
+# Both reviewers then prescribed the same fix independently, and it is not more
+# diff scrutiny: "Seven rounds audited the diff; zero audited the build."
+#
+# So the build is stated where the reviewer reads, BEFORE the model's own
+# output. This is preflight, never a gate: a red build is REPORTED and the leg
+# proceeds. Deliberately so — a leg must stay launchable against known-red CI
+# when that is the point, and a preflight that can refuse to launch is a second
+# way for a review to not happen, which is the failure #590 exists to prevent.
+#
+# Every failure mode of the probe is absorbed. No `gh`, no auth, no network, no
+# PR for this branch: each records "unknown" and the review runs. `< /dev/null`
+# for the same reason it is on the exec line below, and a timeout because a
+# preflight that can hang has reintroduced #590 in the one place nobody would
+# look for it.
+{
+    echo "## CI STATUS (preflight, #613)"
+    echo
+    # `timeout` is GNU coreutils and is NOT on a stock macOS — this repo's
+    # primary machine has neither `timeout` nor `gtimeout`. Hardcoding it makes
+    # the probe report UNKNOWN forever on the maintainer's own laptop, silently,
+    # which is the failure mode this whole issue is about. Caught by the suite,
+    # not by review. So it is used when present and skipped when not: gh carries
+    # its own network timeouts, and the leg is background work whose status the
+    # caller already owns.
+    if command -v timeout > /dev/null 2>&1; then
+        CI_TIMEOUT="timeout 30"
+    elif command -v gtimeout > /dev/null 2>&1; then
+        CI_TIMEOUT="gtimeout 30"
+    else
+        CI_TIMEOUT=""
+    fi
+    # shellcheck disable=SC2086  # unquoted on purpose: empty means "no wrapper"
+    if CI_OUT=$($CI_TIMEOUT gh pr checks --required 2>&1 < /dev/null); then
+        echo "All required checks reported passing:"
+        echo
+        echo '```'
+        echo "$CI_OUT"
+        echo '```'
+    else
+        CI_RC=$?
+        if [ -n "$CI_OUT" ]; then
+            echo "NOT GREEN, or not determinable (gh exit $CI_RC). Raw output:"
+            echo
+            echo '```'
+            echo "$CI_OUT"
+            echo '```'
+        else
+            echo "UNKNOWN — \`gh pr checks\` produced nothing (exit $CI_RC)."
+            echo "No PR for this branch, no auth, no network, or gh unavailable."
+        fi
+    fi
+    echo
+    echo "**A certification verdict issued over a build that is not green, or"
+    echo "not determinable, is only valid if it says so and says why.** The"
+    echo "build is an input to your verdict, not background noise."
+    echo
+    echo "---"
+    echo
+} >> "$OUTPUT" 2>&1
+
 # `< /dev/null` is the whole prevention: the child gets EOF immediately and
 # proceeds to the model. Keep it on this line — it is not incidental.
 #

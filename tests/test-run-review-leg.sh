@@ -165,6 +165,94 @@ rc=$?
 set -e
 check_rc "an output file with no prompt is a usage error, exit 64" 64 "$rc"
 
+# ---------------------------------------------------------------------------
+# 7. CI STATUS IS AN INPUT TO THE REVIEW (#613).
+#
+# PR #610 ran eight review rounds with two independent reviewers while CI
+# `validate` was RED the whole time. Both reviewers ran the suites directly and
+# correctly reported them green; the failing guard was one nobody was asked
+# about. The merge gate caught it, which is a gate step discovered mid-merge —
+# a violation of #593 Rung 1's own stop condition.
+#
+# Both reviewers independently prescribed the same fix: put the build in front
+# of the reviewer, rather than asking for more diff scrutiny. "Seven rounds
+# audited the diff; zero audited the build — that is the whole fix."
+#
+# The stub `gh` mirrors codex's: it must also read stdin to EOF when asked, so
+# a probe that fails to supply EOF hangs here rather than passing quietly. A
+# launcher that can hang on its own preflight has reintroduced #590.
+cat > "$STUBDIR/gh" <<'STUB'
+#!/bin/bash
+if [ -n "$GH_STUB_READ_STDIN" ]; then
+    cat > /dev/null
+fi
+printf '%s' "${GH_STUB_STDOUT:-}"
+exit "${GH_STUB_EXIT:-0}"
+STUB
+chmod +x "$STUBDIR/gh"
+
+out=$(new_leg)
+set +e
+GH_STUB_STDOUT='validate	fail	1m	https://example/run' GH_STUB_EXIT=1 \
+GH_STUB_READ_STDIN=1 \
+STUB_STDOUT='VERDICT: CERTIFIED' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "a red build does not fail the leg — it is reported, not fatal" 0 "$rc"
+
+if grep -qiE 'CI STATUS' "$out"; then
+    pass "the leg's output carries a CI STATUS block"
+else
+    fail "no CI STATUS block in the leg output — the reviewer cannot see the build"
+fi
+
+if grep -qF 'validate' "$out"; then
+    pass "the failing check's name reaches the reviewer"
+else
+    fail "the failing check's name is absent from the leg output"
+fi
+
+# The block must precede the model's own output, or a reviewer reading top-down
+# forms its verdict before it ever sees the build.
+if [ "$(grep -n 'CI STATUS' "$out" | head -1 | cut -d: -f1)" -lt \
+     "$(grep -n 'VERDICT' "$out" | head -1 | cut -d: -f1)" ]; then
+    pass "the CI STATUS block precedes the model's output"
+else
+    fail "the CI STATUS block does not precede the model's output"
+fi
+
+# ---------------------------------------------------------------------------
+# 8. An unavailable `gh` must not take the leg down with it. The probe is
+# preflight, not the payload: no PR, no auth, no network, and the review still
+# runs — with the fact recorded rather than silently omitted.
+out=$(new_leg)
+set +e
+GH_STUB_STDOUT='' GH_STUB_EXIT=127 \
+STUB_STDOUT='VERDICT: CERTIFIED' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "an unavailable gh does not fail the leg" 0 "$rc"
+
+if grep -qiE 'CI STATUS' "$out"; then
+    pass "an unavailable gh still records a CI STATUS block"
+else
+    fail "an unavailable gh left no CI STATUS block — silently omitted"
+fi
+
+# ---------------------------------------------------------------------------
+# 9. The codex exit status still governs, with the probe in front of it. If the
+# preflight could mask the verdict, #590's whole mechanism is gone.
+out=$(new_leg)
+set +e
+GH_STUB_STDOUT='validate	pass	1m	url' GH_STUB_EXIT=0 \
+STUB_STDOUT='boom' STUB_EXIT=7 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "the leg's exit status still governs, probe notwithstanding" 7 "$rc"
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASS"
