@@ -186,6 +186,12 @@ cat > "$STUBDIR/gh" <<'STUB'
 if [ -n "$GH_STUB_READ_STDIN" ]; then
     cat > /dev/null
 fi
+# GH_STUB_SLEEP: never return. A stalled network call, which is what gh does
+# on a hung request — it sets NO overall HTTP timeout (verified against
+# cli/cli v2.92 api/http_client.go and go-gh v2.13 client_options.go).
+if [ -n "${GH_STUB_SLEEP:-}" ]; then
+    sleep "$GH_STUB_SLEEP"
+fi
 printf '%s' "${GH_STUB_STDOUT:-}"
 exit "${GH_STUB_EXIT:-0}"
 STUB
@@ -252,6 +258,50 @@ STUB_STDOUT='boom' STUB_EXIT=7 \
 rc=$?
 set -e
 check_rc "the leg's exit status still governs, probe notwithstanding" 7 "$rc"
+
+# ---------------------------------------------------------------------------
+# 10. A STALLED PROBE MUST NOT HANG THE LEG.
+#
+# The first version of the CI probe fell back to a bare `gh pr checks` when
+# neither `timeout` nor `gtimeout` was present — which is the case on stock
+# macOS, including this repo's own machine — and justified it with "gh carries
+# its own network timeouts."
+#
+# That was an unverified claim and it is FALSE. gh 2.92 configures no overall
+# HTTP timeout (cli/cli api/http_client.go, go-gh pkg/api/client_options.go).
+# A stalled request would therefore block before `exec codex` ever ran: #590,
+# the exact failure the launcher exists to prevent, reintroduced by the fix
+# for #613 and hidden because the stub always exited.
+#
+# So the deadline is the launcher's own, enforced with nothing but bash.
+out=$(new_leg)
+start=$(date +%s)
+set +e
+GH_STUB_SLEEP=120 SDLC_CI_PROBE_TIMEOUT=2 \
+STUB_STDOUT='VERDICT: CERTIFIED' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+elapsed=$(( $(date +%s) - start ))
+check_rc "a stalled CI probe does not fail the leg" 0 "$rc"
+
+if [ "$elapsed" -lt 30 ]; then
+    pass "the stalled probe is abandoned on a deadline (${elapsed}s), not waited on"
+else
+    fail "the leg took ${elapsed}s — the probe was waited on, which is #590 all over again"
+fi
+
+if grep -qF 'VERDICT: CERTIFIED' "$out"; then
+    pass "the review still ran after the probe was abandoned"
+else
+    fail "the review never ran — the probe blocked it"
+fi
+
+if grep -qiE 'UNKNOWN|timed out|deadline' "$out"; then
+    pass "the abandoned probe is recorded, not silently omitted"
+else
+    fail "the probe timed out silently — a reviewer cannot tell the build was never checked"
+fi
 
 echo ""
 echo "=== Results ==="

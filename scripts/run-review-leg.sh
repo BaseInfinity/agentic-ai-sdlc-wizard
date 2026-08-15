@@ -91,29 +91,67 @@ shift
 {
     echo "## CI STATUS (preflight, #613)"
     echo
-    # `timeout` is GNU coreutils and is NOT on a stock macOS — this repo's
-    # primary machine has neither `timeout` nor `gtimeout`. Hardcoding it makes
-    # the probe report UNKNOWN forever on the maintainer's own laptop, silently,
-    # which is the failure mode this whole issue is about. Caught by the suite,
-    # not by review. So it is used when present and skipped when not: gh carries
-    # its own network timeouts, and the leg is background work whose status the
-    # caller already owns.
-    if command -v timeout > /dev/null 2>&1; then
-        CI_TIMEOUT="timeout 30"
-    elif command -v gtimeout > /dev/null 2>&1; then
-        CI_TIMEOUT="gtimeout 30"
+    # THE DEADLINE IS THIS SCRIPT'S OWN, and it depends on nothing.
+    #
+    # The first version reached for `timeout`, then fell back to running `gh`
+    # bare when neither `timeout` nor `gtimeout` was present — which is stock
+    # macOS, including this repo's own machine — on the reasoning that "gh
+    # carries its own network timeouts."
+    #
+    # That was an unverified claim and it is FALSE: gh 2.92 configures no
+    # overall HTTP timeout (cli/cli api/http_client.go, go-gh
+    # pkg/api/client_options.go). A stalled request would block here forever,
+    # before `exec codex` ever ran — #590, the precise failure this launcher
+    # exists to prevent, reintroduced by the preflight added to prevent a
+    # different one. The suite missed it because its stub always exited.
+    #
+    # So: no external timeout binary, and no trust in the child's own limits.
+    # The probe runs in the background writing its exit status to a marker
+    # file, and this loop waits a bounded number of seconds for that marker.
+    #
+    # A marker file rather than `kill -0` on the pid: a background job of this
+    # shell stays a zombie until it is waited on, so `kill -0` reports it alive
+    # after it has finished and the loop would never exit early. `wait -n`
+    # would do it but needs bash 4, and macOS ships bash 3.2.
+    CI_PROBE_TIMEOUT="${SDLC_CI_PROBE_TIMEOUT:-30}"
+    CI_RAW="${TMPDIR:-/tmp}/sdlc-ci-probe.$$.out"
+    CI_DONE="${TMPDIR:-/tmp}/sdlc-ci-probe.$$.done"
+    rm -f "$CI_RAW" "$CI_DONE"
+    # `set +e` inside the subshell is load-bearing: this script runs under
+    # `set -e`, and a non-zero `gh` (which is exactly what a RED build is)
+    # would otherwise kill the subshell before it wrote its marker. The probe
+    # would then look stalled and burn the full deadline on every red build —
+    # reporting "abandoned" for the one case it most needs to report. Caught by
+    # the suite's red-build row regressing, not by reading this back.
+    ( set +e; gh pr checks --required > "$CI_RAW" 2>&1 < /dev/null; echo $? > "$CI_DONE" ) &
+    CI_PROBE_PID=$!
+    CI_WAITED=0
+    while [ ! -f "$CI_DONE" ] && [ "$CI_WAITED" -lt "$CI_PROBE_TIMEOUT" ]; do
+        sleep 1
+        CI_WAITED=$((CI_WAITED + 1))
+    done
+    if [ -f "$CI_DONE" ]; then
+        CI_RC=$(cat "$CI_DONE")
+        CI_OUT=$(cat "$CI_RAW" 2>/dev/null || true)
     else
-        CI_TIMEOUT=""
+        # Abandoned, not awaited. The orphaned gh writes to a temp file nobody
+        # reads and exits on its own; the review is what matters.
+        kill "$CI_PROBE_PID" 2>/dev/null || true
+        CI_RC=124
+        CI_OUT=""
+        CI_TIMED_OUT=1
     fi
-    # shellcheck disable=SC2086  # unquoted on purpose: empty means "no wrapper"
-    if CI_OUT=$($CI_TIMEOUT gh pr checks --required 2>&1 < /dev/null); then
+    rm -f "$CI_RAW" "$CI_DONE"
+    if [ "${CI_TIMED_OUT:-0}" = "1" ]; then
+        echo "UNKNOWN — the check probe did not return within ${CI_PROBE_TIMEOUT}s and was abandoned."
+        echo "The build was NOT verified. Treat it as undetermined, not as green."
+    elif [ "$CI_RC" = "0" ]; then
         echo "All required checks reported passing:"
         echo
         echo '```'
         echo "$CI_OUT"
         echo '```'
     else
-        CI_RC=$?
         if [ -n "$CI_OUT" ]; then
             echo "NOT GREEN, or not determinable (gh exit $CI_RC). Raw output:"
             echo
