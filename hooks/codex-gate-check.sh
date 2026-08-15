@@ -516,6 +516,45 @@ GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
 # independently by the `&` anchor either way). GATE_WORD is interpolated here
 # rather than re-inlined, so the six sites cannot drift apart.
 GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
+# --- A REVIEW LEG MUST RUN THROUGH ITS LAUNCHER (#590 completion) -----------
+#
+# This lane sits ABOVE the git-commit detector because that detector exits 0
+# on any command it does not recognise, and `codex exec` is one of them.
+#
+# `scripts/run-review-leg.sh` has prevented the codex stdin hang since #590
+# closed, and its own header says a leg typed outside it "has no owner and no
+# status". On 2026-08-14 two legs for PR #606 were typed by hand anyway, in a
+# session that had read that header: one hung at 39 bytes with no
+# `< /dev/null` (the exact signature #590 was closed on) and one exhausted its
+# budget with no verdict. Written knowledge that is not applied is what this
+# closes; the repo's answer to that has historically been to write it down
+# again, and PR #606 is a seven-round demonstration of why that fails.
+#
+# The predicate is deliberately the smallest one that catches the accident:
+# `codex` in command position followed by `exec`, allowed if the command names
+# the launcher. It reuses this gate's existing anchoring rather than adding a
+# second notion of command position, so the two cannot drift — and it reads
+# MASKED_COMMAND, so a quoted mention (`grep "codex exec" docs`) is already a Q
+# by the time it gets here and cannot false-fire. That is the #588 defect class
+# and it is not being repeated.
+#
+# NOT A SECURITY BOUNDARY, and the distinction is the one #479's ROADMAP note
+# records about the merge gate: this sees commands issued through the Claude
+# Code Bash tool. A leg launched from a terminal never meets it. It is an
+# accident-catcher for the path where the accident actually happened.
+GATE_CODEX="(${GATE_WORD}*/)?codex\\s+(${GATE_WORD}+\\s+)*exec\\b"
+if printf '%s' "$MASKED_COMMAND" | grep -qE \
+    "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+${GATE_SKIP})*${GATE_CODEX}"; then
+    # Read the RAW command for the launcher: masking collapses quoted text, and
+    # the launcher's path can legitimately appear in a quoted argument.
+    if ! printf '%s' "$COMMAND_VALUE" | grep -q 'run-review-leg\.sh'; then
+        echo "CROSS-MODEL REVIEW GATE: run the review leg through scripts/run-review-leg.sh, not 'codex exec' directly." >&2
+        echo "  scripts/run-review-leg.sh OUTPUT_FILE PROMPT [EXTRA_CODEX_ARGS...]" >&2
+        echo "The launcher gives the child /dev/null on stdin whatever the caller inherited, and its own exit status IS the leg's verdict — 0 completed, non-zero failed, nothing by your deadline means inspect and relaunch. A leg typed by hand has no owner and no status: its fate is unknown immediately, and by wall clock a hang is identical to a slow review. Measured 2026-08-14 on PR #606: one hand-typed leg hung at 39 bytes, a second returned no verdict. $BYPASS_NOTE" >&2
+        exit 2
+    fi
+fi
+
 if ! printf '%s' "$MASKED_COMMAND" | grep -qE \
     "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+${GATE_SKIP})*${GATE_GIT}"; then
     exit 0

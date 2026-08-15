@@ -117,6 +117,9 @@ jobs:
       - name: Run codex-gate command-position tests (#588)
         run: ./tests/test-codex-gate-command-position.sh
 
+      - name: Run review-leg launcher requirement tests (#590)
+        run: ./tests/test-review-leg-launcher-required.sh
+
       - name: Run hook stdin boundedness tests (#491 Class 2)
         run: ./tests/test-hook-stdin-bounded.sh
 
