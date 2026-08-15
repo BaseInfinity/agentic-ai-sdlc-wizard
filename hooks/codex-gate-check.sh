@@ -547,8 +547,15 @@ GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
 # the installed CLI; `ex` and `exe` do NOT resolve, so this is an alias list,
 # not prefix inference, and enumerating the two is exact rather than a guess.
 #
-# The subcommand must be a COMPLETE token: `exec-server` is a different
-# subcommand and the trailing class excludes the `-` that starts it.
+# The subcommand must be a COMPLETE token, and the boundary that proves it is a
+# SHELL token boundary — whitespace, a metacharacter that actually ends a
+# command, or end of line. Not "any non-word character", which is what round 4
+# found: `$`, `.` and `=` all CONTINUE a token, so `SUFFIX=-server; codex
+# exec$SUFFIX --help` runs `codex exec-server` and was refused. `exec-server` is
+# a different subcommand and `-` was already excluded; `$`, `.` and `=` are the
+# same case and are excluded the same way, by naming the boundary instead of
+# negating a word class.
+GATE_CODEX_END="([[:space:]]|[;&|)}<>]|\$)"
 #
 # NO OPTION MAY APPEAR BETWEEN `codex` AND THE SUBCOMMAND. That is a deliberate
 # accepted limit, and it is the design this lane arrived at rather than the one
@@ -576,7 +583,7 @@ GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
 # an option. Accepted and REPORTED rather than fixed — a missed leg is an
 # accident this lane did not catch; a false refusal blocks the maintainer's own
 # review. #601 is the precedent for a measured accepted limit.
-GATE_CODEX="(${GATE_WORD}*/)?\\\\?codex[[:space:]]+(exec|e)([^A-Za-z0-9_-]|\$)"
+GATE_CODEX="(${GATE_WORD}*/)?\\\\?codex[[:space:]]+(exec|e)${GATE_CODEX_END}"
 # Wrappers, but NOT the greedy GATE_SKIP the git lane uses. GATE_SKIP consumes
 # the wrapped command and restarts matching at its arguments, which turned
 # `env echo codex exec`, `env grep codex exec README.md` and

@@ -253,6 +253,31 @@ expect_allowed "ACCEPTED LIMIT: compact short value, approval flag" \
 expect_allowed "-i is variadic, so a following 'exec' is another operand" \
     'codex -i a exec --help'
 
+# --- round 4: the token boundary must be a SHELL boundary -------------------
+# The redesign scored 8/10 with one blocker. `[^A-Za-z0-9_-]` treats `$`, `.`
+# and `=` as ending the token, but all three CONTINUE it. The first row below
+# is the reviewer's: bash expands it to a valid `codex exec-server --help`.
+
+# shellcheck disable=SC2016  # the UNEXPANDED text is the input under test
+expect_allowed "an expansion continues the token — this runs codex exec-server" \
+    'SUFFIX=-server; codex exec$SUFFIX --help'
+
+expect_allowed "a dot continues the token" \
+    'codex exec.foo'
+
+expect_allowed "an equals continues the token" \
+    'codex exec=foo'
+
+# ...and the boundaries that ARE real must still catch a leg.
+expect_refused "end of line is a boundary" \
+    'codex exec'
+
+expect_refused "a redirection immediately after the subcommand is a boundary" \
+    'codex exec>out.md'
+
+expect_refused "a semicolon is a boundary" \
+    'codex e;true'
+
 # A boolean long option is an option like any other: it escapes.
 expect_allowed "ACCEPTED LIMIT: a boolean long option before the subcommand" \
     'codex --oss exec "review"'
