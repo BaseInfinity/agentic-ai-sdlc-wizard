@@ -66,6 +66,32 @@ printf '%s' "${STUB_STDOUT:-}"
 exit "${STUB_EXIT:-0}"
 STUB
 chmod +x "$STUBDIR/codex"
+# The `gh` stub is installed HERE, before the FIRST test, not beside the
+# tests that drive it. Installed later, every earlier test ran the launcher
+# against the REAL `gh` — live API calls from a unit suite, and a result
+# that depends on the network and on whether this branch has a PR. Review
+# caught it; the suite was non-hermetic for its first six tests.
+cat > "$STUBDIR/gh" <<'STUB'
+#!/bin/bash
+if [ -n "$GH_STUB_READ_STDIN" ]; then
+    cat > /dev/null
+fi
+# GH_STUB_SLEEP: never return. A stalled network call, which is what gh does
+# on a hung request — it sets NO overall HTTP timeout (verified against
+# cli/cli v2.92 api/http_client.go and go-gh v2.13 client_options.go).
+if [ -n "${GH_STUB_SLEEP:-}" ]; then
+    # Record our own pid so the test can prove we were actually killed, not
+    # merely abandoned. A launcher that walks away from a live process leaks
+    # it — reported by review after running the real fixture and finding both
+    # this stub and its `sleep` reparented to PID 1 and still running.
+    [ -n "${GH_STUB_PIDFILE:-}" ] && echo $$ > "$GH_STUB_PIDFILE"
+    sleep "$GH_STUB_SLEEP"
+fi
+printf '%s' "${GH_STUB_STDOUT:-}"
+exit "${GH_STUB_EXIT:-0}"
+STUB
+chmod +x "$STUBDIR/gh"
+
 export PATH="$STUBDIR:$PATH"
 export STUB_READ_STDIN=1
 
@@ -164,6 +190,162 @@ set +e
 rc=$?
 set -e
 check_rc "an output file with no prompt is a usage error, exit 64" 64 "$rc"
+
+# ---------------------------------------------------------------------------
+# 7. CI STATUS IS AN INPUT TO THE REVIEW (#613).
+#
+# PR #610 ran eight review rounds with two independent reviewers while CI
+# `validate` was RED the whole time. Both reviewers ran the suites directly and
+# correctly reported them green; the failing guard was one nobody was asked
+# about. The merge gate caught it, which is a gate step discovered mid-merge —
+# a violation of #593 Rung 1's own stop condition.
+#
+# Both reviewers independently prescribed the same fix: put the build in front
+# of the reviewer, rather than asking for more diff scrutiny. "Seven rounds
+# audited the diff; zero audited the build — that is the whole fix."
+#
+# The `gh` stub these rows drive is defined at the top of this file, beside the
+# codex stub, so that every test above runs hermetically too. It mirrors codex's
+# in reading stdin to EOF when asked, so a probe that fails to supply EOF hangs
+# rather than passing quietly — a launcher that can hang on its own preflight
+# has reintroduced #590.
+
+out=$(new_leg)
+set +e
+GH_STUB_STDOUT='validate	fail	1m	https://example/run' GH_STUB_EXIT=1 \
+GH_STUB_READ_STDIN=1 \
+STUB_STDOUT='VERDICT: CERTIFIED' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "a red build does not fail the leg — it is reported, not fatal" 0 "$rc"
+
+if grep -qiE 'CI STATUS' "$out"; then
+    pass "the leg's output carries a CI STATUS block"
+else
+    fail "no CI STATUS block in the leg output — the reviewer cannot see the build"
+fi
+
+if grep -qF 'validate' "$out"; then
+    pass "the failing check's name reaches the reviewer"
+else
+    fail "the failing check's name is absent from the leg output"
+fi
+
+# The block must precede the model's own output, or a reviewer reading top-down
+# forms its verdict before it ever sees the build.
+if [ "$(grep -n 'CI STATUS' "$out" | head -1 | cut -d: -f1)" -lt \
+     "$(grep -n 'VERDICT' "$out" | head -1 | cut -d: -f1)" ]; then
+    pass "the CI STATUS block precedes the model's output"
+else
+    fail "the CI STATUS block does not precede the model's output"
+fi
+
+# ---------------------------------------------------------------------------
+# 8. An unavailable `gh` must not take the leg down with it. The probe is
+# preflight, not the payload: no PR, no auth, no network, and the review still
+# runs — with the fact recorded rather than silently omitted.
+out=$(new_leg)
+set +e
+GH_STUB_STDOUT='' GH_STUB_EXIT=127 \
+STUB_STDOUT='VERDICT: CERTIFIED' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "an unavailable gh does not fail the leg" 0 "$rc"
+
+if grep -qiE 'CI STATUS' "$out"; then
+    pass "an unavailable gh still records a CI STATUS block"
+else
+    fail "an unavailable gh left no CI STATUS block — silently omitted"
+fi
+
+# ---------------------------------------------------------------------------
+# 9. The codex exit status still governs, with the probe in front of it. If the
+# preflight could mask the verdict, #590's whole mechanism is gone.
+out=$(new_leg)
+set +e
+GH_STUB_STDOUT='validate	pass	1m	url' GH_STUB_EXIT=0 \
+STUB_STDOUT='boom' STUB_EXIT=7 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "the leg's exit status still governs, probe notwithstanding" 7 "$rc"
+
+# ---------------------------------------------------------------------------
+# 10. A STALLED PROBE MUST NOT HANG THE LEG.
+#
+# The first version of the CI probe fell back to a bare `gh pr checks` when
+# neither `timeout` nor `gtimeout` was present — which is the case on stock
+# macOS, including this repo's own machine — and justified it with "gh carries
+# its own network timeouts."
+#
+# That was an unverified claim and it is FALSE. gh 2.92 configures no overall
+# HTTP timeout (cli/cli api/http_client.go, go-gh pkg/api/client_options.go).
+# A stalled request would therefore block before `exec codex` ever ran: #590,
+# the exact failure the launcher exists to prevent, reintroduced by the fix
+# for #613 and hidden because the stub always exited.
+#
+# So the deadline is the launcher's own, enforced with nothing but bash.
+out=$(new_leg)
+probe_pidfile="$(dirname "$out")/probe.pid"
+start=$(date +%s)
+set +e
+GH_STUB_SLEEP=120 GH_STUB_PIDFILE="$probe_pidfile" SDLC_CI_PROBE_TIMEOUT=2 \
+STUB_STDOUT='VERDICT: CERTIFIED' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+elapsed=$(( $(date +%s) - start ))
+check_rc "a stalled CI probe does not fail the leg" 0 "$rc"
+
+if [ "$elapsed" -lt 30 ]; then
+    pass "the stalled probe is abandoned on a deadline (${elapsed}s), not waited on"
+else
+    fail "the leg took ${elapsed}s — the probe was waited on, which is #590 all over again"
+fi
+
+if grep -qF 'VERDICT: CERTIFIED' "$out"; then
+    pass "the review still ran after the probe was abandoned"
+else
+    fail "the review never ran — the probe blocked it"
+fi
+
+if grep -qiE 'UNKNOWN|timed out|deadline' "$out"; then
+    pass "the abandoned probe is recorded, not silently omitted"
+else
+    fail "the probe timed out silently — a reviewer cannot tell the build was never checked"
+fi
+
+# The kill must be SILENT in the reviewer's file. Without `disown`, bash prints
+# its job-termination notice — "Terminated: 15   ( set +e; gh pr checks …" —
+# into this very block, exposing the launcher's internals as noise in the one
+# place the PR exists to make readable. Review found it by running the repro;
+# the suite could not, because nothing asserted on it. Deleting `disown` now
+# turns this row red.
+if grep -qE 'Terminated|Killed' "$out"; then
+    fail "a shell job notice leaked into the CI STATUS block — the reviewer reads launcher internals"
+else
+    pass "the kill is silent in the reviewer's output"
+fi
+
+# ...and it must be KILLED, not merely walked away from. The first fix killed
+# the subshell, which left `gh` itself running, reparented to PID 1. An earlier
+# known_limits entry claimed "it exits on its own"; that was an unverified
+# claim, and a genuinely stalled `gh` never does. Repeated timeouts would leak
+# processes, descriptors and connections until later legs cannot launch.
+sleep 1
+if [ -f "$probe_pidfile" ]; then
+    probe_pid=$(cat "$probe_pidfile")
+    if kill -0 "$probe_pid" 2>/dev/null; then
+        kill -9 "$probe_pid" 2>/dev/null || true
+        fail "the timed-out probe (pid $probe_pid) is still alive — abandoned, not killed"
+    else
+        pass "the timed-out probe was killed, not left running"
+    fi
+else
+    fail "the probe never recorded its pid — cannot prove it was killed"
+fi
 
 echo ""
 echo "=== Results ==="

@@ -64,6 +64,142 @@ shift
 
 : > "$OUTPUT"
 
+# ---------------------------------------------------------------------------
+# THE BUILD GOES IN FRONT OF THE REVIEWER (#613)
+#
+# PR #610 ran EIGHT review rounds with two independent reviewers while CI
+# `validate` was red the entire time. Both reviewers ran the test suites
+# directly and correctly reported them green — the guard that was failing was
+# one nobody was asked about, and the merge gate is what finally caught it.
+# That is a gate step discovered mid-merge, which #593 Rung 1's stop condition
+# names as a failure in so many words.
+#
+# Both reviewers then prescribed the same fix independently, and it is not more
+# diff scrutiny: "Seven rounds audited the diff; zero audited the build."
+#
+# So the build is stated where the reviewer reads, BEFORE the model's own
+# output. This is preflight, never a gate: a red build is REPORTED and the leg
+# proceeds. Deliberately so — a leg must stay launchable against known-red CI
+# when that is the point, and a preflight that can refuse to launch is a second
+# way for a review to not happen, which is the failure #590 exists to prevent.
+#
+# Every failure mode of the probe is absorbed. No `gh`, no auth, no network, no
+# PR for this branch: each records "unknown" and the review runs. `< /dev/null`
+# for the same reason it is on the exec line below, and a timeout because a
+# preflight that can hang has reintroduced #590 in the one place nobody would
+# look for it.
+{
+    echo "## CI STATUS (preflight, #613)"
+    echo
+    # THE DEADLINE IS THIS SCRIPT'S OWN, and it depends on nothing.
+    #
+    # The first version reached for `timeout`, then fell back to running `gh`
+    # bare when neither `timeout` nor `gtimeout` was present — which is stock
+    # macOS, including this repo's own machine — on the reasoning that "gh
+    # carries its own network timeouts."
+    #
+    # That was an unverified claim and it is FALSE: gh 2.92 configures no
+    # overall HTTP timeout (cli/cli api/http_client.go, go-gh
+    # pkg/api/client_options.go). A stalled request would block here forever,
+    # before `exec codex` ever ran — #590, the precise failure this launcher
+    # exists to prevent, reintroduced by the preflight added to prevent a
+    # different one. The suite missed it because its stub always exited.
+    #
+    # So: no external timeout binary, and no trust in the child's own limits.
+    # The probe runs in the background writing its exit status to a marker
+    # file, and this loop waits a bounded number of seconds for that marker.
+    #
+    # A marker file rather than `kill -0` on the pid: a background job of this
+    # shell stays a zombie until it is waited on, so `kill -0` reports it alive
+    # after it has finished and the loop would never exit early. `wait -n`
+    # would do it but needs bash 4, and macOS ships bash 3.2.
+    CI_PROBE_TIMEOUT="${SDLC_CI_PROBE_TIMEOUT:-30}"
+    CI_RAW="${TMPDIR:-/tmp}/sdlc-ci-probe.$$.out"
+    CI_DONE="${TMPDIR:-/tmp}/sdlc-ci-probe.$$.done"
+    rm -f "$CI_RAW" "$CI_DONE"
+    # `set +e` inside the subshell is load-bearing: this script runs under
+    # `set -e`, and a non-zero `gh` (which is exactly what a RED build is)
+    # would otherwise kill the subshell before it wrote its marker. The probe
+    # would then look stalled and burn the full deadline on every red build —
+    # reporting "abandoned" for the one case it most needs to report. Caught by
+    # the suite's red-build row regressing, not by reading this back.
+    #
+    # `set -m` is what makes the timeout path able to CLEAN UP. Without job
+    # control a `( … ) &` subshell shares this shell's process group, so the
+    # only thing killable by pid is the subshell itself — and killing that
+    # leaves `gh` running, reparented to PID 1. Review ran the real fixture and
+    # observed exactly that: the leg finished while the probe and its own child
+    # stayed alive. An earlier version of this comment claimed the orphan
+    # "exits on its own"; that was an unverified claim, and a genuinely stalled
+    # `gh` never does. Repeated timeouts would leak processes, descriptors and
+    # connections until a later leg could not launch.
+    #
+    # With job control the subshell becomes a process-group leader, so the
+    # negative-pid kill below reaches the whole group: subshell, `gh`, and
+    # anything `gh` spawned.
+    set -m
+    ( set +e; gh pr checks --required > "$CI_RAW" 2>&1 < /dev/null; echo $? > "$CI_DONE" ) &
+    CI_PROBE_PID=$!
+    set +m
+    # `disown` or bash announces the kill in the reviewer's own output file:
+    #   ./scripts/run-review-leg.sh: line N: 34945 Terminated: 15  ( set +e; gh …
+    # printed by the shell's job-control notice, inside the CI STATUS block —
+    # noise, exposing this script's internals, in the one block the PR exists to
+    # make readable. Found by review running the real stall repro. The group
+    # kill still works after disown (it addresses the process group, not the
+    # job table) and the `wait` below absorbs the disowned-job error.
+    disown "$CI_PROBE_PID" 2>/dev/null || true
+    CI_WAITED=0
+    while [ ! -f "$CI_DONE" ] && [ "$CI_WAITED" -lt "$CI_PROBE_TIMEOUT" ]; do
+        sleep 1
+        CI_WAITED=$((CI_WAITED + 1))
+    done
+    if [ -f "$CI_DONE" ]; then
+        CI_RC=$(cat "$CI_DONE")
+        CI_OUT=$(cat "$CI_RAW" 2>/dev/null || true)
+    else
+        # Kill the whole process GROUP, not the subshell. The negative pid is
+        # the point — see the `set -m` note above. TERM first, then KILL for
+        # anything that ignores it, then reap so no zombie survives us.
+        kill -TERM -- "-$CI_PROBE_PID" 2>/dev/null || kill -TERM "$CI_PROBE_PID" 2>/dev/null || true
+        sleep 1
+        kill -KILL -- "-$CI_PROBE_PID" 2>/dev/null || kill -KILL "$CI_PROBE_PID" 2>/dev/null || true
+        wait "$CI_PROBE_PID" 2>/dev/null || true
+        CI_RC=124
+        CI_OUT=""
+        CI_TIMED_OUT=1
+    fi
+    rm -f "$CI_RAW" "$CI_DONE"
+    if [ "${CI_TIMED_OUT:-0}" = "1" ]; then
+        echo "UNKNOWN — the check probe did not return within ${CI_PROBE_TIMEOUT}s and was abandoned."
+        echo "The build was NOT verified. Treat it as undetermined, not as green."
+    elif [ "$CI_RC" = "0" ]; then
+        echo "All required checks reported passing:"
+        echo
+        echo '```'
+        echo "$CI_OUT"
+        echo '```'
+    else
+        if [ -n "$CI_OUT" ]; then
+            echo "NOT GREEN, or not determinable (gh exit $CI_RC). Raw output:"
+            echo
+            echo '```'
+            echo "$CI_OUT"
+            echo '```'
+        else
+            echo "UNKNOWN — \`gh pr checks\` produced nothing (exit $CI_RC)."
+            echo "No PR for this branch, no auth, no network, or gh unavailable."
+        fi
+    fi
+    echo
+    echo "**A certification verdict issued over a build that is not green, or"
+    echo "not determinable, is only valid if it says so and says why.** The"
+    echo "build is an input to your verdict, not background noise."
+    echo
+    echo "---"
+    echo
+} >> "$OUTPUT" 2>&1
+
 # `< /dev/null` is the whole prevention: the child gets EOF immediately and
 # proceeds to the model. Keep it on this line — it is not incidental.
 #
