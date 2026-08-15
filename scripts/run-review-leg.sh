@@ -141,6 +141,14 @@ shift
     ( set +e; gh pr checks --required > "$CI_RAW" 2>&1 < /dev/null; echo $? > "$CI_DONE" ) &
     CI_PROBE_PID=$!
     set +m
+    # `disown` or bash announces the kill in the reviewer's own output file:
+    #   ./scripts/run-review-leg.sh: line N: 34945 Terminated: 15  ( set +e; gh …
+    # printed by the shell's job-control notice, inside the CI STATUS block —
+    # noise, exposing this script's internals, in the one block the PR exists to
+    # make readable. Found by review running the real stall repro. The group
+    # kill still works after disown (it addresses the process group, not the
+    # job table) and the `wait` below absorbs the disowned-job error.
+    disown "$CI_PROBE_PID" 2>/dev/null || true
     CI_WAITED=0
     while [ ! -f "$CI_DONE" ] && [ "$CI_WAITED" -lt "$CI_PROBE_TIMEOUT" ]; do
         sleep 1

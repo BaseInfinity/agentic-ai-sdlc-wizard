@@ -66,6 +66,32 @@ printf '%s' "${STUB_STDOUT:-}"
 exit "${STUB_EXIT:-0}"
 STUB
 chmod +x "$STUBDIR/codex"
+# The `gh` stub is installed HERE, before the FIRST test, not beside the
+# tests that drive it. Installed later, every earlier test ran the launcher
+# against the REAL `gh` — live API calls from a unit suite, and a result
+# that depends on the network and on whether this branch has a PR. Review
+# caught it; the suite was non-hermetic for its first six tests.
+cat > "$STUBDIR/gh" <<'STUB'
+#!/bin/bash
+if [ -n "$GH_STUB_READ_STDIN" ]; then
+    cat > /dev/null
+fi
+# GH_STUB_SLEEP: never return. A stalled network call, which is what gh does
+# on a hung request — it sets NO overall HTTP timeout (verified against
+# cli/cli v2.92 api/http_client.go and go-gh v2.13 client_options.go).
+if [ -n "${GH_STUB_SLEEP:-}" ]; then
+    # Record our own pid so the test can prove we were actually killed, not
+    # merely abandoned. A launcher that walks away from a live process leaks
+    # it — reported by review after running the real fixture and finding both
+    # this stub and its `sleep` reparented to PID 1 and still running.
+    [ -n "${GH_STUB_PIDFILE:-}" ] && echo $$ > "$GH_STUB_PIDFILE"
+    sleep "$GH_STUB_SLEEP"
+fi
+printf '%s' "${GH_STUB_STDOUT:-}"
+exit "${GH_STUB_EXIT:-0}"
+STUB
+chmod +x "$STUBDIR/gh"
+
 export PATH="$STUBDIR:$PATH"
 export STUB_READ_STDIN=1
 
@@ -181,26 +207,6 @@ check_rc "an output file with no prompt is a usage error, exit 64" 64 "$rc"
 # The stub `gh` mirrors codex's: it must also read stdin to EOF when asked, so
 # a probe that fails to supply EOF hangs here rather than passing quietly. A
 # launcher that can hang on its own preflight has reintroduced #590.
-cat > "$STUBDIR/gh" <<'STUB'
-#!/bin/bash
-if [ -n "$GH_STUB_READ_STDIN" ]; then
-    cat > /dev/null
-fi
-# GH_STUB_SLEEP: never return. A stalled network call, which is what gh does
-# on a hung request — it sets NO overall HTTP timeout (verified against
-# cli/cli v2.92 api/http_client.go and go-gh v2.13 client_options.go).
-if [ -n "${GH_STUB_SLEEP:-}" ]; then
-    # Record our own pid so the test can prove we were actually killed, not
-    # merely abandoned. A launcher that walks away from a live process leaks
-    # it — reported by review after running the real fixture and finding both
-    # this stub and its `sleep` reparented to PID 1 and still running.
-    [ -n "${GH_STUB_PIDFILE:-}" ] && echo $$ > "$GH_STUB_PIDFILE"
-    sleep "$GH_STUB_SLEEP"
-fi
-printf '%s' "${GH_STUB_STDOUT:-}"
-exit "${GH_STUB_EXIT:-0}"
-STUB
-chmod +x "$STUBDIR/gh"
 
 out=$(new_leg)
 set +e
