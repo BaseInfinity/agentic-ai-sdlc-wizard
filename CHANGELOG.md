@@ -62,6 +62,7 @@ the harness enforces rather than something a driver remembers.
   moving a version is named as such (#572).
 
 
+## [1.97.0] - 2026-08-10
 
 ### Removed — a hook that denied its own maintainer, twice
 
