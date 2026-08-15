@@ -190,6 +190,11 @@ fi
 # on a hung request — it sets NO overall HTTP timeout (verified against
 # cli/cli v2.92 api/http_client.go and go-gh v2.13 client_options.go).
 if [ -n "${GH_STUB_SLEEP:-}" ]; then
+    # Record our own pid so the test can prove we were actually killed, not
+    # merely abandoned. A launcher that walks away from a live process leaks
+    # it — reported by review after running the real fixture and finding both
+    # this stub and its `sleep` reparented to PID 1 and still running.
+    [ -n "${GH_STUB_PIDFILE:-}" ] && echo $$ > "$GH_STUB_PIDFILE"
     sleep "$GH_STUB_SLEEP"
 fi
 printf '%s' "${GH_STUB_STDOUT:-}"
@@ -275,9 +280,10 @@ check_rc "the leg's exit status still governs, probe notwithstanding" 7 "$rc"
 #
 # So the deadline is the launcher's own, enforced with nothing but bash.
 out=$(new_leg)
+probe_pidfile="$(dirname "$out")/probe.pid"
 start=$(date +%s)
 set +e
-GH_STUB_SLEEP=120 SDLC_CI_PROBE_TIMEOUT=2 \
+GH_STUB_SLEEP=120 GH_STUB_PIDFILE="$probe_pidfile" SDLC_CI_PROBE_TIMEOUT=2 \
 STUB_STDOUT='VERDICT: CERTIFIED' STUB_EXIT=0 \
     "$RUNNER" "$out" 'review this' >/dev/null 2>&1
 rc=$?
@@ -301,6 +307,24 @@ if grep -qiE 'UNKNOWN|timed out|deadline' "$out"; then
     pass "the abandoned probe is recorded, not silently omitted"
 else
     fail "the probe timed out silently — a reviewer cannot tell the build was never checked"
+fi
+
+# ...and it must be KILLED, not merely walked away from. The first fix killed
+# the subshell, which left `gh` itself running, reparented to PID 1. An earlier
+# known_limits entry claimed "it exits on its own"; that was an unverified
+# claim, and a genuinely stalled `gh` never does. Repeated timeouts would leak
+# processes, descriptors and connections until later legs cannot launch.
+sleep 1
+if [ -f "$probe_pidfile" ]; then
+    probe_pid=$(cat "$probe_pidfile")
+    if kill -0 "$probe_pid" 2>/dev/null; then
+        kill -9 "$probe_pid" 2>/dev/null || true
+        fail "the timed-out probe (pid $probe_pid) is still alive — abandoned, not killed"
+    else
+        pass "the timed-out probe was killed, not left running"
+    fi
+else
+    fail "the probe never recorded its pid — cannot prove it was killed"
 fi
 
 echo ""

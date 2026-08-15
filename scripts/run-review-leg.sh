@@ -123,8 +123,24 @@ shift
     # would then look stalled and burn the full deadline on every red build —
     # reporting "abandoned" for the one case it most needs to report. Caught by
     # the suite's red-build row regressing, not by reading this back.
+    #
+    # `set -m` is what makes the timeout path able to CLEAN UP. Without job
+    # control a `( … ) &` subshell shares this shell's process group, so the
+    # only thing killable by pid is the subshell itself — and killing that
+    # leaves `gh` running, reparented to PID 1. Review ran the real fixture and
+    # observed exactly that: the leg finished while the probe and its own child
+    # stayed alive. An earlier version of this comment claimed the orphan
+    # "exits on its own"; that was an unverified claim, and a genuinely stalled
+    # `gh` never does. Repeated timeouts would leak processes, descriptors and
+    # connections until a later leg could not launch.
+    #
+    # With job control the subshell becomes a process-group leader, so the
+    # negative-pid kill below reaches the whole group: subshell, `gh`, and
+    # anything `gh` spawned.
+    set -m
     ( set +e; gh pr checks --required > "$CI_RAW" 2>&1 < /dev/null; echo $? > "$CI_DONE" ) &
     CI_PROBE_PID=$!
+    set +m
     CI_WAITED=0
     while [ ! -f "$CI_DONE" ] && [ "$CI_WAITED" -lt "$CI_PROBE_TIMEOUT" ]; do
         sleep 1
@@ -134,9 +150,13 @@ shift
         CI_RC=$(cat "$CI_DONE")
         CI_OUT=$(cat "$CI_RAW" 2>/dev/null || true)
     else
-        # Abandoned, not awaited. The orphaned gh writes to a temp file nobody
-        # reads and exits on its own; the review is what matters.
-        kill "$CI_PROBE_PID" 2>/dev/null || true
+        # Kill the whole process GROUP, not the subshell. The negative pid is
+        # the point — see the `set -m` note above. TERM first, then KILL for
+        # anything that ignores it, then reap so no zombie survives us.
+        kill -TERM -- "-$CI_PROBE_PID" 2>/dev/null || kill -TERM "$CI_PROBE_PID" 2>/dev/null || true
+        sleep 1
+        kill -KILL -- "-$CI_PROBE_PID" 2>/dev/null || kill -KILL "$CI_PROBE_PID" 2>/dev/null || true
+        wait "$CI_PROBE_PID" 2>/dev/null || true
         CI_RC=124
         CI_OUT=""
         CI_TIMED_OUT=1
