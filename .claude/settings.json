@@ -52,7 +52,26 @@
       "mcp__claude-in-chrome__read_console_messages",
       "mcp__claude-in-chrome__read_network_requests",
       "mcp__claude-in-chrome__computer",
-      "mcp__claude-in-chrome__browser_batch"
+      "mcp__claude-in-chrome__browser_batch",
+      "Bash(./scripts/merge-pr.sh *)",
+      "Bash(./tests/test-codex-gate-command-position.sh *)",
+      "Bash(./tests/test-hook-stdin-bounded.sh *)",
+      "Bash(./tests/test-compliance.sh *)",
+      "Bash(./tests/test-stop-hook-terminates.sh *)",
+      "Bash(./tests/test-version-logic.sh *)",
+      "Bash(./tests/test-analysis-schema.sh *)",
+      "Bash(shellcheck *)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh run view *)",
+      "Bash(gh run list *)",
+      "Bash(gh repo view *)",
+      "Bash(claude plugin details *)",
+      "Bash(claude plugin list *)"
     ]
   },
   "hooks": {
