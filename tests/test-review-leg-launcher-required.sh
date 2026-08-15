@@ -161,6 +161,72 @@ expect_allowed "a wrapper running grep, with the words as its pattern" \
 expect_allowed "a wrapper running ls, with the words as its path" \
     'env ls /tmp/codex exec'
 
+# --- round 2 of cross-model review -----------------------------------------
+# Its verdict was NOT CERTIFIED 6/10, two blockers, both demonstrated against
+# the real CLI. It also reproduced the ten-row parity table exactly, which is
+# what confirmed the other five round-1 findings as inherited.
+
+# An option's VALUE is not the subcommand. From a directory containing `exec/`,
+# `codex -C exec review --help` is a valid invocation of `codex review`.
+expect_allowed "an option value named exec, short form" \
+    'codex -C exec review --help'
+
+expect_allowed "an option value named exec, model flag" \
+    'codex -m exec review --help'
+
+expect_allowed "an option value named exec, long form" \
+    'codex --cd exec review --help'
+
+expect_allowed "an option value named e" \
+    'codex --model e review'
+
+# ...but the value being consumed must not hide a real leg behind it.
+expect_refused "a consumed option value followed by the real subcommand" \
+    'codex --model gpt-5.6-sol exec "review"'
+
+expect_refused "short option with value, then the alias" \
+    'codex -c model_reasoning_effort=high e "review"'
+
+# Wrapper options that take a TEXTUAL value. All three reach codex.
+expect_refused "env -u FOO wrapping a leg" \
+    'env -u FOO codex exec "review"'
+
+expect_refused "xargs -I X wrapping a leg" \
+    'xargs -I X codex exec "review"'
+
+expect_refused "sudo -u USER wrapping a leg" \
+    'sudo -u USER codex exec "review"'
+
+# The wrapper carry must NOT admit a generic word, or round 1's wrapped-prose
+# false positives come straight back.
+expect_allowed "env -i running echo, with the words as its argument" \
+    'env -i echo codex exec'
+
+# --- pinning the two enumerated option lists --------------------------------
+# Found by falsifying the arity fix before submitting it, not by a reviewer.
+# These rows exist because both lists are transcribed from `codex --help`, and
+# a CLI change is the way they rot silently: a boolean that becomes
+# value-taking turns into a false REFUSAL, the direction that blocks the
+# maintainer's own review leg.
+
+expect_refused "a boolean long option consumes no value" \
+    'codex --oss exec "review"'
+
+expect_refused "a boolean short option consumes no value" \
+    'codex -h exec'
+
+expect_refused "a value-taking option in its = form" \
+    'codex --sandbox=read-only exec "review"'
+
+expect_refused "a value-taking option whose value is a path" \
+    'codex --add-dir /tmp exec "review"'
+
+expect_allowed "-a takes a value, so a following 'exec' is that value" \
+    'codex -a exec review'
+
+expect_allowed "--add-dir takes a value, so a following 'e' is that value" \
+    'codex --add-dir e review'
+
 # Forced failure for the hoisted guard above. Runs LAST so it cannot mask a
 # real result, and only under the sentinel the guard sets.
 if [ -n "${LAUNCHER_SUITE_FORCE_FAILURE:-}" ]; then

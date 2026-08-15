@@ -556,7 +556,37 @@ GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
 #
 # The subcommand must be a COMPLETE token: `exec-server` is a different
 # subcommand and the trailing class excludes the `-` that starts it.
-GATE_CODEX_OPT="(\\s+-${GATE_WORD}*(\\s+${GATE_WORD}+)?)*"
+# OPTION ARITY IS EXPLICIT, because "option, then maybe a value" backtracks.
+# Round 2: from a directory containing `exec/`, `codex -C exec review --help`
+# is a valid invocation of `codex review` — and the lane refused it, because
+# the OPTIONAL value could be given up so that `exec` matched as the
+# subcommand. An optional trailing word is not a grammar; it is two grammars
+# and the engine picks whichever refuses.
+#
+# So the value-taking options are named and MUST consume their value, which
+# makes `-C exec review` unambiguous: `exec` is -C's value, `review` is the
+# subcommand, no match. `codex --model gpt-5.6-sol exec` still matches because
+# the value is consumed and `exec` follows it.
+#
+# The list is codex's own value-taking globals (`codex --help`). An unlisted
+# value-taking option would be read as a boolean and its value as a command
+# name, which fails to match — a false negative, the direction this lane is
+# allowed to be wrong in.
+# BOTH classes are enumerated, from `codex --help`, and a generic branch for
+# either one is what made round 2's finding possible. A generic `--word`
+# boolean matches `--model`, which frees its value to be read as the
+# subcommand — and the engine will find that parse, because the alternative
+# (consume the value, then look for a subcommand) fails outright and a failed
+# branch never wins. Optionality is not a grammar; it is two grammars, and
+# whichever refuses is the one that gets picked.
+#
+# An option in neither list fails to match, so the whole predicate fails and
+# the command is ALLOWED. That is the deliberate direction: a missed leg is an
+# accident this lane did not catch, a false refusal blocks the maintainer's own
+# review. `remote-auth-token-env` precedes `remote` so the longer name wins.
+GATE_CODEX_VALOPT="(-[cimpsCa]|--(config|enable|disable|remote-auth-token-env|remote|image|model|local-provider|profile|sandbox|cd|add-dir|ask-for-approval))"
+GATE_CODEX_BOOLOPT="(-[hV]|--(strict-config|oss|approve-for-me|dangerously-bypass-approvals-and-sandbox|dangerously-bypass-hook-trust|search|no-alt-screen|help|version))"
+GATE_CODEX_OPT="(\\s+(${GATE_CODEX_VALOPT}(=|[[:space:]]+)${GATE_WORD}+|${GATE_CODEX_BOOLOPT}))*"
 GATE_CODEX="(${GATE_WORD}*/)?\\\\?codex${GATE_CODEX_OPT}\\s+(exec|e)([^A-Za-z0-9_-]|\$)"
 # Wrappers, but NOT the greedy GATE_SKIP the git lane uses. GATE_SKIP consumes
 # the wrapped command and restarts matching at its arguments, which turned
@@ -574,7 +604,18 @@ GATE_CODEX="(${GATE_WORD}*/)?\\\\?codex${GATE_CODEX_OPT}\\s+(exec|e)([^A-Za-z0-9
 # whose argument happens to look like a command — accepted, because a false
 # refusal here blocks the maintainer's own review leg, and the git lane's
 # greedy form is what produced three of round 1's eight findings.
-GATE_CODEX_WRAP="(${GATE_WRAPPER}([[:space:]]+(-${GATE_WORD}*|[0-9]+[smhd]?|${GATE_ASSIGN}))*[[:space:]]+)*"
+# Round 2: `env -u FOO codex exec`, `xargs -I X codex exec` and
+# `sudo -u USER codex exec` are real legs that reached codex, and the carry let
+# them through — it admitted dash-tokens but not the TEXTUAL value a wrapper
+# option takes. The git twins of all three are refused, so this was the lane's
+# own gap, not an inherited one.
+#
+# The value-taking wrapper options are named rather than admitted generically.
+# A generic "option then any word" recreates exactly the wrapped-prose false
+# positives round 1 found: `env -i echo codex exec` would read `echo` as -i's
+# value and refuse a command that runs echo.
+GATE_WRAP_VALOPT="-[ugUISnPdske]"
+GATE_CODEX_WRAP="(${GATE_WRAPPER}([[:space:]]+(${GATE_WRAP_VALOPT}[[:space:]]+${GATE_WORD}+|-${GATE_WORD}*|[0-9]+[smhd]?|${GATE_ASSIGN}))*[[:space:]]+)*"
 if printf '%s' "$MASKED_COMMAND" | grep -qE \
     "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}${GATE_CODEX_WRAP}${GATE_CODEX}"; then
     # Read the RAW command for the launcher: masking collapses quoted text, and
