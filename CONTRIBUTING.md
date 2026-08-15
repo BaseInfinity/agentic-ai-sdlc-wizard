@@ -12,6 +12,7 @@ Thank you for your interest in improving the SDLC Harness!
    ./tests/test-version-logic.sh && ./tests/test-analysis-schema.sh && \
    ./tests/test-workflow-triggers.sh && ./tests/test-cusum.sh && \
    ./tests/test-stats.sh && ./tests/test-hooks.sh && \
+   ./tests/test-codex-gate-command-position.sh && \
    ./tests/test-token-spike.sh && \
    ./tests/test-codex-progress-wrapper.sh && \
    ./tests/test-run-review-leg.sh && \
@@ -194,6 +195,7 @@ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 ./tests/test-cusum.sh
 ./tests/test-stats.sh
 ./tests/test-hooks.sh
+./tests/test-codex-gate-command-position.sh
 ./tests/test-hook-stdin-bounded.sh
 ./tests/test-token-spike.sh
 ./tests/test-codex-progress-wrapper.sh

@@ -71,6 +71,23 @@ COMMAND_FIELD=$(printf '%s' "$TOOL_INPUT" \
 # quoted sub-span — both JSON-escaped `\"..\"` and plain `'..'` — to a single
 # placeholder token before the structural match runs, so a quoted value can
 # never look like more than one word to it.
+#
+# The double-quote masker is ESCAPE-AWARE but must NOT let the escape
+# alternative swallow the closing quote. `\\.` would, and under POSIX
+# longest-match `cd \"$dir\" && git commit -m \"message\"` then masks to
+# `cd Q` — the invocation vanishes and the gate fails open. That was
+# the reviewer's own suggested fix this round, and tests/test-hooks.sh caught it
+# in the same commit that applied it. `\\[^"]` covers a backslash inside the
+# span (a Windows path, an escaped char) while still stopping at the closer.
+#
+# STILL OPEN and PRE-EXISTING, tracked on #605: the two passes are independent,
+# so a literal `"` inside one single-quoted argument and another inside a later
+# one are paired as if they were a single double-quoted span. In
+# `printf '%s\n' '"' && git commit -m 'fix "quoted" handling'` the mask
+# swallows `&& git commit` and the gate allows a direct, unquoted invocation.
+# Measured identical on origin/main, so this PR neither introduces nor fixes it.
+# Closing it needs the two passes to scan jointly and honour whichever quote
+# opens first — not another alternative bolted onto either regex.
 COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
     | sed -E 's/^"command"[[:space:]]*:[[:space:]]*"(.*)"$/\1/')
 
@@ -148,26 +165,26 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
 # the equivalent six-character unicode escapes (backslash-u-0-0-0-a and
 # friends). An accident-catcher, not an adversary barrier.
 #
-# BACKSLASH RUNS OF k = 3 (mod 4) before `n` — 7, 11, 15 — produce a FALSE
-# DENIAL. Such a run decodes to literal backslashes plus a newline; bash keeps a
-# backslash as word content, so `echo x\git commit` is one word that invokes
-# nothing, yet the leftover backslash is a non-word character and lets `\bgit`
-# fire here. Note it is specifically k = 3 (mod 4): k = 9 and k = 13 DO invoke
-# git and are correctly blocked. Verified against a bash oracle through k = 16.
+# PARITY IS LOAD-BEARING, and #588 fixed it. The continuation and escaped-tab
+# passes above match `(^|[^S])(SS)*S\n` rather than a bare `S\n`, so they fire
+# only on an ODD decoded backslash run — which is what a line continuation
+# actually is. An even run leaves the newline real, a command separator, so git
+# genuinely runs.
 #
-# DECLINED, on complexity grounds — not impossibility. An earlier version of
-# this comment claimed the only cure was bypass-shaped, on the reasoning that
-# telling this apart from a source `\git` needs command position, which sed
-# cannot decide. Sol disproved that: after the pairing pass above these are
-# already textually distinct — k=7 leaves three sentinels then `\n`, whereas a
-# source `\git` leaves one sentinel then `git` — and demonstrated a sed-only
-# second pairing pass that separates them, prototyped through k = 16.
+# The earlier bare-`S\n` form treated EVERY run as a continuation. The old
+# `\bgit` detector still blocked k = 1 (mod 4) — the real invocations — but for
+# the wrong reason: the leftover literal backslash it produced is a non-word
+# character, so it supplied the boundary `\b` needed. Requiring `git` in command
+# position (below) removed that accident and exposed the fail-OPEN underneath.
 #
-# So this is a choice, with a known fix path recorded on #581. It is declined
-# because the input is pathological (three or more literal backslashes abutting
-# a line continuation immediately before `git`), the failure is CLOSED, and the
-# cost is a rephrase — not worth another state machine inside a hook that ships
-# to every consumer as plain bash.
+# So the three FALSE DENIALS this comment used to record as declined — k = 3
+# (mod 4): 7, 11, 15 — are gone, closed as a side effect of getting the parity
+# right rather than by the second pairing pass #581 prototyped.
+#
+# The contract is now exactly parity, with no exceptions: BLOCK at k = 1 (mod 4),
+# ALLOW everywhere else. Ground truth is DERIVED FROM A BASH ORACLE through
+# k = 16 in tests/test-codex-gate-command-position.sh, and pinned in
+# tests/test-hooks.sh.
 #
 # Unquoted PROSE that merely names the verb can match. That class predates this
 # change and is tracked as #588. Its edge moves here, in both directions, and
@@ -183,25 +200,324 @@ COMMAND_VALUE=$(printf '%s' "$COMMAND_FIELD" \
 # prose is newly caught, because a tab genuinely IS a bash separator and the
 # detector cannot see that the surrounding text is prose. Accepted as part of
 # the already-accepted #588 class: it fails closed and costs a rephrase.
+# HEREDOC BODIES: NOT masked, and that is a deliberate reversal.
+#
+# A previous cut of this PR masked heredoc bodies with an awk pass, to fix the
+# false POSITIVE on `cat > script.sh <<'EOF' ... git commit ... EOF` — a shape
+# #588's own defect description names. Sol's round-6 review measured that the
+# pass introduced SIX fail-opens, each oracle-confirmed and each blocked before
+# it landed:
+#
+#   # documentation: use <<EOF below      a comment mentioning the operator
+#   echo '<<EOF'                          the operator inside quotes
+#   cat <<< EOF                           the regex restarts inside `<<<`
+#   (( x = 1 << EOF ))                    a left-shift in arithmetic
+#   cat <<-EOF ... <tab>EOF               the tab is still `\t` at that stage
+#   cat <<EOF / $(git commit) / EOF       an unquoted body is NOT inert: the
+#                                         substitution runs while the
+#                                         redirection is being constructed
+#
+# That last one also falsified a claim in the reverted comment, which had said
+# the body never runs. The count read FIVE until Sol's round 7 observed that the
+# sixth was described in prose but never counted — and that the row pinned as
+# `(( x = 1 << 2 ))` did not demonstrate the defect at all, because the pass
+# blocked that one too. `<< EOF` is the shape that actually escaped.
+#
+# Recognising a heredoc correctly means ignoring `<<` inside quotes, comments,
+# arithmetic and escapes, excluding `<<<`, queueing multiple delimiters, and
+# distinguishing quoted from expanding bodies. That is a partial shell parser,
+# which is exactly what #533 ruled out — the same ruling this PR has refused to
+# re-litigate everywhere else. So it is reverted rather than deepened, and the
+# heredoc false positive goes back to being an accepted limit that fails CLOSED.
 ESC_SENTINEL=$(printf '\001')
 COMMAND_VALUE=$(printf '%s' "$COMMAND_VALUE" \
     | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
-             -e "s/$ESC_SENTINEL\\\\n//g" \
-             -e "s/$ESC_SENTINEL\\\\t/${ESC_SENTINEL}t/g" \
+             -e "s/(^|[^$ESC_SENTINEL])(($ESC_SENTINEL$ESC_SENTINEL)*)$ESC_SENTINEL\\\\n/\\1\\2/g" \
+             -e "s/(^|[^$ESC_SENTINEL])(($ESC_SENTINEL$ESC_SENTINEL)*)$ESC_SENTINEL\\\\t/\\1\\2${ESC_SENTINEL}t/g" \
              -e 's/\\n/;/g' \
              -e 's/\\t/ /g' \
              -e "s/$ESC_SENTINEL/\\\\/g")
 
 MASKED_COMMAND=$(printf '%s' "$COMMAND_VALUE" \
-    | sed -E -e 's/\\"[^\\]*\\"/Q/g' -e "s/'[^']*'/Q/g")
+    | sed -E -e 's/\\"([^"\\]|\\\\"|\\[^"])*\\"/Q/g' \
+             -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
+             -e "s/\\\\'/E/g" \
+             -e "s/'[^']*'/Q/g" \
+             -e "s/$ESC_SENTINEL/\\\\\\\\/g")
+
+# An ESCAPED separator is word content, not a command boundary: `echo \; git
+# commit` is one command printing three words. Neutralising it to `E` here —
+# rather than asking the anchor for "a separator not preceded by a backslash" —
+# is what keeps PARITY right. A regex lookbehind cannot count backslashes, and
+# `\\;` is an escaped BACKSLASH followed by a REAL separator, which is exactly
+# the k = 1 (mod 4) case the backslash-run contract is built on. Getting this
+# wrong re-opened k = 5, 9 and 13 as fail-opens, caught by those rows.
+#
+# Same sentinel technique as the normalisation above: pair off `\\` first, so
+# only a backslash that genuinely escapes something is left to act on. Escaped
+# whitespace is deliberately untouched — `FOO=a\ b` is still one word.
+#
+# An escape before an ORDINARY character is then REMOVED, because that is what
+# bash does: `e\nv` is `env`, `git c\ommit` is `git commit`, `git --git-\dir`
+# is `git --git-dir`. Enumerating an optional escape between every letter of
+# every keyword instead is unwinnable — it was tried for `git` alone and
+# produced both a fail-open (the escape can sit anywhere in the basename) and a
+# false positive (`\\git` is a command named `\git`, not git) in consecutive
+# rounds. Doing what the shell does closes the whole class in one rule.
+# The class is deliberately narrow, and each exclusion is load-bearing:
+#   - no SPACE: unescaping it would split the word, so an assignment prefix
+#     would stop being a prefix (`FOO=a\ b git commit`).
+#   - no `=`, `+` or `_`: unescaping any of them MANUFACTURES a GATE_ASSIGN
+#     prefix the shell never sees. `FOO\=1 git commit` runs nothing — the word
+#     is not NAME=VALUE, so it is looked up as a command.
+# THE ESCAPED-KEYWORD SHIELD, built rather than hand-written.
+#
+# An escape ANYWHERE in a reserved word stops bash recognising it as one:
+# `i\f`, `wh\ile` and `th\en` are all ordinary command names. Shielding only
+# the leading position missed seven of eight spellings.
+#
+# And the shield needs BOTH boundaries. With only a right boundary it matched
+# the `\do` inside `su\do`, which stopped that token normalising to the
+# enumerated `sudo` wrapper — a fail-OPEN I introduced, caught by the reviewer
+# running a PATH proxy for sudo. The left boundary is what keeps `su\do` a
+# wrapper spelling rather than a shielded keyword.
+GATE_KW_ALT=""
+for _kw in if elif while until "then" "do" "else" coproc; do
+    _i=0
+    while [ "$_i" -lt "${#_kw}" ]; do
+        _sp="${_kw:0:$_i}\\\\${_kw:$_i}"
+        GATE_KW_ALT="${GATE_KW_ALT:+$GATE_KW_ALT|}$_sp"
+        _i=$((_i + 1))
+    done
+done
+
+
+MASKED_COMMAND=$(printf '%s' "$MASKED_COMMAND" \
+    | sed -E -e "s/\\\\\\\\/$ESC_SENTINEL/g" \
+             -e 's/\\[;&|(){}!]/E/g' \
+             -e "s/(^|[[:space:];&|(){}!\`])(${GATE_KW_ALT})([^A-Za-z0-9_]|\$)/\\1K\\2\\3/g" \
+             -e 's/\\([A-Za-z0-9./:,@%^~-])/\1/g' \
+             -e "s/$ESC_SENTINEL/\\\\\\\\/g")
 
 # #236(b): literal substring "git commit" misses git's own global-flag forms
 # — `git -C <dir> commit` and `git -c k=v commit` are valid invocations that
 # never contain that exact two-word substring, and previously sailed through
 # unreviewed. Regex allows any number of -C/-c (with their required value),
 # --long-flag, or single-letter-flag tokens between "git" and "commit".
-if ! printf '%s' "$MASKED_COMMAND" \
-    | grep -qE '\bgit(\s+(-C\s+\S+|-c\s+\S+|--\S+|-[A-Za-z]))*\s+commit\b'; then
+# #588: `\bgit` matched the verb ANYWHERE, so a command that merely NAMED it was
+# blocked — `echo the git commit gate` and `grep -rn git commit hooks/` both
+# denied, neither invoking anything. (Quoted mentions were already fine: the
+# masking pass above collapses them to Q. Only unquoted ones false-fired.)
+#
+# The fix is to require `git` in COMMAND POSITION. That is not the positive
+# command parsing #533 ruled out — nothing here decides what the command DOES.
+# It anchors the existing negative detector to the places bash can begin a
+# command, which is decidable from the text.
+#
+# Anchors: start of string, or after `;` `&` `|` `(` `)` `{` `}` `!`, `$(`, a
+# backtick, or a `then`/`do`/`else` keyword. The `\n` -> `;` normalization above
+# is what keeps #581's line-split shapes caught — `;` is itself an anchor — so
+# that is a load-bearing dependency, pinned by its own fixture row.
+#
+# TRANSPARENT PREFIXES. Anchoring alone would open a fail-OPEN hole: bash runs
+# `env X=1 git commit`, `nice git commit` and `echo -m x | xargs git commit` for
+# real, and after anchoring `git` in those is an argument. Measured with a bash
+# oracle, all four escaped. So a closed, enumerated set of prefixes is treated
+# as transparent — assignments (bash runs an assignment-prefixed command
+# directly; this repo's own workflow uses the shape) plus the wrappers below.
+# Whatever a wrapper takes before `git` is skipped wholesale — see the WRAPPER
+# OPTION GRAMMAR note further down; this hook does not model per-wrapper flags.
+#
+# The set is CLOSED, and that is the accepted limit. A wrapper nobody enumerated
+# — doas, setsid, caffeinate, unbuffer, flock — is a false NEGATIVE, recorded on
+# #588. This hook says of itself that it is an accident-catcher, not an
+# adversary barrier, and #588 concedes deliberate bypass is trivial; an
+# open-ended enumeration cannot be won and is not attempted.
+#
+# `(\S*/)?git` keeps a path-prefixed invocation caught — `/usr/bin/git commit`
+# was blocked by the old `\bgit` and must not regress. It does not re-open
+# prose: `echo see docs/git commit-policy.md` has no anchor before `docs/git`.
+#
+# Every shape named here is pinned in tests/test-codex-gate-command-position.sh,
+# whose expected column is GENERATED BY THE ORACLE rather than hand-written.
+# `eval`, `exec` and `time` are in the transparent set for the same reason the
+# wrappers are, and they were found the same way — by hunting fail-opens with
+# the oracle BEFORE review, not by reasoning about the regex. Each one shipped
+# blocked on origin/main and would have walked past the anchored detector:
+#
+#     eval git commit -m x     oracle INVOKES   base BLOCK   anchored ALLOW
+#     exec git commit -m x     oracle INVOKES   base BLOCK   anchored ALLOW
+#     time git commit -m x     oracle INVOKES   base BLOCK   anchored ALLOW
+#
+# `builtin git commit` is deliberately NOT in the set: the oracle reports it
+# inert, because `builtin` only runs shell builtins and git is not one. Allowing
+# it is the correct answer, and origin/main's false denial of it is fixed here.
+#
+# `\git commit` is handled upstream now, not by an optional backslash in this
+# pattern: the normalisation pass REMOVES an escape before an ordinary
+# character, exactly as bash does, so by the time this regex runs there is no
+# backslash left. The optional-escape spelling that used to live here was
+# deleted — it produced a fail-open (the escape can sit anywhere in the
+# basename) and a false positive (`\\git` is a command named `\git`) in
+# consecutive review rounds.
+#
+# STILL OPEN, and NOT introduced here — `eval 'git commit'`, `bash -c 'git
+# commit'` and `sh -c "git commit"` are allowed on origin/main too, because the
+# masking pass collapses the quoted payload to `Q` before any matching happens.
+# Measured against origin/main, not assumed. Out of scope for #588 and filed
+# separately rather than fixed silently in a PR about prose false-positives.
+# Sol's round 1 found three more fail-open classes in the first cut of this
+# anchor, all of which shipped BLOCKED on origin/main. Each is covered below and
+# pinned by an oracle row:
+#
+#   if git commit -m x; then :; fi      reserved words other than then/do/else
+#   </dev/null git commit -m x          a leading redirection is a valid prefix
+#   env -u FOO git commit -m x          a wrapper option that takes an argument
+#
+# RESERVED WORDS. bash begins a command after `if`, `elif`, `while`, `until` and
+# `coproc` exactly as it does after `then`, `do` and `else`.
+#
+# REDIRECTIONS. bash permits redirections before the command word, so
+# `</dev/null git commit` and `2>/dev/null git commit` are ordinary invocations.
+# They are transparent here, in any order with assignments — for the operators
+# ENUMERATED in GATE_REDIR. That enumeration is the seventh narrowing instance
+# in this file's history: it omitted `<<`, `<<-` and `<>`, and a SEPARATED
+# operand escaped through the gap while an attached one matched by accident via
+# a shorter operator. The set is closed, so an operator nobody enumerated is a
+# false NEGATIVE, on the same footing as the closed wrapper set below.
+#
+# WRAPPER OPTION GRAMMAR. The first cut allowed only flags and bare numbers
+# after a wrapper, so `env -u FOO`, `xargs -I X`, `sudo -u USER` and `timeout 5s`
+# all broke the chain. Enumerating each wrapper's real option grammar is not
+# winnable — the grammars differ per tool and per platform. So once one of the
+# ENUMERATED wrappers appears in command position, the tokens between it and
+# `git` are skipped wholesale, stopping at `;`, `&` or `|` so the skip cannot
+# reach across into a separate command.
+#
+# That deliberately trades a narrow FALSE POSITIVE for closing a fail-open:
+# `time echo git commit` is inert yet blocked here, because the text cannot say
+# whether `echo` is a wrapper's option argument or a new command word. It fails
+# CLOSED and the cost is a rephrase, which is the same bargain every other
+# accepted limit on this hook takes — and the opposite direction from the one
+# that actually matters for a review gate.
+#
+# SHELL WORDS ARE NOT `[^ ]*`. A backslash escape makes the next character
+# ordinary word content, so `FOO=a\ b git commit`, `/path\ with\ spaces/git
+# commit` and `env FOO=a\;b git commit` are all single words to bash and all
+# invoke git. Modelling a word as "runs to the next space or separator" splits
+# every one of them early and lets the invocation through. GATE_WORD is that
+# model, and it is used at all SIX sites that consume a word:
+#
+#   1. assignment values          4. the path prefix on `git`
+#   2. redirection operands       5. git's own global-option operands
+#   3. the wholesale skip         6. the path prefix on a WRAPPER
+#
+# because a word atom that is right at five sites out of six is a fail-open at
+# the sixth. Site 6 was missing from this list until Sol's round-6 review — the
+# code had it, the prose did not, which is a claim-rule violation either way.
+#
+# WHAT GATE_WORD DOES NOT MODEL, stated plainly because the comment it replaced
+# overclaimed: it models ESCAPES, not nested shell syntax. A separator inside
+# `${...}`, `$(...)`, `$((...))` or backticks is not an outer command boundary,
+# and this atom stops there anyway — `FOO=${UNSET:-a;b}x git commit` invokes git
+# and is allowed here. Substitutions nest arbitrarily, so no regex closes that;
+# it is the same constraint as the quoted-payload class on #599 and it is
+# dispositioned the same way, as a pinned accepted limit. Nobody reaches those
+# shapes by accident, and this hook's own header calls it an accident-catcher.
+GATE_WORD='(\\.|[^[:space:];&|])'
+# A separator only counts if it is REAL. `echo \; git commit` is one command
+# printing three words — the `;` is escaped, so it is not a boundary. And a
+# reserved word is only a command-position marker when the reserved word is
+# ITSELF at a boundary: in `echo if git commit`, `if` is an argument to echo,
+# not a keyword, so it must not open a command position. Both were false
+# POSITIVES, which is the direction this detector is weakest in.
+GATE_SEP='(^|[;&|(){}!]|\$\(|`)'
+GATE_ANCHOR="(${GATE_SEP}|${GATE_SEP}[[:space:]]*(if|elif|while|until|then|do|else|coproc)[[:space:]])"
+# A real assignment name, not "any run of non-space". `A-B=1` and `1A=1` are not
+# assignments to bash — it runs them as commands — so treating them as prefixes
+# was a false positive.
+# `NAME+=` is a valid bash assignment form and prefixes a command exactly as
+# `NAME=` does.
+# An ARRAY-ELEMENT assignment is a command prefix too: `A[0]=x git commit` runs
+# git. Narrowing this to scalar names (to kill the `A-B=1` / `1A=1` false
+# positives) excluded them and opened a fail-open.
+#
+# THE SUBSCRIPT IS NOT AN IDENTIFIER. A bash indexed subscript is an ARITHMETIC
+# EXPRESSION: it may nest brackets (`A[B[0]]=x`) and it may be empty (`A[]=x`
+# evaluates to index 0). Both run git. A first cut bounded it to a nonempty,
+# non-nested span and kept all four of those shapes fail-open — the THIRD time
+# in this review that tightening a grammar against a false positive left a
+# fail-open in the same expression.
+#
+# A second cut then bounded it to "anything but `=`" — and `=` is valid INSIDE a
+# subscript too, because the expression is arithmetic: `A[B=1]=x`, `A[1==1]=x`,
+# `A[B+=1]=x` and an associative key `A[x=y]=z` all run git. That was the FOURTH
+# instance of the same pattern, and the two cuts were exact mirrors:
+#
+#   [^][]+   excluded empty and nested subscripts, admitted `=`
+#   [^=]*    admitted empty and nested subscripts, excluded `=`
+#
+# A third cut bounded it by WHITESPACE, on the reasoning that an assignment
+# prefix is a single shell word so its subscript could not contain unquoted
+# whitespace. That reasoning is FALSE — bash's assignment lexer keeps whitespace
+# inside an arithmetic subscript, and `A[1 + 2]=x git commit`, `A[1\ +\ 2]=x`
+# and `declare -A A; A[foo\ bar]=x` all run git. That was the SIXTH instance.
+#
+# So the span is DELIBERATELY UNBOUNDED. Every attempt to characterise what a
+# subscript may not contain has been wrong, in both directions, six times:
+#
+#   [^][]+          excluded empty and nested, admitted `=`
+#   [^=]*           admitted empty and nested, excluded arithmetic `=`
+#   [^[:space:]]*   excluded arithmetic whitespace
+#
+# and the reviewer's own proposed `(\[([^]]|\][^=])*\])?` was a fifth,
+# admitting `=` while re-excluding nesting. The honest model is that a subscript
+# is not enumerable by a regex: an INDEXED subscript is an arithmetic
+# expression, and an ASSOCIATIVE one is an arbitrary string after expansion.
+# Between them there is no character a regex can rely on excluding.
+#
+# THE COST, disclosed rather than discovered: an unbounded span OVERMATCHES.
+# It does not validate bracket balance and cannot — POSIX ERE cannot without a
+# bounded nesting limit or the scanner #533's ruling puts out of reach. So
+# malformed text that merely looks like `NAME[...]=` is read as an assignment
+# prefix and BLOCKED. `A[0]-B[1]=x git commit` is exactly that: oracle-inert,
+# blocked, failing CLOSED, and pinned as a row rather than described.
+#
+# It is also greedy ACROSS A COMMAND BOUNDARY, which is a materially different
+# cost and is pinned separately: in `A[0]=x; echo A[1]=y git commit` the span
+# runs over the `;` and fuses two balanced fragments into one fictional
+# assignment. Inert, blocked, fails CLOSED.
+#
+# The ONLY safety claim made here is the real NAME requirement, which is what
+# keeps `A-B=1` and `1A=1` out. Three earlier versions of this comment claimed
+# more than that and each claim was measured false.
+GATE_ASSIGN="[A-Za-z_][A-Za-z_0-9]*(\\[.*\\])?\\+?=${GATE_WORD}*"
+# The operand may be separated from the operator: `< /dev/null git commit` runs.
+# `>|` is bash's clobber-override and belongs in the operator set.
+GATE_REDIR="[0-9]*(<<<|<<-|<<|<>|>>|<&|>&|>\\||&>>|&>|<|>)[[:space:]]*${GATE_WORD}+"
+# `builtin` is NOT a wrapper in its own right: it runs only shell BUILTINS, so
+# `builtin git commit` and `builtin env git commit` are both inert and blocking
+# them would be false positives. It is a prefix to exactly the builtin members
+# of the set, and it stacks — `builtin builtin command git commit` invokes git.
+GATE_BUILTIN="(\\\\?builtin[[:space:]]+(--[[:space:]]+)?)+\\\\?(command|eval|exec)"
+GATE_EXTERNAL="(${GATE_WORD}*/)?\\\\?(env|command|eval|exec|time|nice|nohup|xargs|timeout|sudo|stdbuf)"
+GATE_WRAPPER="(${GATE_BUILTIN}|\\\\?${GATE_EXTERNAL})"
+# git's value-taking LONG options accept `--opt=v` and `--opt v` alike, and the
+# separated form broke the chain: `git --git-dir .git commit` is an ordinary
+# invocation. The separated alternative is listed first so it wins the match.
+GATE_GIT_LONGVAL='--(git-dir|work-tree|namespace|exec-path|config-env|super-prefix)'
+GATE_GIT="(${GATE_WORD}*/)?git(\\s+(${GATE_GIT_LONGVAL}\\s+${GATE_WORD}+|-C\\s+${GATE_WORD}+|-c\\s+${GATE_WORD}+|--${GATE_WORD}+|-[A-Za-z]))*\\s+commit\\b"
+GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
+# The skip stops at a REAL separator only. `\;` is word content, not a boundary,
+# and neither is the `&` or `|` inside a redirection operator — `env 2>&1 git
+# commit`, `env &>/dev/null git commit` and `env >|/dev/null git commit` all
+# invoke git. Those operators are admitted atomically; a BARE `&` or `|` still
+# ends the skip, so `cmd & git commit` does not get swallowed (and is caught
+# independently by the `&` anchor either way). GATE_WORD is interpolated here
+# rather than re-inlined, so the six sites cannot drift apart.
+GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
+if ! printf '%s' "$MASKED_COMMAND" | grep -qE \
+    "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+${GATE_SKIP})*${GATE_GIT}"; then
     exit 0
 fi
 
