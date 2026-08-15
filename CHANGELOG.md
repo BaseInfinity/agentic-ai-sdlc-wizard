@@ -4,7 +4,64 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
-## [1.97.0] - 2026-08-10
+## [1.98.0] - 2026-08-15
+
+### The review loop can now end, and a review leg can no longer silently fail to happen
+
+Everything in v1.97.0 and earlier assumed a review round would terminate on judgement. Six
+review rounds on one 30-line documentation change said otherwise. This release makes the
+loop's exit condition explicit and makes the mechanics of launching a review leg something
+the harness enforces rather than something a driver remembers.
+
+### Added
+
+- **A termination condition for the review loop** (#606). You are done when a fresh blind
+  round returns zero unresolved findings against the *requested behaviours* — not merely
+  "nothing new". After the budgeted passes, the loop continues only when the immediately
+  preceding completed pass recorded an open P0/P1 showing a requested behaviour is currently
+  wrong, or the first verification-evidence invalidation in this root task. A later
+  evidence-only finding is filed, not spent on another pass.
+
+- **A launcher for review legs, and a gate that requires it** (#590, #595, #596, #610).
+  `codex exec` reads stdin to EOF and appends it to the prompt, so a leg handed an unclosed
+  pipe blocks *before contacting the model* — indefinitely. Two legs were waited on for 51
+  and 28 minutes against processes that had never started. `scripts/run-review-leg.sh` gives
+  its child `/dev/null` on stdin whatever the caller inherited, and its exit status is the
+  leg's verdict. The Bash gate now refuses a leg typed outside it.
+
+  Two designs for detecting the hang from outside were built and both were falsified with
+  running code, so neither shipped: output carries no completion marker, `tokens used` appears
+  in the echoed prompt so a crashed leg reads as complete, the hang's byte signature differs
+  per machine, and a sidecar status publishes after the child exits. The launcher's own exit
+  status is the only sound signal, delivered by the process that has it.
+
+- **The build is now an input to a review verdict** (#613). A review leg's output opens with
+  the current CI status, ahead of the model's own output. Preflight, never a gate — a red
+  build is reported and the leg proceeds, because a preflight that can refuse to launch is a
+  second way for a review not to happen.
+
+- **The review contract as one prose batch** (#558, #557, #573, #574, #564, #556): a severity
+  scale, what actually blocks a merge, reviewers reconciling with each other verbatim rather
+  than through the driver, and the post-review confidence percentages cut for carrying no
+  signal.
+
+- **Falsify-before-review is an executable step** (#590), not advice.
+
+### Fixed — three defects in the commit gate, all of which blocked legitimate work
+
+- **The gate matched `git commit` in prose** (#588), so a commit whose *message* or whose
+  `grep` pattern merely mentioned the phrase was refused. It now fires on command position.
+- **JSON-escaped whitespace hid an invocation from the gate** (#581). A command split by an
+  escaped newline walked past it entirely.
+- **The review gate made the review protocol uncommittable** (#533) — the rule and the
+  mechanism enforcing it could not coexist.
+
+### Changed
+
+- The plugin update path is scoped by surface, and the command that reports success without
+  moving a version is named as such (#572).
+
+
 
 ### Removed — a hook that denied its own maintainer, twice
 
