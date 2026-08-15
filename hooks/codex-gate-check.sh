@@ -516,6 +516,116 @@ GATE_PREFIX="((${GATE_ASSIGN}|${GATE_REDIR})[[:space:]]+)*"
 # independently by the `&` anchor either way). GATE_WORD is interpolated here
 # rather than re-inlined, so the six sites cannot drift apart.
 GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
+# --- A REVIEW LEG MUST RUN THROUGH ITS LAUNCHER (#590 completion) -----------
+#
+# This lane sits ABOVE the git-commit detector because that detector exits 0
+# on any command it does not recognise, and `codex exec` is one of them.
+#
+# `scripts/run-review-leg.sh` has prevented the codex stdin hang since #590
+# closed, and its own header says a leg typed outside it "has no owner and no
+# status". On 2026-08-14 two legs for PR #606 were typed by hand anyway, in a
+# session that had read that header: one hung at 39 bytes with no
+# `< /dev/null` (the exact signature #590 was closed on) and one exhausted its
+# budget with no verdict. Written knowledge that is not applied is what this
+# closes; the repo's answer to that has historically been to write it down
+# again, and PR #606 is a seven-round demonstration of why that fails.
+#
+# The predicate is deliberately the smallest one that catches the accident:
+# `codex` in command position followed by `exec`. There is no launcher escape
+# hatch — see the note above the match itself for why one was never needed and
+# why the one that existed was deleted.
+#
+# It reuses this gate's existing anchoring rather than adding a
+# second notion of command position, so the two cannot drift — and it reads
+# MASKED_COMMAND, so a quoted mention (`grep "codex exec" docs`) is already a Q
+# by the time it gets here and cannot false-fire. That is the #588 defect class
+# and it is not being repeated.
+#
+# NOT A SECURITY BOUNDARY, and the distinction is the one #479's ROADMAP note
+# records about the merge gate: this sees commands issued through the Claude
+# Code Bash tool. A leg launched from a terminal never meets it. It is an
+# accident-catcher for the path where the accident actually happened.
+# The subcommand is `exec` or its DECLARED alias `e` — `codex --help` lists
+# "exec ... [aliases: e]", and `codex e --help` prints exec's help. Verified on
+# the installed CLI; `ex` and `exe` do NOT resolve, so this is an alias list,
+# not prefix inference, and enumerating the two is exact rather than a guess.
+#
+# The subcommand must be a COMPLETE token, and the boundary that proves it is a
+# SHELL token boundary — whitespace, a metacharacter that actually ends a
+# command, or end of line. Not "any non-word character", which is what round 4
+# found: `$`, `.` and `=` all CONTINUE a token, so `SUFFIX=-server; codex
+# exec$SUFFIX --help` runs `codex exec-server` and was refused. `exec-server` is
+# a different subcommand and `-` was already excluded; `$`, `.` and `=` are the
+# same case and are excluded the same way, by naming the boundary instead of
+# negating a word class.
+# `}` is NOT in the set. It only closes a group as a RESERVED WORD, which needs
+# a preceding `;` or newline and its own whitespace — as a bare character it is
+# an ordinary one, and `bash -c 'printf "[%s]" exec}foo'` prints one word. So
+# `codex exec}foo --help` was refused. `)` stays: it is a real metacharacter.
+GATE_CODEX_END="([[:space:]]|[;&|)<>]|\$)"
+#
+# NO OPTION MAY APPEAR BETWEEN `codex` AND THE SUBCOMMAND. That is a deliberate
+# accepted limit, and it is the design this lane arrived at rather than the one
+# it started with. Rounds 1-3 of cross-model review scored 3/10, 6/10, 4/10 —
+# every round's findings were facts about codex's own option grammar, not about
+# the accident being guarded:
+#
+#   round 2  an option's value is not the subcommand   `codex -C exec review`
+#   round 3  compact short values                      `codex -mfoo exec`
+#   round 3  `-h`/`-V` terminate and never dispatch    `codex -h exec`
+#   round 3  `--image` is VARIADIC                     `codex -i a exec`
+#   round 3  per-wrapper arity is not one letter class `xargs -E` vs `sudo -n`
+#
+# Each fix was correct and each opened new surface, because modelling a CLI's
+# option grammar in a regex is building a parser — the thing #533 ruled out,
+# arriving one round at a time. The score never converged.
+#
+# So the gap is closed instead of described. `codex` must be followed directly
+# by the subcommand. This catches BOTH accidents that motivated the lane, and
+# the reason is not luck: `codex exec --model X -c key=value "prompt"` is the
+# shape the CLI is actually used in, with options AFTER the subcommand. An
+# option BEFORE it is a shape no leg in this repo has ever been typed in.
+#
+# What it costs: `codex --model X exec` escapes, as does every wrapper carrying
+# an option. Accepted and REPORTED rather than fixed — a missed leg is an
+# accident this lane did not catch; a false refusal blocks the maintainer's own
+# review. #601 is the precedent for a measured accepted limit.
+GATE_CODEX="(${GATE_WORD}*/)?\\\\?codex[[:space:]]+(exec|e)${GATE_CODEX_END}"
+# Wrappers, but NOT the greedy GATE_SKIP the git lane uses. GATE_SKIP consumes
+# the wrapped command and restarts matching at its arguments, which turned
+# `env echo codex exec`, `env grep codex exec README.md` and
+# `env ls /tmp/codex exec` into refusals: the wrapper runs echo/grep/ls, and
+# `codex exec` is their ARGUMENT, not a command.
+#
+# A wrapper may therefore carry NOTHING between itself and `codex`, for the
+# same reason codex may carry no option before its subcommand: round 3 showed a
+# shared letter class is wrong in both directions at once (`xargs -E` takes a
+# value and was missed; `sudo -n` is boolean and caused a false refusal), and a
+# per-wrapper arity table is the same parser by another name.
+#
+# `env codex exec` and `sudo codex exec` stay caught. `timeout 300 codex exec`
+# and `nice -n 5 codex exec` no longer do — accepted with the rest.
+GATE_CODEX_WRAP="(${GATE_WRAPPER}[[:space:]]+)*"
+# THERE IS NO LAUNCHER ESCAPE HATCH, and removing it is what closed the last
+# hole. This lane used to allow any command whose RAW text mentioned
+# `run-review-leg.sh`, so that the launcher itself could not be refused. That
+# check made `scripts/run-review-leg.sh out p && codex exec "q"` allowed — the
+# lane satisfied by MENTIONING the launcher rather than using it.
+#
+# It was never needed. A launcher invocation is `scripts/run-review-leg.sh
+# OUTPUT PROMPT [args]` and contains no `codex exec` token at all, so the
+# predicate does not match it in the first place. Verified by neutralising the
+# check and re-running: all three real launcher shapes stay ALLOWED, and the
+# `&&` bypass becomes REFUSED. The whole hatch was dead weight that could only
+# ever be wrong. The suite still pins the launcher shapes as allowed.
+if printf '%s' "$MASKED_COMMAND" | grep -qE \
+    "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}${GATE_CODEX_WRAP}${GATE_CODEX}"; then
+    echo "CROSS-MODEL REVIEW GATE: run the review leg through scripts/run-review-leg.sh, not 'codex exec' directly." >&2
+    echo "  scripts/run-review-leg.sh OUTPUT_FILE PROMPT [EXTRA_CODEX_ARGS...]" >&2
+    echo "The launcher gives the child /dev/null on stdin whatever the caller inherited, and its own exit status IS the leg's verdict — 0 completed, non-zero failed, nothing by your deadline means inspect and relaunch. A leg typed by hand has no owner and no status: its fate is unknown immediately, and by wall clock a hang is identical to a slow review. Measured 2026-08-14 on PR #606: one hand-typed leg hung at 39 bytes, a second returned no verdict. $BYPASS_NOTE" >&2
+    exit 2
+fi
+
 if ! printf '%s' "$MASKED_COMMAND" | grep -qE \
     "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+${GATE_SKIP})*${GATE_GIT}"; then
     exit 0
