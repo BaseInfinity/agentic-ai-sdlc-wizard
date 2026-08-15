@@ -454,7 +454,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if ! PR_JSON=$(gh pr view "$PR_NUM" --json headRefOid,number,state,baseRefName 2>&1); then
+if ! PR_JSON=$(gh pr view "$PR_NUM" --json headRefOid,number,state,baseRefName,baseRefOid 2>&1); then
     echo "FAILED CLOSED: could not fetch PR #$PR_NUM (gh error): $PR_JSON" >&2
     exit 1
 fi
@@ -469,6 +469,20 @@ fi
 BASE_BRANCH=$(printf '%s' "$PR_JSON" | grep -o '"baseRefName"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"baseRefName"[[:space:]]*:[[:space:]]*"//; s/"$//')
 if [ -z "$BASE_BRANCH" ]; then
     echo "FAILED CLOSED: could not determine the base branch for PR #$PR_NUM" >&2
+    exit 1
+fi
+# WHERE THE BASE ACTUALLY IS, per the server — not per the local tracking ref.
+#
+# Round 1 of #628, found independently by both reviewers and demonstrated with
+# running code rather than argued. The first version read
+# `refs/remotes/origin/$BASE_BRANCH`, which is a cache: absent, the comparison
+# was skipped outright; stale, it still held the certified tree and satisfied
+# the check. Sol advanced a bare server's main and merged a bogus certification
+# at exit 0 with the local ref left behind; Fable reached the same exit 0 by
+# deleting the ref. The check was vacuous in exactly the case it exists for.
+BASE_SHA=$(printf '%s' "$PR_JSON" | grep -o '"baseRefOid"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"baseRefOid"[[:space:]]*:[[:space:]]*"//; s/"$//')
+if [ -z "$BASE_SHA" ]; then
+    echo "FAILED CLOSED: could not determine the base commit (baseRefOid) for PR #$PR_NUM" >&2
     exit 1
 fi
 
@@ -822,9 +836,20 @@ fi
             echo "BLOCKED: $CLEARANCE_FILE declares no 'base_tree'. A certification names the base it was read against, or a rebase onto moved upstream carries it silently (#540). Record it with: git rev-parse \"origin/\$BASE_BRANCH^{tree}\". Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
             exit 1
         fi
-        CUR_BASE_TREE=$(git rev-parse "origin/$BASE_BRANCH^{tree}" 2>/dev/null) || CUR_BASE_TREE=""
-        if [ -n "$CUR_BASE_TREE" ] && [ "$CUR_BASE_TREE" != "$CL_BASE_TREE" ]; then
-            echo "BLOCKED: the base moved since certification — origin/$BASE_BRANCH tree is $CUR_BASE_TREE, certified base_tree is $CL_BASE_TREE. The reviewers read a different base, and the merged result is not what they cleared (#540). Rebase and re-review, or decide it yourself: --user-approved \"<reason>\"." >&2
+        # Resolved from the PR's own baseRefOid with the same fetch-fallback and
+        # the same fail-closed posture as the remote head above. A base we
+        # cannot read is not a base we can clear against.
+        CUR_BASE_TREE=$(git rev-parse "$BASE_SHA^{tree}" 2>/dev/null) || CUR_BASE_TREE=""
+        if [ -z "$CUR_BASE_TREE" ]; then
+            git fetch -q origin "$BASE_SHA" 2>/dev/null || true
+            CUR_BASE_TREE=$(git rev-parse "$BASE_SHA^{tree}" 2>/dev/null) || CUR_BASE_TREE=""
+        fi
+        if [ -z "$CUR_BASE_TREE" ]; then
+            echo "BLOCKED: could not read the tree of the base commit $BASE_SHA ($BASE_BRANCH), so the base the reviewers read cannot be compared against the base this would merge into. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        if [ "$CUR_BASE_TREE" != "$CL_BASE_TREE" ]; then
+            echo "BLOCKED: the base moved since certification — $BASE_BRANCH tree is $CUR_BASE_TREE, certified base_tree is $CL_BASE_TREE. The reviewers read a different base, and the merged result is not what they cleared (#540). Rebase and re-review, or decide it yourself: --user-approved \"<reason>\"." >&2
             exit 1
         fi
         CL_REVIEW_FILE=$(grep -o '"review_file"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"review_file"[[:space:]]*:[[:space:]]*"//; s/"$//')

@@ -104,7 +104,7 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
             fi
             exit 0 ;;
     esac
-    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":123,\"state\":\"OPEN\",\"baseRefName\":\"main\"}"
+    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":123,\"state\":\"OPEN\",\"baseRefName\":\"main\",\"baseRefOid\":\"$HEAD_SHA\"}"
     exit 0
 elif [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
     printf '%s\n' "$DIFF_FILES"
@@ -383,7 +383,7 @@ rm -rf "$t"
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
 cat > "$t/bin/gh" <<STUB
 #!/bin/bash
-if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -465,7 +465,7 @@ json.dump([{"user": {"login": "m"}, "author_association": "OWNER", "body": hidde
 PY
 cat > "$t/bin/gh" <<STUB
 #!/bin/bash
-if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -575,7 +575,7 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then
   printf '"%s"\n' '.github/workflows/validate-\360\237\230\200.yml'; exit 0
 elif [ "\$1" = "api" ]; then
@@ -673,7 +673,7 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -710,7 +710,7 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) exit 1;; esac        # the query FAILS
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "README.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -749,7 +749,7 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "README.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -792,7 +792,7 @@ PY
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in

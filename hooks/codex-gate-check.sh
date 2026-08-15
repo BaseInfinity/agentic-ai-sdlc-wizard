@@ -720,13 +720,24 @@ case "$STATUS" in
         # "the base" is not observable without knowing the commit's kind — it
         # is HEAD for a normal commit and HEAD^ for an amend — and telling
         # those apart means reading `--amend` off the command line, which is
-        # the option-grammar trap again. It costs nothing to defer: a rebase
-        # onto moved upstream CHANGES the index tree, so the check above
-        # already refuses it. What base_tree adds is which base the reviewer
-        # read, and `scripts/merge-pr.sh` enforces that at the merge boundary,
-        # where the base ref is well-defined and post-command state is
-        # observable. PreToolUse cannot see post-command state, so the hook
-        # was never able to close this alone.
+        # the option-grammar trap again.
+        #
+        # An earlier version of this comment justified the deferral by claiming
+        # a rebase onto moved upstream always CHANGES the index tree, so the
+        # check above already refuses it. Sol falsified that in round 1 of #628
+        # with a running counter-example: when upstream independently produces
+        # the candidate's final content, the rebase drops the now-redundant
+        # branch change and the index tree is unchanged. `base_moved hook=0
+        # candidate_same=yes base_changed=yes`. The claim is false and is not
+        # repeated here.
+        #
+        # The deferral still holds, but for the narrower reason that survives:
+        # PreToolUse cannot observe post-command state, so the hook was never
+        # able to close this alone, and the base ref is only well-defined at
+        # the merge boundary. That makes `scripts/merge-pr.sh` the sole
+        # enforcement point for base_tree — which is exactly why it reads the
+        # base from the PR's baseRefOid and fails closed when it cannot resolve
+        # it, rather than trusting a local tracking ref.
         exit 0
         ;;
     PENDING_RECHECK)

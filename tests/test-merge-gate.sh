@@ -376,7 +376,10 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
             [ "$n" -eq 0 ] && n=1
             echo "$n"; exit 0 ;;
     esac
-    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":${PR_NUM:-123},\"state\":\"OPEN\",\"baseRefName\":\"${BASE_REF:-main}\"}"
+    # baseRefOid is SERVER truth about where the base branch is now. The local
+    # refs/remotes/origin/<base> tracking ref is a cache and can be stale or
+    # absent; both reviewers broke the gate through it in round 1.
+    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":${PR_NUM:-123},\"state\":\"OPEN\",\"baseRefName\":\"${BASE_REF:-main}\",\"baseRefOid\":\"${BASE_OID:-$HEAD_SHA}\"}"
     exit 0
 elif [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
     printf '%s\n' "$DIFF_FILES"
@@ -690,6 +693,70 @@ test_wrapper_blocks_moved_base() {
     fi
 }
 
+# Test: the SERVER base moved while the local tracking ref stayed put.
+#
+# Round 1, found independently by BOTH reviewers and constructed rather than
+# argued. The first version of this check read `origin/$BASE_BRANCH^{tree}` — a
+# local cache — and skipped the comparison entirely when that ref was absent.
+# Sol built a bare server repo, advanced server main, left refs/remotes/origin/
+# main at the certified commit, and merged a bogus certification at exit 0.
+# Fable reached the same exit 0 by deleting the ref outright.
+#
+# The base is now read from the PR's baseRefOid, which is server truth. This row
+# is the regression: the local ref deliberately still says "unchanged".
+test_wrapper_blocks_moved_server_base_with_stale_tracking_ref() {
+    local tmpdir out exit_code candidate_sha candidate_tree server_base_sha
+    tmpdir=$(setup_wrapper_fixture)
+    candidate_sha=$(cat "$tmpdir/.fixture-sha")
+    candidate_tree=$(cat "$tmpdir/.fixture-tree")
+
+    printf 'server base moved\n' > "$tmpdir/server-base.txt"
+    git -C "$tmpdir" add server-base.txt
+    git -C "$tmpdir" commit -qm 'move server base'
+    server_base_sha=$(git -C "$tmpdir" rev-parse HEAD)
+
+    # Back to the certified content, and the local tracking ref left lying.
+    git -C "$tmpdir" reset -q --hard "$candidate_sha"
+    git -C "$tmpdir" update-ref refs/remotes/origin/main "$candidate_sha"
+    echo "BASE_OID=$server_base_sha" >> "$tmpdir/.gh-stub-config"
+
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$candidate_sha" ".reviews/some-review.md" \
+        "$candidate_tree" "$candidate_tree"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "the base moved since certification"; then
+        pass "wrapper blocks when the server base moved despite a stale local tracking ref"
+    else
+        fail "stale origin/main authorized a merge past a moved server base: exit=$exit_code out=$out"
+    fi
+}
+
+# Test: the base object named by the PR cannot be read, so nothing can be
+# compared. Same posture as the unreadable remote head ten lines above it —
+# the first version skipped the check instead, which is fail-OPEN in the one
+# situation where the answer is unknown.
+test_wrapper_blocks_unreadable_base_object() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    echo "BASE_OID=ffffffffffffffffffffffffffffffffffffffff" >> "$tmpdir/.gh-stub-config"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    # Asserting the SPECIFIC message, not just a non-zero exit. Neutering the
+    # fail-closed branch leaves CUR_BASE_TREE empty, which the mismatch check
+    # below it then rejects anyway — so an exit-code-only assertion stays green
+    # through the mutation and proves nothing. Measured, not assumed.
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "could not read the tree of the base commit"; then
+        pass "wrapper blocks when the PR's base object cannot be read"
+    else
+        fail "unreadable base object should block on the unreadable-base branch, got exit=$exit_code out=$out"
+    fi
+}
+
 # Test: the pre-#540 artifact format fails closed. A clearance carrying only a
 # sha named no content, and honouring it would be the hole reopened under an
 # older key — the same posture #437 took for a missing commit_sha.
@@ -874,13 +941,17 @@ test_wrapper_blocks_wizard_doc_touch() {
 
 # Test: all conditions pass — wrapper invokes the exact expected merge command
 test_wrapper_merges_when_all_conditions_met() {
-    local tmpdir out exit_code
+    local tmpdir out exit_code fixture_sha
     tmpdir=$(setup_wrapper_fixture)
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
+    # Captured BEFORE the fixture is removed. Reading it afterwards substitutes
+    # the empty string, which leaves a prefix match that passes without ever
+    # checking the SHA — the whole point of this row (Sol, round 1 P2).
+    fixture_sha=$(cat "$tmpdir/.fixture-sha")
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$fixture_sha" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED: pr merge 123 --squash --match-head-commit $(cat "$tmpdir/.fixture-sha")"; then
+    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED: pr merge 123 --squash --match-head-commit $fixture_sha"; then
         pass "wrapper merges with the exact expected command when all conditions are met"
     else
         fail "wrapper should invoke 'gh pr merge 123 --squash --match-head-commit <fixture sha>', got exit=$exit_code out=$out"
@@ -936,6 +1007,8 @@ test_wrapper_blocks_round_1_only
 test_wrapper_blocks_stale_clearance
 test_wrapper_blocks_wrong_candidate_tree
 test_wrapper_blocks_moved_base
+test_wrapper_blocks_moved_server_base_with_stale_tracking_ref
+test_wrapper_blocks_unreadable_base_object
 test_wrapper_blocks_clearance_without_trees
 test_wrapper_blocks_empty_review_artifact
 test_wrapper_blocks_denylisted_workflow_touch
