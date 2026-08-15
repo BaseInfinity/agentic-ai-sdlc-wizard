@@ -531,8 +531,11 @@ GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
 # again, and PR #606 is a seven-round demonstration of why that fails.
 #
 # The predicate is deliberately the smallest one that catches the accident:
-# `codex` in command position followed by `exec`, allowed if the command names
-# the launcher. It reuses this gate's existing anchoring rather than adding a
+# `codex` in command position followed by `exec`. There is no launcher escape
+# hatch — see the note above the match itself for why one was never needed and
+# why the one that existed was deleted.
+#
+# It reuses this gate's existing anchoring rather than adding a
 # second notion of command position, so the two cannot drift — and it reads
 # MASKED_COMMAND, so a quoted mention (`grep "codex exec" docs`) is already a Q
 # by the time it gets here and cannot false-fire. That is the #588 defect class

@@ -298,6 +298,37 @@ expect_refused "naming the launcher does not license a hand-typed leg beside it"
 expect_refused "...nor does mentioning it in an argument" \
     'echo scripts/run-review-leg.sh; codex exec "q"'
 
+# --- round 6: array data reads as command position --------------------------
+# `words=(codex exec)` assigns two array elements and invokes nothing, but the
+# gate refuses it: GATE_SEP treats `(` as a command separator and the boundary
+# set treats `)` as ending the token. Both are SHARED machinery.
+#
+# INHERITED, not introduced, and measured rather than argued. Run from a tree
+# with NO .reviews/ — so detection alone decides, because with a valid handoff
+# present the git lane exits 0 on the ARTIFACT and that is not an allow:
+#
+#     shape                        codex     git
+#     words=(codex exec)           REFUSE    REFUSE
+#     words=(...) ; ls             REFUSE    REFUSE
+#     words="codex exec"           ALLOW     ALLOW
+#     (codex exec)                 REFUSE    REFUSE
+#     { codex exec; }              REFUSE    REFUSE
+#
+# Fixing it means knowing that `(` opens an ARRAY VALUE rather than a subshell,
+# which is context a regex does not have — and it would have to change the
+# shared anchor, which is blocker condition (3) for the git lane. So the shape
+# is PINNED as it behaves, in both lanes, rather than silently left untested.
+expect_refused "INHERITED LIMIT: array data reads as command position" \
+    'words=(codex exec)'
+
+# shellcheck disable=SC2016  # the UNEXPANDED text is the input under test
+expect_refused "INHERITED LIMIT: ...and a launcher call after it is refused too" \
+    'words=(codex exec)
+scripts/run-review-leg.sh .reviews/out.md "${words[*]}" --model gpt-5.6-sol'
+
+expect_allowed "a STRING assignment is not command position — the boundary case" \
+    'words="codex exec"'
+
 # A boolean long option is an option like any other: it escapes.
 expect_allowed "ACCEPTED LIMIT: a boolean long option before the subcommand" \
     'codex --oss exec "review"'
