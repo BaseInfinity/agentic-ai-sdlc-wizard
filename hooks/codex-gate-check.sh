@@ -555,7 +555,11 @@ GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
 # a different subcommand and `-` was already excluded; `$`, `.` and `=` are the
 # same case and are excluded the same way, by naming the boundary instead of
 # negating a word class.
-GATE_CODEX_END="([[:space:]]|[;&|)}<>]|\$)"
+# `}` is NOT in the set. It only closes a group as a RESERVED WORD, which needs
+# a preceding `;` or newline and its own whitespace — as a bare character it is
+# an ordinary one, and `bash -c 'printf "[%s]" exec}foo'` prints one word. So
+# `codex exec}foo --help` was refused. `)` stays: it is a real metacharacter.
+GATE_CODEX_END="([[:space:]]|[;&|)<>]|\$)"
 #
 # NO OPTION MAY APPEAR BETWEEN `codex` AND THE SUBCOMMAND. That is a deliberate
 # accepted limit, and it is the design this lane arrived at rather than the one
@@ -599,16 +603,24 @@ GATE_CODEX="(${GATE_WORD}*/)?\\\\?codex[[:space:]]+(exec|e)${GATE_CODEX_END}"
 # `env codex exec` and `sudo codex exec` stay caught. `timeout 300 codex exec`
 # and `nice -n 5 codex exec` no longer do — accepted with the rest.
 GATE_CODEX_WRAP="(${GATE_WRAPPER}[[:space:]]+)*"
+# THERE IS NO LAUNCHER ESCAPE HATCH, and removing it is what closed the last
+# hole. This lane used to allow any command whose RAW text mentioned
+# `run-review-leg.sh`, so that the launcher itself could not be refused. That
+# check made `scripts/run-review-leg.sh out p && codex exec "q"` allowed — the
+# lane satisfied by MENTIONING the launcher rather than using it.
+#
+# It was never needed. A launcher invocation is `scripts/run-review-leg.sh
+# OUTPUT PROMPT [args]` and contains no `codex exec` token at all, so the
+# predicate does not match it in the first place. Verified by neutralising the
+# check and re-running: all three real launcher shapes stay ALLOWED, and the
+# `&&` bypass becomes REFUSED. The whole hatch was dead weight that could only
+# ever be wrong. The suite still pins the launcher shapes as allowed.
 if printf '%s' "$MASKED_COMMAND" | grep -qE \
     "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}${GATE_CODEX_WRAP}${GATE_CODEX}"; then
-    # Read the RAW command for the launcher: masking collapses quoted text, and
-    # the launcher's path can legitimately appear in a quoted argument.
-    if ! printf '%s' "$COMMAND_VALUE" | grep -q 'run-review-leg\.sh'; then
-        echo "CROSS-MODEL REVIEW GATE: run the review leg through scripts/run-review-leg.sh, not 'codex exec' directly." >&2
-        echo "  scripts/run-review-leg.sh OUTPUT_FILE PROMPT [EXTRA_CODEX_ARGS...]" >&2
-        echo "The launcher gives the child /dev/null on stdin whatever the caller inherited, and its own exit status IS the leg's verdict — 0 completed, non-zero failed, nothing by your deadline means inspect and relaunch. A leg typed by hand has no owner and no status: its fate is unknown immediately, and by wall clock a hang is identical to a slow review. Measured 2026-08-14 on PR #606: one hand-typed leg hung at 39 bytes, a second returned no verdict. $BYPASS_NOTE" >&2
-        exit 2
-    fi
+    echo "CROSS-MODEL REVIEW GATE: run the review leg through scripts/run-review-leg.sh, not 'codex exec' directly." >&2
+    echo "  scripts/run-review-leg.sh OUTPUT_FILE PROMPT [EXTRA_CODEX_ARGS...]" >&2
+    echo "The launcher gives the child /dev/null on stdin whatever the caller inherited, and its own exit status IS the leg's verdict — 0 completed, non-zero failed, nothing by your deadline means inspect and relaunch. A leg typed by hand has no owner and no status: its fate is unknown immediately, and by wall clock a hang is identical to a slow review. Measured 2026-08-14 on PR #606: one hand-typed leg hung at 39 bytes, a second returned no verdict. $BYPASS_NOTE" >&2
+    exit 2
 fi
 
 if ! printf '%s' "$MASKED_COMMAND" | grep -qE \

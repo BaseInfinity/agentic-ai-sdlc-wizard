@@ -278,6 +278,26 @@ expect_refused "a redirection immediately after the subcommand is a boundary" \
 expect_refused "a semicolon is a boundary" \
     'codex e;true'
 
+# --- round 5: two independent reviewers, one one-line defect each -----------
+# Both certified the round-4 design and each found a real blocker in it.
+
+# `}` is not a shell token boundary. It closes a group only as a RESERVED WORD,
+# which needs a preceding `;` or newline and its own whitespace; as a bare
+# character it is ordinary. `bash -c 'printf "[%s]" exec}foo'` prints one word.
+expect_allowed "a closing brace continues the token — it is not a metacharacter" \
+    'codex exec}foo --help'
+
+expect_allowed "an opening brace continues the token" \
+    'codex exec{foo --help'
+
+# The launcher escape hatch is GONE, and this is the shape that killed it: the
+# lane used to be satisfied by MENTIONING the launcher anywhere in the command.
+expect_refused "naming the launcher does not license a hand-typed leg beside it" \
+    'scripts/run-review-leg.sh out p && codex exec "q"'
+
+expect_refused "...nor does mentioning it in an argument" \
+    'echo scripts/run-review-leg.sh; codex exec "q"'
+
 # A boolean long option is an option like any other: it escapes.
 expect_allowed "ACCEPTED LIMIT: a boolean long option before the subcommand" \
     'codex --oss exec "review"'
