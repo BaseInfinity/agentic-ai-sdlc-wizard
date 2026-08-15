@@ -3873,8 +3873,20 @@ address: after a certain round, every blocker lived at a line *the PR itself had
 created*. That is the loop consuming its own output, and it reads exactly like
 convergence from the inside.
 
-**SCOPE RULE.** Two passes per frozen scope: one review, one verify — and verify
-reads only the diff since the last verdict. A fix that adds code or promises
+**SCOPE RULE.** One review and one verify per frozen scope — and verify
+reads only the diff since the last verdict. **After those two passes, STOP**
+unless the record holds one of exactly two things: an unresolved in-scope P0/P1
+in the deliverable, or a finding that invalidates its verification evidence.
+Harness-only, below-bar and out-of-scope findings are filed and authorize no
+further pass. A fix to the deliverable creates a new SHA and must be verified;
+a pass that found such a defect is not clean, whoever introduced it — including
+the loop itself. And do not prompt a reviewer to "find the next route" or
+"defeat the new guard": asking for a fresh category biases review toward
+producing one, which holds the finding count above zero long after the
+deliverable has converged. *(#588/PR #598 reached 22 review attempts under the
+older wording, which called itself accounting and left termination to the
+driver. The last shipped defect it found was introduced by its own previous
+fix.)* A fix that adds code or promises
 beyond the reviewed diff is *new scope*: it requires a continue/stop decision
 from the planner (a role, not a fourth model — defined under "Why four layers
 didn't catch it"), recorded in `.reviews/handoff.json` under `"scope_decisions"`
@@ -4168,7 +4180,7 @@ codex exec \
 
 **This is the blocking rule stated from the recheck's side.** A finding that shows a requested behavior is wrong means the thing does not work, so it is P1 — no matter who labelled it P2, or when it appeared. Grade by impact and the rule needs no exception.
 
-**Convergence:** the default is **two passes per frozen scope, counted cumulatively per root task** (see "When to stop" above); this section's older max-3-rechecks heuristic is the ceiling, not the target. If still NOT CERTIFIED after the budget, that is a **recorded continue/stop decision**, not an automatic escalation — see the Exception below for where the decision is written. A human is woken only when the two reviewers disagree, or a non-waivable gate has failed twice. Never ship uncertified; but running out of budget is not by itself a reason to interrupt the maintainer.
+**Convergence:** the default is **one review and one verify per frozen scope, counted cumulatively per root task, then STOP** (see "When to stop" above for the two findings that authorize a further pass); this section's older max-3-rechecks heuristic is a ceiling that the stop condition should reach first. If still NOT CERTIFIED after the budget, that is a **recorded continue/stop decision**, not an automatic escalation — see the Exception below for where the decision is written. A human is woken only when the two reviewers disagree, or a non-waivable gate has failed twice. Never ship uncertified; but running out of budget is not by itself a reason to interrupt the maintainer.
 
 **Exception — known-large migrations, and it costs a recorded decision.** The cap is a heuristic against spinning on a shrinking tail of nitpicks, not a hard stop — but "every round is still finding something real" is precisely what a self-consuming loop reports about itself, so it is **not** a licence the builder may grant itself. Each round past the budget requires a continue/stop entry in `.reviews/handoff.json` `"scope_decisions"` **recorded before the round runs** (entry shape and the planner role: "Why four layers didn't catch it" above), carrying the cost line and a `git blame` of the last blocker against the frozen-scope SHA; a blocker in code the issue never asked for is not a reason to continue. With that decision on record: if every round is still surfacing a genuinely new, independently-verified, real issue — especially if severity is flat or increasing (later rounds finding live-code bugs, not just prose) — keep going past round 4. Only stop when a round returns CERTIFIED, or consecutive rounds return nothing but nitpicks/false positives. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
 
@@ -4195,7 +4207,8 @@ Claude writes code → handoff.json (round 1)
     |                              All resolved? → YES → CERTIFIED (write commit_sha)
     |                                          |
     └────────── Fix rejected items ←───────────┘
-        (two passes per frozen scope, counted per root task; past that, a recorded decision)
+     (one review + one verify per frozen scope, per root task, then STOP unless an
+      in-scope P0/P1 or invalidated evidence remains; past that, a recorded decision)
 ```
 
 **Every CERTIFIED path above writes `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) treats a missing or mismatched SHA as a stale certification, so a bare `CERTIFIED` status string is never enough on its own.
@@ -4379,7 +4392,7 @@ When multiple reviewers comment on a PR (Claude, Codex, human reviewers), addres
 2. **Respond per-reviewer** — each reviewer has different blind spots. Address each one's findings separately
 3. **Do not resolve conflicts yourself** — when two model reviewers disagree, cross-feed their positions verbatim and let them reconcile (see "Reconciliation: the reviewers reconcile with each other"). You relay; you never pick a winner. A human reviewer cannot be put in that loop, so a human-vs-model split goes to the human as one question, and the human decides
 4. **Iterate until all approve** — don't merge until every active reviewer is satisfied
-5. **Two passes per reviewer per frozen scope**, counted cumulatively per root task so a re-freeze does not reset it — past that, a recorded continue/stop decision, not a user interrupt
+5. **One review and one verify per reviewer per frozen scope, then STOP**, counted cumulatively per root task so a re-freeze does not reset it. Only an unresolved in-scope P0/P1 in the deliverable, or a finding that invalidates its verification evidence, authorizes another pass — harness-only and out-of-scope findings are filed. Past that, a recorded continue/stop decision, not a user interrupt
 
 The value of multiple reviewers: different models/humans catch different issues. No single reviewer is sufficient for high-stakes changes.
 
