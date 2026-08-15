@@ -204,9 +204,11 @@ check_rc "an output file with no prompt is a usage error, exit 64" 64 "$rc"
 # of the reviewer, rather than asking for more diff scrutiny. "Seven rounds
 # audited the diff; zero audited the build — that is the whole fix."
 #
-# The stub `gh` mirrors codex's: it must also read stdin to EOF when asked, so
-# a probe that fails to supply EOF hangs here rather than passing quietly. A
-# launcher that can hang on its own preflight has reintroduced #590.
+# The `gh` stub these rows drive is defined at the top of this file, beside the
+# codex stub, so that every test above runs hermetically too. It mirrors codex's
+# in reading stdin to EOF when asked, so a probe that fails to supply EOF hangs
+# rather than passing quietly — a launcher that can hang on its own preflight
+# has reintroduced #590.
 
 out=$(new_leg)
 set +e
@@ -313,6 +315,18 @@ if grep -qiE 'UNKNOWN|timed out|deadline' "$out"; then
     pass "the abandoned probe is recorded, not silently omitted"
 else
     fail "the probe timed out silently — a reviewer cannot tell the build was never checked"
+fi
+
+# The kill must be SILENT in the reviewer's file. Without `disown`, bash prints
+# its job-termination notice — "Terminated: 15   ( set +e; gh pr checks …" —
+# into this very block, exposing the launcher's internals as noise in the one
+# place the PR exists to make readable. Review found it by running the repro;
+# the suite could not, because nothing asserted on it. Deleting `disown` now
+# turns this row red.
+if grep -qE 'Terminated|Killed' "$out"; then
+    fail "a shell job notice leaked into the CI STATUS block — the reviewer reads launcher internals"
+else
+    pass "the kill is silent in the reviewer's output"
 fi
 
 # ...and it must be KILLED, not merely walked away from. The first fix killed
