@@ -22,39 +22,42 @@ the harness enforces rather than something a driver remembers.
   wrong, or the first verification-evidence invalidation in this root task. A later
   evidence-only finding is filed, not spent on another pass.
 
-- **A launcher for review legs, and a gate that requires it** (#590, #595, #596, #610).
-  `codex exec` reads stdin to EOF and appends it to the prompt, so a leg handed an unclosed
-  pipe blocks *before contacting the model* — indefinitely. Two legs were waited on for 51
-  and 28 minutes against processes that had never started. `scripts/run-review-leg.sh` gives
-  its child `/dev/null` on stdin whatever the caller inherited, and its exit status is the
-  leg's verdict. The Bash gate now refuses a leg typed outside it.
+- **A gate lane that refuses a hand-typed review leg** (#610), in the shipped
+  `hooks/codex-gate-check.sh`. `codex exec` reads stdin to EOF and appends it to the prompt,
+  so a leg handed an unclosed pipe blocks *before contacting the model* — indefinitely. Two
+  legs were waited on for 51 and 28 minutes against processes that had never started.
 
-  Two designs for detecting the hang from outside were built and both were falsified with
-  running code, so neither shipped: output carries no completion marker, `tokens used` appears
-  in the echoed prompt so a crashed leg reads as complete, the hang's byte signature differs
-  per machine, and a sidecar status publishes after the child exits. The launcher's own exit
-  status is the only sound signal, delivered by the process that has it.
-
-- **The build is now an input to a review verdict** (#613). A review leg's output opens with
-  the current CI status, ahead of the model's own output. Preflight, never a gate — a red
-  build is reported and the leg proceeds, because a preflight that can refuse to launch is a
-  second way for a review not to happen.
+  **The launcher this lane names is NOT in the npm package.** `scripts/` is not in
+  `package.json`'s `files`, so consumers receive the refusal without the
+  `scripts/run-review-leg.sh` it points them at. That is #594, it is open, and it is not
+  fixed here. Verified with `npm pack --dry-run`: zero files under `scripts/`.
 
 - **The review contract as one prose batch** (#558, #557, #573, #574, #564, #556): a severity
   scale, what actually blocks a merge, reviewers reconciling with each other verbatim rather
   than through the driver, and the post-review confidence percentages cut for carrying no
   signal.
 
-- **Falsify-before-review is an executable step** (#590), not advice.
+- **Falsify-before-review is an executable step** (#596), not advice.
 
-### Fixed — three defects in the commit gate, all of which blocked legitimate work
+### Fixed — three defects in the commit gate
 
-- **The gate matched `git commit` in prose** (#588), so a commit whose *message* or whose
-  `grep` pattern merely mentioned the phrase was refused. It now fires on command position.
-- **JSON-escaped whitespace hid an invocation from the gate** (#581). A command split by an
-  escaped newline walked past it entirely.
-- **The review gate made the review protocol uncommittable** (#533) — the rule and the
-  mechanism enforcing it could not coexist.
+Two refused legitimate work; one failed open. Those are opposite failures and are not
+described here as if they were the same one.
+
+- **Refused work: the gate matched `git commit` in unquoted prose** (#588). It now fires on
+  command position. A commit whose *message* mentions the phrase is still refused — that is
+  #600, and it is open.
+- **Refused work: the review gate made the review protocol uncommittable** (#533) — the rule
+  and the mechanism enforcing it could not coexist.
+- **Failed open: a JSON-escaped newline hid an invocation** (#581). A command split by an
+  escaped newline walked past the gate entirely. The opposite failure to the two above, and
+  the more dangerous one, because nothing surfaced it.
+
+### Not in this release, stated because the shipped gate references it
+
+`scripts/run-review-leg.sh` and the CI-status preflight it carries (#590, #613) are
+repo-internal: they are why this project's own review legs no longer hang, and consumers do
+not receive them. #594 tracks shipping the launcher.
 
 ### Changed
 
