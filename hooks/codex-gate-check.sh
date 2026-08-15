@@ -542,9 +542,41 @@ GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
 # records about the merge gate: this sees commands issued through the Claude
 # Code Bash tool. A leg launched from a terminal never meets it. It is an
 # accident-catcher for the path where the accident actually happened.
-GATE_CODEX="(${GATE_WORD}*/)?codex\\s+(${GATE_WORD}+\\s+)*exec\\b"
+# The subcommand is `exec` or its DECLARED alias `e` — `codex --help` lists
+# "exec ... [aliases: e]", and `codex e --help` prints exec's help. Verified on
+# the installed CLI; `ex` and `exe` do NOT resolve, so this is an alias list,
+# not prefix inference, and enumerating the two is exact rather than a guess.
+#
+# Between `codex` and the subcommand, only OPTION tokens may appear — a token
+# starting with `-`, optionally followed by its value. The first version
+# accepted any words there, which made `codex review exec` (where `exec` is the
+# review PROMPT), `codex help exec`, and `codex exec-server --help` all
+# refusals. Those are the #588 false-positive class reappearing in a new lane,
+# and they are what this bound removes.
+#
+# The subcommand must be a COMPLETE token: `exec-server` is a different
+# subcommand and the trailing class excludes the `-` that starts it.
+GATE_CODEX_OPT="(\\s+-${GATE_WORD}*(\\s+${GATE_WORD}+)?)*"
+GATE_CODEX="(${GATE_WORD}*/)?\\\\?codex${GATE_CODEX_OPT}\\s+(exec|e)([^A-Za-z0-9_-]|\$)"
+# Wrappers, but NOT the greedy GATE_SKIP the git lane uses. GATE_SKIP consumes
+# the wrapped command and restarts matching at its arguments, which turned
+# `env echo codex exec`, `env grep codex exec README.md` and
+# `env ls /tmp/codex exec` into refusals: the wrapper runs echo/grep/ls, and
+# `codex exec` is their ARGUMENT, not a command.
+#
+# What a wrapper may carry between itself and `codex` is therefore enumerated
+# rather than skipped: its own options, an option's value, a bare number
+# (`timeout 300`), or an assignment (`env FOO=1`). None of those is a command
+# name, so the wrapped-prose shapes above stop matching while `env codex exec`,
+# `timeout 300 codex exec` and `nice -n 5 codex exec` stay caught.
+#
+# This is narrower than the git lane on purpose. It costs coverage of a wrapper
+# whose argument happens to look like a command — accepted, because a false
+# refusal here blocks the maintainer's own review leg, and the git lane's
+# greedy form is what produced three of round 1's eight findings.
+GATE_CODEX_WRAP="(${GATE_WRAPPER}([[:space:]]+(-${GATE_WORD}*|[0-9]+[smhd]?|${GATE_ASSIGN}))*[[:space:]]+)*"
 if printf '%s' "$MASKED_COMMAND" | grep -qE \
-    "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}(${GATE_WRAPPER}[[:space:]]+${GATE_SKIP})*${GATE_CODEX}"; then
+    "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}${GATE_CODEX_WRAP}${GATE_CODEX}"; then
     # Read the RAW command for the launcher: masking collapses quoted text, and
     # the launcher's path can legitimately appear in a quoted argument.
     if ! printf '%s' "$COMMAND_VALUE" | grep -q 'run-review-leg\.sh'; then

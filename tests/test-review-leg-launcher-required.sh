@@ -108,6 +108,59 @@ expect_allowed "a codex subcommand that is not exec" \
 expect_allowed "an unrelated command" \
     'ls -la scripts/'
 
+# --- round 1 of cross-model review: every shape it demonstrated, as a row ----
+#
+# The reviewer ran these against the hook and reported the exit status; each is
+# recorded here so the finding cannot come back silently. Its verdict was
+# NOT CERTIFIED 3/10 on the first version of this lane.
+
+# The declared alias. `codex --help` lists "exec ... [aliases: e]" and
+# `codex e --help` prints exec's help; `ex` and `exe` do not resolve.
+expect_refused "the declared 'e' alias — a real leg the first version allowed" \
+    'codex e "review this"'
+
+expect_refused "the alias behind an option that takes a value" \
+    'codex --model gpt-5.6-sol e "review this"'
+
+expect_refused "the alias behind a short option" \
+    'codex -m gpt-5.6-sol e "review"'
+
+# Wrappers must still be caught when they wrap codex ITSELF.
+expect_refused "env wrapping codex directly" \
+    'env codex exec "review"'
+
+expect_refused "timeout wrapping codex directly" \
+    'timeout 300 codex exec "review"'
+
+expect_refused "an assignment prefix" \
+    'FOO=bar codex exec "review"'
+
+expect_refused "codex by absolute path" \
+    '/usr/local/bin/codex exec "review"'
+
+expect_refused "escaped command name" \
+    '\codex exec "review"'
+
+# False positives the first version introduced — these invoke no review leg.
+# `exec` here is the review PROMPT, an argument, or a different subcommand.
+expect_allowed "codex review with 'exec' as the prompt" \
+    'codex review exec'
+
+expect_allowed "codex help exec" \
+    'codex help exec'
+
+expect_allowed "exec-server is a different subcommand, not a complete 'exec' token" \
+    'codex exec-server --help'
+
+expect_allowed "a wrapper running echo, with the words as its argument" \
+    'env echo codex exec'
+
+expect_allowed "a wrapper running grep, with the words as its pattern" \
+    'env grep codex exec README.md'
+
+expect_allowed "a wrapper running ls, with the words as its path" \
+    'env ls /tmp/codex exec'
+
 # Forced failure for the hoisted guard above. Runs LAST so it cannot mask a
 # real result, and only under the sentinel the guard sets.
 if [ -n "${LAUNCHER_SUITE_FORCE_FAILURE:-}" ]; then
