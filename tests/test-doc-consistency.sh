@@ -3786,7 +3786,8 @@ test_sdlc_skill_makes_fable_the_deciding_role() {
 # real defects; rounds 5-6 bought spellings of `sudo`.
 #
 # This is deliberately NOT a second round counter. The skill already has one —
-# "TWO PASSES PER FROZEN SCOPE" with its own recorded continue/stop escape —
+# the Convergence rule, "ONE REVIEW AND ONE VERIFY PER FROZEN SCOPE", which now
+# carries the stop condition itself rather than deferring to the driver —
 # and #476 burned six rounds with that rule already shipped, because each
 # repair re-froze the scope and bought two more passes. A cap was never the
 # missing piece; both reviewers said so independently, and the wizard doc
@@ -3837,9 +3838,11 @@ test_sdlc_skill_caps_guard_cost_by_its_change
 # teaches the CORRECT rule is NOT checked and is not checkable this way — see
 # the helper comment below for the four rounds that established that.
 #
-# NOT a cap. #530 deleted a second round counter for contradicting the first.
-# This amends the surviving counter's DEFINITION and adds no limit — whether to
-# continue stays governed by the recorded continue/stop decision.
+# NOT a second counter. #530 deleted one for contradicting the first, and #606
+# rejected another for the same reason. This amends the surviving counter's
+# DEFINITION. The cap lives in that one rule: continue only when the preceding
+# completed pass recorded an open in-scope P0/P1, or the first
+# verification-evidence invalidation in the root task.
 # The wizard states the budget in four places; only ONE of them is the
 # authoritative definition, so the wizard's field check reads that section
 # rather than the whole file. Historically this scoping also mattered because
@@ -4052,7 +4055,6 @@ test_issue_templates_carry_a_scope_card() {
 test_sdlc_skill_planning_requires_a_scope_card
 test_scope_card_breaker_conditions_are_named
 test_issue_templates_carry_a_scope_card
-
 
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
