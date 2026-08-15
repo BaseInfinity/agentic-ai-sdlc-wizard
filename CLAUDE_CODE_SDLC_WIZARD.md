@@ -4209,8 +4209,10 @@ Claude writes code → handoff.json (round 1)
     |                              All resolved? → YES → CERTIFIED (write commit_sha)
     |                                          |
     └────────── Fix rejected items ←───────────┘
-     (one review + one verify per frozen scope, per root task, then STOP unless an
-      in-scope P0/P1 or invalidated evidence remains; past that, a recorded decision)
+     (one review + one verify per frozen scope, per root task, then STOP unless the
+      LAST COMPLETED pass recorded an in-scope P0/P1, or the FIRST evidence
+      invalidation in this root task — one extra pass, then it is filed too;
+      past that, a recorded decision)
 ```
 
 **Every CERTIFIED path above writes `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) treats a missing or mismatched SHA as a stale certification, so a bare `CERTIFIED` status string is never enough on its own.

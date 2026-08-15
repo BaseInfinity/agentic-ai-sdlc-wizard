@@ -4056,6 +4056,66 @@ test_sdlc_skill_planning_requires_a_scope_card
 test_scope_card_breaker_conditions_are_named
 test_issue_templates_carry_a_scope_card
 
+# #606: the evidence exception must carry its bound EVERY time it is stated.
+#
+# The rule's continuation test has two clauses, and the second one — a finding
+# that invalidates the verification evidence — is only safe because it is
+# bounded to the FIRST such finding in a root task. Unbounded, it authorizes a
+# pass after every false-green harness finding, which is the loop the rule
+# exists to stop: at #588/PR #598 round 21 the second evidence-only finding
+# would license round 22.
+#
+# Three consecutive review rounds each found one more unbounded restatement,
+# in six then seven places, and TWO of them were written by the alignment pass
+# that was fixing the others. Hand-aligning one rule across a document set is
+# itself a way to reintroduce it, so the class gets a machine check rather than
+# another careful sweep.
+test_evidence_exception_always_carries_its_bound() {
+    local out
+    out=$(python3 - <<'PYEOF'
+import re, sys
+
+FILES = [
+    "skills/sdlc/SKILL.md",
+    "cowork/skills/sdlc/SKILL.md",
+    "CLAUDE_CODE_SDLC_WIZARD.md",
+    "SDLC.md",
+]
+# Any statement of the exception. Whitespace is normalised first so a bound
+# that wrapped onto the next line still counts.
+MENTION = re.compile(r"(invalidat\w*\s+(its\s+)?(verification[- ])?evidence"
+                     r"|(verification[- ])?evidence[- ]invalidation"
+                     r"|evidence-only)", re.I)
+# A mention is bounded if the surrounding prose says WHICH invalidation it is,
+# or caps how many passes it buys. "second ... is filed" bounds it exactly as
+# "first" does, and the rule's own evidence citation is written that way.
+BOUND = re.compile(r"\b(first|second|exactly one|one additional pass"
+                   r"|one extra pass|and no more)\b", re.I)
+WINDOW = 320   # chars either side, enough to span the wrapped statements
+
+bad = []
+for f in FILES:
+    try:
+        text = " ".join(open(f, encoding="utf-8").read().split())
+    except OSError:
+        bad.append("%s: unreadable" % f)
+        continue
+    for m in MENTION.finditer(text):
+        lo = max(0, m.start() - WINDOW)
+        hi = min(len(text), m.end() + WINDOW)
+        if not BOUND.search(text[lo:hi]):
+            bad.append("%s: %r" % (f, text[m.start()-60 if m.start()>60 else 0:m.end()+60]))
+print("\n".join(bad))
+PYEOF
+)
+    if [ -z "$out" ]; then
+        pass "#606: every statement of the evidence exception carries its FIRST-only bound"
+    else
+        fail "#606: an unbounded statement of the evidence exception survives — it authorizes a pass after every false-green finding: $out"
+    fi
+}
+
+test_evidence_exception_always_carries_its_bound
 
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 
