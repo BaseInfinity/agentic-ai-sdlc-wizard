@@ -454,7 +454,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if ! PR_JSON=$(gh pr view "$PR_NUM" --json headRefOid,number,state,baseRefName,baseRefOid 2>&1); then
+if ! PR_JSON=$(gh pr view "$PR_NUM" --json headRefOid,number,state,baseRefName 2>&1); then
     echo "FAILED CLOSED: could not fetch PR #$PR_NUM (gh error): $PR_JSON" >&2
     exit 1
 fi
@@ -471,18 +471,34 @@ if [ -z "$BASE_BRANCH" ]; then
     echo "FAILED CLOSED: could not determine the base branch for PR #$PR_NUM" >&2
     exit 1
 fi
-# WHERE THE BASE ACTUALLY IS, per the server — not per the local tracking ref.
+# WHERE THE BASE BRANCH IS NOW — asked of the server, every run.
 #
-# Round 1 of #628, found independently by both reviewers and demonstrated with
-# running code rather than argued. The first version read
-# `refs/remotes/origin/$BASE_BRANCH`, which is a cache: absent, the comparison
-# was skipped outright; stale, it still held the certified tree and satisfied
-# the check. Sol advanced a bare server's main and merged a bogus certification
-# at exit 0 with the local ref left behind; Fable reached the same exit 0 by
-# deleting the ref. The check was vacuous in exactly the case it exists for.
-BASE_SHA=$(printf '%s' "$PR_JSON" | grep -o '"baseRefOid"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"baseRefOid"[[:space:]]*:[[:space:]]*"//; s/"$//')
+# Two rounds of #628 got this wrong the SAME way, and the shared mistake is
+# worth more than either fix: both read a CACHED value and treated it as
+# current.
+#
+#   Round 1 read `refs/remotes/origin/$BASE_BRANCH`, a local cache. Absent, the
+#   comparison was skipped outright; stale, it still held the certified tree and
+#   satisfied the check. Both reviewers broke it — one by deleting the ref, one
+#   by advancing a bare server's main and leaving the ref behind.
+#
+#   Round 2 read `baseRefOid` off `gh pr view`, which BOTH reviewers had
+#   prescribed. Live data falsified it: that field is the base commit ASSOCIATED
+#   WITH THE PULL REQUEST, a snapshot that does not move when the branch does.
+#   Measured on this repo — PR #615 carried baseRefOid f8ba12b while main was at
+#   d0e1c7b, different trees. So round 2 replaced an indefinitely stale local
+#   cache with an indefinitely stale server-side snapshot.
+#
+# `baseRefOid` is therefore deliberately NOT in the `pr view --json` list above:
+# a trap field left parsed is a regression waiting to be reintroduced. The ref
+# endpoint below is the branch tip itself.
+if ! BASE_REF_JSON=$(gh api "repos/{owner}/{repo}/git/ref/heads/$BASE_BRANCH" 2>&1); then
+    echo "FAILED CLOSED: could not read the current tip of $BASE_BRANCH (gh error): $BASE_REF_JSON" >&2
+    exit 1
+fi
+BASE_SHA=$(printf '%s' "$BASE_REF_JSON" | grep -o '"sha"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"sha"[[:space:]]*:[[:space:]]*"//; s/"$//')
 if [ -z "$BASE_SHA" ]; then
-    echo "FAILED CLOSED: could not determine the base commit (baseRefOid) for PR #$PR_NUM" >&2
+    echo "FAILED CLOSED: could not determine the current tip of $BASE_BRANCH for PR #$PR_NUM" >&2
     exit 1
 fi
 
@@ -836,9 +852,10 @@ fi
             echo "BLOCKED: $CLEARANCE_FILE declares no 'base_tree'. A certification names the base it was read against, or a rebase onto moved upstream carries it silently (#540). Record it with: git rev-parse \"origin/\$BASE_BRANCH^{tree}\". Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
             exit 1
         fi
-        # Resolved from the PR's own baseRefOid with the same fetch-fallback and
-        # the same fail-closed posture as the remote head above. A base we
-        # cannot read is not a base we can clear against.
+        # $BASE_SHA is the base branch's CURRENT tip, read from the server
+        # above. Resolved here with the same fetch-fallback and the same
+        # fail-closed posture as the remote head. A base we cannot read is not
+        # a base we can clear against.
         CUR_BASE_TREE=$(git rev-parse "$BASE_SHA^{tree}" 2>/dev/null) || CUR_BASE_TREE=""
         if [ -z "$CUR_BASE_TREE" ]; then
             git fetch -q origin "$BASE_SHA" 2>/dev/null || true

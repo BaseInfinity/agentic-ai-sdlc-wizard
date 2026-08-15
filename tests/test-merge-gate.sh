@@ -386,6 +386,17 @@ elif [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
     exit 0
 elif [ "$1" = "api" ]; then
     case "$*" in
+        *git/ref/heads/*)
+            # WHERE THE BASE BRANCH IS NOW. Deliberately a DIFFERENT knob from
+            # BASE_OID, which the pr-view stub still emits as `baseRefOid`.
+            # Round 2 read baseRefOid and was wrong: that field is the base
+            # commit ASSOCIATED WITH THE PR, a snapshot that does not move when
+            # the branch does. Measured live on this repo — PR #615 carried
+            # baseRefOid f8ba12b while main was at d0e1c7b. The two knobs are
+            # split here so a row can make them disagree the way GitHub does,
+            # and so reverting the source to baseRefOid stays red forever.
+            echo "{\"object\":{\"sha\":\"${LIVE_BASE_OID:-$HEAD_SHA}\"}}"
+            exit 0 ;;
         *check-runs*)
             # REAL envelope: {"total_count":N,"check_runs":[...]}, one such object
             # per page, which is how `gh --paginate` concatenates pages. Codex
@@ -718,7 +729,11 @@ test_wrapper_blocks_moved_server_base_with_stale_tracking_ref() {
     # Back to the certified content, and the local tracking ref left lying.
     git -C "$tmpdir" reset -q --hard "$candidate_sha"
     git -C "$tmpdir" update-ref refs/remotes/origin/main "$candidate_sha"
-    echo "BASE_OID=$server_base_sha" >> "$tmpdir/.gh-stub-config"
+    # The two knobs DISAGREE, exactly as real GitHub does: baseRefOid stays at
+    # the snapshot the PR was opened against, while the branch itself has moved.
+    # Round 2 read the snapshot and merged; this row is why it cannot again.
+    echo "BASE_OID=$candidate_sha" >> "$tmpdir/.gh-stub-config"
+    echo "LIVE_BASE_OID=$server_base_sha" >> "$tmpdir/.gh-stub-config"
 
     write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$candidate_sha" ".reviews/some-review.md" \
         "$candidate_tree" "$candidate_tree"
@@ -740,7 +755,7 @@ test_wrapper_blocks_moved_server_base_with_stale_tracking_ref() {
 test_wrapper_blocks_unreadable_base_object() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
-    echo "BASE_OID=ffffffffffffffffffffffffffffffffffffffff" >> "$tmpdir/.gh-stub-config"
+    echo "LIVE_BASE_OID=ffffffffffffffffffffffffffffffffffffffff" >> "$tmpdir/.gh-stub-config"
     write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?

@@ -104,13 +104,18 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
             fi
             exit 0 ;;
     esac
-    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":123,\"state\":\"OPEN\",\"baseRefName\":\"main\",\"baseRefOid\":\"$HEAD_SHA\"}"
+    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":123,\"state\":\"OPEN\",\"baseRefName\":\"main\"}"
     exit 0
 elif [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
     printf '%s\n' "$DIFF_FILES"
     exit 0
 elif [ "$1" = "api" ]; then
     case "$*" in
+        *git/ref/heads/*)
+            # #540 round 3: the merge boundary asks the server for the base
+            # branch tip. baseRefOid is a PR snapshot and is no longer read.
+            echo "{\"object\":{\"sha\":\"$HEAD_SHA\"}}"
+            exit 0 ;;
         *check-runs*)
             echo "{\"conclusion\":\"$VALIDATE_CONCLUSION\",\"name\":\"validate\"}"
             ;;
@@ -383,10 +388,11 @@ rm -rf "$t"
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
 cat > "$t/bin/gh" <<STUB
 #!/bin/bash
-if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
+    *git/ref/heads/*) echo '{"object":{"sha":"$HEAD_SHA"}}'; exit 0;;
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
     *issues*comments*) printf '[{"user":{"login":"x"},"body":"<!-- CROSS-MODEL-CLEARANCE --> {\\\\"reviewer\\\\":\\\\"codex\\\\"} prose {\\\\"confidence\\\\":100} prose {\\\\"sha\\\\":\\\\"$HEAD_SHA\\\\"}"},{"user":{"login":"x"},"body":"<!-- CROSS-MODEL-CLEARANCE --> {\\\\"reviewer\\\\":\\\\"fable\\\\"} prose {\\\\"confidence\\\\":100} prose {\\\\"sha\\\\":\\\\"$HEAD_SHA\\\\"}"}]\n';;
     *pulls*files*) : ;;
@@ -465,10 +471,11 @@ json.dump([{"user": {"login": "m"}, "author_association": "OWNER", "body": hidde
 PY
 cat > "$t/bin/gh" <<STUB
 #!/bin/bash
-if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
+    *git/ref/heads/*) echo '{"object":{"sha":"$HEAD_SHA"}}'; exit 0;;
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
     *issues*comments*) cat "$t/comments.json";;
     *pulls*files*) : ;;
@@ -575,11 +582,12 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then
   printf '"%s"\n' '.github/workflows/validate-\360\237\230\200.yml'; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
+    *git/ref/heads/*) echo '{"object":{"sha":"$HEAD_SHA"}}'; exit 0;;
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
     *issues*comments*) printf '[]\n';;
     *pulls*files*) printf '[{"filename":".github/workflows/validate-\\ud83d\\ude00.yml","status":"added"}]\n';;
@@ -673,10 +681,11 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
+    *git/ref/heads/*) echo '{"object":{"sha":"$HEAD_SHA"}}'; exit 0;;
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
     *issues*comments*) cat "$t/comments.json";;
     *pulls*files*) echo '[{"filename":"CLAUDE_CODE_SDLC_WIZARD.md","status":"modified"}]';;
@@ -710,10 +719,11 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) exit 1;; esac        # the query FAILS
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "README.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
+    *git/ref/heads/*) echo '{"object":{"sha":"$HEAD_SHA"}}'; exit 0;;
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
     *issues*comments*) printf '[]\n';;
     *pulls*files*) printf '[{"filename":"README.md","status":"modified"}]\n';;
@@ -749,10 +759,11 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "README.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
+    *git/ref/heads/*) echo '{"object":{"sha":"$HEAD_SHA"}}'; exit 0;;
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
     *issues*comments*) printf '[]\n';;
     *pulls*files*) cat "$t/files.json";;
@@ -792,10 +803,11 @@ PY
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main","baseRefOid":"$HEAD_SHA"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
+    *git/ref/heads/*) echo '{"object":{"sha":"$HEAD_SHA"}}'; exit 0;;
     *check-runs*) echo '{"conclusion":"success","name":"validate"}';;
     *issues*comments*) cat "$1/comments.json";;
     *pulls*files*) echo '[{"filename":"CLAUDE_CODE_SDLC_WIZARD.md","status":"modified"}]';;

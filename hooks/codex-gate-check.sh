@@ -735,9 +735,14 @@ case "$STATUS" in
         # PreToolUse cannot observe post-command state, so the hook was never
         # able to close this alone, and the base ref is only well-defined at
         # the merge boundary. That makes `scripts/merge-pr.sh` the sole
-        # enforcement point for base_tree — which is exactly why it reads the
-        # base from the PR's baseRefOid and fails closed when it cannot resolve
-        # it, rather than trusting a local tracking ref.
+        # enforcement point for base_tree.
+        #
+        # An earlier version of this sentence said that boundary reads the base
+        # from the PR's `baseRefOid`. It did, and that was the round-2 defect:
+        # `baseRefOid` is the base commit ASSOCIATED WITH THE PR, a snapshot
+        # that does not move when the branch does (measured — PR #615 carried
+        # f8ba12b while main was at d0e1c7b). It now asks the server for the
+        # branch tip directly and fails closed when it cannot.
         exit 0
         ;;
     PENDING_RECHECK)
