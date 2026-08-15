@@ -4072,39 +4072,62 @@ test_issue_templates_carry_a_scope_card
 # another careful sweep.
 test_evidence_exception_always_carries_its_bound() {
     local out
-    out=$(python3 - <<'PYEOF'
-import re, sys
+    out=$(GUARD_ROOT="$REPO_ROOT" python3 - <<'PYEOF'
+import os, re
 
+ROOT = os.environ.get("GUARD_ROOT") or "."
 FILES = [
     "skills/sdlc/SKILL.md",
     "cowork/skills/sdlc/SKILL.md",
     "CLAUDE_CODE_SDLC_WIZARD.md",
     "SDLC.md",
 ]
-# Any statement of the exception. Whitespace is normalised first so a bound
-# that wrapped onto the next line still counts.
+
+# Every way the exception can be NAMED. Whitespace is normalised first, so a
+# statement that wrapped across lines is still one string here.
 MENTION = re.compile(r"(invalidat\w*\s+(its\s+)?(verification[- ])?evidence"
                      r"|(verification[- ])?evidence[- ]invalidation"
                      r"|evidence-only)", re.I)
-# A mention is bounded if the surrounding prose says WHICH invalidation it is,
-# or caps how many passes it buys. "second ... is filed" bounds it exactly as
-# "first" does, and the rule's own evidence citation is written that way.
-BOUND = re.compile(r"\b(first|second|exactly one|one additional pass"
-                   r"|one extra pass|and no more)\b", re.I)
-WINDOW = 320   # chars either side, enough to span the wrapped statements
 
+# NAME WHAT IS ALLOWED, do not chase what is forbidden. The first version of
+# this guard searched for "first" or "second" ANYWHERE within a window, which
+# is proximity, not meaning: cross-model review passed two genuinely wrong
+# statements through it — "...invalidation after the first pass" (the ordinal
+# modifies the wrong noun) and "...the second verification-evidence
+# invalidation" (which reverses the rule outright). A bound is only a bound if
+# the ordinal is attached to the invalidation itself, or the sentence says the
+# finding is FILED rather than that it authorizes a pass.
+ALLOWED = [
+    # the ordinal binds the invalidation, and it is the first one
+    re.compile(r"\bfirst\b[^.]{0,40}?(verification[- ])?evidence[- ]invalidation", re.I),
+    # or it caps how many passes the exception is worth
+    re.compile(r"evidence-only finding[^.]{0,60}?"
+               r"(authorizes exactly one additional pass|buys one extra pass)", re.I),
+    # or it says a later one is filed, which is the same bound stated from the
+    # other end — including the rule's own citation, where the SECOND such
+    # finding in a root task is filed rather than acted on
+    re.compile(r"(later|second)[^.]{0,80}?evidence-only finding[^.]{0,80}?\bis filed\b", re.I),
+    re.compile(r"evidence-only finding[^.]{0,80}?\bis filed\b", re.I),
+]
+# The allowed pattern must CONTAIN the mention, not merely sit near it. A
+# window search passed both of cross-model review's escaping mutations, because
+# the sentence AFTER the mutated clause was itself correctly bounded and
+# satisfied the window. Proximity is not attachment.
 bad = []
 for f in FILES:
+    path = os.path.join(ROOT, f)
     try:
-        text = " ".join(open(f, encoding="utf-8").read().split())
-    except OSError:
-        bad.append("%s: unreadable" % f)
+        text = " ".join(open(path, encoding="utf-8").read().split())
+    except OSError as e:
+        bad.append("%s: unreadable (%s)" % (f, e))
         continue
+    spans = []
+    for pat in ALLOWED:
+        spans.extend((mm.start(), mm.end()) for mm in pat.finditer(text))
     for m in MENTION.finditer(text):
-        lo = max(0, m.start() - WINDOW)
-        hi = min(len(text), m.end() + WINDOW)
-        if not BOUND.search(text[lo:hi]):
-            bad.append("%s: %r" % (f, text[m.start()-60 if m.start()>60 else 0:m.end()+60]))
+        if not any(lo <= m.start() and hi >= m.end() for lo, hi in spans):
+            lo2 = max(0, m.start() - 70)
+            bad.append("%s: %r" % (f, text[lo2:m.end() + 70]))
 print("\n".join(bad))
 PYEOF
 )
