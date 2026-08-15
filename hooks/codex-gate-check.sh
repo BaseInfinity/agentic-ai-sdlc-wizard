@@ -547,75 +547,51 @@ GATE_SKIP="((${GATE_WORD}|[<>]\\||[<>]&|&>|[[:space:]])*[[:space:]])?"
 # the installed CLI; `ex` and `exe` do NOT resolve, so this is an alias list,
 # not prefix inference, and enumerating the two is exact rather than a guess.
 #
-# Between `codex` and the subcommand, only OPTION tokens may appear — a token
-# starting with `-`, optionally followed by its value. The first version
-# accepted any words there, which made `codex review exec` (where `exec` is the
-# review PROMPT), `codex help exec`, and `codex exec-server --help` all
-# refusals. Those are the #588 false-positive class reappearing in a new lane,
-# and they are what this bound removes.
-#
 # The subcommand must be a COMPLETE token: `exec-server` is a different
 # subcommand and the trailing class excludes the `-` that starts it.
-# OPTION ARITY IS EXPLICIT, because "option, then maybe a value" backtracks.
-# Round 2: from a directory containing `exec/`, `codex -C exec review --help`
-# is a valid invocation of `codex review` — and the lane refused it, because
-# the OPTIONAL value could be given up so that `exec` matched as the
-# subcommand. An optional trailing word is not a grammar; it is two grammars
-# and the engine picks whichever refuses.
 #
-# So the value-taking options are named and MUST consume their value, which
-# makes `-C exec review` unambiguous: `exec` is -C's value, `review` is the
-# subcommand, no match. `codex --model gpt-5.6-sol exec` still matches because
-# the value is consumed and `exec` follows it.
+# NO OPTION MAY APPEAR BETWEEN `codex` AND THE SUBCOMMAND. That is a deliberate
+# accepted limit, and it is the design this lane arrived at rather than the one
+# it started with. Rounds 1-3 of cross-model review scored 3/10, 6/10, 4/10 —
+# every round's findings were facts about codex's own option grammar, not about
+# the accident being guarded:
 #
-# The list is codex's own value-taking globals (`codex --help`). An unlisted
-# value-taking option would be read as a boolean and its value as a command
-# name, which fails to match — a false negative, the direction this lane is
-# allowed to be wrong in.
-# BOTH classes are enumerated, from `codex --help`, and a generic branch for
-# either one is what made round 2's finding possible. A generic `--word`
-# boolean matches `--model`, which frees its value to be read as the
-# subcommand — and the engine will find that parse, because the alternative
-# (consume the value, then look for a subcommand) fails outright and a failed
-# branch never wins. Optionality is not a grammar; it is two grammars, and
-# whichever refuses is the one that gets picked.
+#   round 2  an option's value is not the subcommand   `codex -C exec review`
+#   round 3  compact short values                      `codex -mfoo exec`
+#   round 3  `-h`/`-V` terminate and never dispatch    `codex -h exec`
+#   round 3  `--image` is VARIADIC                     `codex -i a exec`
+#   round 3  per-wrapper arity is not one letter class `xargs -E` vs `sudo -n`
 #
-# An option in neither list fails to match, so the whole predicate fails and
-# the command is ALLOWED. That is the deliberate direction: a missed leg is an
-# accident this lane did not catch, a false refusal blocks the maintainer's own
-# review. `remote-auth-token-env` precedes `remote` so the longer name wins.
-GATE_CODEX_VALOPT="(-[cimpsCa]|--(config|enable|disable|remote-auth-token-env|remote|image|model|local-provider|profile|sandbox|cd|add-dir|ask-for-approval))"
-GATE_CODEX_BOOLOPT="(-[hV]|--(strict-config|oss|approve-for-me|dangerously-bypass-approvals-and-sandbox|dangerously-bypass-hook-trust|search|no-alt-screen|help|version))"
-GATE_CODEX_OPT="(\\s+(${GATE_CODEX_VALOPT}(=|[[:space:]]+)${GATE_WORD}+|${GATE_CODEX_BOOLOPT}))*"
-GATE_CODEX="(${GATE_WORD}*/)?\\\\?codex${GATE_CODEX_OPT}\\s+(exec|e)([^A-Za-z0-9_-]|\$)"
+# Each fix was correct and each opened new surface, because modelling a CLI's
+# option grammar in a regex is building a parser — the thing #533 ruled out,
+# arriving one round at a time. The score never converged.
+#
+# So the gap is closed instead of described. `codex` must be followed directly
+# by the subcommand. This catches BOTH accidents that motivated the lane, and
+# the reason is not luck: `codex exec --model X -c key=value "prompt"` is the
+# shape the CLI is actually used in, with options AFTER the subcommand. An
+# option BEFORE it is a shape no leg in this repo has ever been typed in.
+#
+# What it costs: `codex --model X exec` escapes, as does every wrapper carrying
+# an option. Accepted and REPORTED rather than fixed — a missed leg is an
+# accident this lane did not catch; a false refusal blocks the maintainer's own
+# review. #601 is the precedent for a measured accepted limit.
+GATE_CODEX="(${GATE_WORD}*/)?\\\\?codex[[:space:]]+(exec|e)([^A-Za-z0-9_-]|\$)"
 # Wrappers, but NOT the greedy GATE_SKIP the git lane uses. GATE_SKIP consumes
 # the wrapped command and restarts matching at its arguments, which turned
 # `env echo codex exec`, `env grep codex exec README.md` and
 # `env ls /tmp/codex exec` into refusals: the wrapper runs echo/grep/ls, and
 # `codex exec` is their ARGUMENT, not a command.
 #
-# What a wrapper may carry between itself and `codex` is therefore enumerated
-# rather than skipped: its own options, an option's value, a bare number
-# (`timeout 300`), or an assignment (`env FOO=1`). None of those is a command
-# name, so the wrapped-prose shapes above stop matching while `env codex exec`,
-# `timeout 300 codex exec` and `nice -n 5 codex exec` stay caught.
+# A wrapper may therefore carry NOTHING between itself and `codex`, for the
+# same reason codex may carry no option before its subcommand: round 3 showed a
+# shared letter class is wrong in both directions at once (`xargs -E` takes a
+# value and was missed; `sudo -n` is boolean and caused a false refusal), and a
+# per-wrapper arity table is the same parser by another name.
 #
-# This is narrower than the git lane on purpose. It costs coverage of a wrapper
-# whose argument happens to look like a command — accepted, because a false
-# refusal here blocks the maintainer's own review leg, and the git lane's
-# greedy form is what produced three of round 1's eight findings.
-# Round 2: `env -u FOO codex exec`, `xargs -I X codex exec` and
-# `sudo -u USER codex exec` are real legs that reached codex, and the carry let
-# them through — it admitted dash-tokens but not the TEXTUAL value a wrapper
-# option takes. The git twins of all three are refused, so this was the lane's
-# own gap, not an inherited one.
-#
-# The value-taking wrapper options are named rather than admitted generically.
-# A generic "option then any word" recreates exactly the wrapped-prose false
-# positives round 1 found: `env -i echo codex exec` would read `echo` as -i's
-# value and refuse a command that runs echo.
-GATE_WRAP_VALOPT="-[ugUISnPdske]"
-GATE_CODEX_WRAP="(${GATE_WRAPPER}([[:space:]]+(${GATE_WRAP_VALOPT}[[:space:]]+${GATE_WORD}+|-${GATE_WORD}*|[0-9]+[smhd]?|${GATE_ASSIGN}))*[[:space:]]+)*"
+# `env codex exec` and `sudo codex exec` stay caught. `timeout 300 codex exec`
+# and `nice -n 5 codex exec` no longer do — accepted with the rest.
+GATE_CODEX_WRAP="(${GATE_WRAPPER}[[:space:]]+)*"
 if printf '%s' "$MASKED_COMMAND" | grep -qE \
     "${GATE_ANCHOR}[[:space:]]*${GATE_PREFIX}${GATE_CODEX_WRAP}${GATE_CODEX}"; then
     # Read the RAW command for the launcher: masking collapses quoted text, and

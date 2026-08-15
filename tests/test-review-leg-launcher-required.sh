@@ -119,17 +119,19 @@ expect_allowed "an unrelated command" \
 expect_refused "the declared 'e' alias — a real leg the first version allowed" \
     'codex e "review this"'
 
-expect_refused "the alias behind an option that takes a value" \
+# ACCEPTED LIMIT (round 4 redesign): an option between `codex` and the
+# subcommand escapes by design. See the header of the lane in the hook.
+expect_allowed "ACCEPTED LIMIT: the alias behind an option that takes a value" \
     'codex --model gpt-5.6-sol e "review this"'
 
-expect_refused "the alias behind a short option" \
+expect_allowed "ACCEPTED LIMIT: the alias behind a short option" \
     'codex -m gpt-5.6-sol e "review"'
 
 # Wrappers must still be caught when they wrap codex ITSELF.
 expect_refused "env wrapping codex directly" \
     'env codex exec "review"'
 
-expect_refused "timeout wrapping codex directly" \
+expect_allowed "ACCEPTED LIMIT: a wrapper carrying its own argument" \
     'timeout 300 codex exec "review"'
 
 expect_refused "an assignment prefix" \
@@ -161,13 +163,22 @@ expect_allowed "a wrapper running grep, with the words as its pattern" \
 expect_allowed "a wrapper running ls, with the words as its path" \
     'env ls /tmp/codex exec'
 
-# --- round 2 of cross-model review -----------------------------------------
-# Its verdict was NOT CERTIFIED 6/10, two blockers, both demonstrated against
-# the real CLI. It also reproduced the ten-row parity table exactly, which is
-# what confirmed the other five round-1 findings as inherited.
+# --- rounds 2 and 3, and the redesign they forced ---------------------------
+#
+# Round 2 (6/10) and round 3 (4/10) each demonstrated real facts about codex's
+# option grammar that an option-aware predicate got wrong. The score across
+# three rounds went 3 -> 6 -> 4: every fix was correct and every fix opened new
+# surface, because modelling a CLI's grammar in a regex is building the parser
+# #533 rules out. The gap is now closed instead of described.
+#
+# EVERY command either round demonstrated is still a row. The ones an
+# option-aware predicate would have had to reason about are now ALLOWED, each
+# an accepted limit rather than a defect — the direction this lane is permitted
+# to be wrong in.
 
-# An option's VALUE is not the subcommand. From a directory containing `exec/`,
-# `codex -C exec review --help` is a valid invocation of `codex review`.
+# Round 2: an option's VALUE is not the subcommand. From a directory containing
+# `exec/`, `codex -C exec review --help` is a valid invocation of `codex
+# review`. Correct then and correct now, by a rule with no arity in it.
 expect_allowed "an option value named exec, short form" \
     'codex -C exec review --help'
 
@@ -180,52 +191,74 @@ expect_allowed "an option value named exec, long form" \
 expect_allowed "an option value named e" \
     'codex --model e review'
 
-# ...but the value being consumed must not hide a real leg behind it.
-expect_refused "a consumed option value followed by the real subcommand" \
+expect_allowed "ACCEPTED LIMIT: an option value, then the real subcommand" \
     'codex --model gpt-5.6-sol exec "review"'
 
-expect_refused "short option with value, then the alias" \
+expect_allowed "ACCEPTED LIMIT: short option with value, then the alias" \
     'codex -c model_reasoning_effort=high e "review"'
 
-# Wrapper options that take a TEXTUAL value. All three reach codex.
-expect_refused "env -u FOO wrapping a leg" \
+# Round 2: wrapper options that take a TEXTUAL value. All three reach codex.
+# Round 3 then showed the letter class fixing these was wrong in BOTH
+# directions at once — `xargs -E` takes a value and was missed, `sudo -n` is
+# boolean and produced a false refusal. A wrapper now carries nothing.
+expect_allowed "ACCEPTED LIMIT: env -u FOO wrapping a leg" \
     'env -u FOO codex exec "review"'
 
-expect_refused "xargs -I X wrapping a leg" \
+expect_allowed "ACCEPTED LIMIT: xargs -I X wrapping a leg" \
     'xargs -I X codex exec "review"'
 
-expect_refused "sudo -u USER wrapping a leg" \
+expect_allowed "ACCEPTED LIMIT: sudo -u USER wrapping a leg" \
     'sudo -u USER codex exec "review"'
 
-# The wrapper carry must NOT admit a generic word, or round 1's wrapped-prose
-# false positives come straight back.
+expect_allowed "ACCEPTED LIMIT: xargs -E, the uppercase value option round 3 found" \
+    'xargs -E EOF codex exec "review"'
+
+expect_allowed "sudo -n is BOOLEAN and echo is the command — a false refusal, now gone" \
+    'sudo -n echo codex exec'
+
 expect_allowed "env -i running echo, with the words as its argument" \
     'env -i echo codex exec'
 
-# --- pinning the two enumerated option lists --------------------------------
-# Found by falsifying the arity fix before submitting it, not by a reviewer.
-# These rows exist because both lists are transcribed from `codex --help`, and
-# a CLI change is the way they rot silently: a boolean that becomes
-# value-taking turns into a false REFUSAL, the direction that blocks the
-# maintainer's own review leg.
-
-expect_refused "a boolean long option consumes no value" \
-    'codex --oss exec "review"'
-
-expect_refused "a boolean short option consumes no value" \
+# Round 3: `-h`/`-V` and their long forms terminate at global help/version and
+# never dispatch exec. An option-aware predicate refused all four. There is no
+# leg here to miss — these are pure false positives that the redesign removes.
+expect_allowed "-h terminates at global help and never dispatches exec" \
     'codex -h exec'
 
-expect_refused "a value-taking option in its = form" \
+expect_allowed "--help terminates at global help" \
+    'codex --help exec'
+
+expect_allowed "-V terminates at version" \
+    'codex -V exec'
+
+expect_allowed "--version terminates at version" \
+    'codex --version exec'
+
+# Round 3: compact short-option values. `codex -mfoo exec --help` reaches exec.
+expect_allowed "ACCEPTED LIMIT: compact short value, model flag" \
+    'codex -mfoo exec --help'
+
+expect_allowed "ACCEPTED LIMIT: compact short value, sandbox flag" \
+    'codex -sread-only exec --help'
+
+expect_allowed "ACCEPTED LIMIT: compact short value, relocation flag" \
+    'codex -C/tmp exec --help'
+
+expect_allowed "ACCEPTED LIMIT: compact short value, approval flag" \
+    'codex -anever exec --help'
+
+# Round 3: `--image`/`-i` is VARIADIC, so `codex -i a exec --help` prints
+# top-level help — `exec` is a second image operand, not the subcommand. The
+# single-value model got this backwards. No arity model, no way to be wrong.
+expect_allowed "-i is variadic, so a following 'exec' is another operand" \
+    'codex -i a exec --help'
+
+# A boolean long option is an option like any other: it escapes.
+expect_allowed "ACCEPTED LIMIT: a boolean long option before the subcommand" \
+    'codex --oss exec "review"'
+
+expect_allowed "ACCEPTED LIMIT: the = form of a value-taking option" \
     'codex --sandbox=read-only exec "review"'
-
-expect_refused "a value-taking option whose value is a path" \
-    'codex --add-dir /tmp exec "review"'
-
-expect_allowed "-a takes a value, so a following 'exec' is that value" \
-    'codex -a exec review'
-
-expect_allowed "--add-dir takes a value, so a following 'e' is that value" \
-    'codex --add-dir e review'
 
 # Forced failure for the hoisted guard above. Runs LAST so it cannot mask a
 # real result, and only under the sentinel the guard sets.
