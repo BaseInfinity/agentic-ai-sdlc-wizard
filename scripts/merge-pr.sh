@@ -454,13 +454,21 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if ! PR_JSON=$(gh pr view "$PR_NUM" --json headRefOid,number,state 2>&1); then
+if ! PR_JSON=$(gh pr view "$PR_NUM" --json headRefOid,number,state,baseRefName 2>&1); then
     echo "FAILED CLOSED: could not fetch PR #$PR_NUM (gh error): $PR_JSON" >&2
     exit 1
 fi
 HEAD_SHA=$(printf '%s' "$PR_JSON" | grep -o '"headRefOid"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"headRefOid"[[:space:]]*:[[:space:]]*"//; s/"$//')
 if [ -z "$HEAD_SHA" ]; then
     echo "FAILED CLOSED: could not determine remote head SHA for PR #$PR_NUM" >&2
+    exit 1
+fi
+# #540's base_tree check compares against the branch this PR actually targets,
+# never a hardcoded `main`. A PR stacked on another branch has a different base
+# and would otherwise be judged against a base it was never read on.
+BASE_BRANCH=$(printf '%s' "$PR_JSON" | grep -o '"baseRefName"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"baseRefName"[[:space:]]*:[[:space:]]*"//; s/"$//')
+if [ -z "$BASE_BRANCH" ]; then
+    echo "FAILED CLOSED: could not determine the base branch for PR #$PR_NUM" >&2
     exit 1
 fi
 
@@ -754,6 +762,69 @@ fi
         CL_SHA=$(grep -o '"sha"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"sha"[[:space:]]*:[[:space:]]*"//; s/"$//')
         if [ "$CL_SHA" != "$HEAD_SHA" ]; then
             echo "BLOCKED: $CLEARANCE_FILE is stale — its sha ($CL_SHA) does not match the current remote head ($HEAD_SHA). New commits landed since certification. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        # #540, THE MERGE BOUNDARY. The hook cannot close this hole alone:
+        # PreToolUse cannot observe post-command state, so a pre-commit check
+        # can only speak for the index it saw. This is where the object that
+        # actually merges is available, and it is checked against the content
+        # the reviewers read.
+        #
+        # WHY THIS AND NOT THE SHA CHECK ABOVE. The sha check is correct and
+        # stays — it is what keeps CI freshness honest. But a SHA answers "is
+        # this the same commit", and what a review certifies is CONTENT. Those
+        # come apart in both directions: a message-only amend changes the SHA
+        # while changing nothing reviewable (the ~10-wasted-tool-call re-pin
+        # tax), and a rebase onto moved upstream can preserve a diff while
+        # producing a tree nobody read.
+        #
+        # WHY NOT patch-id, which an earlier ruling chose. Measured, then
+        # amended by both advisors: two diffs differing only in the indentation
+        # of an added Python line produce the IDENTICAL patch-id, because
+        # patch-id ignores whitespace by design and whitespace is semantic in
+        # Python, YAML, Makefiles and string literals. And the thing merged
+        # here is the resulting TREE, not the diff.
+        #
+        # base_tree is checked too, and this is the half the hook deliberately
+        # does NOT do. At the commit boundary "the base" is unobservable
+        # without knowing whether the commit is an amend — which means reading
+        # git's option grammar off a command line, the #610 trap. Here the base
+        # ref is well-defined, so the check lands where it is answerable.
+        #
+        # Fails closed on a missing field: an artifact naming no content is the
+        # pre-#540 format, and honouring it would be the hole reopened under an
+        # older key.
+        CL_CAND_TREE=$(grep -o '"candidate_tree"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"candidate_tree"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        if [ -z "$CL_CAND_TREE" ]; then
+            echo "BLOCKED: $CLEARANCE_FILE declares no 'candidate_tree'. A certification names the content it was issued over, not just the commit it happened to sit on (#540). Record it with: git rev-parse 'HEAD^{tree}'. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        REMOTE_TREE=$(git rev-parse "$HEAD_SHA^{tree}" 2>/dev/null) || REMOTE_TREE=""
+        if [ -z "$REMOTE_TREE" ]; then
+            # The object is not local — fetch it rather than guessing. A tree
+            # we cannot read is not a tree we can clear.
+            git fetch -q origin "$HEAD_SHA" 2>/dev/null || true
+            REMOTE_TREE=$(git rev-parse "$HEAD_SHA^{tree}" 2>/dev/null) || REMOTE_TREE=""
+        fi
+        if [ -z "$REMOTE_TREE" ]; then
+            echo "BLOCKED: could not read the tree of the remote head $HEAD_SHA, so the merging content cannot be compared against what was certified. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        if [ "$REMOTE_TREE" != "$CL_CAND_TREE" ]; then
+            echo "BLOCKED: the content about to merge is not the content that was certified — remote head tree $REMOTE_TREE, certified candidate_tree $CL_CAND_TREE (#540). Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        # base_tree pins WHICH BASE the reviewers read. A rebase onto moved
+        # upstream can leave candidate_tree untouched while the integration
+        # result changes, which is the second measurement that killed patch-id.
+        CL_BASE_TREE=$(grep -o '"base_tree"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"base_tree"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        if [ -z "$CL_BASE_TREE" ]; then
+            echo "BLOCKED: $CLEARANCE_FILE declares no 'base_tree'. A certification names the base it was read against, or a rebase onto moved upstream carries it silently (#540). Record it with: git rev-parse \"origin/\$BASE_BRANCH^{tree}\". Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        CUR_BASE_TREE=$(git rev-parse "origin/$BASE_BRANCH^{tree}" 2>/dev/null) || CUR_BASE_TREE=""
+        if [ -n "$CUR_BASE_TREE" ] && [ "$CUR_BASE_TREE" != "$CL_BASE_TREE" ]; then
+            echo "BLOCKED: the base moved since certification — origin/$BASE_BRANCH tree is $CUR_BASE_TREE, certified base_tree is $CL_BASE_TREE. The reviewers read a different base, and the merged result is not what they cleared (#540). Rebase and re-review, or decide it yourself: --user-approved \"<reason>\"." >&2
             exit 1
         fi
         CL_REVIEW_FILE=$(grep -o '"review_file"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"review_file"[[:space:]]*:[[:space:]]*"//; s/"$//')

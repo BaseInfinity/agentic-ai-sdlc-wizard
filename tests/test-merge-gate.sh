@@ -311,6 +311,23 @@ setup_wrapper_fixture() {
     mkdir -p "$tmpdir/bin" "$tmpdir/.reviews" "$tmpdir/tests"
     git init -q "$tmpdir"
 
+    # #540: the merge boundary compares the REMOTE HEAD's TREE against the
+    # certified candidate_tree, so the fixture's head can no longer be a
+    # made-up string like "abc123" — it has to be an object git can resolve.
+    # The fixture therefore makes one real commit and publishes it as both the
+    # PR head and origin/<base>. Tests that want a STALE sha still pass a
+    # literal; only the "current head" ones read .fixture-sha.
+    git -C "$tmpdir" config user.email t@example.com
+    git -C "$tmpdir" config user.name "SDLC Test"
+    printf 'fixture\n' > "$tmpdir/tests/keep.txt"
+    git -C "$tmpdir" add tests/keep.txt
+    git -C "$tmpdir" commit -qm fixture
+    git -C "$tmpdir" rev-parse HEAD > "$tmpdir/.fixture-sha"
+    git -C "$tmpdir" rev-parse 'HEAD^{tree}' > "$tmpdir/.fixture-tree"
+    # origin/main must exist: base_tree is compared against the branch the PR
+    # actually targets, read from the PR itself rather than assumed.
+    git -C "$tmpdir" update-ref refs/remotes/origin/main HEAD
+
     # Control file the stub gh reads: one KEY=VALUE per line.
     # HEAD_SHA, VALIDATE_CONCLUSION, DIFF_FILES (newline-separated, base64
     # would be overkill — use a sentinel-delimited list), DELETED_TEST_FILES,
@@ -326,7 +343,8 @@ setup_wrapper_fixture() {
     # pulls/files endpoint — NOT via `gh pr diff`, which has no per-path
     # filter flag.
     cat > "$tmpdir/.gh-stub-config" <<'CONFIG'
-HEAD_SHA=abc123
+HEAD_SHA=__FIXTURE_SHA__
+BASE_REF=main
 VALIDATE_CONCLUSION=success
 EXTRA_VALIDATE_CONCLUSION=
 DIFF_FILES=src/foo.js
@@ -336,6 +354,10 @@ PACKAGE_JSON_VERSION_CHANGED=
 BEYOND_FIRST_PAGE=
 CLEARANCE_PAYLOADS=
 CONFIG
+    # Splice the real sha in after the heredoc, which is quoted so it cannot
+    # expand.
+    sed -i.bak "s/__FIXTURE_SHA__/$(cat "$tmpdir/.fixture-sha")/" "$tmpdir/.gh-stub-config"
+    rm -f "$tmpdir/.gh-stub-config.bak"
 
     cat > "$tmpdir/bin/gh" <<'STUB'
 #!/bin/bash
@@ -354,7 +376,7 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
             [ "$n" -eq 0 ] && n=1
             echo "$n"; exit 0 ;;
     esac
-    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":${PR_NUM:-123},\"state\":\"OPEN\"}"
+    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":${PR_NUM:-123},\"state\":\"OPEN\",\"baseRefName\":\"${BASE_REF:-main}\"}"
     exit 0
 elif [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
     printf '%s\n' "$DIFF_FILES"
@@ -405,6 +427,10 @@ elif [ "$1" = "api" ]; then
                 # unicode-escape test silently tested nothing. GitHub's API
                 # returns a real comment's backslash as \\, which is what this
                 # now reproduces.
+                # __FIXTURE_SHA__ resolves here rather than in the config,
+                # because #540 made the fixture head a real git object and a
+                # test cannot know its value at authoring time.
+                payload=${payload//__FIXTURE_SHA__/$HEAD_SHA}
                 printf '{"user":{"login":"maintainer"},"author_association":"OWNER","body":"**CROSS-MODEL-CLEARANCE**\\n\\n```json\\n%s\\n```"}' \
                     "$(printf '%s' "$payload" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
             done <<< "${CLEARANCE_PAYLOADS:-}"
@@ -473,12 +499,20 @@ STUB
 
 write_clearance() {
     local tmpdir="$1" pr="$2" status="$3" round="$4" sha="$5" review_file="$6"
+    # #540: a clearance names the CONTENT it was issued over, not just the
+    # commit it sat on. Both default to the fixture's real trees so existing
+    # rows keep testing what they were written to test; pass 7/8 to certify
+    # content that is deliberately wrong.
+    local cand="${7:-$(cat "$tmpdir/.fixture-tree")}"
+    local base="${8:-$(cat "$tmpdir/.fixture-tree")}"
     cat > "$tmpdir/.reviews/merge-clearance-$pr.json" <<JSON
 {
   "pr_number": $pr,
   "status": "$status",
   "round": $round,
   "sha": "$sha",
+  "candidate_tree": "$cand",
+  "base_tree": "$base",
   "review_file": "$review_file"
 }
 JSON
@@ -588,7 +622,7 @@ test_wrapper_blocks_missing_clearance() {
 test_wrapper_blocks_non_certified_status() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
-    write_clearance "$tmpdir" 123 "PENDING_REVIEW" 1 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "PENDING_REVIEW" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -603,7 +637,7 @@ test_wrapper_blocks_non_certified_status() {
 test_wrapper_blocks_round_1_only() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
-    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -611,6 +645,74 @@ test_wrapper_blocks_round_1_only() {
         pass "wrapper blocks a round-1-only CERTIFIED as insufficient dialogue"
     else
         fail "wrapper should block round=1 CERTIFIED, got exit=$exit_code out=$out"
+    fi
+}
+
+# --- #540: the clearance names CONTENT, and the merge boundary checks it ---
+#
+# The hook can only speak for the index it saw before the commit; PreToolUse
+# cannot observe post-command state. This is the other half, and the half that
+# sees the object that actually merges.
+
+# Test: certified content is not the content that would merge
+test_wrapper_blocks_wrong_candidate_tree() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # A well-formed clearance, current SHA, round 2 — everything the pre-#540
+    # gate asked for — but naming a tree that is not the one on the head.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "4b825dc642cb6eb9a060e54bf8d69288fbee4904" "$(cat "$tmpdir/.fixture-tree")"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && echo "$out" | grep -q "not the content that was certified"; then
+        pass "wrapper blocks when the merging tree is not the certified candidate_tree"
+    else
+        fail "wrapper should block on candidate_tree mismatch, got exit=$exit_code out=$out"
+    fi
+}
+
+# Test: the base moved under the certification. Same candidate_tree, different
+# base — a rebase onto moved upstream leaves the diff alone and changes the
+# result, which is the measurement that killed patch-id as the primitive.
+test_wrapper_blocks_moved_base() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "$(cat "$tmpdir/.fixture-tree")" "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && echo "$out" | grep -q "the base moved since certification"; then
+        pass "wrapper blocks when the certified base_tree is not the current base"
+    else
+        fail "wrapper should block on base_tree mismatch, got exit=$exit_code out=$out"
+    fi
+}
+
+# Test: the pre-#540 artifact format fails closed. A clearance carrying only a
+# sha named no content, and honouring it would be the hole reopened under an
+# older key — the same posture #437 took for a missing commit_sha.
+test_wrapper_blocks_clearance_without_trees() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # Hand-written in the OLD shape: no candidate_tree, no base_tree.
+    cat > "$tmpdir/.reviews/merge-clearance-123.json" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && echo "$out" | grep -q "declares no 'candidate_tree'"; then
+        pass "wrapper fails closed on a pre-#540 clearance that names no content"
+    else
+        fail "wrapper should block a clearance with no candidate_tree, got exit=$exit_code out=$out"
     fi
 }
 
@@ -633,7 +735,7 @@ test_wrapper_blocks_stale_clearance() {
 test_wrapper_blocks_empty_review_artifact() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/missing-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/missing-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
     if [ "$exit_code" -ne 0 ] && echo "$out" | grep -qi "review"; then
@@ -648,7 +750,7 @@ test_wrapper_blocks_denylisted_workflow_touch() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
     sed -i.bak 's#DIFF_FILES=src/foo.js#DIFF_FILES=.github/workflows/ci.yml#' "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -666,7 +768,7 @@ test_wrapper_blocks_self_referential_touch() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
     sed -i.bak 's#DIFF_FILES=src/foo.js#DIFF_FILES=scripts/merge-pr.sh#' "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -682,7 +784,7 @@ test_wrapper_blocks_test_deletion() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
     sed -i.bak 's#DELETED_TEST_FILES=#DELETED_TEST_FILES=tests/test-foo.sh#' "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -701,7 +803,7 @@ test_wrapper_blocks_test_file_renamed_out_of_tests_dir() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
     sed -i.bak "s#RENAMED_TEST_FILES=#RENAMED_TEST_FILES='tests/test-foo.sh->archive/test-foo.sh'#" "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -720,7 +822,7 @@ test_wrapper_blocks_test_deletion_beyond_first_page() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
     sed -i.bak 's#BEYOND_FIRST_PAGE=#BEYOND_FIRST_PAGE=tests/test-late-page.sh#' "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -741,7 +843,7 @@ test_wrapper_blocks_package_json_version_change() {
     tmpdir=$(setup_wrapper_fixture)
     sed -i.bak -e 's#DIFF_FILES=src/foo.js#DIFF_FILES=package.json#' \
         -e 's#PACKAGE_JSON_VERSION_CHANGED=#PACKAGE_JSON_VERSION_CHANGED=1#' "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -759,7 +861,7 @@ test_wrapper_blocks_wizard_doc_touch() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
     sed -i.bak 's#DIFF_FILES=src/foo.js#DIFF_FILES=CLAUDE_CODE_SDLC_WIZARD.md#' "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -774,14 +876,14 @@ test_wrapper_blocks_wizard_doc_touch() {
 test_wrapper_merges_when_all_conditions_met() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED: pr merge 123 --squash --match-head-commit abc123"; then
+    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED: pr merge 123 --squash --match-head-commit $(cat "$tmpdir/.fixture-sha")"; then
         pass "wrapper merges with the exact expected command when all conditions are met"
     else
-        fail "wrapper should invoke 'gh pr merge 123 --squash --match-head-commit abc123', got exit=$exit_code out=$out"
+        fail "wrapper should invoke 'gh pr merge 123 --squash --match-head-commit <fixture sha>', got exit=$exit_code out=$out"
     fi
 }
 
@@ -832,6 +934,9 @@ test_wrapper_blocks_missing_clearance
 test_wrapper_blocks_non_certified_status
 test_wrapper_blocks_round_1_only
 test_wrapper_blocks_stale_clearance
+test_wrapper_blocks_wrong_candidate_tree
+test_wrapper_blocks_moved_base
+test_wrapper_blocks_clearance_without_trees
 test_wrapper_blocks_empty_review_artifact
 test_wrapper_blocks_denylisted_workflow_touch
 test_wrapper_blocks_self_referential_touch
@@ -862,7 +967,7 @@ run_with_clearance() {
     tmpdir=$(setup_wrapper_fixture)
     printf 'DIFF_FILES=CLAUDE_CODE_SDLC_WIZARD.md\n' >> "$tmpdir/.gh-stub-config"
     printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' "$payloads")" >> "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "review body" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 --cross-model-cleared 2>&1) && code=0 || code=$?
     rm -rf "$tmpdir"
@@ -888,16 +993,16 @@ refute_merge() {  # $1=result  $2=what was being attempted
 test_clearance_requires_verdict_field() {
     # Two reviewers, both >=95, both bound to the head SHA, NEITHER declaring a
     # verdict. Confidence alone must not clear a merge.
-    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","confidence":97,"sha":"abc123"}
-{"reviewer":"fable-5","confidence":96,"sha":"abc123"}')" \
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","confidence":97,"sha":"__FIXTURE_SHA__"}
+{"reviewer":"fable-5","confidence":96,"sha":"__FIXTURE_SHA__"}')" \
         "clearance with no verdict field does not merge"
 }
 
 test_clearance_rejects_negative_verdict() {
     # THE DEFECT, stated as a test: a reviewer who says NO, at high confidence,
     # must never clear. Before the fix this merged.
-    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"NO","confidence":97,"sha":"abc123"}
-{"reviewer":"fable-5","verdict":"NO","confidence":99,"sha":"abc123"}')" \
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"NO","confidence":97,"sha":"__FIXTURE_SHA__"}
+{"reviewer":"fable-5","verdict":"NO","confidence":99,"sha":"__FIXTURE_SHA__"}')" \
         "two confident NO verdicts do not merge"
 }
 
@@ -906,8 +1011,8 @@ test_clearance_rejects_lowercase_verdict() {
     # YES, so the exact-match check I had documented as strict was not strict.
     # A verdict is a machine-written field in a machine-written payload; a
     # reviewer that cannot emit the exact token has not cleared anything.
-    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"yes","confidence":97,"sha":"abc123"}
-{"reviewer":"fable-5","verdict":"YeS","confidence":96,"sha":"abc123"}')" \
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"yes","confidence":97,"sha":"__FIXTURE_SHA__"}
+{"reviewer":"fable-5","verdict":"YeS","confidence":96,"sha":"__FIXTURE_SHA__"}')" \
         "case-variant verdicts (yes / YeS) do not merge"
 }
 
@@ -915,8 +1020,8 @@ test_clearance_rejects_duplicate_verdict_keys() {
     # Codex: a payload carrying `verdict` TWICE — NO first, YES last — merged,
     # because JSON parsers keep the last duplicate key. The rendered comment can
     # be made to read as a refusal while the parsed object says YES.
-    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"NO","confidence":97,"sha":"abc123","verdict":"YES"}
-{"reviewer":"fable-5","verdict":"NO","confidence":96,"sha":"abc123","verdict":"YES"}')" \
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"NO","confidence":97,"sha":"__FIXTURE_SHA__","verdict":"YES"}
+{"reviewer":"fable-5","verdict":"NO","confidence":96,"sha":"__FIXTURE_SHA__","verdict":"YES"}')" \
         "a duplicated verdict key (NO then YES) does not merge"
 }
 
@@ -926,8 +1031,8 @@ test_clearance_rejects_unicode_escaped_duplicate_key() {
     # did — and kept the last one, YES. Counting literal text cannot win against
     # escaping, which is why the fix stopped counting text and instead pins the
     # payload to an exact key set with no escapes permitted anywhere.
-    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"NO","confidence":97,"sha":"abc123","\u0076erdict":"YES"}
-{"reviewer":"fable-5","verdict":"NO","confidence":96,"sha":"abc123","ver\u0064ict":"YES"}')" \
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"NO","confidence":97,"sha":"__FIXTURE_SHA__","\u0076erdict":"YES"}
+{"reviewer":"fable-5","verdict":"NO","confidence":96,"sha":"__FIXTURE_SHA__","ver\u0064ict":"YES"}')" \
         "unicode-escaped duplicate keys do not merge"
 }
 
@@ -935,8 +1040,8 @@ test_clearance_rejects_unknown_extra_key() {
     # Consequence of the positive anchor: the payload carries exactly the four
     # decision-bearing keys. An unrecognised field is refused rather than
     # ignored, so nothing can ride along unexamined.
-    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123","note":"x"}
-{"reviewer":"fable-5","verdict":"YES","confidence":96,"sha":"abc123","note":"x"}')" \
+    refute_merge "$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"__FIXTURE_SHA__","note":"x"}
+{"reviewer":"fable-5","verdict":"YES","confidence":96,"sha":"__FIXTURE_SHA__","note":"x"}')" \
         "a payload with an unexpected extra key does not merge"
 }
 
@@ -944,8 +1049,8 @@ test_clearance_accepts_two_yes_verdicts() {
     # Non-vacuity control. If this fails, the two tests above prove nothing —
     # they would pass against a gate that rejects everything.
     local r
-    r=$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}
-{"reviewer":"fable-5","verdict":"YES","confidence":96,"sha":"abc123"}')
+    r=$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"__FIXTURE_SHA__"}
+{"reviewer":"fable-5","verdict":"YES","confidence":96,"sha":"__FIXTURE_SHA__"}')
     if printf '%s' "$r" | grep -q "GH_MERGE_INVOKED"; then
         pass "two YES verdicts at >=95 bound to the head SHA do clear the merge"
     else
@@ -958,8 +1063,8 @@ test_sub_threshold_message_prescribes_next_action() {
     # must say what to do next; tonight it just refused and the human ran the
     # merge by hand (GH #478).
     local r
-    r=$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}
-{"reviewer":"fable-5","verdict":"YES","confidence":93,"sha":"abc123"}')
+    r=$(run_with_clearance '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"__FIXTURE_SHA__"}
+{"reviewer":"fable-5","verdict":"YES","confidence":93,"sha":"__FIXTURE_SHA__"}')
     if printf '%s' "$r" | grep -qi "focused merge-safety round"; then
         pass "a sub-threshold YES prescribes the next action instead of dead-ending"
     else
@@ -999,7 +1104,7 @@ run_hard_deny() {   # "$@" = extra args, already separated
     local tmpdir out code
     tmpdir=$(setup_wrapper_fixture)
     printf 'DIFF_FILES=hooks/codex-gate-check.sh\n' >> "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "review body" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 "$@" 2>&1) && code=0 || code=$?
     printf 'exit=%s %s' "$code" "$out"
@@ -1076,7 +1181,7 @@ test_user_approved_also_clears_the_weaker_ackable_tier() {
     # sourced file cannot assign — which fails closed on a truncated file set.
     printf 'DIFF_FILES=%s\n' "'hooks/codex-gate-check.sh
 CLAUDE_CODE_SDLC_WIZARD.md'" >> "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "review body" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 --user-approved "maintainer decision" 2>&1) && code=0 || code=$?
     rm -rf "$tmpdir"
@@ -1217,10 +1322,19 @@ make_gate_pristine() {   # $1=tmpdir
     git -C "$d" add -A >/dev/null 2>&1
     git -C "$d" -c user.email=t@example.com -c user.name=t commit -qm fixture >/dev/null 2>&1
     git -C "$d" update-ref refs/remotes/origin/main HEAD
+    # This commit MOVES the head, so everything keyed on it must move with it.
+    # Before #540 only the sha mattered and the stub's HEAD_SHA was a constant,
+    # so nothing here needed refreshing; now the clearance also names the tree
+    # that merges, and a stale one reads as "the base moved since
+    # certification" — a true statement about a fixture artifact, not about
+    # anything under test.
+    git -C "$d" rev-parse HEAD > "$d/.fixture-sha"
+    git -C "$d" rev-parse 'HEAD^{tree}' > "$d/.fixture-tree"
+    printf 'HEAD_SHA=%s\n' "$(cat "$d/.fixture-sha")" >> "$d/.gh-stub-config"
 }
 
-DUAL_YES_PAYLOADS='{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}
-{"reviewer":"fable-5","verdict":"YES","confidence":96,"sha":"abc123"}'
+DUAL_YES_PAYLOADS='{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"__FIXTURE_SHA__"}
+{"reviewer":"fable-5","verdict":"YES","confidence":96,"sha":"__FIXTURE_SHA__"}'
 
 # Everything a HARD-tier dual-certified merge is supposed to need, all valid.
 # Individual tests then break exactly one thing.
@@ -1229,9 +1343,11 @@ setup_dual_fixture() {   # echoes tmpdir
     tmpdir=$(setup_wrapper_fixture)
     printf 'DIFF_FILES=hooks/codex-gate-check.sh\n' >> "$tmpdir/.gh-stub-config"
     printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' "$DUAL_YES_PAYLOADS")" >> "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
     echo "review body" > "$tmpdir/.reviews/some-review.md"
     make_gate_pristine "$tmpdir"
+    # AFTER make_gate_pristine, never before: it commits, so it is the last
+    # thing that moves the head and the trees the clearance has to name.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "$tmpdir"
 }
 
@@ -1285,7 +1401,7 @@ test_dual_certified_record_says_attested_not_authenticated
 test_dual_certified_needs_two_distinct_reviewers() {
     local tmpdir
     tmpdir=$(setup_dual_fixture)
-    printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}')" \
+    printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"__FIXTURE_SHA__"}')" \
         >> "$tmpdir/.gh-stub-config"
     refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
         "one reviewer alone does not dual-certify a HARD_DENY path"
@@ -1295,8 +1411,8 @@ test_dual_certified_needs_two_distinct_reviewers
 test_dual_certified_refuses_a_no_verdict() {
     local tmpdir
     tmpdir=$(setup_dual_fixture)
-    printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"abc123"}
-{"reviewer":"fable-5","verdict":"NO","confidence":96,"sha":"abc123"}')" >> "$tmpdir/.gh-stub-config"
+    printf 'CLEARANCE_PAYLOADS=%s\n' "$(printf '%q' '{"reviewer":"gpt-5.6-sol","verdict":"YES","confidence":97,"sha":"__FIXTURE_SHA__"}
+{"reviewer":"fable-5","verdict":"NO","confidence":96,"sha":"__FIXTURE_SHA__"}')" >> "$tmpdir/.gh-stub-config"
     refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
         "one YES and one NO does not dual-certify — disagreement is the human's case, not a merge"
 }
@@ -1308,7 +1424,7 @@ test_dual_certified_refuses_a_no_verdict
 test_dual_certified_still_requires_round_2_artifact() {
     local tmpdir
     tmpdir=$(setup_dual_fixture)
-    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     refute_merge "$(run_dual_in "$tmpdir" --dual-certified)" \
         "a round-1-only clearance artifact still blocks under --dual-certified"
 }
@@ -1496,7 +1612,7 @@ test_wrapper_blocks_a_shadowed_red_validate() {
     local tmpdir out code
     tmpdir=$(setup_wrapper_fixture)
     printf 'EXTRA_VALIDATE_CONCLUSION=failure\n' >> "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "review body" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && code=0 || code=$?
     rm -rf "$tmpdir"
@@ -1515,7 +1631,7 @@ test_wrapper_blocks_an_in_progress_duplicate_validate() {
     local tmpdir out code
     tmpdir=$(setup_wrapper_fixture)
     printf 'EXTRA_VALIDATE_CONCLUSION=null\n' >> "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "review body" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && code=0 || code=$?
     rm -rf "$tmpdir"
@@ -1533,7 +1649,7 @@ test_wrapper_blocks_a_red_validate_on_a_bare_array_page() {
     tmpdir=$(setup_wrapper_fixture)
     printf 'EXTRA_VALIDATE_CONCLUSION=failure\n' >> "$tmpdir/.gh-stub-config"
     printf 'EXTRA_VALIDATE_PAGE_SHAPE=bare\n' >> "$tmpdir/.gh-stub-config"
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "abc123" ".reviews/some-review.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
     echo "review body" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && code=0 || code=$?
     rm -rf "$tmpdir"

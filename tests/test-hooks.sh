@@ -3768,12 +3768,15 @@ test_codex_gate_blocks_commit_without_review() {
 }
 
 test_codex_gate_allows_commit_with_certified_review() {
-    local tmpdir head_sha
+    local tmpdir head_sha idx_tree
     tmpdir=$(mktemp -d)
     (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
     head_sha=$(cd "$tmpdir" && git rev-parse HEAD)
     mkdir -p "$tmpdir/.reviews"
-    printf '{"status":"CERTIFIED","score":9,"commit_sha":"%s"}' "$head_sha" > "$tmpdir/.reviews/handoff.json"
+    # #540: a certification names the CONTENT it was issued over. The
+    # index is the candidate here — PreToolUse runs before the commit.
+    idx_tree=$(cd "$tmpdir" && git write-tree)
+    printf '{"status":"CERTIFIED","score":9,"commit_sha":"%s","candidate_tree":"%s"}' "$head_sha" "$idx_tree" > "$tmpdir/.reviews/handoff.json"
     local out exit_code
     out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
     exit_code=$?
@@ -3786,12 +3789,15 @@ test_codex_gate_allows_commit_with_certified_review() {
 }
 
 test_codex_gate_allows_commit_with_reviewed_status() {
-    local tmpdir head_sha
+    local tmpdir head_sha idx_tree
     tmpdir=$(mktemp -d)
     (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
     head_sha=$(cd "$tmpdir" && git rev-parse HEAD)
     mkdir -p "$tmpdir/.reviews"
-    printf '{"status":"REVIEWED","commit_sha":"%s"}' "$head_sha" > "$tmpdir/.reviews/handoff.json"
+    # #540: a certification names the CONTENT it was issued over. The
+    # index is the candidate here — PreToolUse runs before the commit.
+    idx_tree=$(cd "$tmpdir" && git write-tree)
+    printf '{"status":"REVIEWED","commit_sha":"%s","candidate_tree":"%s"}' "$head_sha" "$idx_tree" > "$tmpdir/.reviews/handoff.json"
     local out exit_code
     out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1)
     exit_code=$?
@@ -3803,38 +3809,48 @@ test_codex_gate_allows_commit_with_reviewed_status() {
     fi
 }
 
-# ROADMAP #437: a CERTIFIED/REVIEWED handoff.json has no freshness check — any
-# number of new commits can land after certification and still sail through
-# the gate on the same stale status string. Proven live in the v1.84.0
-# release: 2 real post-certification commits both passed the gate on a
-# round-11 CERTIFIED handoff that never got re-issued. Fix: certification
-# records commit_sha (HEAD at cert time); the gate compares it to current
-# HEAD and treats a mismatch as stale. This allows exactly one commit after
-# certification (HEAD still equals the recorded SHA at that commit's
-# PreToolUse check) and blocks the next one until re-cert.
-test_codex_gate_blocks_stale_certification_after_new_commit() {
-    local tmpdir cert_sha
+# ROADMAP #437 originally: a CERTIFIED handoff had no freshness check at all,
+# proven live in the v1.84.0 release when 2 post-certification commits both
+# sailed through on a round-11 CERTIFIED handoff. #437's answer was
+# commit_sha == HEAD.
+#
+# #540 REPLACED THAT KEY, and this row was rewritten with it. The SHA key had
+# the hole it was meant to close still in it: PreToolUse runs BEFORE the
+# commit, so HEAD still equals the certified SHA at check time and the gate
+# allowed a commit carrying content nobody reviewed. It also invalidated on
+# every SHA change — including message-only amends that change nothing
+# reviewable — costing a re-pin call per commit.
+#
+# So what must be refused is CONTENT that moved, not a SHA that moved. This
+# row now proves exactly that, and the paired allow rows above prove the
+# other direction.
+test_codex_gate_blocks_certification_when_content_moved() {
+    local tmpdir cert_sha cert_tree
     tmpdir=$(mktemp -d)
     (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
     cert_sha=$(cd "$tmpdir" && git rev-parse HEAD)
+    cert_tree=$(cd "$tmpdir" && git write-tree)
     mkdir -p "$tmpdir/.reviews"
-    printf '{"status":"CERTIFIED","commit_sha":"%s"}' "$cert_sha" > "$tmpdir/.reviews/handoff.json"
-    # A commit lands after certification (simulates the real v1.84.0 incident:
-    # a post-certification CI-shepherd fix committed without re-review).
-    (cd "$tmpdir" && git commit -q --allow-empty -m "post-cert fix") > /dev/null 2>&1
+    printf '{"status":"CERTIFIED","commit_sha":"%s","candidate_tree":"%s"}' "$cert_sha" "$cert_tree" > "$tmpdir/.reviews/handoff.json"
+    # Content the certification never saw is staged. Under the old SHA key this
+    # ALLOWED, because HEAD had not moved yet — the hole #540 exists to close.
+    printf 'unreviewed\n' > "$tmpdir/new.txt"
+    (cd "$tmpdir" && git add new.txt) > /dev/null 2>&1
     local out exit_code
     out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"another fix\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "stale"; then
-        pass "codex gate BLOCKS (exit 2) a stale certification after a new commit landed"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "not what was certified"; then
+        pass "codex gate BLOCKS (exit 2) staged content the certification never saw"
     else
-        fail "codex gate should exit 2 + mention staleness once HEAD has moved past the certified commit_sha, got exit=$exit_code out: $out"
+        fail "codex gate should exit 2 when the index tree is not the certified candidate_tree, got exit=$exit_code out: $out"
     fi
 }
 
-# Missing commit_sha (an old-format handoff.json from before this fix) is
-# treated as stale, not silently allowed — no legacy-compat fallback.
-test_codex_gate_blocks_missing_commit_sha_as_stale() {
+# An old-format handoff.json — one naming no candidate_tree, which is every
+# handoff written before #540 — fails closed. Same posture #437 took for a
+# missing commit_sha and #533 for a missing branch: honouring the older key
+# would be the hole reopened under it.
+test_codex_gate_blocks_missing_candidate_tree() {
     local tmpdir
     tmpdir=$(mktemp -d)
     (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
@@ -3843,10 +3859,10 @@ test_codex_gate_blocks_missing_commit_sha_as_stale() {
     local out exit_code
     out=$(printf '%s' '{"tool_input":{"command":"git commit -m \"fix: something\""}}' | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -qi "stale"; then
-        pass "codex gate BLOCKS (exit 2) an old-format handoff.json with no commit_sha"
+    if [ "$exit_code" -eq 2 ] && echo "$out" | grep -q "declares no 'candidate_tree'"; then
+        pass "codex gate BLOCKS (exit 2) an old-format handoff.json naming no content"
     else
-        fail "codex gate should exit 2 + mention staleness when commit_sha is missing, got exit=$exit_code out: $out"
+        fail "codex gate should exit 2 + name candidate_tree when it is missing, got exit=$exit_code out: $out"
     fi
 }
 
@@ -4253,7 +4269,7 @@ test_codex_gate_silent_on_shapes_that_do_not_invoke_git() {
 # with a CERTIFIED handoff matching HEAD, the same four shapes must still pass
 # through silently.
 test_codex_gate_allows_certified_commit_split_across_lines() {
-    local tmpdir head_sha out exit_code failures label cmd
+    local tmpdir head_sha idx_tree out exit_code failures label cmd
     failures=""
     for label in 'newline-separated:cd foo\ngit commit -m \"x\"' \
                  'line-continuation:git \\\n  commit -m \"x\"' \
@@ -4263,8 +4279,10 @@ test_codex_gate_allows_certified_commit_split_across_lines() {
         tmpdir=$(mktemp -d)
         (cd "$tmpdir" && git init -q && git commit -q --allow-empty -m init) > /dev/null 2>&1
         head_sha=$(cd "$tmpdir" && git rev-parse HEAD)
+        idx_tree=$(cd "$tmpdir" && git write-tree)
         mkdir -p "$tmpdir/.reviews"
-        printf '{"status":"CERTIFIED","score":9,"commit_sha":"%s"}' "$head_sha" > "$tmpdir/.reviews/handoff.json"
+        # #540: certification names content, so the artifact carries the tree.
+        printf '{"status":"CERTIFIED","score":9,"commit_sha":"%s","candidate_tree":"%s"}' "$head_sha" "$idx_tree" > "$tmpdir/.reviews/handoff.json"
         out=$(printf '{"tool_input":{"command":"%s"}}' "$cmd" | (cd "$tmpdir" && "$HOOKS_DIR/codex-gate-check.sh") 2>&1) && exit_code=0 || exit_code=$?
         rm -rf "$tmpdir"
         { [ "$exit_code" -eq 0 ] && [ -z "$out" ]; } || failures="$failures [${label%%:*} -> exit=$exit_code]"
@@ -4463,8 +4481,8 @@ test_codex_gate_blocks_commit_with_dash_c_config_flag
 test_codex_gate_blocks_commit_with_quote_before_git_commit
 test_codex_gate_silent_when_only_description_mentions_commit
 test_codex_gate_blocks_commit_with_quoted_value_containing_space
-test_codex_gate_blocks_stale_certification_after_new_commit
-test_codex_gate_blocks_missing_commit_sha_as_stale
+test_codex_gate_blocks_certification_when_content_moved
+test_codex_gate_blocks_missing_candidate_tree
 test_codex_gate_allows_in_flight_commit_on_declared_branch
 test_codex_gate_blocks_in_flight_commit_on_branch_mismatch
 test_codex_gate_blocks_in_flight_commit_with_no_branch_field

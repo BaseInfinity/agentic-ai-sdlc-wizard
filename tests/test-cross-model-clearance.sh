@@ -54,7 +54,20 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-HEAD_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+# #540: the merge boundary resolves the head's TREE, so the fixture head can no
+# longer be a made-up 40-char string — git has to be able to look it up. One
+# template repo is built here and its .git is copied into every fixture, which
+# keeps HEAD_SHA a single file-scope constant (dozens of call sites embed it in
+# clearance-comment payloads) while making it a real object.
+XMC_TEMPLATE=$(mktemp -d "${TMPDIR:-/tmp}/xmc-tpl.XXXXXX") || exit 1
+trap 'rm -rf "$XMC_TEMPLATE"' EXIT
+git -C "$XMC_TEMPLATE" init -q
+git -C "$XMC_TEMPLATE" config user.email t@example.com
+git -C "$XMC_TEMPLATE" config user.name "SDLC Test"
+git -C "$XMC_TEMPLATE" commit -q --allow-empty -m fixture
+git -C "$XMC_TEMPLATE" update-ref refs/remotes/origin/main HEAD
+HEAD_SHA=$(git -C "$XMC_TEMPLATE" rev-parse HEAD)
+HEAD_TREE=$(git -C "$XMC_TEMPLATE" rev-parse 'HEAD^{tree}')
 OTHER_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 # ---------------------------------------------------------------------------
@@ -71,6 +84,8 @@ make_stub_env() {
     local tmpdir
     tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/xmc.XXXXXX") || return 1
     mkdir -p "$tmpdir/bin" "$tmpdir/.reviews"
+    # A real repo whose HEAD is HEAD_SHA, so the #540 tree lookups resolve.
+    cp -R "$XMC_TEMPLATE/.git" "$tmpdir/.git"
     cat > "$tmpdir/bin/gh" <<'STUB'
 #!/bin/bash
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
@@ -89,7 +104,7 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
             fi
             exit 0 ;;
     esac
-    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":123,\"state\":\"OPEN\"}"
+    echo "{\"headRefOid\":\"$HEAD_SHA\",\"number\":123,\"state\":\"OPEN\",\"baseRefName\":\"main\"}"
     exit 0
 elif [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
     printf '%s\n' "$DIFF_FILES"
@@ -163,6 +178,7 @@ STUB
 write_clearance_artifact() {
     cat > "$1/.reviews/merge-clearance-123.json" <<JSON
 { "pr_number": 123, "status": "CERTIFIED", "round": 4, "sha": "$2",
+  "candidate_tree": "${3:-$HEAD_TREE}", "base_tree": "${4:-$HEAD_TREE}",
   "review_file": ".reviews/r.md" }
 JSON
     echo "review body" > "$1/.reviews/r.md"
@@ -367,7 +383,7 @@ rm -rf "$t"
 t=$(make_stub_env); write_clearance_artifact "$t" "$HEAD_SHA"
 cat > "$t/bin/gh" <<STUB
 #!/bin/bash
-if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -449,7 +465,7 @@ json.dump([{"user": {"login": "m"}, "author_association": "OWNER", "body": hidde
 PY
 cat > "$t/bin/gh" <<STUB
 #!/bin/bash
-if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -559,7 +575,7 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then
   printf '"%s"\n' '.github/workflows/validate-\360\237\230\200.yml'; exit 0
 elif [ "\$1" = "api" ]; then
@@ -657,7 +673,7 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -694,7 +710,7 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) exit 1;; esac        # the query FAILS
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "README.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -733,7 +749,7 @@ cat > "$t/bin/gh" <<STUB
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "README.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
@@ -776,7 +792,7 @@ PY
 #!/bin/bash
 if [ "\$1" = "pr" ] && [ "\$2" = "view" ]; then
   case "\$*" in *changedFiles*) echo 1; exit 0;; esac
-  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN"}'; exit 0
+  echo '{"headRefOid":"$HEAD_SHA","number":123,"state":"OPEN","baseRefName":"main"}'; exit 0
 elif [ "\$1" = "pr" ] && [ "\$2" = "diff" ]; then echo "CLAUDE_CODE_SDLC_WIZARD.md"; exit 0
 elif [ "\$1" = "api" ]; then
   case "\$*" in
