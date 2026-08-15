@@ -4098,8 +4098,14 @@ MENTION = re.compile(r"(invalidat\w*\s+(its\s+)?(verification[- ])?evidence"
 # the ordinal is attached to the invalidation itself, or the sentence says the
 # finding is FILED rather than that it authorizes a pass.
 ALLOWED = [
-    # the ordinal binds the invalidation, and it is the first one
-    re.compile(r"\bfirst\b[^.]{0,40}?(verification[- ])?evidence[- ]invalidation", re.I),
+    # The ordinal must bind the INVALIDATION, with nothing but emphasis marks
+    # between them, and the per-root-task scope must be stated. `[^.]{0,40}` was
+    # too loose: cross-model review passed "the first PASS after a
+    # verification-evidence invalidation in this root task", where `first`
+    # grammatically modifies `pass` and the per-root-task bound is lost, so
+    # every invalidation buys a pass again.
+    re.compile(r"\bfirst\b[\W_]{0,4}(verification[- ])?evidence[- ]invalidation"
+               r"\s+in\s+(this|the)\s+root\s+task", re.I),
     # or it caps how many passes the exception is worth
     re.compile(r"evidence-only finding[^.]{0,60}?"
                r"(authorizes exactly one additional pass|buys one extra pass)", re.I),
@@ -4108,6 +4114,10 @@ ALLOWED = [
     # finding in a root task is filed rather than acted on
     re.compile(r"(later|second)[^.]{0,80}?evidence-only finding[^.]{0,80}?\bis filed\b", re.I),
     re.compile(r"evidence-only finding[^.]{0,80}?\bis filed\b", re.I),
+    # or it treats the exception as a finite budget that can be spent — which
+    # says the same thing as "first" from the accounting side
+    re.compile(r"evidence-only exception[^.]{0,40}?"
+               r"(remains unspent|is spent|already spent|unconsumed)", re.I),
 ]
 # The allowed pattern must CONTAIN the mention, not merely sit near it. A
 # window search passed both of cross-model review's escaping mutations, because
