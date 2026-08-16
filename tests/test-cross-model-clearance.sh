@@ -180,10 +180,16 @@ STUB
     echo "$tmpdir"
 }
 
+# #636 added base_sha to the enforced contract, so every artifact this suite
+# writes needs it or the wrapper fails closed before reaching the checks these
+# rows are actually about. Defaults to the fixture's real base — these tests are
+# about clearance COMMENTS, not about ancestry; arg 5 exists for a row that
+# wants to say otherwise.
 write_clearance_artifact() {
     cat > "$1/.reviews/merge-clearance-123.json" <<JSON
 { "pr_number": 123, "status": "CERTIFIED", "round": 4, "sha": "$2",
   "candidate_tree": "${3:-$HEAD_TREE}", "base_tree": "${4:-$HEAD_TREE}",
+  "base_sha": "${5:-$HEAD_SHA}",
   "review_file": ".reviews/r.md" }
 JSON
     echo "review body" > "$1/.reviews/r.md"

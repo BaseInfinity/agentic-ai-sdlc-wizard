@@ -779,17 +779,285 @@ fi
             echo "BLOCKED: no clearance artifact found at $CLEARANCE_FILE. Run the full cross-model review protocol and write this file, or decide it yourself with --user-approved \"<reason>\"." >&2
             exit 1
         fi
-        CL_STATUS=$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        # ROUND 2 (Sol): A NESTED KEY IS NOT A CONTRACT FIELD.
+        #
+        # Every field below was read as "the first `"name":` anywhere in the
+        # file". JSON nesting made that wrong: an object placed ahead of the
+        # real field supplies the value the gate compares, and the field the
+        # certification actually declares is never read at all.
+        #
+        # Executed against base_sha: live base moved to a different commit,
+        # `"metadata": {"base_sha": "<live>"}` ahead of a stale top-level
+        # `"base_sha": "<old>"`. The nested value matched the live base, the
+        # ancestry check passed, and it merged at exit 0 — #636's hole reopened
+        # by the parser that reads its fix.
+        #
+        # It backed status, round, sha, candidate_tree, base_tree, base_sha and
+        # review_file identically, so this is fixed ONCE, here, rather than
+        # seven times: project the artifact down to depth 1 and read every
+        # contract field from the projection. A nested object collapses to `{}`
+        # and its keys cease to exist as far as the gate is concerned.
+        #
+        # The walk is string-aware — a brace inside a quoted value is data, not
+        # structure — and escape-aware, so a `\"` does not end a string early.
+        # awk rather than a regex because nesting is not a regular language;
+        # any "strip the inner braces" pattern is defeated by one more level.
+        # ROUND 3 (Fable + Sol, converging; DESIGN ESCALATION): STOP
+        # REIMPLEMENTING JSON.
+        #
+        # Rounds 1-3 produced twelve-plus executed artifacts that merged at
+        # exit 0, and every single one was a JSON-GRAMMAR case: nesting,
+        # greedy matching, a `]` inside a string, duplicate keys, keys
+        # smuggled through `\uXXXX` escapes, an unterminated string, trailing
+        # garbage, a numeric token read as a digit prefix. Each round patched
+        # the case it was shown and the next round found the next one. That is
+        # not a hardening backlog, it is the cost curve of hand-writing a JSON
+        # parser in awk and sed — there is always one more case, and both
+        # reviewers are now hunting specifically here.
+        #
+        # THE "NO jq AT THE MERGE BOUNDARY" PREMISE THAT FORCED THE HAND
+        # PARSER IS FALSE, and it was false in this same file: line 133
+        # already refuses to run without jq. This script is repo-local and
+        # never ships (see CLAUDE.md) — the zero-dependency rule protects
+        # consumers, and this has none. python3 is a documented dependency of
+        # this repo's own test suite.
+        #
+        # python3 rather than jq for one specific reason: jq resolves
+        # duplicate keys silently (last wins) and cannot report them, and
+        # duplicates were the single largest defect class across rounds 2 and
+        # 3. `object_pairs_hook` sees the raw pair list and can refuse.
+        #
+        # What this deletes, rather than patches:
+        #   - depth tracking, and every desync that let a nested key print as
+        #     a top-level one (a whole-file parse has no depth counter to
+        #     desync, and refuses the file outright if it does not parse)
+        #   - first-wins vs last-wins ambiguity, for EVERY key at EVERY depth
+        #   - escape smuggling: `reviewers` IS `reviewers` once decoded,
+        #     so an escaped duplicate arrives at the hook as a duplicate
+        #   - digit-prefix number reads: 0.5 is a float and is refused as a
+        #     findings count, rather than parsing as its leading `0`
+        #
+        # THE CONTRACT IS UNCHANGED. Two or more reviewers, all clean, none
+        # dirty; a declared verdict must be CERTIFIED; absence fails closed;
+        # round >= 2 remains a route this branch never touches. Only the
+        # extraction moved.
+        if ! command -v python3 >/dev/null 2>&1; then
+            echo "FAILED CLOSED: python3 is required to parse the clearance artifact. A grep fallback is exactly the parser this replaced, so there is not one." >&2
+            exit 1
+        fi
+        CLEARANCE_PARSED=$(python3 -c '
+import json, re, sys
+
+path = sys.argv[1]
+
+def no_dupes(pairs):
+    seen = set()
+    for k, _ in pairs:
+        if k in seen:
+            # Reported at any depth. A duplicate anywhere means the artifact
+            # has two meanings and parsers disagree about which one is the
+            # certification — the gate refuses rather than picking.
+            raise ValueError("declares the key %r more than once" % k)
+        seen.add(k)
+    return dict(pairs)
+
+def refuse_constant(c):
+    raise ValueError("uses the non-JSON constant %s" % c)
+
+try:
+    with open(path) as fh:
+        doc = json.load(fh, object_pairs_hook=no_dupes, parse_constant=refuse_constant)
+except ValueError as exc:
+    # json.JSONDecodeError subclasses ValueError, so an unbalanced structure,
+    # an unterminated string and trailing garbage all land here alongside the
+    # duplicate-key refusal above.
+    sys.stderr.write("%s\n" % exc)
+    sys.exit(2)
+
+if not isinstance(doc, dict):
+    sys.stderr.write("is not a JSON object\n")
+    sys.exit(2)
+
+_HEX = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+def _is_object_name(v):
+    # SHA-1 today, SHA-256 accepted so a git object-format migration refuses
+    # nothing legitimate. Both are fixed-width lowercase hex.
+    return _HEX.fullmatch(v) is not None
+
+# `review_file` HAS NO GRAMMAR HERE, deliberately. See the comment at the
+# `[ -s ]` check in the shell for why a path grammar on that field is theatre.
+FIELD_GRAMMAR = {
+    "sha": _is_object_name,
+    "candidate_tree": _is_object_name,
+    "base_tree": _is_object_name,
+    "base_sha": _is_object_name,
+}
+FIELD_KIND = {
+    "sha": "git object name",
+    "candidate_tree": "git object name",
+    "base_tree": "git object name",
+    "base_sha": "git object name",
+}
+
+out = []
+def emit(key, value):
+    # The projection is a tab-separated channel and the shell reads it back one
+    # line at a time with `head -1`. Two different attacks live here and BOTH are
+    # closed by refusing the whole control-character class rather than an
+    # enumerated set of separators:
+    #
+    #   tab / newline — inject extra rows. Rows injected through a string field
+    #   precede the derived counts emitted at the end, so an artifact declaring
+    #   no reviewers at all forged "2 reviewers, zero findings".
+    #
+    #   NUL — needs no separator. It is legal JSON, python emits it, and the
+    #   shell DELETES it from a command substitution, so "CERT\0IFIED" and a
+    #   commit sha split by a NUL both normalise to the live value only AFTER
+    #   the parse. What a JSON reader sees in the artifact is then not what the
+    #   gate compares.
+    #
+    # An enumerated set missed NUL, which is the same mistake in miniature that
+    # the hand-written parser kept making: enumerate the cases and the next case
+    # is the one you did not list. Every contract field is a sha, a path, or a
+    # status word, so no C0 control character or DEL is ever legitimate in one.
+    if isinstance(value, str) and any(ord(c) < 0x20 or ord(c) == 0x7F for c in value):
+        sys.stderr.write("field %r contains a control character\n" % key)
+        sys.exit(2)
+    # THE CLASS REFUSAL ABOVE IS DEFENCE IN DEPTH, NOT THE GUARD. It refuses
+    # what is known to be dangerous, so it fails OPEN whenever that knowledge is
+    # incomplete — which it was twice, at {tab, newline, CR} and again before
+    # NUL was added. The guard proper is below and runs the other way round: a
+    # field must MATCH what it is, so anything unanticipated fails CLOSED. It
+    # also does not depend on modelling shell byte semantics at all, and stays
+    # correct if one of these values later reaches a different sink.
+    if isinstance(value, str) and value and key in FIELD_GRAMMAR:
+        if not FIELD_GRAMMAR[key](value):
+            sys.stderr.write("field %r is not a well-formed %s\n" % (key, FIELD_KIND[key]))
+            sys.exit(2)
+    out.append("%s\t%s" % (key, value))
+
+for key in ("status", "sha", "candidate_tree", "base_tree", "base_sha", "review_file"):
+    value = doc.get(key)
+    # A non-string where a string is required is reported as absent: the
+    # shell already fails closed on absence with a message naming the field,
+    # and inventing a second refusal for "present but wrong type" would say
+    # the same thing twice.
+    emit(key, value if isinstance(value, str) else "")
+
+# bool is an int in Python and `true` is not a round number.
+rnd = doc.get("round")
+emit("round", rnd if isinstance(rnd, int) and not isinstance(rnd, bool) else "")
+
+reviewers = doc.get("reviewers")
+reviewer_count = clean_count = dirty_count = 0
+if isinstance(reviewers, list):
+    for entry in reviewers:
+        if not isinstance(entry, dict):
+            # Still a reviewer, never a clean one — the same direction as an
+            # entry that omits its count.
+            reviewer_count += 1
+            continue
+        reviewer_count += 1
+        if "verdict" in entry and entry["verdict"] != "CERTIFIED":
+            continue
+        total = entry.get("findings_total")
+        if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+            continue
+        if total == 0:
+            clean_count += 1
+        else:
+            dirty_count += 1
+emit("reviewer_count", reviewer_count)
+emit("clean_count", clean_count)
+emit("dirty_count", dirty_count)
+
+sys.stdout.write("\n".join(out))
+' "$CLEARANCE_FILE" 2>&1) || {
+            echo "BLOCKED: $CLEARANCE_FILE does not parse as a certification — $CLEARANCE_PARSED. A file the gate cannot read one way is not a clearance. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        }
+        # One line per key, so the first match is the only match.
+        cl_field() {
+            printf '%s\n' "$CLEARANCE_PARSED" | sed -n "s/^$1	//p" | head -1
+        }
+        CL_STATUS=$(cl_field status)
         if [ "$CL_STATUS" != "CERTIFIED" ]; then
             echo "BLOCKED: $CLEARANCE_FILE status is '${CL_STATUS:-missing}', not CERTIFIED. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
             exit 1
         fi
-        CL_ROUND=$(grep -o '"round"[[:space:]]*:[[:space:]]*[0-9]*' "$CLEARANCE_FILE" | head -1 | sed 's/.*"round"[[:space:]]*:[[:space:]]*//')
+        CL_ROUND=$(cl_field round)
         if [ -z "$CL_ROUND" ] || [ "$CL_ROUND" -lt 2 ]; then
-            echo "BLOCKED: $CLEARANCE_FILE shows round=${CL_ROUND:-missing} — a round-1-only CERTIFIED is treated as an insufficient dialogue (real adversarial review takes at least one recheck round). Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
-            exit 1
+            # #563: THE ONE CASE WHERE round >= 2 IS BACKWARDS.
+            #
+            # The round>=2 rule is sound and stays: one round is usually a
+            # rubber stamp, and the dialogue is where review actually happens.
+            # But it conflates "a dialogue happened" with "the review was
+            # adversarial", and those come apart in exactly one place — both
+            # reviewers certify at round 1 having found NOTHING to dispute.
+            #
+            # PR #562 is the measured instance: Sol zero at every severity at
+            # 99%, Fable zero at every severity at 97%, both verifying the
+            # evidence against primary sources independently. The only way to
+            # satisfy the gate from there was to re-invoke both reviewers and
+            # ask them to re-verify nothing — ceremony that increments a counter
+            # and buys no signal. Two independent clean certifications is
+            # STRONGER evidence than one two-round dialogue, and the gate read
+            # it as weaker.
+            #
+            # The exemption is mechanical — it reads integers, never prose — and
+            # deliberately narrow: TWO OR MORE reviewers, EVERY one at
+            # findings_total 0. One finding at any severity, from any reviewer,
+            # and the recheck round is owed as before.
+            #
+            # ABSENCE IS NOT ZERO. Every artifact written before #563 carries no
+            # findings_total, and silence about findings must never read as an
+            # assertion that there were none, or the exemption applies
+            # retroactively to certifications that never claimed it.
+            #
+            # Trust boundary unchanged and worth stating: the agent writes this
+            # artifact, so the counts are ATTESTED, not authenticated — exactly
+            # the standing of `round` itself. This does not widen that gap.
+            # COUNTED PER REVIEWER ENTRY, NOT PER OCCURRENCE. Round 1 of this
+            # review found the first version grepped every `findings_total` in
+            # the file and never checked the match belonged to a reviewer.
+            # Two counterexamples were executed against it, both merging at
+            # exit 0: an artifact with ZERO reviewer entries and two stray
+            # `findings_total: 0` keys elsewhere, and one with two clean
+            # reviewers plus a third that omits the field entirely. Counting
+            # occurrences answers "are there two zeros in this file", which is
+            # not the question.
+            #
+            # Every entry must carry its own zero. An entry with no
+            # `findings_total` counts as a reviewer and NOT as a clean one, so
+            # partial absence blocks.
+            #
+            # ROUND 3: the counting moved into the strict parse above, with the
+            # slicing-and-splitting it replaced. Three rounds of executed
+            # counterexamples all defeated the EXTRACTION, never the contract —
+            # a regex slice truncating at the first `]`, a greedy prefix taking
+            # the last `"reviewers":[` in the file, a `]` inside a quoted value,
+            # duplicate keys resolved by position, escaped duplicate keys, a
+            # float read as its leading digit. The parser answers all of them
+            # structurally: entries are entries because the JSON says so, a
+            # findings count is an integer or it is not a count, and a verdict
+            # is the value of the verdict key.
+            REVIEWER_COUNT=$(cl_field reviewer_count)
+            CLEAN_COUNT=$(cl_field clean_count)
+            DIRTY_COUNT=$(cl_field dirty_count)
+            # EVERY reviewer clean, and at least two of them. `CLEAN_COUNT -eq
+            # REVIEWER_COUNT` is what closes the partial-absence hole: an entry
+            # that says nothing is counted but never cleared, so it can only
+            # ever refuse.
+            if [ "$CL_ROUND" = "1" ] && [ "$REVIEWER_COUNT" -ge 2 ] \
+                && [ "$CLEAN_COUNT" -eq "$REVIEWER_COUNT" ] && [ "$DIRTY_COUNT" -eq 0 ]; then
+                echo "NOTE: round=1 accepted — $CLEAN_COUNT reviewers each certified with zero findings at every severity (#563). A recheck round would have nothing to be about." >&2
+            else
+                echo "BLOCKED: $CLEARANCE_FILE shows round=${CL_ROUND:-missing} — a round-1-only CERTIFIED is treated as an insufficient dialogue (real adversarial review takes at least one recheck round). The one exemption is two or more reviewers each recording findings_total=0; this artifact declares $REVIEWER_COUNT reviewer entries, $CLEAN_COUNT of them recording zero findings and $DIRTY_COUNT recording findings — an entry that records nothing counts toward neither (#563). Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+                exit 1
+            fi
         fi
-        CL_SHA=$(grep -o '"sha"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"sha"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        CL_SHA=$(cl_field sha)
         if [ "$CL_SHA" != "$HEAD_SHA" ]; then
             echo "BLOCKED: $CLEARANCE_FILE is stale — its sha ($CL_SHA) does not match the current remote head ($HEAD_SHA). New commits landed since certification. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
             exit 1
@@ -824,7 +1092,7 @@ fi
         # Fails closed on a missing field: an artifact naming no content is the
         # pre-#540 format, and honouring it would be the hole reopened under an
         # older key.
-        CL_CAND_TREE=$(grep -o '"candidate_tree"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"candidate_tree"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        CL_CAND_TREE=$(cl_field candidate_tree)
         if [ -z "$CL_CAND_TREE" ]; then
             echo "BLOCKED: $CLEARANCE_FILE declares no 'candidate_tree'. A certification names the content it was issued over, not just the commit it happened to sit on (#540). Record it with: git rev-parse 'HEAD^{tree}'. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
             exit 1
@@ -847,7 +1115,7 @@ fi
         # base_tree pins WHICH BASE the reviewers read. A rebase onto moved
         # upstream can leave candidate_tree untouched while the integration
         # result changes, which is the second measurement that killed patch-id.
-        CL_BASE_TREE=$(grep -o '"base_tree"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"base_tree"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        CL_BASE_TREE=$(cl_field base_tree)
         if [ -z "$CL_BASE_TREE" ]; then
             echo "BLOCKED: $CLEARANCE_FILE declares no 'base_tree'. A certification names the base it was read against, or a rebase onto moved upstream carries it silently (#540). Record it with: git rev-parse \"origin/\$BASE_BRANCH^{tree}\". Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
             exit 1
@@ -869,7 +1137,65 @@ fi
             echo "BLOCKED: the base moved since certification — $BASE_BRANCH tree is $CUR_BASE_TREE, certified base_tree is $CL_BASE_TREE. The reviewers read a different base, and the merged result is not what they cleared (#540). Rebase and re-review, or decide it yourself: --user-approved \"<reason>\"." >&2
             exit 1
         fi
-        CL_REVIEW_FILE=$(grep -o '"review_file"[[:space:]]*:[[:space:]]*"[^"]*"' "$CLEARANCE_FILE" | head -1 | sed 's/.*"review_file"[[:space:]]*:[[:space:]]*"//; s/"$//')
+        # #636: A TREE CARRIES NO ANCESTRY, AND base_tree IS A TREE.
+        #
+        # #540 replaced SHA identity with content identity, and that was right.
+        # But it bound the content at the two ENDPOINTS and modelled the base as
+        # a tree. The base is a POSITION IN A HISTORY. A PR diff is three-dot,
+        # so what actually merges depends on the MERGE BASE — and the merge base
+        # can move while `sha`, `candidate_tree` and `base_tree` are all still
+        # byte-identical.
+        #
+        # The case, reproduced with real git objects during #521's design
+        # review rather than argued: main takes a commit the PR also contains,
+        # then REVERTS it. Main's tree returns byte-for-byte to what the
+        # reviewers read, so base_tree matches. The PR head never moved, so
+        # candidate_tree matches. But the merge base advanced past the reverted
+        # commit, so the PR now contributes only the part the revert did not
+        # undo. Measured: reviewed base tree == live base tree, candidate tree
+        # matched, and `git merge-tree` produced a prospective merge containing
+        # HALF the reviewed content. Every check above passed. It merged at
+        # exit 0.
+        #
+        # base_sha is the conservative fix: it subsumes base_tree entirely
+        # (same commit implies same tree), so the tree check above is now
+        # strictly redundant. It is kept anyway — removing it is contract churn
+        # for no safety gain, and its refusal message is the more legible one
+        # when a genuine rebase is what moved.
+        #
+        # Fails closed when absent, for the same reason candidate_tree does: an
+        # artifact that says nothing about the base is the pre-#636 format, and
+        # honouring it leaves the hole open forever behind an omitted field.
+        # Nothing live breaks — clearances are per-PR and written fresh.
+        CL_BASE_SHA=$(cl_field base_sha)
+        if [ -z "$CL_BASE_SHA" ]; then
+            echo "BLOCKED: $CLEARANCE_FILE declares no 'base_sha'. A tree carries no ancestry, so base_tree alone cannot tell a moved base from a still one — a revert returns the base tree to its old value while the merge base advances (#636). Record it with: git rev-parse \"origin/\$BASE_BRANCH\". Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        if [ "$CL_BASE_SHA" != "$BASE_SHA" ]; then
+            echo "BLOCKED: the base branch moved since certification — $BASE_BRANCH is at $BASE_SHA, certified base_sha is $CL_BASE_SHA. The trees may still match (a revert does exactly that), but the merge base moved, so what merges is not what was reviewed (#636). Rebase and re-review, or decide it yourself: --user-approved \"<reason>\"." >&2
+            exit 1
+        fi
+        CL_REVIEW_FILE=$(cl_field review_file)
+        # EXISTENCE AND NON-EMPTINESS IS THE WHOLE CHECK, ON PURPOSE. Nothing
+        # binds this file's CONTENT to this PR, this round, or these reviewers,
+        # so any non-empty tracked file satisfies it — `README.md` does. That
+        # makes every question about the path's PEDIGREE theatre: refusing a
+        # path that escapes the repository denies an artifact author nothing,
+        # because the identical check is satisfied by a file already inside it.
+        #
+        # A grammar and a realpath containment check lived here for three review
+        # rounds and were deleted (#645). They bought no security property any
+        # test could state, and they cost false refusals — a legal `-review.md`,
+        # a legitimate in-repo symlink, and any invocation from a subdirectory
+        # were all blocked. A false refusal in a merge gate is worse than dead
+        # code: it trains `--user-approved` overrides and erodes the gate it
+        # lives in. Do not re-add a path check here. The real fix is to bind the
+        # CONTENT — a digest in the artifact, or a file that must name the sha
+        # and round — and that is #645, not a spelling rule.
+        #
+        # `review_file`'s in-scope surface is the projection channel, and the
+        # control-character class refusal in emit() still covers that.
         if [ -z "$CL_REVIEW_FILE" ] || [ ! -s "$CL_REVIEW_FILE" ]; then
             echo "BLOCKED: $CLEARANCE_FILE's referenced review artifact ('$CL_REVIEW_FILE') is missing or empty — can't verify the dialogue was substantive. Explicit user confirmation is required: --user-approved \"<reason>\"." >&2
             exit 1

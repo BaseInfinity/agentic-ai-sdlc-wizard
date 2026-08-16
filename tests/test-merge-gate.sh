@@ -328,6 +328,22 @@ setup_wrapper_fixture() {
     # actually targets, read from the PR itself rather than assumed.
     git -C "$tmpdir" update-ref refs/remotes/origin/main HEAD
 
+    # #636: A SECOND COMMIT WITH THE IDENTICAL TREE. This is the minimal
+    # instance of the ancestry class — the base MOVED, and every field #540
+    # enforces still matches, because a tree carries no ancestry.
+    #
+    # The real-world trigger is a revert: main takes a commit the PR also
+    # contains, then reverts it, and main's tree returns byte-for-byte to where
+    # the reviewers read it while the merge base advances past it. An empty
+    # commit reproduces the same fields (new sha, same tree) in one line
+    # instead of four, and the gate cannot tell the two apart — which is the
+    # point.
+    git -C "$tmpdir" commit -q --allow-empty -m "base moved, tree identical"
+    git -C "$tmpdir" rev-parse HEAD > "$tmpdir/.fixture-base-moved-sha"
+    # Rewound so this commit is reachable-but-not-current: only rows that
+    # deliberately point the live base at it are affected.
+    git -C "$tmpdir" reset -q --hard "$(cat "$tmpdir/.fixture-sha")"
+
     # Control file the stub gh reads: one KEY=VALUE per line.
     # HEAD_SHA, VALIDATE_CONCLUSION, DIFF_FILES (newline-separated, base64
     # would be overkill — use a sentinel-delimited list), DELETED_TEST_FILES,
@@ -519,17 +535,55 @@ write_clearance() {
     # content that is deliberately wrong.
     local cand="${7:-$(cat "$tmpdir/.fixture-tree")}"
     local base="${8:-$(cat "$tmpdir/.fixture-tree")}"
-    cat > "$tmpdir/.reviews/merge-clearance-$pr.json" <<JSON
-{
-  "pr_number": $pr,
-  "status": "$status",
-  "round": $round,
-  "sha": "$sha",
-  "candidate_tree": "$cand",
-  "base_tree": "$base",
-  "review_file": "$review_file"
+    # #563: arg 9 is a raw `reviewers` array body. DELIBERATELY EMPTY BY
+    # DEFAULT, and that default is load-bearing: every artifact written before
+    # #563 carries no findings_total at all, and those must keep taking the
+    # round >= 2 path unchanged. A default of "two reviewers at zero" would
+    # silently hand every existing round-1 row the new exemption and hide the
+    # fail-closed behaviour this field exists to have.
+    local reviewers="${9:-}"
+    # #636: WHERE the base was, not just what it contained. Defaults to the
+    # fixture's real base commit so every pre-existing row keeps testing what it
+    # was written to test. Deliberately independent of arg 5 — several rows pass
+    # a deliberately stale head sha there, and the base is a separate fact.
+    local base_sha="${10:-$(cat "$tmpdir/.fixture-sha")}"
+    # Round 2 (Sol): arg 11 is raw JSON emitted BEFORE every contract field, so
+    # a row can place a NESTED object carrying the same key names ahead of the
+    # real ones. Order is the whole point — the reader took the first match in
+    # the file, so a nested value only masks a top-level one by preceding it.
+    local extra="${11:-}"
+    # Arg 12 is the same thing AFTER the reviewers array. Both positions are
+    # needed and neither substitutes: `head -1` reads the FIRST occurrence and
+    # a greedy `.*` reads the LAST, so a masking value has to be placed on the
+    # correct side of the real field to reproduce each defect.
+    local extra_after="${12:-}"
+    {
+        printf '{\n'
+        printf '  "pr_number": %s,\n' "$pr"
+        [ -n "$extra" ] && printf '  %s,\n' "$extra"
+        printf '  "status": "%s",\n' "$status"
+        printf '  "round": %s,\n' "$round"
+        printf '  "sha": "%s",\n' "$sha"
+        printf '  "candidate_tree": "%s",\n' "$cand"
+        printf '  "base_tree": "%s",\n' "$base"
+        printf '  "base_sha": "%s",\n' "$base_sha"
+        [ -n "$reviewers" ] && printf '  "reviewers": [%s],\n' "$reviewers"
+        [ -n "$extra_after" ] && printf '  %s,\n' "$extra_after"
+        printf '  "review_file": "%s"\n' "$review_file"
+        printf '}\n'
+    } > "$tmpdir/.reviews/merge-clearance-$pr.json"
 }
-JSON
+
+# #563 helper: a reviewers-array body with N entries, each at findings_total=$2.
+# Kept as a function rather than inline JSON so a row states its INTENT ("two
+# reviewers, both clean") instead of a wall of braces that has to be re-read.
+reviewers_with() {
+    local count="$1" total="$2" i out=""
+    for i in $(seq 1 "$count"); do
+        [ -n "$out" ] && out="$out,"
+        out="$out{\"model\":\"r$i\",\"verdict\":\"CERTIFIED\",\"confidence\":97,\"findings_total\":$total}"
+    done
+    printf '%s' "$out"
 }
 
 # Test: wrapper script exists and is executable (guards the tests below —
@@ -659,6 +713,1006 @@ test_wrapper_blocks_round_1_only() {
         pass "wrapper blocks a round-1-only CERTIFIED as insufficient dialogue"
     else
         fail "wrapper should block round=1 CERTIFIED, got exit=$exit_code out=$out"
+    fi
+}
+
+# --- #636: a tree carries no ancestry ---
+#
+# #540 bound certification to CONTENT rather than to a SHA, and that was right.
+# But it bound the content at the two ENDPOINTS and modelled the base as a tree.
+# The base is a POSITION IN A HISTORY. A PR diff is three-dot, so what actually
+# merges depends on the merge base — and the merge base can move while `sha`,
+# `candidate_tree` and `base_tree` all stay byte-identical.
+#
+# Reproduced with real git objects during #521's design review: reviewed base
+# tree matched live, candidate tree matched, and `git merge-tree` produced a
+# prospective merge containing only HALF the reviewed content.
+test_wrapper_blocks_moved_base_with_identical_tree() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # The live base is a DIFFERENT commit with the SAME tree. Every field the
+    # gate enforces today matches; only ancestry moved.
+    echo "LIVE_BASE_OID=$(cat "$tmpdir/.fixture-base-moved-sha")" >> "$tmpdir/.gh-stub-config"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    # Asserting the SPECIFIC refusal. A generic non-zero exit would also be
+    # satisfied by the tree-mismatch check further down, which cannot fire here
+    # by construction — the trees are equal, that is the whole scenario.
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "base_sha"; then
+        pass "wrapper blocks when the base moved to a commit with an identical tree"
+    else
+        fail "wrapper should block a moved base with an identical tree, got exit=$exit_code out=$out"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# ROUND 2 (Sol, P1): A NESTED KEY IS NOT A CONTRACT FIELD.
+#
+# Every contract field was read with `grep -o '"field".."' | head -1` — the
+# FIRST occurrence anywhere in the file, at any nesting depth. So an object
+# nested ahead of the real field supplies the value the gate compares, and the
+# top-level field the certification actually declares is never read.
+#
+# Sol executed this against base_sha: live base moved to a different commit,
+# `"metadata": {"base_sha": "<live>"}` placed before a stale top-level
+# `"base_sha": "<old>"`. The nested value matched the live base, so the ancestry
+# check passed and it merged at exit 0 — the exact hole #636 exists to close,
+# reopened by the parser reading it.
+#
+# It is a CLASS defect, not one field's: the same read shape backs status,
+# round, sha, candidate_tree, base_tree and review_file. Rows below cover the
+# two that authorize content and ancestry; fixing only the one Sol demonstrated
+# would leave the other five standing.
+test_wrapper_blocks_nested_base_sha_masking_a_stale_one() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    echo "LIVE_BASE_OID=$(cat "$tmpdir/.fixture-base-moved-sha")" >> "$tmpdir/.gh-stub-config"
+    # Top-level base_sha is the ORIGINAL base — stale, and the gate must refuse
+    # on it. The nested one matches the live base and must be invisible.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" "" "$(cat "$tmpdir/.fixture-sha")" \
+        "\"metadata\": {\"base_sha\": \"$(cat "$tmpdir/.fixture-base-moved-sha")\"}"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "base branch moved"; then
+        pass "wrapper ignores a nested base_sha and refuses on the top-level one"
+    else
+        fail "wrapper should read base_sha only at the top level, got exit=$exit_code out=$out"
+    fi
+}
+
+test_wrapper_blocks_nested_candidate_tree_masking_a_stale_one() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # Same shape, different field — this is the one that binds CONTENT. The
+    # top-level candidate_tree certifies a tree that is not what would merge.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "0000000000000000000000000000000000000000" "" "" "" \
+        "\"metadata\": {\"candidate_tree\": \"$(cat "$tmpdir/.fixture-tree")\"}"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "not the content that was certified"; then
+        pass "wrapper ignores a nested candidate_tree and refuses on the top-level one"
+    else
+        fail "wrapper should read candidate_tree only at the top level, got exit=$exit_code out=$out"
+    fi
+}
+
+# ROUND 2 (Sol, P1): the verdict check matched "CERTIFIED" ANYWHERE in the
+# entry rather than as the value OF the verdict key. A reviewer declaring
+# NOT_CERTIFIED alongside any other field whose value happens to contain the
+# word — a note, a filename, a quoted refusal message — was counted as clean.
+# Sol executed it: `"verdict":"NOT_CERTIFIED","note":"CERTIFIED"` took the
+# round-1 exemption and merged at exit 0.
+test_wrapper_blocks_round_1_when_certified_appears_outside_the_verdict() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"r1","verdict":"CERTIFIED","findings_total":0},{"model":"r2","verdict":"NOT_CERTIFIED","note":"CERTIFIED","findings_total":0}'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "wrapper reads CERTIFIED as the verdict's value, not as text anywhere in the entry"
+    else
+        fail "wrapper should block a NOT_CERTIFIED reviewer whose other fields contain 'CERTIFIED', got exit=$exit_code out=$out"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# ROUND 2 (Fable, P1/P2): THE REVIEWERS SLICE WAS A REGEX, AND AN ARRAY IS NOT
+# A REGULAR LANGUAGE.
+#
+# The block was cut with `sed 's/.*"reviewers"...\[\([^]]*\)\].*/\1/'`. Two
+# executed counterexamples merged at exit 0:
+#
+#   PROBE-A: `[^]]*` stops at the FIRST `]` in the file. A nested array inside
+#   an early clean entry (`"tags":[1]`) truncated the block there, so a LATER
+#   entry recording five findings was never seen. Two clean reviewers, zero
+#   dirty, exemption granted — while a reviewer had findings.
+#
+#   PROBE-B: the leading `.*` is greedy, so it takes the LAST `"reviewers":[`
+#   in the file. A nested `history.round0.reviewers` array of clean entries
+#   overrode the real top-level array holding one NOT_CERTIFIED reviewer with
+#   four findings.
+#
+# Round 1's "fail closed by construction" was argued for nested OBJECTS and is
+# false for nested ARRAYS and duplicate keys. It is also false for a `]` inside
+# a quoted string, which neither probe used and which truncates identically —
+# so the block is now extracted by a depth- and string-aware walk rather than
+# hardened case by case, and a duplicate top-level key is refused as ambiguous.
+test_wrapper_blocks_round_1_when_a_nested_array_hides_a_dirty_reviewer() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"r1","verdict":"CERTIFIED","findings_total":0},{"model":"r2","verdict":"CERTIFIED","findings_total":0,"tags":[1]},{"model":"r3","verdict":"CERTIFIED","findings_total":5}'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a nested array in one entry does not truncate the reviewers block"
+    else
+        fail "wrapper should see the dirty third reviewer past a nested array, got exit=$exit_code out=$out"
+    fi
+}
+
+test_wrapper_blocks_round_1_when_a_string_bracket_hides_a_dirty_reviewer() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # Same truncation, no nesting at all — a `]` inside a quoted value. This is
+    # the variant a "refuse blocks containing [" guard would let through.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"r1","verdict":"CERTIFIED","findings_total":0},{"model":"r2","verdict":"CERTIFIED","findings_total":0,"note":"see [1] above]"},{"model":"r3","verdict":"CERTIFIED","findings_total":7}'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a ']' inside a quoted value does not truncate the reviewers block"
+    else
+        fail "wrapper should see the dirty third reviewer past a bracket in a string, got exit=$exit_code out=$out"
+    fi
+}
+
+test_wrapper_blocks_round_1_when_a_nested_reviewers_array_shadows_the_real_one() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # The REAL array is one NOT_CERTIFIED reviewer with findings. A nested
+    # history block afterwards holds two clean ones.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"sol","verdict":"NOT_CERTIFIED","findings_total":4}' "" "" \
+        '"history": {"round0": {"reviewers": [{"model":"a","verdict":"CERTIFIED","findings_total":0},{"model":"b","verdict":"CERTIFIED","findings_total":0}]}}'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a nested reviewers array does not shadow the top-level one"
+    else
+        fail "wrapper should read the top-level reviewers array, got exit=$exit_code out=$out"
+    fi
+}
+
+test_wrapper_blocks_round_1_on_duplicate_reviewers_keys() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # Two top-level reviewers keys. JSON parsers disagree about which wins, so
+    # the gate refuses rather than picking — a certification that cannot be
+    # read one way is not a certification.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" "$(reviewers_with 2 0)" "" \
+        '"reviewers": [{"model":"x","verdict":"NOT_CERTIFIED","findings_total":9}]'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "more than once"; then
+        pass "two top-level reviewers keys are refused as ambiguous"
+    else
+        fail "wrapper should refuse a duplicated reviewers key, got exit=$exit_code out=$out"
+    fi
+}
+
+# The counterpart the refusals above would otherwise be satisfied by: a nested
+# array in an entry is LEGAL JSON, and a clearance carrying one must still take
+# the exemption. Without this row, "block anything containing a bracket" would
+# pass every test above while being wrong.
+test_wrapper_allows_round_1_two_clean_reviewers_with_a_nested_array() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"r1","verdict":"CERTIFIED","findings_total":0,"tags":["a","b"]},{"model":"r2","verdict":"CERTIFIED","findings_total":0}'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "two clean reviewers still take the exemption when an entry carries a nested array"
+    else
+        fail "a legal nested array should not defeat the exemption, got exit=$exit_code out=$out"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# ROUND 3 (Fable + Sol, converging): AMBIGUITY WAS RESOLVED BY POSITION INSTEAD
+# OF REFUSED, AND NEITHER WALK CHECKED WHETHER IT HAD PARSED ANYTHING.
+#
+# Round 2 established the principle in two places — a duplicated top-level
+# `reviewers` key and a duplicated `verdict` inside an entry are REFUSED rather
+# than resolved. The principle was right and was applied to exactly those two
+# keys; every other key kept reading first-wins, which is the opposite of what
+# a JSON parser does. Nine artifacts were executed against that gap and all
+# nine merged at exit 0.
+#
+# These rows are what forced the design escalation: the fix is no longer a
+# hand-written walk but a strict parse, so the rows below are the specification
+# that parse has to meet.
+raw_clearance() {
+    cat > "$1/.reviews/merge-clearance-123.json"
+    echo "content" > "$1/.reviews/some-review.md"
+}
+
+# The entry says zero, then says seven. First-wins read it as clean; a JSON
+# parser reads seven. The exemption was granted to an artifact with findings.
+test_wrapper_blocks_round_1_on_duplicate_findings_total_in_an_entry() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"r1","verdict":"CERTIFIED","findings_total":0,"findings_total":7},{"model":"r2","verdict":"CERTIFIED","findings_total":0}'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "an entry declaring findings_total twice is refused, not resolved first-wins"
+    else
+        fail "duplicate findings_total in an entry should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# 0.5 is valid JSON and is not zero. A digit-PREFIX match read it as 0.
+test_wrapper_blocks_round_1_on_a_non_integer_findings_total() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"r1","verdict":"CERTIFIED","findings_total":0.5},{"model":"r2","verdict":"CERTIFIED","findings_total":0.5}'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a non-integer findings_total does not parse as its leading digit"
+    else
+        fail "findings_total 0.5 should not count as zero, got exit=$exit_code out=$out"
+    fi
+}
+
+# 0.0 is the discriminating case for the TYPE check specifically: it equals
+# zero numerically, so a guard that only compares values still clears it. Only
+# a guard that requires an INTEGER refuses. Without this row the type check
+# survives its own mutation — which is how it shipped untested the first time.
+test_wrapper_blocks_round_1_on_a_float_zero_findings_total() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"r1","verdict":"CERTIFIED","findings_total":0.0},{"model":"r2","verdict":"CERTIFIED","findings_total":0.0}'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "findings_total 0.0 is not an integer count, even though it equals zero"
+    else
+        fail "a float zero findings_total should not clear, got exit=$exit_code out=$out"
+    fi
+}
+
+# A reviewers entry that is not an object at all. It is still a reviewer and
+# never a clean one — the same direction as an entry omitting its count.
+# Discriminates the "count it anyway" branch, which is otherwise unreachable.
+test_wrapper_blocks_round_1_when_a_reviewers_entry_is_not_an_object() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"r1","verdict":"CERTIFIED","findings_total":0},{"model":"r2","verdict":"CERTIFIED","findings_total":0},"a bare string"'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a non-object reviewers entry counts as a reviewer and never as a clean one"
+    else
+        fail "a bare string in the reviewers array should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# status CERTIFIED, then status NOT_CERTIFIED. Pre-existing first-wins read,
+# swept in rather than deferred because the same commit rewrote this read.
+test_wrapper_blocks_duplicate_status_keys() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "status": "NOT_CERTIFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "more than once"; then
+        pass "a duplicated top-level status key is refused as ambiguous"
+    else
+        fail "duplicate status keys should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# The same shape on the field #636 exists to bind: live base first, stale base
+# second. The gate cleared an ancestry the artifact's JSON meaning does not name.
+test_wrapper_blocks_duplicate_base_sha_keys() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")",
+  "base_sha": "0000000000000000000000000000000000000000",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "more than once"; then
+        pass "a duplicated top-level base_sha key is refused as ambiguous"
+    else
+        fail "duplicate base_sha keys should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# The parse is strict; the CHANNEL it writes to was not. Contract fields are
+# projected as "key\tvalue" lines and read back with `head -1`, and the three
+# derived counts are emitted last. A string value carrying a newline and tabs
+# injects earlier count rows that win the `head -1` read, so an artifact
+# declaring NO reviewers at all takes the round-1 exemption as "2 reviewers,
+# zero findings". Legal JSON throughout — \n and \t are standard escapes, so
+# nothing upstream of the projection can see it.
+test_wrapper_blocks_tsv_injection_through_a_string_field() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 1,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")\nreviewer_count\t2\nclean_count\t2\ndirty_count\t0",
+  "review_file": ".reviews/some-review.md",
+  "reviewers": []
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a control character in a projected string field cannot forge the reviewer counts"
+    else
+        fail "TSV injection through base_sha should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# The same seam aimed at ANCESTRY rather than at the counts. `status` is emitted
+# first, so rows injected through it win the `head -1` read for every field that
+# follows — including the three #636 binds. The artifact's real sha, trees and
+# base_sha are all garbage; the injected rows supply live ones.
+test_wrapper_blocks_tsv_injection_forging_the_ancestry_binds() {
+    local tmpdir out exit_code sha tree
+    tmpdir=$(setup_wrapper_fixture)
+    sha=$(cat "$tmpdir/.fixture-sha")
+    tree=$(cat "$tmpdir/.fixture-tree")
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED\nsha\t$sha\ncandidate_tree\t$tree\nbase_tree\t$tree\nbase_sha\t$sha\nreview_file\t.reviews/some-review.md",
+  "round": 2,
+  "sha": "0000000000000000000000000000000000000000",
+  "candidate_tree": "0000000000000000000000000000000000000000",
+  "base_tree": "0000000000000000000000000000000000000000",
+  "base_sha": "0000000000000000000000000000000000000000",
+  "review_file": ".reviews/nonexistent-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a control character in status cannot forge the content and ancestry binds"
+    else
+        fail "TSV injection through status should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# The other half of the same seam, and it does not need a row separator. NUL is
+# legal JSON (\u0000), python emits it, and the shell DELETES it from a command
+# substitution. So every string bind can be written with a NUL in the middle and
+# normalize to the live value only after the parse: what a JSON reader sees in
+# the artifact is not what the gate compares. Refusing an enumerated set of
+# separators misses this; the refusal has to be the whole control-character
+# class.
+test_wrapper_blocks_nul_normalising_a_string_field() {
+    local tmpdir out exit_code sha tree
+    tmpdir=$(setup_wrapper_fixture)
+    sha=$(cat "$tmpdir/.fixture-sha")
+    tree=$(cat "$tmpdir/.fixture-tree")
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERT\u0000IFIED",
+  "round": 2,
+  "sha": "${sha:0:20}\u0000${sha:20}",
+  "candidate_tree": "${tree:0:20}\u0000${tree:20}",
+  "base_tree": "${tree:0:20}\u0000${tree:20}",
+  "base_sha": "${sha:0:20}\u0000${sha:20}",
+  "review_file": ".reviews/some\u0000-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a NUL byte cannot normalise a string field into a live value after the parse"
+    else
+        fail "NUL normalisation should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# The row above is NOT sufficient, and this row exists because review proved it.
+# That artifact puts a NUL in `sha` as well, so it is refused by the object-name
+# grammar and the control-character class refusal is never reached: narrow the
+# class back to {tab, newline, CR} and the suite still goes fully green. `status`
+# is the only field the class refusal SOLELY guards — no grammar constrains it —
+# so the isolation has to be a NUL in status with every other field clean.
+# Under the narrowed class this artifact merges at exit 0, which is the round-5
+# normalisation exploit intact.
+test_wrapper_blocks_nul_in_status_with_every_other_field_clean() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERT\u0000IFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "contains a control character"; then
+        pass "the control-character class refusal is proven on the one field it solely guards"
+    else
+        fail "a NUL in status alone should block via the class refusal, got exit=$exit_code out=$out"
+    fi
+}
+
+# The object-name grammar is NOT load-bearing for safety and this row says so
+# honestly: a non-hex sha never matched the live head anyway, so the staleness
+# comparison already blocked it. What the grammar changes is WHERE and WHY it is
+# refused — at the parse, named as malformed, before any comparison runs. That
+# is the behaviour asserted here, and it is the only thing about this guard that
+# is provable today. Its real value is invariance if one of these values ever
+# reaches a different sink; that value cannot be tested until such a sink
+# exists, and is disclosed in known_limits rather than claimed.
+test_wrapper_refuses_a_malformed_object_name_at_the_parse() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "not-a-real-object-name" ".reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "not a well-formed git object name"; then
+        pass "a malformed object name is refused at the parse, not at the comparison"
+    else
+        fail "malformed sha should be refused as malformed, got exit=$exit_code out=$out"
+    fi
+}
+
+# POSITIVE ROW, and the only survivor of the deleted path guard (#645). The
+# grammar and the realpath containment check that used to run on review_file are
+# gone: they bought no security property any test could state, because nothing
+# binds this file's CONTENT to anything, and they cost false refusals. This row
+# is what stops them coming back. Any path check re-added here fails it, since a
+# space is legal in a repository path and every such rule refused it. It asserts
+# a criterion-4 property — a legitimate round >= 2 artifact still merges — which
+# survives the guard's deletion because it was never about the guard.
+test_wrapper_allows_a_review_file_path_containing_a_space() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    echo "content" > "$tmpdir/.reviews/review notes.md"
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/review notes.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a legitimate review_file path containing a space still merges"
+    else
+        fail "a space in a repo-relative review_file should merge, got exit=$exit_code out=$out"
+    fi
+}
+
+# The object-name grammar was mapped over four fields and only `sha` was rowed,
+# so deleting the other three mappings left the suite green. One row per field.
+test_wrapper_refuses_a_malformed_candidate_tree() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" "not-a-tree"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && echo "$out" | grep -q "candidate_tree.*not a well-formed"; then
+        pass "a malformed candidate_tree is refused at the parse"
+    else
+        fail "malformed candidate_tree should be refused, got exit=$exit_code out=$out"
+    fi
+}
+
+test_wrapper_refuses_a_malformed_base_tree() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "$(cat "$tmpdir/.fixture-tree")" "not-a-tree"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && echo "$out" | grep -q "base_tree.*not a well-formed"; then
+        pass "a malformed base_tree is refused at the parse"
+    else
+        fail "malformed base_tree should be refused, got exit=$exit_code out=$out"
+    fi
+}
+
+test_wrapper_refuses_a_malformed_base_sha() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_sha": "not-a-base",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && echo "$out" | grep -q "base_sha.*not a well-formed"; then
+        pass "a malformed base_sha is refused at the parse"
+    else
+        fail "malformed base_sha should be refused, got exit=$exit_code out=$out"
+    fi
+}
+
+# Round 2's duplicate-reviewers refusal counted only captures that OPEN a
+# bracket, so a second `reviewers` whose value is a string was invisible.
+# Under a real parser this artifact has no reviewer entries at all.
+test_wrapper_blocks_duplicate_reviewers_key_with_a_non_array_value() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 1,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")",
+  "reviewers": [{"model":"r1","verdict":"CERTIFIED","findings_total":0},{"model":"r2","verdict":"CERTIFIED","findings_total":0}],
+  "reviewers": "superseded",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a duplicated reviewers key is refused even when the second value is not an array"
+    else
+        fail "a non-array duplicate reviewers key should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# THE WALKS NEVER CHECKED THEIR OWN END STATE. A stray leading `]` drove depth
+# to -1, so every real depth was offset by one and a NESTED base_sha printed
+# into the "depth-1" projection ahead of the honest top-level one — Sol's
+# round-2 hole, reopened through the code written to close it.
+test_wrapper_blocks_a_clearance_whose_braces_do_not_balance() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    echo "LIVE_BASE_OID=$(cat "$tmpdir/.fixture-base-moved-sha")" >> "$tmpdir/.gh-stub-config"
+    raw_clearance "$tmpdir" <<JSON
+]
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "metadata": {"base_sha": "$(cat "$tmpdir/.fixture-base-moved-sha")"},
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "does not parse"; then
+        pass "an artifact whose structure does not balance is refused before any field is read"
+    else
+        fail "unbalanced structure should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# Same hole, different desync: an unterminated string flips quote parity, the
+# nested object's braces read as string data, and its base_sha prints into the
+# projection ahead of the honest one.
+test_wrapper_blocks_a_clearance_with_an_unterminated_string() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    echo "LIVE_BASE_OID=$(cat "$tmpdir/.fixture-base-moved-sha")" >> "$tmpdir/.gh-stub-config"
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "pad": "unterminated,
+  "metadata": {"base_sha": "$(cat "$tmpdir/.fixture-base-moved-sha")"},
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "does not parse"; then
+        pass "an artifact with an unterminated string is refused before any field is read"
+    else
+        fail "an unterminated string should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# Sol, criterion 3: the duplicate-verdict refusal added in round 2 was ASSERTED
+# and never tested — replacing it with `if false` left the suite fully green.
+# The duplicate-verdict rows that existed belonged to the cross-model COMMENT
+# parser, a different mechanism. A guard covered only by another guard's tests
+# is untested.
+test_wrapper_blocks_round_1_on_duplicate_verdict_keys_in_an_entry() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md" \
+        "" "" '{"model":"r1","verdict":"CERTIFIED","findings_total":0},{"model":"r2","verdict":"NOT_CERTIFIED","verdict":"CERTIFIED","findings_total":0}'
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "an entry declaring verdict twice is refused, not resolved by position"
+    else
+        fail "duplicate verdict keys in an entry should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# ESCAPE-SMUGGLED DUPLICATES. A `base_sha` key IS `base_sha` — JSON
+# unescapes key names before they are keys, so any duplicate rule comparing
+# raw bytes sees two different keys where a parser sees one key twice.
+#
+# The live base is deliberately NOT moved: the plain key names it and would be
+# accepted on its own, so the escaped duplicate is the only thing that can
+# change the verdict. Move the base and the row blocks on the honest key and
+# proves nothing about escapes.
+test_wrapper_blocks_an_escape_smuggled_duplicate_key() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")",
+  "\u0062ase_sha": "$(cat "$tmpdir/.fixture-base-moved-sha")",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "a duplicate key smuggled through a unicode escape is still a duplicate"
+    else
+        fail "an escaped duplicate key should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# Everything after the closing brace is not JSON, and a file that is not JSON
+# is not a certification — but a reader that only greps for fields never
+# notices there is a file left over.
+test_wrapper_blocks_a_clearance_with_trailing_garbage() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    raw_clearance "$tmpdir" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")",
+  "review_file": ".reviews/some-review.md"
+}
+not json at all
+JSON
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "does not parse"; then
+        pass "an artifact with trailing non-JSON is refused"
+    else
+        fail "trailing garbage should block, got exit=$exit_code out=$out"
+    fi
+}
+
+# Test: an artifact predating #636 carries no base_sha and must not be grandfathered
+test_wrapper_blocks_clearance_without_base_sha() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # Silence about the base is not an assertion about the base. Clearances are
+    # per-PR and written fresh each cycle, so nothing live is broken by refusing
+    # the old shape — and grandfathering it would leave the hole open forever
+    # behind an artifact that simply omits the field.
+    cat > "$tmpdir/.reviews/merge-clearance-123.json" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 2,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    # Asserting the ABSENCE wording specifically, not just "base_sha". Measured:
+    # with the absence branch neutered, CL_BASE_SHA is the empty string, which
+    # the mismatch check below then rejects anyway — and its message also says
+    # "base_sha", so a looser assertion stays GREEN through its own mutation and
+    # proves nothing. Same class as the #628 unreadable-base row.
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "declares no 'base_sha'"; then
+        pass "wrapper blocks a clearance carrying no base_sha at all"
+    else
+        fail "wrapper should block a clearance with no base_sha, got exit=$exit_code out=$out"
+    fi
+}
+
+# --- #563: the round>=2 rule blocks the case where the review was CLEANEST ---
+#
+# round >= 2 conflates "a dialogue happened" with "the review was adversarial",
+# and those come apart in exactly one case: both reviewers certify at round 1
+# with nothing to dispute. That happened on PR #562 — Sol zero at every
+# severity, Fable zero at every severity, both verifying the evidence against
+# primary sources. The only way to satisfy the gate from there was to re-invoke
+# both reviewers and ask them to re-verify nothing: ceremony that increments a
+# counter and buys no signal.
+#
+# Two independent clean certifications is STRONGER evidence than one two-round
+# dialogue, and the gate read it as weaker.
+#
+# The exemption is mechanical — it reads integers out of the artifact, never
+# prose — and it is deliberately narrow: two or more reviewers, every one of
+# them at findings_total 0.
+
+# Test: round 1 with two independently clean reviewers is allowed to merge
+test_wrapper_allows_round_1_two_clean_reviewers() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" \
+        ".reviews/some-review.md" "" "" "$(reviewers_with 2 0)"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    # Asserting the MERGE actually happened, not merely a zero exit: this is the
+    # one row in the #563 set that opens a path, so it has to prove the path
+    # reaches the end rather than that nothing errored on the way.
+    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "wrapper allows round=1 when two reviewers each certified with zero findings"
+    else
+        fail "wrapper should merge round=1 with two clean reviewers, got exit=$exit_code out=$out"
+    fi
+}
+
+# Test: one finding at any severity still demands the recheck round
+test_wrapper_blocks_round_1_when_a_reviewer_found_something() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # TWO clean reviewers PLUS one carrying a single finding. The two-clean part
+    # is deliberate and load-bearing: with only one clean and one dirty, the
+    # >= 2 floor blocks the row on its own and the finding-count guard is never
+    # exercised — measured, that shape stayed GREEN through its own mutation.
+    # Here the floor is satisfied, so the ONLY thing that can refuse this is the
+    # recorded finding. That is the RED the issue names: "a clearance with one
+    # P3 recorded must still demand round 2".
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" \
+        ".reviews/some-review.md" "" "" \
+        "{\"model\":\"r1\",\"findings_total\":0},{\"model\":\"r2\",\"findings_total\":0},{\"model\":\"r3\",\"findings_total\":1}"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -qi "round"; then
+        pass "wrapper blocks round=1 when any reviewer recorded a finding"
+    else
+        fail "wrapper should block round=1 with a non-zero findings_total, got exit=$exit_code out=$out"
+    fi
+}
+
+# Test: a single clean reviewer is not two, and does not earn the exemption
+test_wrapper_blocks_round_1_single_clean_reviewer() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" \
+        ".reviews/some-review.md" "" "" "$(reviewers_with 1 0)"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -qi "round"; then
+        pass "wrapper blocks round=1 with only one clean reviewer"
+    else
+        fail "wrapper should block round=1 with a single reviewer, got exit=$exit_code out=$out"
+    fi
+}
+
+# Test: the field being ABSENT is not the field being zero
+test_wrapper_blocks_round_1_when_findings_field_absent() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # Two reviewers, both certified, NEITHER carrying findings_total — the exact
+    # shape of every clearance artifact written before #563. Silence about
+    # findings must never read as an assertion of zero findings, or the
+    # exemption retroactively applies to artifacts that never claimed it.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" \
+        ".reviews/some-review.md" "" "" \
+        "{\"model\":\"r1\",\"verdict\":\"CERTIFIED\"},{\"model\":\"r2\",\"verdict\":\"CERTIFIED\"}"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -qi "round"; then
+        pass "wrapper blocks round=1 when findings_total is absent, not zero"
+    else
+        fail "wrapper should block round=1 with no findings_total, got exit=$exit_code out=$out"
+    fi
+}
+
+# --- Round 1 of this PR's own review, P1: the counting was unscoped ---
+#
+# The first implementation grepped every `findings_total` in the artifact and
+# never checked the match belonged to a reviewer. Both rows below were EXECUTED
+# against it by the reviewer and both MERGED at exit 0. They are kept as
+# permanent rows rather than being folded into the ones above, because they fail
+# for a different reason than "wrong count": they fail because the thing being
+# counted was never the thing the contract names.
+
+# Test: stray findings_total keys outside any reviewer entry earn nothing
+test_wrapper_blocks_round_1_unscoped_findings_totals() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # ZERO reviewer entries. The two zeros sit at top level, where an
+    # occurrence-counting implementation happily finds them.
+    cat > "$tmpdir/.reviews/merge-clearance-123.json" <<JSON
+{
+  "pr_number": 123,
+  "status": "CERTIFIED",
+  "round": 1,
+  "sha": "$(cat "$tmpdir/.fixture-sha")",
+  "candidate_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_tree": "$(cat "$tmpdir/.fixture-tree")",
+  "base_sha": "$(cat "$tmpdir/.fixture-sha")",
+  "findings_total": 0,
+  "notes_findings_total": 0,
+  "review_file": ".reviews/some-review.md"
+}
+JSON
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "0 reviewer entries"; then
+        pass "wrapper blocks round=1 when the zeros belong to no reviewer"
+    else
+        fail "wrapper should block unscoped findings_total keys, got exit=$exit_code out=$out"
+    fi
+}
+
+# Test: a reviewer that reports nothing is not a reviewer that reports zero
+test_wrapper_blocks_round_1_partially_counted_reviewers() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # Two clean reviewers satisfy the >= 2 floor on their own. The third
+    # declares no findings_total at all — so the artifact never claims that
+    # reviewer found nothing, and the gate must not infer it.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" \
+        ".reviews/some-review.md" "" "" \
+        "{\"model\":\"r1\",\"findings_total\":0},{\"model\":\"r2\",\"findings_total\":0},{\"model\":\"r3\",\"verdict\":\"CERTIFIED\"}"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "3 reviewer entries"; then
+        pass "wrapper blocks round=1 when one reviewer records no findings_total"
+    else
+        fail "wrapper should block a partially-counted reviewer set, got exit=$exit_code out=$out"
+    fi
+}
+
+# Test: zero findings without a certification is an abandoned review, not a clean one
+test_wrapper_blocks_round_1_clean_but_not_certified_reviewer() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # Round 1 P2. Zero findings is what the reviewer SAW; the verdict is what
+    # they CONCLUDED. A leg that timed out, or stopped early, or simply refused,
+    # can honestly report zero findings — and must not be counted as agreement.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 1 "$(cat "$tmpdir/.fixture-sha")" \
+        ".reviews/some-review.md" "" "" \
+        "{\"model\":\"r1\",\"verdict\":\"CERTIFIED\",\"findings_total\":0},{\"model\":\"r2\",\"verdict\":\"NOT_CERTIFIED\",\"findings_total\":0}"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -ne 0 ] && ! echo "$out" | grep -q "GH_MERGE_INVOKED" \
+        && echo "$out" | grep -q "2 reviewer entries"; then
+        pass "wrapper blocks round=1 when a zero-findings reviewer did not certify"
+    else
+        fail "wrapper should block a NOT_CERTIFIED zero-findings reviewer, got exit=$exit_code out=$out"
+    fi
+}
+
+# Test: round >= 2 is untouched by any of this
+test_wrapper_allows_round_2_without_findings_field() {
+    local tmpdir out exit_code
+    tmpdir=$(setup_wrapper_fixture)
+    # No reviewers array at all. #563 adds an alternative route past round >= 2;
+    # it must not add a REQUIREMENT to it. Every pre-#563 artifact looks like
+    # this one, and every one of them must still merge.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+    rm -rf "$tmpdir"
+    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED"; then
+        pass "wrapper still merges round>=2 with no findings_total present"
+    else
+        fail "wrapper should merge round=2 without the new field, got exit=$exit_code out=$out"
     fi
 }
 
@@ -802,7 +1856,11 @@ JSON
 test_wrapper_blocks_stale_clearance() {
     local tmpdir out exit_code
     tmpdir=$(setup_wrapper_fixture)
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "old-sha-999" ".reviews/some-review.md"
+    # A real 40-hex object name that is simply not the head. The old fixture used
+    # the placeholder "old-sha-999", which since the field grammar landed is
+    # refused as malformed BEFORE the staleness comparison is ever reached — so
+    # the row passed while testing a different refusal than the one it names.
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "9999999999999999999999999999999999999999" ".reviews/some-review.md"
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
@@ -1019,6 +2077,45 @@ test_wrapper_blocks_ci_neutral
 test_wrapper_blocks_missing_clearance
 test_wrapper_blocks_non_certified_status
 test_wrapper_blocks_round_1_only
+test_wrapper_blocks_moved_base_with_identical_tree
+test_wrapper_blocks_nested_base_sha_masking_a_stale_one
+test_wrapper_blocks_nested_candidate_tree_masking_a_stale_one
+test_wrapper_blocks_round_1_when_certified_appears_outside_the_verdict
+test_wrapper_blocks_round_1_when_a_nested_array_hides_a_dirty_reviewer
+test_wrapper_blocks_round_1_when_a_string_bracket_hides_a_dirty_reviewer
+test_wrapper_blocks_round_1_when_a_nested_reviewers_array_shadows_the_real_one
+test_wrapper_blocks_round_1_on_duplicate_reviewers_keys
+test_wrapper_allows_round_1_two_clean_reviewers_with_a_nested_array
+test_wrapper_blocks_round_1_on_duplicate_findings_total_in_an_entry
+test_wrapper_blocks_round_1_on_a_non_integer_findings_total
+test_wrapper_blocks_round_1_on_a_float_zero_findings_total
+test_wrapper_blocks_round_1_when_a_reviewers_entry_is_not_an_object
+test_wrapper_blocks_duplicate_status_keys
+test_wrapper_blocks_duplicate_base_sha_keys
+test_wrapper_blocks_tsv_injection_through_a_string_field
+test_wrapper_blocks_tsv_injection_forging_the_ancestry_binds
+test_wrapper_blocks_nul_normalising_a_string_field
+test_wrapper_blocks_nul_in_status_with_every_other_field_clean
+test_wrapper_refuses_a_malformed_object_name_at_the_parse
+test_wrapper_allows_a_review_file_path_containing_a_space
+test_wrapper_refuses_a_malformed_candidate_tree
+test_wrapper_refuses_a_malformed_base_tree
+test_wrapper_refuses_a_malformed_base_sha
+test_wrapper_blocks_duplicate_reviewers_key_with_a_non_array_value
+test_wrapper_blocks_a_clearance_whose_braces_do_not_balance
+test_wrapper_blocks_a_clearance_with_an_unterminated_string
+test_wrapper_blocks_round_1_on_duplicate_verdict_keys_in_an_entry
+test_wrapper_blocks_an_escape_smuggled_duplicate_key
+test_wrapper_blocks_a_clearance_with_trailing_garbage
+test_wrapper_blocks_clearance_without_base_sha
+test_wrapper_allows_round_1_two_clean_reviewers
+test_wrapper_blocks_round_1_when_a_reviewer_found_something
+test_wrapper_blocks_round_1_single_clean_reviewer
+test_wrapper_blocks_round_1_when_findings_field_absent
+test_wrapper_blocks_round_1_unscoped_findings_totals
+test_wrapper_blocks_round_1_partially_counted_reviewers
+test_wrapper_blocks_round_1_clean_but_not_certified_reviewer
+test_wrapper_allows_round_2_without_findings_field
 test_wrapper_blocks_stale_clearance
 test_wrapper_blocks_wrong_candidate_tree
 test_wrapper_blocks_moved_base
