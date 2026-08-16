@@ -1681,13 +1681,17 @@ test_ai_setup_lanes_reviewer_is_gpt56() {
     local bad=""
     # "5\.6" AND "Sol" (not just one or the other) so a Sol->Terra swap, or a
     # future GPT-5.7 Sol rename, both fail.
-    # (Line numbers re-pinned after the 2026-07-24 Opus 5 A/B lane restructure.)
-    for n in 15 26 43 58 60 138 178 182 220 221 224; do
+    # (Line numbers re-pinned after the 2026-07-24 Opus 5 A/B lane restructure,
+    # and again on 2026-08-16 when #579 added the advisor-availability and
+    # Setup-B-unverified paragraphs. Re-pinning is the third time this check has
+    # cost a round to a pure insertion above it — the pins encode position, not
+    # the claim they mean to guard. Replacing them with content anchors is #659.)
+    for n in 15 26 45 60 62 140 192 196 234 235 238; do
         bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
     done
-    # L142 is the fallback-chain line: must name "5\.6" AND BOTH Sol (primary)
+    # L144 is the fallback-chain line: must name "5\.6" AND BOTH Sol (primary)
     # and Terra (fallback target) so a Terra->Luna swap also fails.
-    bad="$bad$(_check_line_has_and_lacks "$F" 142 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    bad="$bad$(_check_line_has_and_lacks "$F" 144 "5\.6,Sol,Terra" "5\.5" "5\.4")"
     if [ -z "$bad" ]; then
         pass "AI_SETUP_LANES.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
     else
@@ -1699,9 +1703,11 @@ test_readme_reviewer_is_gpt56() {
     local F="$REPO_ROOT/README.md"
     if [ ! -f "$F" ]; then fail "README.md not found"; return; fi
     local bad=""
-    # L126 is the fallback-chain line: must name "5\.6" AND BOTH Sol and Terra.
-    bad="$bad$(_check_line_has_and_lacks "$F" 126 "5\.6,Sol,Terra" "5\.5" "5\.4")"
-    for n in 189 190 191; do
+    # L130 is the fallback-chain line: must name "5\.6" AND BOTH Sol and Terra.
+    # (Re-pinned 2026-08-16 by #544's frontier-model banner, which shifted every
+    # line below it by 4. Position pins again, not content — see #659.)
+    bad="$bad$(_check_line_has_and_lacks "$F" 130 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    for n in 193 194 195; do
         bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
     done
     if [ -z "$bad" ]; then
@@ -1711,16 +1717,16 @@ test_readme_reviewer_is_gpt56() {
     fi
 }
 
-# L151 is a historical eval citation (Andon Labs Vending-Bench actually used
+# L155 is a historical eval citation (Andon Labs Vending-Bench actually used
 # GPT-5.5 at the time) — must NOT be rewritten, or the citation becomes
 # factually wrong about what model that benchmark run used.
 test_readme_vending_bench_citation_untouched() {
     local F="$REPO_ROOT/README.md"
     if [ ! -f "$F" ]; then fail "README.md not found"; return; fi
-    if sed -n '151p' "$F" | grep -q "GPT-5\.5"; then
-        pass "README.md L151 vending-bench citation still names GPT-5.5 (historical, untouched)"
+    if sed -n '155p' "$F" | grep -q "GPT-5\.5"; then
+        pass "README.md L155 vending-bench citation still names GPT-5.5 (historical, untouched)"
     else
-        fail "README.md L151 vending-bench citation no longer names GPT-5.5 — historical citation was rewritten"
+        fail "README.md L155 vending-bench citation no longer names GPT-5.5 — historical citation was rewritten"
     fi
 }
 

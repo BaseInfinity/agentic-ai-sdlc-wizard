@@ -432,9 +432,11 @@ New built-in commands available to use alongside the wizard:
 
 **Settings precedence:** Managed > CLI flags > Local (`.claude/settings.local.json`) > Project (`.claude/settings.json`) > User (`~/.claude/settings.json`). The wizard writes project-level by default — never nukes global settings. Setup skill Step 9.5 asks if you also want global.
 
-**Important:** Fable does NOT appear in the `/advisor` interactive picker, and as of 2026-07-24 is **server-side disabled as an advisor entirely** — "Claude Code doesn't offer Fable 5 as the advisor," per `code.claude.com/docs/en/advisor`, pending an Anthropic-controlled rollout. This is not a transient incident; restarting the session doesn't fix it. Set `advisorModel: "fable"` anyway (it activates automatically once the rollout returns), and in the meantime fall back to a Fable subagent (`Agent({model: "fable", effort: "high"})`) at every point you'd have called `advisor()`.
+**Important:** Fable does NOT appear in the `/advisor` interactive picker — set `advisorModel: "fable"` explicitly. Availability has moved: Anthropic's rollout **disabled** Fable-as-advisor on 2026-07-24 ("Claude Code doesn't offer Fable 5 as the advisor," per `code.claude.com/docs/en/advisor`), and it was **observed working again on 2026-08-16**. Both are dated observations, not current state — **determine which applies by calling `advisor()`**, never by reading this line. On a real failure, fall back to a Fable subagent (`Agent({model: "fable", effort: "high"})`) at every point you'd have called `advisor()`.
 
-**Billing:** Advisor queries in interactive sessions are Max-bundled (same pool as the driver). The advisor does not trigger headless/credit-pool billing.
+**Quota exhaustion is a different condition, and the advisor was observed to survive it once.** claude.ai shows `All models` and `Fable` as separate meters. Observed 2026-08-16: `advisor()` returned a Fable ruling while the `Fable` meter read 100% and `/model fable` was refused. **So try the advisor before concluding Fable is out of reach** — but no meter delta was measured, so which meter that call billed is unknown, and a window rollover was not ruled out. It is the most expensive shape either way — it forwards the whole conversation on every call and its read is not cached between them.
+
+**Billing:** Advisor queries in interactive sessions are Max-bundled and do not trigger headless/credit-pool billing. **Which usage meter they draw down is not established here** — claude.ai shows `All models` and `Fable` separately, and no before/after meter delta has been measured against an advisor call. Do not budget on the assumption that advisor usage spares any particular meter.
 
 **To update:** Run `! claude update` from inside a CC session to get v2.1.170+. The `!` prefix runs shell commands inline — no need to exit.
 
@@ -1682,7 +1684,7 @@ Feature branches still recommended for solo devs (keeps main clean, easy rollbac
 **What the CI shepherd does:**
 1. **CI fix loop:** After pushing, Claude watches CI via `gh pr checks`, reads logs on **pass and fail** (`gh run view <RUN_ID> --log`, not just `--log-failed`), diagnoses and fixes failures, pushes again (max 2 attempts)
 2. **Log review on pass:** Passing CI can still hide warnings, skipped steps, degraded scores, or silent test exclusions. A green checkmark is necessary but not sufficient — always read the logs
-3. **Review feedback loop:** After CI passes and logs look clean, Claude reads automated review comments, implements valid suggestions, pushes and re-reviews (max 3 iterations)
+3. **Review feedback loop:** After CI passes and logs look clean, Claude reads automated review comments, implements valid suggestions, pushes and re-reviews — terminating on the cumulative stop rule (#539), not a fixed count
 4. **Pre-release CI audit:** Before cutting any release, review CI runs across ALL PRs merged since last release. Look for warnings in passing runs, degraded scores, skipped suites. Use `gh run list` + `gh run view <ID> --log`
 
 **Recommendation:** Yes if you have CI configured. The shepherd closes the loop between "local tests pass" and "PR is actually ready to merge."
@@ -1719,7 +1721,7 @@ Feature branches still recommended for solo devs (keeps main clean, easy rollbac
 2. Based on your level: fixes criticals only, or all findings
 3. Iterates (push -> re-review) until no findings remain at your chosen level
 4. Only brings you in when everything is clean
-5. Max 3 iterations to prevent infinite loops
+5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task. Counted per root task; re-freezing scope never resets it.
 
 **Check for new plugins periodically:**
 ```
@@ -2559,7 +2561,7 @@ CI passes -> Read review suggestions
    - **Opinion/style:** Different but equivalent formatting, subjective naming preference, "you could also..." without clear benefit → Skip it
 3. Implement the valid ones, run tests locally, push
 4. CI re-reviews — repeat until no substantive suggestions remain
-5. Max 3 iterations — if reviewer keeps finding new things, ASK USER
+5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task. A reviewer that keeps finding *new surfaces* after the deliverable converged is the failure that rule exists to stop; re-freezing scope never resets the count.
 
 **The goal:** User is only brought in at the very end, when both CI and reviewer are satisfied. The code should be polished before human review.
 
@@ -4182,7 +4184,7 @@ codex exec \
 
 **This is the blocking rule stated from the recheck's side.** A finding that shows a requested behavior is wrong means the thing does not work, so it is P1 — no matter who labelled it P2, or when it appeared. Grade by impact and the rule needs no exception.
 
-**Convergence:** the default is **one review and one verify per frozen scope, counted cumulatively per root task, then STOP** (see "When to stop" above for the two findings that authorize a further pass); this section's older max-3-rechecks heuristic is a ceiling that the stop condition should reach first. If still NOT CERTIFIED after the budget, that is a **recorded continue/stop decision**, not an automatic escalation — see the Exception below for where the decision is written. A human is woken only when the two reviewers disagree, or a non-waivable gate has failed twice. Never ship uncertified; but running out of budget is not by itself a reason to interrupt the maintainer.
+**Convergence:** the default is **one review and one verify per frozen scope, counted cumulatively per root task, then STOP** (see "When to stop" above for the two findings that authorize a further pass). **There is no fixed round cap.** This section previously carried a max-3-rechecks heuristic; it is deleted rather than subordinated, because a stated ceiling gets read as an allowance and #598 reached 22 attempts with one in place. If still NOT CERTIFIED after the budget, that is a **recorded continue/stop decision**, not an automatic escalation — see the Exception below for where the decision is written. A human is woken only when the two reviewers disagree, or a non-waivable gate has failed twice. Never ship uncertified; but running out of budget is not by itself a reason to interrupt the maintainer.
 
 **Exception — known-large migrations, and it costs a recorded decision.** The round-count heuristic is not the cap — the stop condition above is — but "every round is still finding something real" is precisely what a self-consuming loop reports about itself, so it is **not** a licence the builder may grant itself. Each round past the budget requires a continue/stop entry in `.reviews/handoff.json` `"scope_decisions"` **recorded before the round runs** (entry shape and the planner role: "Why four layers didn't catch it" above), carrying the cost line and a `git blame` of the last blocker against the frozen-scope SHA; a blocker in code the issue never asked for is not a reason to continue. With that decision on record, a migration may run long — but the authorization is per-round and comes from the stop condition, not from the migration label: each further round needs the immediately preceding COMPLETED pass to have recorded an open P0/P1 against a requested behavior. "Every round is still finding something real" is that same test stated loosely; state it exactly, because a loop consuming its own churn reports the loose version about itself. An evidence-only finding buys one extra pass per root task and no more. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
 
@@ -4271,7 +4273,7 @@ CLI-distributed file parity (skills, hooks, settings).
 
 #### Multiple reviewers (Claude review + Codex + human)
 
-Run them in parallel; collect feedback via `gh api repos/OWNER/REPO/pulls/PR/comments` (single source of truth). Respond per-reviewer (different blind spots — don't merge feedback). On a conflict between two model reviewers, cross-feed their positions verbatim and let them reconcile — you relay, you do not pick a winner. A human-vs-model split goes to the human as one question. Cap iterations at 3 per reviewer to avoid infinite loops.
+Run them in parallel; collect feedback via `gh api repos/OWNER/REPO/pulls/PR/comments` (single source of truth). Respond per-reviewer (different blind spots — don't merge feedback). On a conflict between two model reviewers, cross-feed their positions verbatim and let them reconcile — you relay, you do not pick a winner. A human-vs-model split goes to the human as one question. Termination is the cumulative stop rule (#539) applied per root task — not a per-reviewer iteration cap.
 
 #### Non-code domains (research, persuasion, medical content)
 
