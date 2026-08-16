@@ -35,6 +35,11 @@ cat > "$TMPDIR_T/bin/gh" <<'STUB'
 #!/bin/bash
 : > "$STUB_ARGV_FILE"
 for a in "$@"; do printf '%s\n' "$a" >> "$STUB_ARGV_FILE"; done
+# The stub also records the ambient target vars it INHERITED, because argv is
+# only half the target. `gh` honours GH_REPO, so a wrapper with a spotless argv
+# can still post to another repository entirely.
+printf 'GH_REPO=%s\n' "${GH_REPO-}" > "$STUB_ENV_FILE"
+printf 'GH_HOST=%s\n' "${GH_HOST-}" >> "$STUB_ENV_FILE"
 echo "https://github.com/example/repo/pull/1#issuecomment-stub"
 STUB
 chmod +x "$TMPDIR_T/bin/gh"
@@ -43,6 +48,12 @@ BODY="$TMPDIR_T/body.md"
 echo "a clearance body" > "$BODY"
 
 export STUB_ARGV_FILE="$TMPDIR_T/argv.txt"
+export STUB_ENV_FILE="$TMPDIR_T/env.txt"
+
+# The repository this wrapper is pinned to. scripts/ is repo-local by charter
+# (CLAUDE.md: deliberately never ships), so a constant is legitimate here and
+# would not be under skills/.
+PINNED_REPO="github.com/BaseInfinity/claude-sdlc-harness"
 
 run_wrapper() {
     : > "$STUB_ARGV_FILE"
@@ -64,6 +75,8 @@ for kind in pr issue; do
         EXPECTED="$kind
 comment
 650
+-R
+$PINNED_REPO
 --body-file
 $BODY"
         if [ "$(cat "$STUB_ARGV_FILE")" = "$EXPECTED" ]; then
@@ -152,13 +165,45 @@ else
 fi
 
 echo ""
-echo "=== -R is never passed, so the repo stays the current remote ==="
+echo "=== the target is a pinned constant, not inherited ==="
+# ROUND 2 FINDING (sol, P0). The first version passed NO repo selector and let
+# gh resolve the current remote. That is argv-only thinking: gh honours GH_REPO
+# from the environment, so a wrapper with a spotless argv still posted wherever
+# an inherited variable said. The 24-row suite passed throughout.
+#
+# MEASURED, not assumed, gh 2.92.0, read-only probes:
+#   GH_REPO=cli/cli gh pr view 650 --json url          -> cli/cli        (redirected)
+#   ... -R github.com/BaseInfinity/claude-sdlc-harness -> this repo      (flag wins)
+#   ... -R BaseInfinity/claude-sdlc-harness            -> this repo      (flag wins)
+#
+# So the fix DECLARES the target rather than sanitizing the environment.
+# `unset GH_REPO GH_HOST` is defence in depth and fails OPEN the moment gh adds
+# another redirector — the same enumerate-the-cases trap merge-pr.sh's emit()
+# documents at NUL. The pinned -R is the guard and holds under any
+# flag-versus-env precedence.
 run_wrapper pr 650 "$BODY"
-if grep -qx -- "-R" "$STUB_ARGV_FILE" 2>/dev/null || \
-   grep -qx -- "--repo" "$STUB_ARGV_FILE" 2>/dev/null; then
-    fail "the wrapper passes a repo selector — it can write to another repo"
+if grep -qx -- "$PINNED_REPO" "$STUB_ARGV_FILE" 2>/dev/null; then
+    pass "the repo selector is exactly the pinned constant"
 else
-    pass "no repo selector is passed; gh resolves the current remote"
+    fail "the wrapper does not pin its target — gh resolves it from ambient state"
+fi
+
+GH_REPO=evil/repo GH_HOST=evil.example.com run_wrapper pr 650 "$BODY"
+if grep -qx -- "$PINNED_REPO" "$STUB_ARGV_FILE" 2>/dev/null; then
+    pass "an inherited GH_REPO does not move the target off the pinned repo"
+else
+    fail "GH_REPO redirected the target — the argv guard is not the whole target"
+fi
+if grep -qx -- "evil/repo" "$STUB_ARGV_FILE" 2>/dev/null; then
+    fail "an inherited GH_REPO reached gh's argv"
+else
+    pass "an inherited GH_REPO never reaches gh's argv"
+fi
+if [ "$(cat "$STUB_ENV_FILE")" = "GH_REPO=
+GH_HOST=" ]; then
+    pass "GH_REPO and GH_HOST are cleared from gh's environment"
+else
+    fail "gh inherited a target variable: $(tr '\n' ' ' < "$STUB_ENV_FILE")"
 fi
 
 echo ""

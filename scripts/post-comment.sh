@@ -95,6 +95,34 @@ if [ ! -s "$BODY_FILE" ]; then
     exit 2
 fi
 
-# The argv is built HERE and is not derived from "$@". No -R, so gh resolves the
-# current directory's remote and cannot be pointed at another repository.
-exec gh "$KIND" comment "$NUMBER" --body-file "$BODY_FILE"
+# THE TARGET IS DECLARED, NOT INHERITED.
+#
+# Round 2 of this file's own review found the P0: the first version passed no
+# repo selector at all and let gh resolve the current remote. That is argv-only
+# thinking. `gh` honours GH_REPO from the environment, so a wrapper with a
+# spotless argv still posted wherever an inherited variable pointed — and the
+# 24-row suite passed the whole time.
+#
+# Measured on gh 2.92.0 with read-only probes, not assumed:
+#
+#   GH_REPO=cli/cli gh pr view 650 --json url             -> cli/cli
+#   ... -R github.com/BaseInfinity/claude-sdlc-harness    -> this repo
+#   ... -R BaseInfinity/claude-sdlc-harness               -> this repo
+#
+# The unset below is DEFENCE IN DEPTH, not the guard. It enumerates the
+# redirectors known today and therefore fails OPEN the moment gh adds another —
+# the same trap merge-pr.sh's emit() documents, where an enumerated separator
+# set missed NUL. The pinned -R is the guard: it holds under any flag-versus-env
+# precedence, and it is a constant rather than a derivation because deriving the
+# repo from the remote would duplicate gh's own resolution logic and be read
+# through the very variable being defended against.
+#
+# A hard-coded repository is legitimate HERE and would not be under skills/:
+# scripts/ is repo-local by charter (CLAUDE.md — it deliberately never ships),
+# this serves one repo's merge protocol, and a rename fails loudly at gh, which
+# is fail-closed.
+unset GH_REPO GH_HOST
+
+exec gh "$KIND" comment "$NUMBER" \
+    -R github.com/BaseInfinity/claude-sdlc-harness \
+    --body-file "$BODY_FILE"
