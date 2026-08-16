@@ -34,7 +34,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > ### Standing rulings
 >
-> GitHub Issues is the store; this file routes to it. No gate redesign in PR-B. No new guard or tooling surface. One independently closable issue at a time — *this scopes how Rung-1 work is picked, not how a ruled batch ships; prose batches go out under the 2026-08-10 batch ruling below. That ruling is older than this line: PR-A shipped six issues (#558, #557, #573, #574, #564, #556) as ONE PR at 00:31 on 2026-08-11, and this sentence first landed 79 minutes later the same night. It was written after that batch, not against it. Clarified 2026-08-16.*
+> GitHub Issues is the store; this file routes to it. No gate redesign in PR-B. No new guard or tooling surface. One independently closable issue at a time — *this scopes how Rung-1 work is picked, not how a ruled batch ships; prose batches go out under the 2026-08-10 batch ruling below. That ruling is older than this line: PR-A shipped six issues (#558, #557, #573, #574, #564, #556) as ONE PR at 00:31:52 on 2026-08-11 (`db2e018`), and this sentence first landed at 01:50:01 the same night (`0ad8351`). The chronology fixes only that this line is the later text; it says nothing about what its author intended toward the batch, and that question is not settled here. Clarified 2026-08-16.*
 
 > ### 2026-08-10 — RULED: batch the meta changes. Two PRs, prose first.
 >
