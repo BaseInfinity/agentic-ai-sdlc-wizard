@@ -14,9 +14,21 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > ### Release sequence
 >
-> `v1.99.0 — PR-B: the gate` → `v1.99.1 — the consumer-truth prose batch` → `v2.0.0`. Milestone membership on GitHub is authoritative; this line fixes only the order they ship in.
+> `v1.99.0 — PR-B: the gate` → `v1.99.1 — review-leg supervision` → `v1.99.2 — the consumer-truth prose batch` → `v2.0.0`. Milestone membership on GitHub is authoritative; this line fixes only the order they ship in. *(Corrected 2026-08-16: this said v1.99.1 was the prose batch. A supervision milestone was inserted ahead of it and the prose batch moved to v1.99.2.)*
 >
 > **v2.0.0's terminal gate is #545, not issue closure.** The major release is authorized when the maintainer has personally consumed the harness in another repo and it worked. Every other issue closing is necessary and not sufficient.
+>
+> ### Last save point — 2026-08-16, ~01:45
+>
+> Written so a cold session resumes without reading a transcript. Shipped to `main` tonight, in order — issue numbers only, because the tracker owns PR state (#482): **#617** (SHAPE and TARGET as required reviewer outputs), the **permission-allowlist** work (`gh pr comment` replaced by the fixed-argv wrapper `scripts/post-comment.sh` — the pattern would have authorized `--delete-last` on the merge gate's own clearance comments), and **#653** (the SHAPE routing card in `skills/sdlc/SKILL.md`).
+>
+> **Next action: #504's experiment — Fable drives milestone v1.99.2** (#579, #544, #537, #499), batched into ONE PR. Compare rounds, tokens and wall clock against the allowlist cycle's baseline: 4 rounds, 5 review legs, ~456k leg tokens, 43 minutes.
+>
+> **Open and unfinished:** `fix/585-operator-output-style` — 3 commits parked on a branch, never reviewed, #585 still open. **#622** — the post-mortem step has not run since v1.97.0; a 2.0 release with no end-of-release audit contradicts the harness's own rules, so it runs or the maintainer waives it explicitly.
+>
+> **Filed tonight:** #652 — `TESTING.md` reads as a suite registry but omits 54 of 80 CI suites.
+>
+> **The retro both reviewers gave, which the next session should act on rather than repeat:** tonight was valuable and over-expensive. The allowlist cycle's rounds 1–3 were the loop working; round 4 was self-inflicted — the driver never ran `tests/test-workflow-triggers.sh` and `tests/test-doc-consistency.sh` before committing a diff that touched `ci.yml`, so CI became the test phase. That pair takes **13.3 seconds** and would have saved **at least 4m47s** plus a dialogue round and two full clearance rebinds. The reviewers split on the fix: make it mechanical in the commit hook, or make it a mandatory step in the skill. Prose is the weaker option on tonight's own evidence — the output style was live in context and decayed anyway (#644).
 >
 > ### Standing rulings
 >
@@ -36,7 +48,9 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **Also settled:** the second review leg is **conditional, with no npm-path carve-out** — nearly every meaningful PR here touches consumer-shipped `files`, so a path carve-out nullifies conditionality. The trigger is the **risk-tier field the scope cards already carry**: HIGH → leg 2 mandatory, low/medium → single leg. **This is not live yet** — `scripts/merge-pr.sh` still requires two clearances on every PR, and making the risk-tier trigger real is PR-B's work, tracked on #540 and #563. Until PR-B ships, the gate wins. The post-review confidence percentages are **cut** (#574): they did not discriminate — one leg certified at 100% and another at 96%, and a real P1 followed each.
 >
-> **Moved to backlog, premise changed:** #545 and #542's outside-repo consumption framing, and #504. The work is here, in this repo — not in sibling repos.
+> **Moved to backlog, premise changed:** #542's outside-repo consumption framing. The work is here, in this repo — not in sibling repos.
+>
+> *(Corrected 2026-08-16. This line also listed #545 and #504, and both are now live — it contradicted the terminal-gate paragraph four lines above it, which names #545 as the thing v2.0.0 waits on. **#545 is the v2.0.0 gate and is the maintainer's to run**, not backlog. **#504 was ruled on 2026-08-16**: do not swap the driver for the whole queue; instead Fable drives the single v1.99.2 milestone as a measured experiment, compared against the allowlist cycle's baseline of 4 rounds and ~15.5M session tokens. Ruling is on the issue.)*
 
 **Two rules, both enforced by [`tests/test-roadmap-integrity.sh`](tests/test-roadmap-integrity.sh)** — this section sat stale for two days in July 2026, so its freshness is now machine-checked rather than trusted:
 
