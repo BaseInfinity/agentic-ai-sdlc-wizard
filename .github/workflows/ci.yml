@@ -138,6 +138,9 @@ jobs:
       - name: Run review-verdict schema tests (#617)
         run: ./tests/test-review-verdict-schema.sh
 
+      - name: Run post-comment wrapper tests (fixed argv, no flag passthrough)
+        run: ./tests/test-post-comment.sh
+
       - name: Run session-load audit tests (token bloat phase 2)
         run: ./tests/test-audit-session-load.sh
 
