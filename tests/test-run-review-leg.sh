@@ -436,6 +436,71 @@ else
     fail "--output-schema was not passed — codex is never told to emit shape or target"
 fi
 
+# THE STALE VERDICT (found by review, P0). The transcript is truncated at
+# launch and row 5 proves it. The verdict sidecar was NOT, so a relaunch whose
+# leg exits 0 without emitting a verdict validated the PREVIOUS run's answer and
+# reported the leg complete. Same defect as row 5, one file over — which is why
+# the row exists here rather than the fix landing quietly.
+out=$(new_leg)
+set +e
+STUB_VERDICT='{"verdict":"CERTIFIED","shape":"SOUND","confidence":99,"findings":[]}' \
+STUB_STDOUT='first run' STUB_EXIT=0 "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+set -e
+if [ -s "$out.verdict.json" ]; then
+    pass "the first leg wrote a verdict"
+else
+    fail "the first leg wrote no verdict — fixture is not exercising the case"
+fi
+set +e
+STUB_NO_VERDICT=1 STUB_STDOUT='second run, no verdict' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "a relaunch emitting no verdict is refused, not passed on the stale one" 65 "$rc"
+if [ -s "$out.verdict.json" ]; then
+    fail "the previous run's verdict survived into this run — it is being re-validated"
+else
+    pass "the previous run's verdict is cleared, not reused"
+fi
+
+# KILLING THE LAUNCHER MUST KILL THE LEG (found by review, P2). Dropping `exec`
+# broke this: the launcher's pid was no longer codex's, so a TERM left codex
+# alive, appending to the transcript and able to write a verdict into a path a
+# relaunch had since truncated. The stale-verdict channel from the other end.
+out=$(new_leg)
+pidfile="$(dirname "$out")/codex.pid"
+cat > "$STUBDIR/codex-slow" <<'SLOWSTUB'
+#!/bin/bash
+echo $$ > "$CODEX_PIDFILE"
+sleep 60
+SLOWSTUB
+chmod +x "$STUBDIR/codex-slow"
+slowdir="$(dirname "$out")/slowbin"
+mkdir -p "$slowdir"
+cp "$STUBDIR/codex-slow" "$slowdir/codex"
+set +e
+CODEX_PIDFILE="$pidfile" PATH="$slowdir:$PATH" "$RUNNER" "$out" 'review this' >/dev/null 2>&1 &
+launcher_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    [ -s "$pidfile" ] && break
+    sleep 1
+done
+kill -TERM "$launcher_pid" 2>/dev/null
+wait "$launcher_pid" 2>/dev/null
+sleep 1
+set -e
+if [ -s "$pidfile" ]; then
+    codex_pid=$(cat "$pidfile")
+    if kill -0 "$codex_pid" 2>/dev/null; then
+        kill -9 "$codex_pid" 2>/dev/null || true
+        fail "killing the launcher left codex (pid $codex_pid) alive — it can still write a late verdict"
+    else
+        pass "killing the launcher kills the leg"
+    fi
+else
+    fail "the stub never recorded its pid — cannot prove the kill reached it"
+fi
+
 echo ""
 echo "=== Results ==="
 echo "Passed: $PASS"

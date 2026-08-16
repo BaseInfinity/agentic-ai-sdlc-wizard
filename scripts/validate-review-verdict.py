@@ -56,6 +56,7 @@ _SUPPORTED = {
 # this constant names the schema back, so the two cannot drift apart silently:
 # _check_cross_field asserts the declaration is present before enforcing it.
 _CROSS_FIELD_ID = "VOLUNTEERED_NOT_REPAIRABLE"
+_CLAIM_RULE_ID = "CLAIM_NOT_EMPTY"
 
 _TYPES = {
     "object": dict,
@@ -78,6 +79,29 @@ def _unsupported(schema, where):
         # rather than discover months later that it was never enforced.
         raise Invalid("%s: schema uses unsupported keyword(s) %s"
                       % (where, ", ".join(sorted(unknown))))
+
+
+def _walk_schema(schema, where="schema"):
+    """Refuse an unreadable keyword ANYWHERE in the schema, before validating.
+
+    `_check` only descends into properties the verdict actually carries, so an
+    unsupported keyword sitting under an absent optional field was never
+    reached — the fail-closed posture held only on branches the data happened to
+    exercise. This walks the schema itself, so coverage does not depend on the
+    verdict in hand.
+    """
+    if not isinstance(schema, dict):
+        return
+    _unsupported(schema, where)
+    for key, sub in schema.get("properties", {}).items():
+        _walk_schema(sub, "%s.%s" % (where, key))
+    if "items" in schema:
+        _walk_schema(schema["items"], "%s[]" % where)
+    for i, sub in enumerate(schema.get("allOf", [])):
+        _walk_schema(sub, "%s.allOf[%d]" % (where, i))
+    for key in ("if", "then"):
+        if key in schema:
+            _walk_schema(schema[key], "%s.%s" % (where, key))
 
 
 def _matches(value, schema):
@@ -123,6 +147,17 @@ def _check(value, schema, where):
             if key not in value:
                 raise Invalid("%s: missing required field %r" % (where, key))
         props = schema.get("properties", {})
+        # additionalProperties:false is ENFORCED, not merely tolerated. It was
+        # read and ignored in the first version, so a verdict could carry
+        # undeclared fields past a contract that says it cannot — found by
+        # review. The provider requires the keyword to be present and false, so
+        # a validator that skips it is silently weaker than the schema it reads,
+        # which is the fail-open posture this file is supposed to refuse.
+        if schema.get("additionalProperties") is False:
+            undeclared = sorted(set(value) - set(props))
+            if undeclared:
+                raise Invalid("%s: undeclared field(s) %s"
+                              % (where, ", ".join(repr(k) for k in undeclared)))
         for key, sub in props.items():
             if key in value:
                 _check(value[key], sub, "%s.%s" % (where, key))
@@ -150,15 +185,24 @@ def _check_cross_field(verdict, schema):
     is a drift this repo has already paid for twice.
     """
     declared = " ".join(schema.get("x-cross-field-rules", []))
-    if _CROSS_FIELD_ID not in declared:
-        raise Invalid(
-            "schema no longer declares %s in x-cross-field-rules, but the "
-            "validator still enforces it — the shipped contract and the check "
-            "have drifted" % _CROSS_FIELD_ID)
+    for rule_id in (_CROSS_FIELD_ID, _CLAIM_RULE_ID):
+        if rule_id not in declared:
+            raise Invalid(
+                "schema no longer declares %s in x-cross-field-rules, but the "
+                "validator still enforces it — the shipped contract and the "
+                "check have drifted" % rule_id)
 
     for i, finding in enumerate(verdict.get("findings", [])):
         if not isinstance(finding, dict):
             continue
+        # An empty claim is a finding that says nothing. Enforced here rather
+        # than as `minLength` in the schema: that file goes to the provider
+        # verbatim, `minLength` is not among the keywords proven accepted, and
+        # an unproven keyword risks a 400 that breaks every leg. Two drafts
+        # already failed exactly that way.
+        if not str(finding.get("claim", "")).strip():
+            raise Invalid("findings[%d]: claim is empty — a finding that says "
+                          "nothing cannot be acted on" % i)
         if (finding.get("target") == "VOLUNTEERED"
                 and finding.get("disposition") == "REPAIR"):
             raise Invalid(
@@ -202,6 +246,7 @@ def main(argv):
         return 1
 
     try:
+        _walk_schema(schema)
         _check(verdict, schema, "verdict")
         _check_cross_field(verdict, schema)
     except Invalid as exc:

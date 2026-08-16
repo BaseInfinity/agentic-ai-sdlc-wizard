@@ -224,6 +224,15 @@ shift
 SCHEMA="$SCRIPT_DIR/../skills/sdlc/review-verdict.schema.json"
 VERDICT="$OUTPUT.verdict.json"
 
+# TRUNCATED FOR THE SAME REASON THE TRANSCRIPT IS, and it was missed the first
+# time. A relaunch whose leg exits 0 without emitting a verdict would otherwise
+# validate the PREVIOUS run's answer and report this leg complete — a stale
+# certification presented as a fresh one, which is the failure this whole file
+# exists to prevent, reintroduced by the file added to prevent it. Found by
+# review, not by the suite, because the suite tested the transcript and nobody
+# extended that row to the sidecar.
+rm -f "$VERDICT"
+
 # `< /dev/null` is the whole prevention: the child gets EOF immediately and
 # proceeds to the model. Keep it on this line — it is not incidental.
 #
@@ -233,6 +242,18 @@ VERDICT="$OUTPUT.verdict.json"
 # THE LEG'S FATE, with no second observer reconstructing it. That property is
 # preserved below: codex's status is captured and re-raised unchanged, and the
 # only other way to exit non-zero is a verdict this script read itself.
+# KILLING THIS SCRIPT MUST KILL THE LEG, and dropping `exec` broke that until
+# the trap below existed. With `exec`, the launcher's pid WAS codex's, so a
+# TERM to the task killed the review. Without it, review found by execution
+# that a TERM to the launcher leaves codex ALIVE — still appending to $OUTPUT,
+# and still able to write a verdict afterwards. That orphan is the stale-verdict
+# channel from the other end: a late write lands in a path a relaunch has since
+# truncated, and the next leg validates a verdict no one asked for.
+#
+# So codex runs in the background and this script waits on it, forwarding TERM
+# and INT to the child first. `wait` returns >128 when interrupted by a signal,
+# so the status is re-taken after the trap fires to get codex's real one.
+# Written for bash 3.2 — macOS ships nothing newer.
 set +e
 codex exec \
     -c 'model_reasoning_effort="high"' \
@@ -240,8 +261,12 @@ codex exec \
     --output-schema "$SCHEMA" \
     --output-last-message "$VERDICT" \
     "$@" \
-    >> "$OUTPUT" 2>&1 < /dev/null
+    >> "$OUTPUT" 2>&1 < /dev/null &
+CODEX_PID=$!
+trap 'kill -TERM "$CODEX_PID" 2>/dev/null; wait "$CODEX_PID" 2>/dev/null; exit 143' TERM INT
+wait "$CODEX_PID"
 CODEX_RC=$?
+trap - TERM INT
 set -e
 
 # A leg that never reached the model is a FAILED leg, not an invalid one. Report
@@ -270,5 +295,11 @@ if ! python3 "$SCRIPT_DIR/validate-review-verdict.py" "$VERDICT" "$SCHEMA" >> "$
         echo "read the prose and fill the fields in yourself, which puts the"
         echo "answer back with the party that has momentum."
     } >> "$OUTPUT" 2>&1
+    # 65 is not provably unique: codex's own status passes through unchanged,
+    # so a 65 from codex would be indistinguishable from this one. Nothing
+    # observed emits 65 from codex, so the collision is latent. Tracked in #649
+    # rather than repaired here — it is out of scope for #617 and the fix is not
+    # obviously the launcher's. Until then, the INCOMPLETE LEG block above is
+    # what tells the two apart, by artifact rather than by status.
     exit 65
 fi

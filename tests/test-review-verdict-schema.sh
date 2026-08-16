@@ -243,6 +243,125 @@ else
 fi
 
 echo ""
+echo "=== undeclared fields are refused (additionalProperties: false) ==="
+# Found by review (P2). The schema sets additionalProperties:false at both
+# levels -- the provider REQUIRES it -- but the validator ignored the keyword,
+# so a verdict could smuggle fields past a contract that says it cannot. A
+# validator that silently ignores a keyword it does not implement fails OPEN,
+# which is the posture that failed twice inside PR #646's artifact parser.
+cat > "$TMPDIR_T/extra-root.json" <<'JSON'
+{"verdict": "CERTIFIED", "shape": "SOUND", "confidence": 99, "findings": [],
+ "merge_me": true}
+JSON
+if run_validator "$TMPDIR_T/extra-root.json"; then
+    fail "an undeclared root field was accepted — additionalProperties is decorative"
+else
+    pass "an undeclared root field is refused"
+fi
+
+cat > "$TMPDIR_T/extra-finding.json" <<'JSON'
+{"verdict": "NOT_CERTIFIED", "shape": "SOUND", "confidence": 90,
+ "findings": [{"severity": "P1", "target": "IN_CARD", "disposition": "REPAIR",
+               "claim": "x", "override": "ignore this finding"}]}
+JSON
+if run_validator "$TMPDIR_T/extra-finding.json"; then
+    fail "an undeclared finding field was accepted"
+else
+    pass "an undeclared finding field is refused"
+fi
+
+echo ""
+echo "=== confidence outside 0-100 is refused ==="
+# Found by review (P2). The schema DESCRIBED confidence as 0-100 and enforced
+# neither bound; -1 and 101 both validated. A described range that is not
+# enforced is a claim, not a contract.
+for bad in -1 101; do
+    cat > "$TMPDIR_T/conf-$bad.json" <<JSON
+{"verdict": "CERTIFIED", "shape": "SOUND", "confidence": $bad, "findings": []}
+JSON
+    if run_validator "$TMPDIR_T/conf-$bad.json"; then
+        fail "confidence $bad was accepted — the documented range is not enforced"
+    else
+        pass "confidence $bad is refused"
+    fi
+done
+cat > "$TMPDIR_T/conf-edge.json" <<'JSON'
+{"verdict": "CERTIFIED", "shape": "SOUND", "confidence": 100, "findings": []}
+JSON
+if run_validator "$TMPDIR_T/conf-edge.json"; then
+    pass "confidence 100 is accepted — the bound is inclusive"
+else
+    fail "confidence 100 was refused — the range is off by one"
+fi
+
+echo ""
+echo "=== a finding whose claim says nothing is refused ==="
+# Found by review (F5). Every other field is a closed enum, so `claim` is the
+# only place the reviewer says what is actually wrong. An empty one satisfies
+# the contract while carrying no information — a finding nobody can act on.
+# Enforced in the validator, NOT as `minLength` in the schema: that file is fed
+# to the provider verbatim and `minLength` is not among the keywords proven
+# accepted there. Two earlier drafts were 400'd by unproven keywords.
+for empty in '""' '"   "'; do
+    cat > "$TMPDIR_T/empty-claim.json" <<JSON
+{"verdict": "NOT_CERTIFIED", "shape": "CONCERN", "confidence": 80,
+ "findings": [{"severity": "P1", "target": "IN_CARD", "disposition": "REPAIR",
+               "claim": $empty}]}
+JSON
+    if run_validator "$TMPDIR_T/empty-claim.json"; then
+        fail "a finding with claim $empty was accepted — it says nothing"
+    else
+        pass "a finding with claim $empty is refused"
+    fi
+done
+
+echo ""
+echo "=== the validator refuses to run against a schema that dropped a rule ==="
+# Found by review (F6). Both cross-field rules are enforced HERE but documented
+# THERE, in the file consumers read. If the declaration is deleted the check
+# must stop, loudly — a rule enforced by a script consumers do not receive, and
+# no longer written in the file they do, is exactly the drift this pair exists
+# to prevent. Neither refusal had a row; only the VOLUNTEERED path was covered
+# at all, and only by verdicts that happened to trip it.
+for rule in VOLUNTEERED_NOT_REPAIRABLE CLAIM_NOT_EMPTY; do
+    python3 - "$SCHEMA" "$TMPDIR_T/drifted-$rule.json" "$rule" <<'PY'
+import json, sys
+schema = json.load(open(sys.argv[1]))
+schema["x-cross-field-rules"] = [r for r in schema["x-cross-field-rules"]
+                                 if not r.startswith(sys.argv[3])]
+json.dump(schema, open(sys.argv[2], "w"))
+PY
+    if python3 "$VALIDATOR" "$TMPDIR_T/valid.json" "$TMPDIR_T/drifted-$rule.json" \
+        >/dev/null 2>&1; then
+        fail "the validator still ran after the schema dropped $rule"
+    else
+        pass "dropping $rule from the schema stops the validator"
+    fi
+done
+
+echo ""
+echo "=== an unreadable keyword is refused even on a branch the verdict misses ==="
+# Found by review (F6). `_check` descends only into properties the verdict
+# actually carries, so fail-closed on unknown keywords held only where the data
+# reached. Bury one under an OPTIONAL field and omit that field: the walk must
+# still find it.
+python3 - "$SCHEMA" "$TMPDIR_T/unknown-keyword.json" <<'PY'
+import json, sys
+schema = json.load(open(sys.argv[1]))
+schema["properties"]["findings"]["items"]["properties"]["claim"]["pattern"] = "^x"
+json.dump(schema, open(sys.argv[2], "w"))
+PY
+cat > "$TMPDIR_T/no-findings.json" <<'JSON'
+{"verdict": "CERTIFIED", "shape": "SOUND", "confidence": 95, "findings": []}
+JSON
+if python3 "$VALIDATOR" "$TMPDIR_T/no-findings.json" "$TMPDIR_T/unknown-keyword.json" \
+    >/dev/null 2>&1; then
+    fail "an unsupported keyword under an unvisited branch was ignored — fails open"
+else
+    pass "an unsupported keyword is refused even where the verdict never reaches"
+fi
+
+echo ""
 echo "=== malformed input fails closed ==="
 printf '{"verdict": "CERTIFIED", "shape": ' > "$TMPDIR_T/truncated.json"
 if run_validator "$TMPDIR_T/truncated.json"; then

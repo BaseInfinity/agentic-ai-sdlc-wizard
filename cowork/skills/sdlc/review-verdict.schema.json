@@ -3,7 +3,8 @@
   "title": "SDLC review-leg verdict",
   "description": "The structured verdict a review leg returns, in ADDITION to its prose transcript (GH #617). It exists because five prose rules in SKILL.md each independently ended rounds 6-8 of PR #646 and none of them fired: :136 (WRONG SHAPE), :152 (no test costs more rounds than its change), :163 (blame the line), :273 (second repair means ask whether it should exist), :166 (the reviewers are each other's tiebreaker). All five addressed the driver, the party with momentum. This moves two of those questions to the reviewer, who has none, and makes them unskippable rather than advisory. THIS FILE IS FED DIRECTLY TO `codex exec --output-schema`, so it must satisfy the provider's structured-output rules, which are stricter than JSON Schema: every object must set additionalProperties:false, every declared property must appear in `required`, and `allOf`/`if`/`then` are REFUSED with a 400. Both constraints were found by running it, not by reading docs -- the first draft used additionalProperties:true and an if/then, and every leg failed at the API. The cross-field rule those keywords would have carried (VOLUNTEERED cannot be REPAIRed) therefore lives in scripts/validate-review-verdict.py, which is named in x-cross-field-rules below so the two cannot silently drift apart. A validator may check PRESENCE, ENUM MEMBERSHIP, and those named cross-field rules only. It must never judge whether a tag is CORRECT -- a semantic validator is a reviewer, and rebuilding one here is how PR #598 reached 22 rounds chasing regex over prose.",
   "x-cross-field-rules": [
-    "VOLUNTEERED_NOT_REPAIRABLE: a finding with target VOLUNTEERED must have disposition DELETE or FILE, never REPAIR. Not expressible here -- the provider refuses allOf/if/then -- so it is enforced in scripts/validate-review-verdict.py and tested in tests/test-review-verdict-schema.sh."
+    "VOLUNTEERED_NOT_REPAIRABLE: a finding with target VOLUNTEERED must have disposition DELETE or FILE, never REPAIR. Not expressible here -- the provider refuses allOf/if/then -- so it is enforced in scripts/validate-review-verdict.py and tested in tests/test-review-verdict-schema.sh.",
+    "CLAIM_NOT_EMPTY: a finding's `claim` must be non-empty. NOT expressed as minLength here -- `minimum`/`maximum` were proved accepted by the provider on 2026-08-16, but `minLength` was not, and this file is fed to the provider verbatim: an unproven keyword risks a 400 that breaks EVERY leg, which is how two earlier drafts failed. Enforced in scripts/validate-review-verdict.py instead, at zero provider risk. Every other field is a closed enum, so `claim` is the only place a reviewer says what is wrong; an empty one satisfies the contract and carries nothing."
   ],
   "type": "object",
   "additionalProperties": false,
@@ -20,8 +21,10 @@
       "enum": ["SOUND", "CONCERN", "WRONG_SHAPE"]
     },
     "confidence": {
-      "description": "0-100. Required because the provider's strict mode requires every declared property to be required; a leg with nothing to say should return its honest number, not omit the field.",
-      "type": "integer"
+      "description": "0-100, and the bounds are ENFORCED, not merely described. The first version documented the range and checked neither end; -1 and 101 both validated. A described range nothing enforces is a claim, not a contract -- found by review. `minimum`/`maximum` are safe to state here: proved accepted by the provider on 2026-08-16, unlike minLength. Required because the provider's strict mode requires every declared property to be required; a leg with nothing to say returns its honest number, not no field.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
     },
     "findings": {
       "type": "array",
