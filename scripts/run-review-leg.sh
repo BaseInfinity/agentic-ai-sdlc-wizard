@@ -59,6 +59,11 @@ if [ $# -lt 2 ]; then
     exit 64
 fi
 
+# Resolved from this script's own location, never from the caller's cwd: a leg
+# is routinely launched from a worktree or a private review copy, and the schema
+# it validates against must be the one that ships beside this launcher.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 OUTPUT="$1"
 shift
 
@@ -200,13 +205,70 @@ shift
     echo
 } >> "$OUTPUT" 2>&1
 
+# THE STRUCTURED VERDICT (#617)
+#
+# The leg must answer two questions it kept not being asked: does this code
+# deserve to exist (`shape`), and does each defective line trace to the issues
+# under review (`target`). Five prose rules in skills/sdlc/SKILL.md each
+# independently end rounds 6-8 of PR #646 — :136, :152, :163, :273, :166 — and
+# none of them fired. All five addressed the DRIVER, the party with momentum.
+# These two are answered by the REVIEWER, who has none, and the schema is what
+# makes them unskippable rather than advisory.
+#
+# The schema lives under skills/, which SHIPS; this validator lives under
+# scripts/, which does not (#594). A consumer therefore inherits the CONTRACT
+# even though they do not yet inherit the ENFORCER. That asymmetry is
+# deliberate and disclosed — it is not an oversight to be fixed by copying the
+# rules into this file, which would create a second copy that drifts from the
+# one consumers read.
+SCHEMA="$SCRIPT_DIR/../skills/sdlc/review-verdict.schema.json"
+VERDICT="$OUTPUT.verdict.json"
+
 # `< /dev/null` is the whole prevention: the child gets EOF immediately and
 # proceeds to the model. Keep it on this line — it is not incidental.
 #
-# exec replaces this shell, so the caller sees codex's own exit status with
-# nothing in between that could die separately and leave the status unknown.
-exec codex exec \
+# NO `exec` HERE, AND THAT IS A DELIBERATE REVERSAL. It used to exec so the
+# caller saw codex's own exit status with nothing in between. The property that
+# mattered was never `exec` itself — it was that THE LAUNCHER'S EXIT STATUS IS
+# THE LEG'S FATE, with no second observer reconstructing it. That property is
+# preserved below: codex's status is captured and re-raised unchanged, and the
+# only other way to exit non-zero is a verdict this script read itself.
+set +e
+codex exec \
     -c 'model_reasoning_effort="high"' \
     -s danger-full-access \
+    --output-schema "$SCHEMA" \
+    --output-last-message "$VERDICT" \
     "$@" \
     >> "$OUTPUT" 2>&1 < /dev/null
+CODEX_RC=$?
+set -e
+
+# A leg that never reached the model is a FAILED leg, not an invalid one. Report
+# its own status and say nothing about the verdict, which was never written.
+if [ "$CODEX_RC" -ne 0 ]; then
+    exit "$CODEX_RC"
+fi
+
+# PRESENCE AND ENUM MEMBERSHIP ONLY. The validator must never judge whether a
+# tag is CORRECT — that is a reading of the diff against the issues under
+# review, which is the reviewer's job. A semantic validator here is how PR #598
+# reached 22 rounds chasing regex over prose. A closed enum cannot chase
+# synonyms; an English-meaning check can, forever.
+if ! python3 "$SCRIPT_DIR/validate-review-verdict.py" "$VERDICT" "$SCHEMA" >> "$OUTPUT" 2>&1; then
+    {
+        echo
+        echo "---"
+        echo
+        echo "## INCOMPLETE LEG (#617)"
+        echo
+        echo "The review ran, but its structured verdict did not answer the"
+        echo "questions the contract requires — see the validator's reason above."
+        echo "A leg that skipped \`shape\`, or returned a finding with no"
+        echo "\`target\`, has not said whether the code should exist or whether"
+        echo "it traces to the issues under review. Relaunch the leg; do not"
+        echo "read the prose and fill the fields in yourself, which puts the"
+        echo "answer back with the party that has momentum."
+    } >> "$OUTPUT" 2>&1
+    exit 65
+fi

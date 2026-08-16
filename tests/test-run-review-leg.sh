@@ -57,10 +57,37 @@ trap 'rm -rf "$TMPROOT"' EXIT
 #                    here forever instead of quietly passing.
 STUBDIR="$TMPROOT/bin"
 mkdir -p "$STUBDIR"
+#   STUB_NO_VERDICT  skip writing the structured verdict, simulating a leg that
+#                    ran but did not answer the #617 contract
+#   STUB_VERDICT     verdict JSON to write instead of the conforming default
 cat > "$STUBDIR/codex" <<'STUB'
 #!/bin/bash
 if [ -n "$STUB_READ_STDIN" ]; then
     cat > /dev/null
+fi
+# The real codex writes the structured verdict to --output-last-message (#617).
+# The stub must do the same, or every row here would assert on a launcher whose
+# validation step never had input — a test that passes because the thing it
+# tests never ran is the defect this repo files as #642.
+VERDICT_PATH=""
+SCHEMA_ARG=""
+prev=""
+for arg in "$@"; do
+    if [ "$prev" = "--output-last-message" ]; then VERDICT_PATH="$arg"; fi
+    if [ "$prev" = "--output-schema" ]; then SCHEMA_ARG="$arg"; fi
+    prev="$arg"
+done
+# Recorded so a row can pin that --output-schema was actually PASSED. Review
+# caught that nothing did: the stub ignored the flag, so deleting it from the
+# launcher left the whole suite green while every real leg lost the contract
+# that makes codex emit these fields at all.
+[ -n "${STUB_ARGS_FILE:-}" ] && printf '%s' "$SCHEMA_ARG" > "$STUB_ARGS_FILE"
+# Assigned to a variable FIRST. Inlining this as a `${STUB_VERDICT:-...}`
+# default requires escaping the closing brace, and the backslash survives into
+# the file — which the launcher then correctly refused as malformed JSON.
+DEFAULT_VERDICT='{"verdict":"CERTIFIED","shape":"SOUND","confidence":99,"findings":[]}'
+if [ -n "$VERDICT_PATH" ] && [ -z "$STUB_NO_VERDICT" ]; then
+    printf '%s' "${STUB_VERDICT:-$DEFAULT_VERDICT}" > "$VERDICT_PATH"
 fi
 printf '%s' "${STUB_STDOUT:-}"
 exit "${STUB_EXIT:-0}"
@@ -345,6 +372,68 @@ if [ -f "$probe_pidfile" ]; then
     fi
 else
     fail "the probe never recorded its pid — cannot prove it was killed"
+fi
+
+# ---------------------------------------------------------------------------
+# THE #617 WIRING. The schema and validator have their own suite
+# (tests/test-review-verdict-schema.sh). These two rows prove the LAUNCHER
+# actually consults them — a validator nobody calls is the same defect as a
+# guard nobody tests.
+
+# A leg that ran but answered nothing is INCOMPLETE, not successful. This is the
+# case rounds 6-8 of PR #646 lived in: the reviews happened, and the two
+# questions that would have ended them were never put.
+out=$(new_leg)
+set +e
+STUB_NO_VERDICT=1 STUB_STDOUT=$'VERDICT: CERTIFIED\n' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "a leg that wrote no structured verdict is refused" 65 "$rc"
+if grep -q 'INCOMPLETE LEG' "$out"; then
+    pass "the reviewer's file says why the leg was refused"
+else
+    fail "the leg was refused with nothing in the output explaining it"
+fi
+
+# VOLUNTEERED + REPAIR is the combination this whole change exists to forbid.
+# It must be refused THROUGH THE LAUNCHER, not only in the schema suite.
+out=$(new_leg)
+set +e
+STUB_VERDICT='{"verdict":"NOT_CERTIFIED","shape":"CONCERN","confidence":80,"findings":[{"severity":"P1","target":"VOLUNTEERED","disposition":"REPAIR","claim":"a false refusal from a guard nobody asked for"}]}' \
+STUB_STDOUT=$'VERDICT: NOT CERTIFIED\n' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "a leg prescribing REPAIR on volunteered code is refused" 65 "$rc"
+
+# ...and the same finding marked DELETE goes through, or the rule reads as
+# "never report volunteered findings" and hides what it exists to surface.
+out=$(new_leg)
+set +e
+STUB_VERDICT='{"verdict":"NOT_CERTIFIED","shape":"WRONG_SHAPE","confidence":80,"findings":[{"severity":"P1","target":"VOLUNTEERED","disposition":"DELETE","claim":"a guard tracing to neither issue under review"}]}' \
+STUB_STDOUT=$'VERDICT: NOT CERTIFIED\n' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "a leg prescribing DELETE on volunteered code completes" 0 "$rc"
+
+# The launcher must PASS --output-schema, not merely validate afterwards. The
+# schema is what makes codex emit shape/target in the first place; without it a
+# leg returns prose, the verdict file is absent or unconforming, and every leg
+# fails closed for the wrong reason.
+out=$(new_leg)
+argsfile="$(dirname "$out")/schema-arg"
+set +e
+STUB_ARGS_FILE="$argsfile" STUB_STDOUT='ok' STUB_EXIT=0 \
+    "$RUNNER" "$out" 'review this' >/dev/null 2>&1
+rc=$?
+set -e
+check_rc "the leg completes" 0 "$rc"
+if [ -s "$argsfile" ] && grep -q 'review-verdict.schema.json' "$argsfile"; then
+    pass "the launcher passes --output-schema pointing at the shipped schema"
+else
+    fail "--output-schema was not passed — codex is never told to emit shape or target"
 fi
 
 echo ""
