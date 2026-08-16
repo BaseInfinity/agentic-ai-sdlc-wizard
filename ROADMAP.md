@@ -28,11 +28,13 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **Filed tonight:** #652 — `TESTING.md` reads as a suite registry but omits 54 of 80 CI suites.
 >
-> **The retro both reviewers gave, which the next session should act on rather than repeat:** tonight was valuable and over-expensive. The allowlist cycle's rounds 1–3 were the loop working; round 4 was self-inflicted — the driver never ran `tests/test-workflow-triggers.sh` and `tests/test-doc-consistency.sh` before committing a diff that touched `ci.yml`, so CI became the test phase. That pair takes **13.3 seconds** and would have saved **at least 4m47s** plus a dialogue round and two full clearance rebinds. The reviewers split on the fix: make it mechanical in the commit hook, or make it a mandatory step in the skill. Prose is the weaker option on tonight's own evidence — the output style was live in context and decayed anyway (#644).
+> **The retro both reviewers gave, which the next session should act on rather than repeat:** tonight was valuable and over-expensive. The allowlist cycle's rounds 1–3 were the loop working; round 4 was self-inflicted — the driver never ran `tests/test-workflow-triggers.sh` and `tests/test-doc-consistency.sh` before committing a diff that touched `ci.yml`, so CI became the test phase. That pair takes **13.3 seconds** and would have saved **at least 4m47s** plus a dialogue round and two full clearance rebinds.
+>
+> **MAINTAINER RULING, 2026-08-16 — this does NOT become a rule, in the skill or in a hook.** Both reviewers proposed one (Sol: a mandatory step in `skills/sdlc/SKILL.md`; Fable: a lane in the commit hook, since prose decays). Both were declined, and no issue was filed. Verbatim: *"i wouldn't bake a one-off thing into the skill"* and *"that's not the worst to find the problem in CI if it's expensive to run — but if it's not, then we could have run that here."* **CI catching a forgotten test is an acceptable, cheap failure. The answer is targeted testing judgement — run the suites a diff plausibly breaks — not another permanent rule in a skill that is already long.** Do not re-open this without new evidence that it is recurring rather than a one-off.
 >
 > ### Standing rulings
 >
-> GitHub Issues is the store; this file routes to it. No gate redesign in PR-B. No new guard or tooling surface. One independently closable issue at a time.
+> GitHub Issues is the store; this file routes to it. No gate redesign in PR-B. No new guard or tooling surface. One independently closable issue at a time — *this scopes how Rung-1 work is picked, not how a ruled batch ships: prose batches go out under the 2026-08-10 batch ruling below, which shipped PR-A's six issues (#558, #557, #573, #574, #564, #556) as one PR while this line was already live. Clarified 2026-08-16.*
 
 > ### 2026-08-10 — RULED: batch the meta changes. Two PRs, prose first.
 >
