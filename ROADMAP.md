@@ -22,7 +22,9 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > Written so a cold session resumes without reading a transcript. Shipped to `main` tonight, in order — issue numbers only, because the tracker owns PR state (#482): **#617** (SHAPE and TARGET as required reviewer outputs), the **permission-allowlist** work (`gh pr comment` replaced by the fixed-argv wrapper `scripts/post-comment.sh` — the pattern would have authorized `--delete-last` on the merge gate's own clearance comments), and **#653** (the SHAPE routing card in `skills/sdlc/SKILL.md`).
 >
-> **Next action: #504's experiment — Fable drives milestone v1.99.2** (#579, #544, #537, #499), batched into ONE PR. Compare rounds, tokens and wall clock against the allowlist cycle's baseline: 4 rounds, 5 review legs, ~456k leg tokens, 43 minutes.
+> **Next action: #504's experiment — Fable drives milestone v1.99.2** (#579, #544, #499), batched into ONE PR. Compare rounds, tokens and wall clock against the allowlist cycle's baseline: 4 rounds, 5 review legs, ~456k leg tokens, 43 minutes. *(Corrected 2026-08-16: this listed #537 too. #537 is a capability detector plus tests — code in a batch premised on prose, which both re-adds the test surface the batch removes and contaminates the measurement. Moved to v1.99.1; ruling on #504.)*
+>
+> **This work merges before v1.99.0 and v1.99.1, deliberately, and that is safe** — `release.yml` triggers on a tag push, so merging publishes nothing. **It is not free at tag time:** v1.99.0 and v1.99.1 are cut from a `main` that already carries this content, so whoever tags them states which content is present ahead of its milestone. Rung 1's item 3 (#521) stays open and is deliberately deferred — repairing the review surface mid-experiment would change what the experiment measures. Both rulings are on #593 and #504.
 >
 > **Open and unfinished:** `fix/585-operator-output-style` — 3 commits parked on a branch, never reviewed, #585 still open. **#622** — the post-mortem step has not run since v1.97.0; a 2.0 release with no end-of-release audit contradicts the harness's own rules, so it runs or the maintainer waives it explicitly.
 >
