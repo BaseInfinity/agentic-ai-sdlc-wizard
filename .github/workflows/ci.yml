@@ -126,6 +126,9 @@ jobs:
       - name: Run hook stdin boundedness tests (#491 Class 2)
         run: ./tests/test-hook-stdin-bounded.sh
 
+      - name: Run evidence-exception bound tests (#608, PR #615)
+        run: ./tests/test-evidence-exception-bound.sh
+
       - name: Run token-spike anomaly tests (ROADMAP #220)
         run: ./tests/test-token-spike.sh
 
