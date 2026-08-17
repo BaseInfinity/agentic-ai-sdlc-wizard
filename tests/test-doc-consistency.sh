@@ -1707,9 +1707,16 @@ test_readme_reviewer_is_gpt56() {
     # (Re-pinned 2026-08-16 by #544's frontier-model banner, which shifted every
     # line below it by 4. Position pins again, not content — see #659.)
     bad="$bad$(_check_line_has_and_lacks "$F" 130 "5\.6,Sol,Terra" "5\.5" "5\.4")"
-    for n in 193 194 195; do
-        bad="$bad$(_check_line_has_and_lacks "$F" "$n" "5\.6,Sol" "5\.5")"
-    done
+    # Every OTHER line naming a GPT-5.x reviewer must name 5.6, by CONTENT.
+    # This replaced position pins on lines 193-195 when the model-selection
+    # research moved to AI_SETUP_LANES.md (#659 asked for exactly this: the
+    # pins had already been re-anchored once and broke again on the move).
+    # README carries no historical GPT-5.5 citation — the Vending-Bench one
+    # moved out with the research, and its own guard followed it there.
+    local stale
+    stale="$(grep -n 'GPT-5\.' "$F" | grep -v 'GPT-5\.6' || true)"
+    [ -n "$stale" ] && bad="$bad$(printf ' stale-GPT-line:%s' "$(printf '%s' "$stale" | cut -d: -f1 | tr '\n' ',')")"
+    grep -q 'GPT-5\.6 Sol' "$F" || bad="$bad README.md(no-sol-reference-at-all)"
     if [ -z "$bad" ]; then
         pass "README.md: all reviewer-model lines reference GPT-5.6 Sol/Terra, none reference stale GPT-5.5/5.4"
     else
@@ -1717,16 +1724,23 @@ test_readme_reviewer_is_gpt56() {
     fi
 }
 
-# L155 is a historical eval citation (Andon Labs Vending-Bench actually used
-# GPT-5.5 at the time) — must NOT be rewritten, or the citation becomes
-# factually wrong about what model that benchmark run used.
-test_readme_vending_bench_citation_untouched() {
-    local F="$REPO_ROOT/README.md"
-    if [ ! -f "$F" ]; then fail "README.md not found"; return; fi
-    if sed -n '155p' "$F" | grep -q "GPT-5\.5"; then
-        pass "README.md L155 vending-bench citation still names GPT-5.5 (historical, untouched)"
+# The Vending-Bench line is a historical eval citation (Andon Labs actually ran
+# GPT-5.5 at the time) — it must NOT be rewritten to 5.6, or the citation
+# becomes factually wrong about what model that benchmark run used. It lived in
+# README until the model-selection research moved to AI_SETUP_LANES.md; the
+# guard follows the content. Located by CONTENT, not line number, so moving it
+# again cannot silently disable this check.
+test_vending_bench_citation_untouched() {
+    local F="$REPO_ROOT/AI_SETUP_LANES.md"
+    if [ ! -f "$F" ]; then fail "AI_SETUP_LANES.md not found"; return; fi
+    local line
+    line="$(grep -n 'Vending-Bench' "$F" | head -1)"
+    if [ -z "$line" ]; then
+        fail "Vending-Bench citation not found in AI_SETUP_LANES.md — the historical citation was deleted or moved again"
+    elif printf '%s' "$line" | grep -q "GPT-5\.5"; then
+        pass "Vending-Bench citation still names GPT-5.5 (historical, untouched)"
     else
-        fail "README.md L155 vending-bench citation no longer names GPT-5.5 — historical citation was rewritten"
+        fail "Vending-Bench citation no longer names GPT-5.5 — historical citation was rewritten"
     fi
 }
 
@@ -1826,7 +1840,7 @@ test_claude_md_reviewer_is_gpt56() {
 
 test_ai_setup_lanes_reviewer_is_gpt56
 test_readme_reviewer_is_gpt56
-test_readme_vending_bench_citation_untouched
+test_vending_bench_citation_untouched
 test_wizard_doc_reviewer_is_gpt56
 test_wizard_doc_e2e_audit_citation_untouched
 test_skill_files_reviewer_is_gpt56
@@ -1876,8 +1890,11 @@ test_sonnet5_default_effort_is_medium() {
         || bad="$bad AI_SETUP_LANES.md(ladder)"
     grep -q 'Sonnet 5 at `medium` effort' "$REPO_ROOT/README.md" \
         || bad="$bad README.md(default-line)"
-    grep -q 'Sonnet 5: `medium` default' "$REPO_ROOT/README.md" \
-        || bad="$bad README.md(effort-line)"
+    # The per-model effort wall moved from README to AI_SETUP_LANES.md with the
+    # rest of the model-selection research; the assertion followed it. README
+    # still states the default in its own idiom (default-line, above).
+    grep -q 'Sonnet 5: `medium` default' "$REPO_ROOT/AI_SETUP_LANES.md" \
+        || bad="$bad AI_SETUP_LANES.md(effort-wall)"
     grep -q 'Sonnet 5: `medium` default' "$REPO_ROOT/SDLC.md" \
         || bad="$bad SDLC.md"
     grep -q 'Sonnet 5 `medium`' "$REPO_ROOT/skills/sdlc/SKILL.md" \
@@ -1952,10 +1969,14 @@ test_setup_a_escalation_and_advisor_fallback_explicit() {
         || bad="$bad AI_SETUP_LANES.md:driver-swap"
     grep -q 'spawn a Fable subagent' "$REPO_ROOT/AI_SETUP_LANES.md" \
         || bad="$bad AI_SETUP_LANES.md:advisor-fallback"
-    grep -q 'takes over as driver' "$REPO_ROOT/README.md" \
-        || bad="$bad README.md:driver-swap"
-    grep -q 'spawn a Fable subagent' "$REPO_ROOT/README.md" \
-        || bad="$bad README.md:advisor-fallback"
+    # "Reading Setup A precisely" moved from README to AI_SETUP_LANES.md, so the
+    # two prose assertions are made once, above, against the file that now
+    # carries them. README keeps a POINTER, and the pointer is asserted here so
+    # it cannot rot into a dead reference to prose that lives elsewhere.
+    grep -q 'how to read Setup A precisely' "$REPO_ROOT/README.md" \
+        || bad="$bad README.md:missing-pointer-to-setup-a-detail"
+    grep -q 'AI_SETUP_LANES.md' "$REPO_ROOT/README.md" \
+        || bad="$bad README.md:missing-lanes-link"
     # Negative half (Codex round-1 P1-3): positive assertions alone false-green
     # while the advisor-outage procedure still offers a "no advisor" path. The
     # outage section must route to the subagent fallback, never to skipping.

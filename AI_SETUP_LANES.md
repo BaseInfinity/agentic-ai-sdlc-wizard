@@ -250,6 +250,42 @@ Watch the headless surface if you've automated `claude -p` calls in your project
 
 The wizard does not enforce setup lane selection — it documents the recommended default per change shape. Whatever ships is your call.
 
+## Model Selection — The Evidence
+
+Moved here from `README.md` so that section stays short. **Read the honesty
+note there first:** Setup A is the only lane with cycle data from this repo.
+The research below is third-party field data about model behavior in general.
+It is the reasoning behind the lane assignments; it is not a measurement of
+this harness running on any lane other than A.
+
+### Why Opus 4.6 was the flagship, and why that changed
+
+Two weeks of in-the-wild data after Opus 4.8's launch (2026-05-28) showed a clear pattern that first made Opus 4.6 the wizard's flagship over Anthropic's own "latest" model:
+
+- **[Andon Labs Vending-Bench](https://andonlabs.com/blog/opus-4-8-vending-bench)** — 4.8 finished last vs 4.7 and GPT-5.5; documented "Max reasoning is not the best reasoning effort"; falls for scam suppliers 30× more frequently
+- **[AI Weekly: 900K cache tokens per turn](https://aiweekly.co/alerts/claude-opus-48-thinking-burns-900k-tokens-per-turn)** — 40-60× jump vs 4.7 at HIGH effort. Burns Max 5-hour limits 2-3× faster
+- **[Tech.yahoo review](https://tech.yahoo.com/ai/claude/articles/claude-opus-4-8-review-130106963.html)** — explicit: "Anthropic deliberately made Opus's new tokenizer less efficient"; "a single coding prompt drained our entire token quota"
+- **Active GitHub regressions** — false-greens ([#63861](https://github.com/anthropics/claude-code/issues/63861)), 2-3× token burn ([#64961](https://github.com/anthropics/claude-code/issues/64961)), 46K tokens for simple coding turn ([#64153](https://github.com/anthropics/claude-code/issues/64153)), dropped constraints during execution ([#65932](https://github.com/anthropics/claude-code/issues/65932)), fabricated identifiers in parallel tool batches
+- **[Paweł Huryn's 4.7 guide](https://www.productcompass.pm/p/claude-opus-4-7-guide)** — "most complaints about 4.7 feeling slow stem from people reflexively using max"
+- **[BSWEN effort decision guide](https://docs.bswen.com/blog/2026-04-19-claude-code-effort-level-decision-guide/)** — "Max on Opus causes overthinking on routine stuff. xHigh is the sweet spot for autonomous work"
+- **r/Claudeopus field reports** — one maintainer's literal A/B: "12 hours with 4.8 zero deliverables; plugged in 4.6, spec written + 133 tests green in one session." Top comment: "4.6 had the best overall balance at max"
+
+That research still stands as the reason **Sonnet 5 (not Opus 4.6, not Opus 4.8) is Setup B's driver** — Sonnet 5 doesn't have Opus 4.8's overthinking problem, and generally uses less quota for comparable-scope work. **Note what kind of evidence that is:** third-party field reports about model behavior in general, not a measurement of this harness running on Setup B. Setup A is the only lane behind which there is cycle data from this repo, and the lane tables above label Setup B unverified for exactly that reason. The two statements are consistent — the research picks Sonnet 5 *over other Setup B candidates*; it says nothing about Setup B versus Setup A. Opus 4.6/4.8 remain reachable as an explicit escalation/stability pin (see the lane tables above) for anyone who's tuned a workflow to their specific behavior, but neither is a lane driver anymore.
+
+**Why Opus 5 became the default (2026-07-24), on top of that history.** Opus 5 launched today at the same price as Opus 4.8, positioned by Anthropic as "close to Fable 5 intelligence at half the price," with documented self-verification improvements. Every capability claim behind this is Anthropic's own launch-day material — zero field data exists yet, the exact evidence class the wizard's own process treats with skepticism (see this document's trial-flagged framing). The wizard maintainer chose to adopt it as default anyway, judging the risk acceptable since Codex still gates every task and reverting is one settings change. Sonnet 5 remains the wizard's evidence-backed pick for lower-stakes work — Setup B, not deprecated.
+
+4.6 remains Anthropic-supported until **≥ Feb 5, 2027** per the [official deprecation page](https://platform.claude.com/docs/en/about-claude/model-deprecations).
+
+**Effort is model-aware, not blanket `max`.** Opus 5: `high` default for Setup A, `medium` for routine web/CRUD (changed 2026-08-02); `xhigh` is an escalation trigger for difficult/long-running work, not the default — effort tiers are static per session, but Opus 5 has documented adaptive reasoning *within* a fixed tier. Sonnet 5: `medium` default (CodeRabbit-tested), escalate `/effort high` → `xhigh` for hard tasks. Opus 4.8: `xhigh` (its own `max` overthinks). Opus 4.6: `max` (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc or settings env var — persisting effort that way silently overrides a later `/effort` change after you switch models (see `SDLC.md`'s Lessons Learned for a real incident this caused). Also check for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` env var in your shell rc files — it silently overrides `/model opus` picker choices. OpenAI/Codex reviewer: `high` default (2026-08-01; cost and review-noise, not capability) — escalate to `xhigh` for unusually risky PRs, `max`/Pro above that (see the Final Review Policy above).
+
+### Reading Setup A precisely
+
+Clarified 2026-07-13, updated 2026-07-24 for the Opus 5 swap — these exact points kept getting re-confused; each rule states its why:
+
+- **Effort starts at `high`, not `xhigh`** (changed 2026-08-02). Opus 5's own documented default is `high` for general use. Anthropic recommends "extra" (`xhigh`) specifically for difficult and long-running asynchronous work — treat that as an escalation trigger, not the standing default, and drop to `medium` for routine web/CRUD.
+- **Model escalation swaps the driver, not the tier.** After 2 failed attempts, LOW confidence, or on high-stakes changes with Setup A already exhausted, a pinned Opus 4.8 (`claude-opus-4-8`) takes over as driver for a genuinely independent second pass — Opus-5-driver plus an Opus-5 advisor fallback would otherwise be a same-family self-check. Why a swap and not more effort: the lane's policy treats repeated failure as a sign the *approach* needs different eyes, not deeper reasoning on the same track.
+- **Advisor failure has a fallback, not a shrug.** Fable 5 advises via `advisorModel: "fable"` — disabled by an Anthropic rollout on 2026-07-24, observed working again on 2026-08-16. Availability is a dated observation, so establish it by calling the tool. On a real failure, spawn a Fable subagent at `high` as the fallback reviewer immediately, exactly as the `/sdlc` skill prescribes. Why: the advisor's job is catching wrong approaches *before* they're built, so a transport failure changes how the advice is obtained — not whether the check happens.
+
 ## See Also
 
 - [`CLAUDE_CODE_SDLC_WIZARD.md`](CLAUDE_CODE_SDLC_WIZARD.md) — Full wizard doc, including Stability tier opt-in for the wider model choice
