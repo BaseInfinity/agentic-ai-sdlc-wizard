@@ -60,7 +60,7 @@
 # doc would reference a path that does not exist there. CLAUDE_CODE_SDLC_WIZARD.md
 # ships; the rule lives in it.
 #
-# SELF-FALSIFICATION: at the end, 18 mutations are written to a temp tree and
+# SELF-FALSIFICATION: at the end, 19 mutations are written to a temp tree and
 # the checker is RE-RUN against each. A mutation that does not make the checker
 # fail means the guard is vacuous. The checker runs as a real subprocess against
 # a real file; it does not re-grep a string in memory, which would only prove
@@ -76,11 +76,20 @@
 #   Form E (1)  seat 1's round-3 reproduction: the rule captured by a
 #               strikethrough span, so it renders inside <del> — retracted —
 #               while the normalised body is byte-identical
+#   Form F (1)  seat 1's round-4 reproduction: the rule captured by a raw <s>
+#               element, which crosses blank lines and so defeated the
+#               blank-line invariant that Form E's fix relied on
 #
-# Forms C, D and E are kept permanently: a bypass fixed without a test is a bypass
-# that comes back. run_mutation prints the REJECTION REASON for each, because a
-# mutation caught for the wrong reason is not evidence the guard works — seat 1
-# found exactly that in round 1.
+# Forms C through F are kept permanently: a bypass fixed without a test is a
+# bypass that comes back.
+#
+# Each mutation declares WHICH check must reject it, and run_mutation FAILS if a
+# different check does. Reporting the reason was not enough: seat 1 found in
+# round 4 that Form C bypass #1 had drifted onto the marker-isolation check
+# while the summary still claimed every mutation failed for its intended
+# reason. A mutation that drifts has stopped testing what it was written for,
+# and nothing said so. Every fixture also asserts its own preconditions, so it
+# cannot quietly degrade into a weaker test than its label claims.
 
 set -euo pipefail
 
@@ -232,6 +241,46 @@ if o == 0 or lines[o - 1].strip() != "" or c + 1 >= len(lines) or lines[c + 1].s
 if "~~" in raw[raw.index(OPEN_MARK) : raw.index(CLOSE_MARK)]:
     print("the canonical block contains a strikethrough delimiter")
     sys.exit(1)
+
+# 1d. No raw HTML element may open before the canonical block.
+#
+#     The blank-line invariant in 1c was asserted from the GFM spec, not from a
+#     render, and seat 1 falsified it in round 4 with an actual cmark-gfm +
+#     HTML5 parse: a raw `<s>` opened before the blank line captured the block
+#     anyway, rendering the complete rule under html>body>s>p>strong while the
+#     checker exited 0. Raw HTML is not an inline span and does cross blank
+#     lines, so 1c is necessary but not sufficient.
+#
+#     Enumerating `<s>` would repeat the mistake — `<del>`, `<code>`, `<div
+#     hidden>`, `<script>` and `<template>` all retract or hide the rule the
+#     same way. The bounded invariant is that the shipped document opens NO
+#     HTML element before the rule. That was already true when this was
+#     written (the only tag-shaped strings in that region are prose
+#     placeholders like <branch> and <sha>, which are not HTML elements), so
+#     this constrains nothing that exists — it only stops the class from being
+#     introduced.
+HTML_ELEMENTS = {
+    "a", "abbr", "b", "big", "blockquote", "body", "br", "code", "del", "details",
+    "div", "em", "font", "head", "html", "i", "iframe", "ins", "kbd", "mark",
+    "nobr", "noscript", "object", "p", "pre", "q", "s", "samp", "script", "small",
+    "span", "strike", "strong", "sub", "summary", "sup", "template", "tt", "u",
+    "var", "table", "tbody", "td", "th", "thead", "tr", "ul", "ol", "li", "style",
+}
+region = raw[: raw.index(CLOSE_MARK)]
+found = sorted(
+    {
+        t.lower()
+        for t in re.findall(r"</?([A-Za-z][A-Za-z0-9]*)(?:\s[^>]*)?/?>", region)
+        if t.lower() in HTML_ELEMENTS
+    }
+)
+if found:
+    print(
+        "raw HTML element(s) %s open before the canonical block; a raw element "
+        "crosses blank lines and can render the rule struck through, hidden or "
+        "as a code sample while its text is byte-identical" % (", ".join(found),)
+    )
+    sys.exit(1)
 lo, hi = blocks[0]
 block = text[lo:hi]
 
@@ -324,15 +373,31 @@ mutations_caught=0
 # where a mis-spliced fixture failed on mangled text rather than on the
 # violation it was named for. Printing the reason makes that visible instead of
 # silent.
+# Rejects a mutation AND asserts WHICH check rejected it.
+#
+# Reporting the reason was not enough. Seat 1 found in round 4 that Form C
+# bypass #1 had silently started failing on the marker-isolation check rather
+# than the canonical-equality check it was written for — so the summary line
+# claiming "each for its intended reason" was false while every mutation was
+# still being caught. A mutation that drifts onto a different check has stopped
+# testing what it was written to test, and nothing said so.
+#
+# $3 is a substring that MUST appear in the checker's rejection message.
 run_mutation() {
-    local label="$1" file="$2" reason
+    local label="$1" file="$2" expect="$3" reason
     mutations_run=$((mutations_run + 1))
     if reason=$(python3 "$CHECKER" "$file" 2>&1); then
         fail "self-falsification: guard still PASSES under mutation [$label] — the guard is vacuous"
     fi
+    case "$reason" in
+        *"$expect"*) ;;
+        *)
+            fail "self-falsification: mutation [$label] was rejected, but by the WRONG check. Expected a reason containing '$expect', got: $reason"
+            ;;
+    esac
     mutations_caught=$((mutations_caught + 1))
     echo "  caught: $label"
-    echo "    reason: ${reason:0:160}"
+    echo "    reason: ${reason:0:150}"
 }
 
 # The mutator edits ONLY the text between the canonical markers, so each
@@ -377,7 +442,7 @@ while IFS='|' read -r find replace; do
     m="$WORK/inblock-$i.md"
     python3 "$MUTATOR" "$DOC" "$m" "$find" "$replace" \
         || fail "mutation harness broken: could not apply in-block mutation #$i ($find)"
-    run_mutation "in-block reword #$i ($find -> ${replace:-<deleted>})" "$m"
+    run_mutation "in-block reword #$i ($find -> ${replace:-<deleted>})" "$m" "not EXACTLY the rule"
 done <<'MUTS'
 the FIRST verification-evidence|the SECOND verification-evidence
 authorizes exactly one additional pass|authorizes a pass
@@ -468,7 +533,7 @@ for nm in "$NEARMISS_1" "$NEARMISS_2" "$NEARMISS_3" "$NEARMISS_4" "$NEARMISS_5";
     m="$WORK/unmarked-$i.md"
     python3 "$INJECTOR" "$DOC" "$m" "$nm" \
         || fail "mutation harness broken: could not inject near-miss #$i"
-    run_mutation "unmarked near-miss #$i, injected adjacent to a marked sentence" "$m"
+    run_mutation "unmarked near-miss #$i, injected adjacent to a marked sentence" "$m" "do not carry"
 done
 
 # --- Form C: the four bypasses seat 1 demonstrated against the first version
@@ -476,7 +541,7 @@ done
 # permanent regression mutations, because a bypass that is fixed without a test
 # is a bypass that comes back.
 i=0
-while IFS='|' read -r anchor injected; do
+while IFS='|' read -r anchor injected expect; do
     [ -n "$anchor" ] || continue
     i=$((i + 1))
     m="$WORK/bypass-$i.md"
@@ -497,18 +562,18 @@ PYEOF
     then
         fail "mutation harness broken: could not build bypass fixture #$i"
     fi
-    run_mutation "seat-1 bypass #$i" "$m"
+    run_mutation "seat-1 bypass #$i" "$m" "$expect"
 done <<'BYPASSES'
-<!-- /CANONICAL:evidence-exception-bound -->|But every evidence-only finding authorizes another pass. <!-- /CANONICAL:evidence-exception-bound -->
-Otherwise STOP.|Otherwise CONTINUE.
-and no more [bound: CANONICAL:evidence-exception-bound].|and no more [bound: CANONICAL:evidence-exception-bound]; nevertheless every later evidence-only finding authorizes another pass.
-Below-bar and out-of-scope findings are filed|Invalid verification evidence always authorizes another pass. Below-bar and out-of-scope findings are filed
+Otherwise STOP.|Otherwise STOP. But every evidence-only finding authorizes another pass.|not EXACTLY the rule
+Otherwise STOP.|Otherwise CONTINUE.|not EXACTLY the rule
+and no more [bound: CANONICAL:evidence-exception-bound].|and no more [bound: CANONICAL:evidence-exception-bound]; nevertheless every later evidence-only finding authorizes another pass.|do not carry
+Below-bar and out-of-scope findings are filed|Invalid verification evidence always authorizes another pass. Below-bar and out-of-scope findings are filed|do not carry
 BYPASSES
 
 # --- Form D: round-2 findings. A stray unmatched marker (either end), and the
 # canonical block swallowed by an unclosed code fence.
 i=0
-while IFS='|' read -r anchor injected; do
+while IFS='|' read -r anchor injected expect; do
     [ -n "$anchor" ] || continue
     i=$((i + 1))
     m="$WORK/r2-$i.md"
@@ -529,10 +594,10 @@ PYEOF
     then
         fail "mutation harness broken: could not build round-2 fixture #$i"
     fi
-    run_mutation "seat-1 round-2 finding #$i" "$m"
+    run_mutation "seat-1 round-2 finding #$i" "$m" "$expect"
 done <<'R2FIXTURES'
-Below-bar and out-of-scope findings are filed|<!-- /CANONICAL:evidence-exception-bound --> Below-bar and out-of-scope findings are filed
-Below-bar and out-of-scope findings are filed|<!-- CANONICAL:evidence-exception-bound --> Below-bar and out-of-scope findings are filed
+Below-bar and out-of-scope findings are filed|<!-- /CANONICAL:evidence-exception-bound --> Below-bar and out-of-scope findings are filed|must appear exactly once
+Below-bar and out-of-scope findings are filed|<!-- CANONICAL:evidence-exception-bound --> Below-bar and out-of-scope findings are filed|must appear exactly once
 R2FIXTURES
 
 # The unclosed-code-fence fixture needs an embedded newline, which the '|'
@@ -562,7 +627,7 @@ PYEOF
 then
     fail "mutation harness broken: could not build the unclosed-fence fixture"
 fi
-run_mutation "seat-1 round-2: canonical block inside an unclosed code fence" "$m"
+run_mutation "seat-1 round-2: canonical block inside an unclosed code fence" "$m" "unclosed code fence"
 
 # Seat 1's round-3 reproduction, verified by it with a cmark-gfm render: inline
 # the CLOSING marker into the following prose and open a strikethrough span
@@ -601,9 +666,50 @@ PYEOF
 then
     fail "mutation harness broken: could not build the strikethrough fixture"
 fi
-run_mutation "seat-1 round-3: rule captured by a strikethrough span (renders as <del>)" "$m"
+run_mutation "seat-1 round-3: rule captured by a strikethrough span (renders as <del>)" "$m" "alone on its own line"
 
-[ "$mutations_run" -eq 18 ] || fail "expected 16 mutations, ran $mutations_run"
-pass "self-falsification: all $mutations_caught/18 mutations make the guard fail"
+# Seat 1's round-4 reproduction, verified with cmark-gfm --unsafe plus an HTML5
+# parse: a raw <s> opened before the blank line captured the block anyway,
+# rendering the rule under html>body>s>p>strong while the checker exited 0 with
+# markers isolated, blank lines intact and the body unchanged. Raw HTML is not
+# an inline span and does cross blank lines, which falsified the blank-line
+# invariant as a sufficient condition.
+m="$WORK/r4-rawhtml.md"
+if ! python3 - "$DOC" "$m" <<'PYEOF'
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+OPEN_MARK = "<!-- CANONICAL:evidence-exception-bound -->"
+CLOSE_MARK = "<!-- /CANONICAL:evidence-exception-bound -->"
+
+text = open(src, encoding="utf-8").read()
+out = text.replace("\n\n" + OPEN_MARK, "<s>\n\n" + OPEN_MARK, 1)
+out = out.replace(CLOSE_MARK + "\n\n", CLOSE_MARK + "\n\n</s>", 1)
+if out == text:
+    sys.stderr.write("raw-html fixture: replacement was a no-op\n")
+    sys.exit(2)
+
+# The attack only means anything while the block still looks pristine to the
+# structural checks — markers isolated, blank lines intact, body unchanged.
+lines = out.splitlines()
+o = next(i for i, ln in enumerate(lines) if ln.strip() == OPEN_MARK)
+c = next(i for i, ln in enumerate(lines) if ln.strip() == CLOSE_MARK)
+if lines[o - 1].strip() != "" or lines[c + 1].strip() != "":
+    sys.stderr.write("raw-html fixture: blank-line separation broken, fixture tests the wrong thing\n")
+    sys.exit(2)
+if " ".join(text[text.index(OPEN_MARK) : text.index(CLOSE_MARK)].split()) != " ".join(
+    out[out.index(OPEN_MARK) : out.index(CLOSE_MARK)].split()
+):
+    sys.stderr.write("raw-html fixture: body changed, fixture tests the wrong thing\n")
+    sys.exit(2)
+open(dst, "w", encoding="utf-8").write(out)
+PYEOF
+then
+    fail "mutation harness broken: could not build the raw-HTML fixture"
+fi
+run_mutation "seat-1 round-4: rule captured by a raw <s> element (renders under html>body>s)" "$m" "raw HTML element"
+
+[ "$mutations_run" -eq 19 ] || fail "expected 19 mutations, ran $mutations_run"
+pass "self-falsification: all $mutations_caught/19 mutations make the guard fail"
 
 echo "All evidence-exception-bound checks passed."
