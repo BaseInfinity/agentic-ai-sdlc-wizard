@@ -3877,6 +3877,7 @@ convergence from the inside.
 
 **SCOPE RULE.** One review and one verify per frozen scope — and verify
 reads only the diff since the last verdict.
+
 <!-- CANONICAL:evidence-exception-bound -->
 **After those two passes, continue ONLY when the
 immediately preceding COMPLETED pass recorded either (a) an open P0/P1 showing a

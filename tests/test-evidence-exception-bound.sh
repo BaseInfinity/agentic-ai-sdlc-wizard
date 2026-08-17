@@ -60,7 +60,7 @@
 # doc would reference a path that does not exist there. CLAUDE_CODE_SDLC_WIZARD.md
 # ships; the rule lives in it.
 #
-# SELF-FALSIFICATION: at the end, 17 mutations are written to a temp tree and
+# SELF-FALSIFICATION: at the end, 18 mutations are written to a temp tree and
 # the checker is RE-RUN against each. A mutation that does not make the checker
 # fail means the guard is vacuous. The checker runs as a real subprocess against
 # a real file; it does not re-grep a string in memory, which would only prove
@@ -73,8 +73,11 @@
 #   Form C (4)  the four bypasses seat 1 demonstrated in round 1
 #   Form D (3)  the three seat 1 raised in round 2 (stray closing marker,
 #               stray opening marker, block swallowed by an unclosed fence)
+#   Form E (1)  seat 1's round-3 reproduction: the rule captured by a
+#               strikethrough span, so it renders inside <del> — retracted —
+#               while the normalised body is byte-identical
 #
-# Forms C and D are kept permanently: a bypass fixed without a test is a bypass
+# Forms C, D and E are kept permanently: a bypass fixed without a test is a bypass
 # that comes back. run_mutation prints the REJECTION REASON for each, because a
 # mutation caught for the wrong reason is not evidence the guard works — seat 1
 # found exactly that in round 1.
@@ -188,6 +191,46 @@ if fences % 2 != 0:
         "fences precede it); the rule would render as a code sample, not as text"
         % fences
     )
+    sys.exit(1)
+
+# 1c. Each marker owns its line, and the block is separated by blank lines.
+#     Seat 1 demonstrated (round 3, with a cmark-gfm render) that inlining the
+#     CLOSING marker into surrounding prose and opening a `~~` span before the
+#     block makes the whole rule render inside <del> — struck through, i.e.
+#     retracted — while the normalised body is byte-identical and the checker
+#     exits 0.
+#
+#     Chasing `~~` would be the treadmill again: the next inline construct
+#     (an unclosed `<span>`, a blockquote, an HTML comment) does the same job.
+#     The structural invariant closes the class instead. GFM inline spans
+#     cannot cross a blank line, so a block that is line-isolated and
+#     paragraph-separated cannot be captured by any inline construct opened
+#     outside it.
+lines = raw.splitlines()
+open_lines = [i for i, ln in enumerate(lines) if OPEN_MARK in ln]
+close_lines = [i for i, ln in enumerate(lines) if CLOSE_MARK in ln]
+for label, idxs, mark in (("opening", open_lines, OPEN_MARK), ("closing", close_lines, CLOSE_MARK)):
+    if len(idxs) != 1 or lines[idxs[0]].strip() != mark:
+        print(
+            "the %s canonical marker must be alone on its own line (found: %r) "
+            "— an inlined marker lets an inline span opened outside the block "
+            "capture the rule, so it renders struck through or as code while "
+            "the text is byte-identical"
+            % (label, lines[idxs[0]] if idxs else None)
+        )
+        sys.exit(1)
+
+o, c = open_lines[0], close_lines[0]
+if o == 0 or lines[o - 1].strip() != "" or c + 1 >= len(lines) or lines[c + 1].strip() != "":
+    print(
+        "the canonical block must be surrounded by blank lines — GFM inline "
+        "spans cannot cross a blank line, and that separation is what stops a "
+        "span opened outside the block from capturing the rule"
+    )
+    sys.exit(1)
+
+if "~~" in raw[raw.index(OPEN_MARK) : raw.index(CLOSE_MARK)]:
+    print("the canonical block contains a strikethrough delimiter")
     sys.exit(1)
 lo, hi = blocks[0]
 block = text[lo:hi]
@@ -521,7 +564,46 @@ then
 fi
 run_mutation "seat-1 round-2: canonical block inside an unclosed code fence" "$m"
 
-[ "$mutations_run" -eq 17 ] || fail "expected 16 mutations, ran $mutations_run"
-pass "self-falsification: all $mutations_caught/17 mutations make the guard fail"
+# Seat 1's round-3 reproduction, verified by it with a cmark-gfm render: inline
+# the CLOSING marker into the following prose and open a strikethrough span
+# before the block. The normalised body is byte-identical, so the equality
+# check passes — but the whole rule renders inside <del>, i.e. retracted.
+m="$WORK/r3-strikethrough.md"
+if ! python3 - "$DOC" "$m" <<'PYEOF'
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+OPEN_MARK = "<!-- CANONICAL:evidence-exception-bound -->"
+CLOSE_MARK = "<!-- /CANONICAL:evidence-exception-bound -->"
+
+text = open(src, encoding="utf-8").read()
+if OPEN_MARK not in text or CLOSE_MARK not in text:
+    sys.stderr.write("strikethrough fixture: markers not found\n")
+    sys.exit(2)
+
+# `~~` opened before the block and closed after it, with the closing marker
+# pulled inline so no blank line separates the span from the rule.
+out = text.replace(OPEN_MARK, "~~\n" + OPEN_MARK, 1)
+out = out.replace("\n" + CLOSE_MARK + "\n", " " + CLOSE_MARK + " ~~ ", 1)
+if out == text:
+    sys.stderr.write("strikethrough fixture: replacement was a no-op\n")
+    sys.exit(2)
+
+# The fixture is only meaningful if the canonical body still normalises
+# identically — that is the whole point of the attack.
+norm_before = " ".join(text[text.index(OPEN_MARK) : text.index(CLOSE_MARK)].split())
+norm_after = " ".join(out[out.index(OPEN_MARK) : out.index(CLOSE_MARK)].split())
+if norm_before != norm_after:
+    sys.stderr.write("strikethrough fixture: body changed, so it does not test the reported hole\n")
+    sys.exit(2)
+open(dst, "w", encoding="utf-8").write(out)
+PYEOF
+then
+    fail "mutation harness broken: could not build the strikethrough fixture"
+fi
+run_mutation "seat-1 round-3: rule captured by a strikethrough span (renders as <del>)" "$m"
+
+[ "$mutations_run" -eq 18 ] || fail "expected 16 mutations, ran $mutations_run"
+pass "self-falsification: all $mutations_caught/18 mutations make the guard fail"
 
 echo "All evidence-exception-bound checks passed."
