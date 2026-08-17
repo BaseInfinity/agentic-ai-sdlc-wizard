@@ -10,7 +10,7 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
 | Role | Model | Effort |
 |------|-------|--------|
-| **Advisor** | Fable 5 (via `advisorModel: "fable"`) — **currently server-side disabled** ("temporarily unavailable" pending an Anthropic rollout, confirmed 2026-07-24 per `code.claude.com/docs/en/advisor`). **On `advisor()` failure, immediately fall back to a Fable subagent call** (`Agent({model: "fable", effort: "high"})`) — do not wait or retry, go straight to the fallback every time. | `high` (server-side); subagent fallback explicit `high` |
+| **Advisor** | Fable 5 (via `advisorModel: "fable"`) — **observed working 2026-08-16**, twice in one session, returning full rulings. This reverses the 2026-07-24 "server-side disabled" state; re-check by calling it, not by reading this row. **On `advisor()` failure, fall back to a Fable subagent call** (`Agent({model: "fable", effort: "high"})`) — go straight to the fallback rather than retrying. *The fallback path has never been observed firing, so its behavior is unverified.* | `high` (server-side); subagent fallback explicit `high` |
 | **Driver** | Opus 5 (`claude-opus-5`, via the `opus` alias) | `high` for complex projects, `medium` for routine web/CRUD work (maintainer decision 2026-08-02). Escalate to `xhigh` for genuinely hard or long-running agentic tasks — Anthropic's own framing for that tier — but do not run it as the standing default: Anthropic's Opus 5 prompting guide advises using lower effort liberally wherever quality holds, and higher effort increases elaboration and self-directed scope. |
 | **Reviewer** | Codex (GPT-5.6 Sol) high | Still gates every task at the end — unaffected by the driver/advisor change |
 | **Escalation** | `max` only as a last resort (marginal gains, doubles cost — not the default escalation path); Opus 4.8 pinned explicitly (`claude-opus-4-8`) as a secondary check when Opus-5-driver + Opus-5-fallback-advisor would otherwise be a same-family self-check | Stuck (2 failed attempts / LOW confidence) or high-stakes |
@@ -28,7 +28,7 @@ This is **guidance, not a hard rule**. Maintainer override is always allowed.
 
 Sonnet 5 medium remains a fine default for less complex repos — see Setup B below. It's demoted from Setup A's primary slot here specifically because the maintainer's own workload is dominated by complex, agentic-heavy repos where Opus 5's extra capability is worth the cost; that's a workload-specific call, not a universal verdict that Sonnet 5 medium is inferior.
 
-**Advisor failure has a fallback, not a shrug.** `advisor()` is a server-side tool and can fail (currently: Fable is disabled as an advisor repo-wide via an Anthropic rollout, not an incident). When it errors, spawn a Fable subagent as the fallback reviewer — the same rule the `/sdlc` skill carries ("if down, spawn Fable subagent at `high`"). The advisor check is never skipped; only its transport changes.
+**Advisor failure has a fallback, not a shrug.** `advisor()` is a server-side tool and can fail. When it errors, spawn a Fable subagent as the fallback reviewer — the same rule the `/sdlc` skill carries ("if down, spawn Fable subagent at `high`"). The advisor check is never skipped; only its transport changes. **This fallback is unverified: it has never been observed firing.** Availability has moved twice in three weeks (disabled 2026-07-24, working 2026-08-16), so treat any availability sentence in this file as a dated observation rather than current state — and settle it by calling the tool.
 
 **Requires:** Claude Code v2.1.219+ (Opus 5 alias resolution), Fable 5 access for advisor/subagent fallback.
 
@@ -36,9 +36,11 @@ Sonnet 5 medium remains a fine default for less complex repos — see Setup B be
 
 **For one-off tasks, scripts, and less complex repos — not the main workflow.** Where Setup A is the default for genuine autonomous agentic work, Setup B is for lower-stakes, lower-complexity work where Sonnet 5's speed and cost outweigh Opus 5's extra capability.
 
+> **Setup B is unverified in this repo.** Every lane below rests on vendor material and general reasoning about cost and complexity, not on a measured run. Setup A is what this repo actually dogfoods, and the only lane behind which there is cycle data. Nothing here is a controlled comparison against Setup A — choose it on scope and cost, and do not read it as a measured capability claim in either direction.
+
 | Role | Model | Effort |
 |------|-------|--------|
-| **Advisor** | Fable 5 (via `advisorModel: "fable"`) — same server-side-disabled caveat as Setup A; fall back to a Fable subagent at `high` on failure | `high` (server-side); subagent fallback explicit `high` |
+| **Advisor** | Fable 5 (via `advisorModel: "fable"`) — same dated-availability caveat as Setup A; fall back to a Fable subagent at `high` on failure | `high` (server-side); subagent fallback explicit `high` |
 | **Driver** | Sonnet 5 (`claude-sonnet-5`) | `medium` default, escalate `high` → `xhigh` for tasks that turn out harder than expected |
 | **Reviewer** | Codex (GPT-5.6 Sol) high | — |
 
@@ -157,13 +159,25 @@ Fable 5 as advisor also requires Fable 5 access for your organization/plan.
 
 ## When the Advisor Is Unavailable
 
-**As of 2026-07-24, Fable-as-advisor is server-side disabled for everyone**, confirmed per `code.claude.com/docs/en/advisor`: "Claude Code doesn't offer Fable 5 as the advisor... A remotely configured rollout controls when Fable 5 returns as an advisor option." This is a deliberate Anthropic gate, not an incident — no session restart, `/clear`, or waiting fixes it. Periodically re-check the docs page for rollout status; don't assume this is permanent or assume it's still true indefinitely without re-checking.
+**Fable-as-advisor was server-side disabled on 2026-07-24 and was observed working again on 2026-08-16.** The 2026-07-24 block was a deliberate Anthropic rollout gate, documented at `code.claude.com/docs/en/advisor`: "Claude Code doesn't offer Fable 5 as the advisor... A remotely configured rollout controls when Fable 5 returns as an advisor option." On 2026-08-16 an `advisor()` call returned a full Fable 5 ruling, twice in one session.
 
-**Step 1 — skip the restart, go straight to the fallback.** Unlike a transient API incident, no session restart, `/clear`, or wait fixes a rollout-gated block — spawn a Fable subagent as the fallback reviewer immediately, explicit `effort: "high"` (per this repo's own `/sdlc` skill: "if down, spawn Fable subagent at `high`"). Batch your plan or open questions into one subagent consult at each point where you'd have called `advisor()`. Runs interactively on your Max subscription like any other agent.
+**Both of those are dated observations, and neither is current state.** Availability moved twice in three weeks. Do not decide whether the advisor works by reading this file, and do not add a guard that greps it — **call the tool.** One failed call is the whole diagnostic.
 
-**Step 2 — keep driving with your lane's model.** `/model opus` for Setup A, `/model sonnet` for Setup B. The subagent replaces the advisor's transport; the Codex high PR gate remains the separate final backstop, not a substitute for the advisor check.
+**Exhausted Fable quota is not the same condition as a disabled advisor.** claude.ai `/settings/usage` shows `All models` and `Fable` as separate meters. **Observed 2026-08-16:** with the `Fable` meter reading 100% used and `/model fable` refused, an `advisor()` call still returned a Fable 5 ruling.
 
-**Step 3 (last resort, scripted/CI only):**
+**What that does and does not establish.** It establishes that a capped `Fable` meter did not, on that occasion, block the advisor — so **try `advisor()` before concluding Fable is out of reach.** It does **not** establish which meter the call billed: no meter delta was measured before and after, and a plausible competing explanation — a quota window rolling over between the refusal and the call — was not ruled out. Nor is the separate-meter display itself evidence of separate pools; two meters can report against one limit. Treat "advisor survives a capped Fable meter" as one dated observation, not as a billing mechanism.
+
+Either way it is not free. Advisor usage counts toward your plan's limits, it forwards the entire conversation on every call, and its read is not cached between calls. Spend it on design decisions, not on grading work already done.
+
+**Step 1 — call `advisor()`. The call is the diagnostic.** Do not decide availability from this file, from the docs page, or from a Fable quota meter reading 100%. This rung moved to the front on 2026-08-16, when a capped `Fable` meter was observed not to block the advisor.
+
+**A single error does not mean "Fable is down."** Anthropic documents several unrelated causes for an advisor failure: an unsupported provider, an invalid main-model/advisor pairing, an organization allowlist, feature-flag fetching, the advisor being disabled in the environment, and plain account access. Read the error before concluding anything, and do not record "server-side disabled" unless the error says so.
+
+**Step 2 — on a real failure, go straight to the subagent.** Spawn a Fable subagent as the fallback reviewer, explicit `effort: "high"` (per this repo's own `/sdlc` skill: "if down, spawn Fable subagent at `high`"). No restart, no retry, no wait — a rollout gate is not transient, and a retry loop against one wastes a cycle. Batch your open questions into one consult at each point where you'd have called `advisor()`. Runs interactively on your Max subscription like any other agent. **Unverified:** this path has never been observed firing. During the 2026-07-24 outage the driver used it, but no receipt or transcript of a fallback-triggered leg was kept, so its behavior under a real failure is described, not measured.
+
+**Step 3 — keep driving with your lane's model.** `/model opus` for Setup A, `/model sonnet` for Setup B. The subagent replaces the advisor's transport; the Codex high PR gate remains the separate final backstop, not a substitute for the advisor check.
+
+**Step 4 (last resort, scripted/CI only):**
 
 - `claude --model fable --effort high -p "$(cat <file>)"` — headless mode bills API credits, not your Max subscription.
 
@@ -217,7 +231,7 @@ Credit allocations: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. **No rollover.*
 
 ### What this means for the lanes
 
-- **Setup A — Opus 5 + Fable advisor (fallback subagent):** Opus 5 driver on Max, 1M context included at standard rates (see above). Fable 5 advisor server-side disabled currently — Fable subagent fallback also Max-bundled. GPT-5.6 Sol high reviewer, separate. Higher Max quota consumption than Setup B — though the gap narrowed when Setup A's driver default moved to `high`/`medium` on 2026-08-02.
+- **Setup A — Opus 5 + Fable advisor (fallback subagent):** Opus 5 driver on Max, 1M context included at standard rates (see above). Fable 5 advisor observed working 2026-08-16 — Fable subagent fallback also Max-bundled. claude.ai `/settings/usage` shows `All models` and `Fable` as separate meters, and on 2026-08-16 the advisor answered with the `Fable` meter at 100%; **which meter that call billed was not measured**, so do not budget against it. Advisor is the priciest call shape regardless — full conversation every call, no cache between calls. GPT-5.6 Sol high reviewer, separate. Higher Max quota consumption than Setup B — though the gap narrowed when Setup A's driver default moved to `high`/`medium` on 2026-08-02.
 - **Setup B — Sonnet 5 Simple/One-Off:** Sonnet 5's native 1M context — interactive session, Max-bundled, no `[1m]` suffix needed. Fable 5 advisor (fallback subagent) — also Max-bundled. GPT-5.6 Sol high reviewer on ChatGPT subscription. Generally lower Max quota consumption than Setup A at the `medium` default (savings shrink at higher effort).
 - **Setup C — OpusPlan Hybrid:** **fully Max-bundled.** `opusplan` uses Opus (plan mode, now Opus 5) + Sonnet (execute mode), both at their native context windows — no credit drain.
   - **⚠️ Avoid `sonnet[1m]` as a manual pin outside Setup B/C:** if your provider or gateway doesn't resolve Sonnet 5 to its native 1M automatically, forcing a `[1m]`-suffixed pin on an older Sonnet can draw from your usage credits pool ($3/$15 per Mtok) instead of your Max subscription. The `/model` picker shows this explicitly — watch for "Draws from usage credits."
