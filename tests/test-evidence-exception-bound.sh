@@ -25,7 +25,14 @@
 #                             carry the reference token in its OWN SENTENCE.
 #                             Token presence is syntactic. Checkable.
 #   verbatim for MEANING    — the rule is stated in exactly ONE marked block
-#                             in the shipped doc, and compared byte-for-byte.
+#                             in the shipped doc, and compared VERBATIM after
+#                             whitespace normalisation. Not byte-for-byte: an
+#                             earlier header said that, and it was an
+#                             overclaim (seat 1, round 6). Line wrapping and
+#                             indentation are free to change, because the
+#                             markdown source is reflowed by ordinary edits
+#                             and a reflow does not change the rule. Every
+#                             word, and the order of every word, is fixed.
 #
 # STATED LIMIT — read this before extending the guard. A sentence that carries
 # the reference token and ALSO misstates the rule passes this check. That is
@@ -34,6 +41,13 @@
 # that takes on that ambition. The guard's job is to make every restatement
 # REACHABLE from the one authoritative statement, so a human or reviewer can
 # check it in one hop. Do not grow this file toward semantic matching.
+#
+# Read that limit together with the word REACHABLE above: this guard makes
+# every DETECTED restatement carry a pointer. It does not, and cannot, make
+# every restatement detected — MENTION is a vocabulary, so a paraphrase that
+# avoids every one of its alternatives is neither flagged nor bound. Seat 1
+# raised the gap between those two readings in round 6. The honest claim is
+# the narrow one: what this guard finds, it binds.
 #
 # SECOND STATED LIMIT — RENDER CAPTURE IS OUT OF SCOPE. This guard reads the
 # document's SOURCE TEXT. It does not render it, and it does not try to prove
@@ -81,7 +95,7 @@
 # doc would reference a path that does not exist there. CLAUDE_CODE_SDLC_WIZARD.md
 # ships; the rule lives in it.
 #
-# SELF-FALSIFICATION: at the end, 19 mutations are written to a temp tree and
+# SELF-FALSIFICATION: at the end, 20 mutations are written to a temp tree and
 # the checker is RE-RUN against each. A mutation that does not make the checker
 # fail means the guard is vacuous. The checker runs as a real subprocess against
 # a real file; it does not re-grep a string in memory, which would only prove
@@ -100,15 +114,23 @@
 #   Form G (1)  seat 1's round-5 reproduction: the block swallowed by an
 #               unclosed `~~~` fence, which the fence check missed while it
 #               counted only backticks
+#   Form H (1)  seat 1's round-6 reproduction: an unclosed ```` block whose
+#               inner ``` line does not close it, which the fence check missed
+#               while it counted prefix-shaped lines instead of tracking fence
+#               state
 #
-# Forms C, D, E and G are kept permanently: a bypass fixed without a test is a
-# bypass that comes back.
+# Forms C, D, E, G and H are kept permanently: a bypass fixed without a test is
+# a bypass that comes back.
 #
-# There is also ONE must-PASS fixture, which is not a mutation and is not
-# counted above: a harmless closed `<kbd>Ctrl</kbd>` before the block. A
-# deleted check leaves no trace, so its overbreadth can silently return; this
-# fixture fails the suite if it does. Seat 1's round-5 P2 was exactly that
-# false positive.
+# There are also TWO must-PASS fixtures, which are not mutations and are not
+# counted above. Both guard against a check being WRONG IN THE OTHER
+# DIRECTION, which no must-fail mutation can detect:
+#
+#   1. a harmless closed `<kbd>Ctrl</kbd>` before the block must be ACCEPTED.
+#      A deleted check leaves no trace, so the round-5 overbreadth could
+#      silently return; this fails the suite if it does.
+#   2. a properly CLOSED ```` block containing a literal ``` line must be
+#      ACCEPTED. The round-6 prefix counter rejected that valid document.
 #
 # Each mutation declares WHICH check must reject it, and run_mutation FAILS if a
 # different check does. Reporting the reason was not enough: seat 1 found in
@@ -217,25 +239,48 @@ if len(blocks) != 1:
 #     everything after it — including the rule — into a code sample that
 #     renders as an inert example rather than as governing text.
 #
-#     CommonMark defines exactly two fence characters, backtick and tilde, so
-#     both are checked and the set is CLOSED BY SPEC. This is the last
-#     extension this check will ever need; there is no third character to
-#     chase later.
+#     This TRACKS FENCE STATE per CommonMark; it does not count
+#     prefix-shaped lines. Seat 1 demonstrated (round 6) that counting was
+#     wrong in both directions: a valid CLOSED ```` block containing a literal
+#     ``` line was rejected, while the same block left UNCLOSED was accepted
+#     and captured the rule. Parity of look-alike prefixes is not fence state.
 #
-#     The two are counted SEPARATELY and never summed. A ``` line inside an
-#     open ~~~ block is literal content, not a fence, and vice versa — a
-#     combined count would let one character's content corrupt the other's
-#     parity and produce a false verdict in either direction.
+#     The rules that matter here, from the spec: a closing fence must use the
+#     SAME character as the opening one and be AT LEAST as long, it carries no
+#     info string, and while a fence is open every other line — including a
+#     shorter or differently-charactered fence line — is literal content.
+#     CommonMark defines exactly two fence characters, backtick and tilde, so
+#     this is closed by spec and cannot need extending again.
 before = raw[: raw.index(OPEN_MARK)]
-for char, name in (("```", "backtick"), ("~~~", "tilde")):
-    n = len([ln for ln in before.splitlines() if ln.lstrip().startswith(char)])
-    if n % 2 != 0:
-        print(
-            "the canonical block sits inside an unclosed %s code fence (%d "
-            "line-leading %s fences precede it); the rule would render as a "
-            "code sample, not as text" % (name, n, name)
-        )
-        sys.exit(1)
+open_char = None
+open_len = 0
+for ln in before.splitlines():
+    stripped = ln.lstrip()
+    # An indent of 4+ spaces is an indented code block, not a fence.
+    if len(ln) - len(stripped) >= 4:
+        continue
+    ch = stripped[:1]
+    if ch not in ("`", "~"):
+        continue
+    n = len(stripped) - len(stripped.lstrip(ch))
+    if n < 3:
+        continue
+    info = stripped[n:].strip()
+    if open_char is None:
+        # A backtick info string may not itself contain a backtick.
+        if ch == "`" and "`" in info:
+            continue
+        open_char, open_len = ch, n
+    elif ch == open_char and n >= open_len and not info:
+        open_char, open_len = None, 0
+
+if open_char is not None:
+    print(
+        "the canonical block sits inside an unclosed %s code fence (opened with "
+        "%d %r and never closed); the rule would render as a code sample, not "
+        "as text" % ("tilde" if open_char == "~" else "backtick", open_len, open_char)
+    )
+    sys.exit(1)
 
 # 1c. Each marker owns its line, and the block is separated by blank lines.
 #     Seat 1 demonstrated (round 3, with a cmark-gfm render) that inlining the
@@ -718,8 +763,42 @@ then
 fi
 run_mutation "seat-1 round-5: canonical block inside an unclosed ~~~ fence" "$m" "unclosed tilde code fence"
 
-[ "$mutations_run" -eq 19 ] || fail "expected 19 mutations, ran $mutations_run"
-pass "self-falsification: all $mutations_caught/19 mutations make the guard fail"
+# Form H. Seat 1's round-6 reproduction, the must-FAIL half: a four-backtick
+# block that is never closed, containing a literal ``` line. The predecessor
+# check counted prefix-shaped lines, so the inner ``` "closed" the block on
+# paper and the capture went undetected. Under real fence tracking a shorter
+# fence is literal content while a longer one is open, and this is caught.
+m="$WORK/r6-fourtick-unclosed.md"
+if ! python3 - "$DOC" "$m" <<'PYEOF'
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+OPEN_MARK = "<!-- CANONICAL:evidence-exception-bound -->"
+
+text = open(src, encoding="utf-8").read()
+stray = "\n\n````\nnot a closing fence:\n```\n"
+out = text.replace("\n\n" + OPEN_MARK, stray + "\n" + OPEN_MARK, 1)
+if out == text:
+    sys.stderr.write("fourtick fixture: replacement was a no-op\n")
+    sys.exit(2)
+before = out[: out.index(OPEN_MARK)]
+# The whole point: naive prefix PARITY sees an even number and is fooled.
+ticks = len([ln for ln in before.splitlines() if ln.lstrip().startswith("```")])
+if ticks % 2 != 0:
+    sys.stderr.write(
+        "fourtick fixture: prefix parity is odd (%d), so a naive counter would also "
+        "catch it and the fixture proves nothing about fence tracking\n" % ticks
+    )
+    sys.exit(2)
+open(dst, "w", encoding="utf-8").write(out)
+PYEOF
+then
+    fail "mutation harness broken: could not build the unclosed-four-backtick fixture"
+fi
+run_mutation "seat-1 round-6: unclosed \`\`\`\` block whose inner \`\`\` does not close it" "$m" "unclosed backtick code fence"
+
+[ "$mutations_run" -eq 20 ] || fail "expected 20 mutations, ran $mutations_run"
+pass "self-falsification: all $mutations_caught/20 mutations make the guard fail"
 
 # ---------------------------------------------------------------------------
 # MUST-PASS fixture (not a mutation, not counted above).
@@ -755,6 +834,40 @@ if ! reason=$(python3 "$CHECKER" "$m" 2>&1); then
     fail "false positive: a harmless closed <kbd>Ctrl</kbd> before the block made the guard REJECT. The round-5 overbreadth has returned. Reason given: $reason"
 fi
 pass "no false positive: a harmless closed HTML element before the block is accepted"
+
+# MUST-PASS fixture #2 — the other half of seat 1's round-6 P1. A four-backtick
+# block that IS properly closed, containing a literal ``` line. The predecessor
+# prefix counter rejected this valid document. Fence tracking must accept it.
+m="$WORK/mustpass-fourtick-closed.md"
+if ! python3 - "$DOC" "$m" <<'PYEOF'
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+OPEN_MARK = "<!-- CANONICAL:evidence-exception-bound -->"
+
+text = open(src, encoding="utf-8").read()
+block = "\n\n````\nnot a closing fence:\n```\n````\n"
+out = text.replace("\n\n" + OPEN_MARK, block + "\n" + OPEN_MARK, 1)
+if out == text:
+    sys.stderr.write("closed-fourtick fixture: replacement was a no-op\n")
+    sys.exit(2)
+before = out[: out.index(OPEN_MARK)]
+ticks = len([ln for ln in before.splitlines() if ln.lstrip().startswith("```")])
+if ticks % 2 == 0:
+    sys.stderr.write(
+        "closed-fourtick fixture: prefix parity is even (%d), so a naive counter would "
+        "also accept it and the fixture proves nothing\n" % ticks
+    )
+    sys.exit(2)
+open(dst, "w", encoding="utf-8").write(out)
+PYEOF
+then
+    fail "mutation harness broken: could not build the closed-four-backtick fixture"
+fi
+if ! reason=$(python3 "$CHECKER" "$m" 2>&1); then
+    fail "false positive: a properly CLOSED \`\`\`\` block containing a literal \`\`\` line made the guard REJECT. The check is counting prefixes again instead of tracking fence state. Reason given: $reason"
+fi
+pass "no false positive: a closed \`\`\`\` block containing a literal \`\`\` line is accepted"
 
 
 echo "All evidence-exception-bound checks passed."
