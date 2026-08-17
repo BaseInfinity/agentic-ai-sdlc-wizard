@@ -35,6 +35,17 @@
 # REACHABLE from the one authoritative statement, so a human or reviewer can
 # check it in one hop. Do not grow this file toward semantic matching.
 #
+# NAMED NON-GOAL, so it is not rediscovered as a defect. A reversal welded to
+# the token by an em dash, a parenthetical, a colon, a list-item line break or
+# an adjacent table cell passes. Seat 1 raised this as a P1 repair in round 2;
+# it was DISPUTED and the dispute was measured, not argued. Widening the clause
+# split to cover those forms splits the reference token at its own colon
+# ("[bound:" | "CANONICAL...]") and produces eight false violations in the
+# current document. No punctuation class is an attachment boundary in English,
+# so each one added is a step on the treadmill that killed the predecessor. The
+# token still does its job in these cases: it carries the pointer a reader can
+# follow to the authoritative block.
+#
 # WHY THE CANONICAL TEXT IS THE DOC'S WORDING, not PR #615's snippet: the
 # snippet said a later invalidation is "handed off for human review". The
 # certified rule says a later evidence-only finding "is filed" — and this
@@ -49,12 +60,24 @@
 # doc would reference a path that does not exist there. CLAUDE_CODE_SDLC_WIZARD.md
 # ships; the rule lives in it.
 #
-# SELF-FALSIFICATION: at the end, ten mutations — the five near-misses that
-# defeated the predecessor, each applied BOTH inside the canonical block and as
-# new unmarked prose — are written to a temp tree and the checker is RE-RUN
-# against each. A mutation that does not make the checker fail means the guard
-# is vacuous. The checker runs as a real subprocess against a real file; it does
-# not re-grep a string in memory, which would only prove that grep works.
+# SELF-FALSIFICATION: at the end, 17 mutations are written to a temp tree and
+# the checker is RE-RUN against each. A mutation that does not make the checker
+# fail means the guard is vacuous. The checker runs as a real subprocess against
+# a real file; it does not re-grep a string in memory, which would only prove
+# that grep works. The set is:
+#
+#   Form A (5)  the five predecessor near-misses, reworded INSIDE the block
+#   Form B (5)  the same five injected as unmarked prose, each placed
+#               immediately after a clause that carries both a mention and the
+#               token — the shape the predecessor's proximity window accepted
+#   Form C (4)  the four bypasses seat 1 demonstrated in round 1
+#   Form D (3)  the three seat 1 raised in round 2 (stray closing marker,
+#               stray opening marker, block swallowed by an unclosed fence)
+#
+# Forms C and D are kept permanently: a bypass fixed without a test is a bypass
+# that comes back. run_mutation prints the REJECTION REASON for each, because a
+# mutation caught for the wrong reason is not evidence the guard works — seat 1
+# found exactly that in round 1.
 
 set -euo pipefail
 
@@ -106,11 +129,12 @@ CANONICAL_RULE = (
 #
 # STATED LIMIT ON DETECTION: this is a vocabulary, and a vocabulary can always
 # be evaded by a paraphrase that shares no listed token. That is a real hole
-# and it is not closable by adding alternatives forever. It is bounded, though,
-# in a way the predecessor's MEANING regex was not: evading detection requires
-# discussing the rule without using its words, whereas the predecessor could be
-# evaded while quoting it. Extend this pattern when a real evasion is observed;
-# do not speculatively grow it.
+# and it is not closable by adding alternatives forever — "Stale evidence buys
+# another pass" uses the rule's own vocabulary and matches nothing listed here.
+# It is bounded, though, in a way the predecessor's MEANING regex was not:
+# evading detection requires avoiding the listed token patterns, whereas the
+# predecessor could be evaded while quoting the rule verbatim. Extend this
+# pattern when a real evasion is observed; do not speculatively grow it.
 MENTION = re.compile(
     r"(invalidat\w*\s+(its\s+)?(verification[- ])?evidence"
     r"|(verification[- ])?evidence[- ]invalidation"
@@ -120,10 +144,22 @@ MENTION = re.compile(
 )
 
 path = sys.argv[1]
-text = " ".join(open(path, encoding="utf-8").read().split())
+raw = open(path, encoding="utf-8").read()
+text = " ".join(raw.split())
 problems = []
 
-# 1. The canonical block exists exactly once.
+# 1. The canonical block exists exactly once — and so does each marker.
+#    Counting matched PAIRS is not enough: seat 1 appended a bare closing
+#    marker at EOF and the pair count stayed 1, so the check passed while the
+#    document contained a stray marker that a later edit could pair with.
+if raw.count(OPEN_MARK) != 1 or raw.count(CLOSE_MARK) != 1:
+    print(
+        "each canonical marker must appear exactly once: found %d opening and "
+        "%d closing (a stray unmatched marker can be paired by a later edit)"
+        % (raw.count(OPEN_MARK), raw.count(CLOSE_MARK))
+    )
+    sys.exit(1)
+
 blocks = [
     (m.start(), m.end())
     for m in re.finditer(
@@ -134,6 +170,23 @@ if len(blocks) != 1:
     print(
         "the canonical block must appear exactly once, found %d "
         "(markers: %s ... %s)" % (len(blocks), OPEN_MARK, CLOSE_MARK)
+    )
+    sys.exit(1)
+
+# 1b. The block must not be swallowed by an unclosed code fence. This is an
+#     accident, not an attack: one stray ``` earlier in the document turns
+#     everything after it — including the rule — into a code sample that
+#     renders as an inert example rather than as governing text. Parity of
+#     line-leading fences before the marker is the whole check; this does NOT
+#     attempt general markdown-rendering semantics, and must not grow toward
+#     them.
+before = raw[: raw.index(OPEN_MARK)]
+fences = len([ln for ln in before.splitlines() if ln.lstrip().startswith("```")])
+if fences % 2 != 0:
+    print(
+        "the canonical block sits inside an unclosed code fence (%d line-leading "
+        "fences precede it); the rule would render as a code sample, not as text"
+        % fences
     )
     sys.exit(1)
 lo, hi = blocks[0]
@@ -409,7 +462,66 @@ and no more [bound: CANONICAL:evidence-exception-bound].|and no more [bound: CAN
 Below-bar and out-of-scope findings are filed|Invalid verification evidence always authorizes another pass. Below-bar and out-of-scope findings are filed
 BYPASSES
 
-[ "$mutations_run" -eq 14 ] || fail "expected 14 mutations, ran $mutations_run"
-pass "self-falsification: all $mutations_caught/14 mutations make the guard fail"
+# --- Form D: round-2 findings. A stray unmatched marker (either end), and the
+# canonical block swallowed by an unclosed code fence.
+i=0
+while IFS='|' read -r anchor injected; do
+    [ -n "$anchor" ] || continue
+    i=$((i + 1))
+    m="$WORK/r2-$i.md"
+    if ! python3 - "$DOC" "$m" "$anchor" "$injected" <<'PYEOF'
+import sys
+
+src, dst, anchor, injected = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+text = open(src, encoding="utf-8").read()
+if anchor not in text:
+    sys.stderr.write("r2 fixture: anchor %r not found\n" % anchor)
+    sys.exit(2)
+out = text.replace(anchor, injected, 1)
+if out == text:
+    sys.stderr.write("r2 fixture: replacement was a no-op\n")
+    sys.exit(2)
+open(dst, "w", encoding="utf-8").write(out)
+PYEOF
+    then
+        fail "mutation harness broken: could not build round-2 fixture #$i"
+    fi
+    run_mutation "seat-1 round-2 finding #$i" "$m"
+done <<'R2FIXTURES'
+Below-bar and out-of-scope findings are filed|<!-- /CANONICAL:evidence-exception-bound --> Below-bar and out-of-scope findings are filed
+Below-bar and out-of-scope findings are filed|<!-- CANONICAL:evidence-exception-bound --> Below-bar and out-of-scope findings are filed
+R2FIXTURES
+
+# The unclosed-code-fence fixture needs an embedded newline, which the '|'
+# table above cannot carry, so it is built on its own.
+m="$WORK/r2-fence.md"
+if ! python3 - "$DOC" "$m" <<'PYEOF'
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+ANCHOR = "**SCOPE RULE.** One review and one verify"
+text = open(src, encoding="utf-8").read()
+if ANCHOR not in text:
+    sys.stderr.write("fence fixture: anchor not found\n")
+    sys.exit(2)
+# One stray opening fence before the rule, closed by nothing.
+out = text.replace(ANCHOR, "```\n" + ANCHOR, 1)
+if out == text:
+    sys.stderr.write("fence fixture: replacement was a no-op\n")
+    sys.exit(2)
+before = out[: out.index("<!-- CANONICAL:evidence-exception-bound -->")]
+fences = len([ln for ln in before.splitlines() if ln.lstrip().startswith("```")])
+if fences % 2 == 0:
+    sys.stderr.write("fence fixture: parity is still even (%d), fixture is inert\n" % fences)
+    sys.exit(2)
+open(dst, "w", encoding="utf-8").write(out)
+PYEOF
+then
+    fail "mutation harness broken: could not build the unclosed-fence fixture"
+fi
+run_mutation "seat-1 round-2: canonical block inside an unclosed code fence" "$m"
+
+[ "$mutations_run" -eq 17 ] || fail "expected 16 mutations, ran $mutations_run"
+pass "self-falsification: all $mutations_caught/17 mutations make the guard fail"
 
 echo "All evidence-exception-bound checks passed."
