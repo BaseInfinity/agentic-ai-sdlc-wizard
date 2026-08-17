@@ -1,4 +1,4 @@
-<!-- SDLC Harness Version: 1.98.0 -->
+<!-- SDLC Harness Version: 1.99.2 -->
 <!-- Setup Date: 2026-01-24 -->
 <!-- Completed Steps: step-0.1, step-0.2, step-1, step-2, step-3, step-4, step-5, step-6, step-7, step-8, step-9 -->
 <!-- Claude Code Baseline: v2.1.220 -->
@@ -10,7 +10,7 @@
 
 | Property | Value |
 |----------|-------|
-| Wizard Version | 1.98.0 |
+| Wizard Version | 1.99.2 |
 | Last Updated | 2026-07-04 |
 | Claude Code Minimum | v2.1.219+ (required for `opus` alias to resolve to Opus 5, the current default); v2.1.154+ for the older `opus[1m]` alias resolution; v2.1.105+ for `PreCompact` hook |
 | Claude Code Recommended | v2.1.220+ — **v2.1.214 changed single-segment `dir/**` hook `if:` conditions to match only `<cwd>/dir`; any-depth now needs `**/dir/**`. This silently disabled the shipped TDD hook for every consumer whose source is not at repo-root `src/` (fixed in v1.91.0).** Also in this range: exit-code-2 hooks now block even when their stdout JSON fails schema validation (v2.1.214 — we were never exposed, our exit-2 hooks write to stderr); plugin skills with a `name` frontmatter field keep their plugin prefix in slash-command autocomplete (v2.1.216, affects `sdlc-wizard-cowork:sdlc`); transcripts record reasoning effort per assistant message (v2.1.212); subagent nesting defaults changed twice (disabled v2.1.217, re-enabled at depth 3 in v2.1.219). Earlier baseline rationale: `SessionStart`/`Setup`/`SubagentStart` hooks no longer hide stderr on exit 2 (v2.1.199), hook events no longer dropped during `SessionStart` in headless sessions (v2.1.204), duplicate skill-instruction context bloat fixed (v2.1.202). |
@@ -46,7 +46,7 @@ This repository uses the SDLC Harness to enforce:
 |------|---------|---------|
 | `sdlc-prompt-check.sh` | Every prompt | SDLC baseline reminder, claude-setup-wizard redirect when SDLC.md/TESTING.md missing |
 | `tdd-pretool-check.sh` | Before Write/Edit/MultiEdit | Blocks (exit 2) implementation writes to `src/**` unless a test file was touched earlier this session. This repo's own gate is scoped to `hooks/`, `cli/`, `.github/workflows/` via `SDLC_TDD_SRC_PATTERN` (no `src/` dir here) |
-| `codex-gate-check.sh` | Before `git commit` (Bash) | Blocks (exit 2) commits without a REVIEWED/CERTIFIED `.reviews/handoff.json`, or with a stale certification — stale meaning either a `commit_sha` mismatch **or** (#540) a CERTIFIED handoff that declares no `candidate_tree`, or whose `candidate_tree` does not match the staged index tree. The SHA check alone was insufficient: the committed SHA is never the reviewed SHA, so certification binds to content. An in-flight `PENDING_RECHECK` round commits on the branch it declares in `branch` — missing field, detached HEAD, branch mismatch, a literal `main`/`master`, or a relocation flag all still block (#533) |
+| `codex-gate-check.sh` | Before `git commit` (Bash) | Blocks (exit 2) commits without a REVIEWED/CERTIFIED `.reviews/handoff.json`, or with a stale certification — stale meaning either a `commit_sha` mismatch **or** (#540) a CERTIFIED handoff that declares no `candidate_tree`, or whose `candidate_tree` does not match the staged index tree. The SHA check alone was insufficient: the committed SHA is not guaranteed to be the reviewed SHA, so certification binds to content. An in-flight `PENDING_RECHECK` round commits on the branch it declares in `branch` — missing field, detached HEAD, branch mismatch, a literal `main`/`master`, or a relocation flag all still block (#533) |
 | `instructions-loaded-check.sh` | Session start | Wizard-version + CC-version staleness nudges, cross-model-review staleness check, autocompact compound-misconfig check, dual-channel-install check |
 | `model-effort-check.sh` | Session start | Nudges upgrade when effort/model is behind recommended |
 | `precompact-seam-check.sh` | Before manual `/compact` | Blocks compact mid-rebase/merge/cherry-pick (requires CC v2.1.105+) |

@@ -14,23 +14,27 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > ### Release sequence
 >
-> `v1.99.0 — PR-B: the gate` → `v1.99.1 — review-leg supervision` → `v1.99.2 — the consumer-truth prose batch` → `v2.0.0`. Milestone membership on GitHub is authoritative; this line fixes only the order they ship in. *(Corrected 2026-08-16: this said v1.99.1 was the prose batch. A supervision milestone was inserted ahead of it and the prose batch moved to v1.99.2.)*
+> `v1.99.2 — the consumer-truth prose batch` **(shipped 2026-08-17, milestone closed)** → `v1.99.3 — review-leg supervision` → `v2.0.0`. Milestone membership on GitHub is authoritative; this line fixes only the order they ship in. *(Corrected 2026-08-17: this line named `v1.99.0 — PR-B: the gate` and `v1.99.1 — review-leg supervision`, and **neither title exists on GitHub any more.** v1.99.1 was renumbered to v1.99.3 with contents untouched. v1.99.0 was retired without a number, because half its issues shipped in v1.98.0 and half in v1.99.2 — it never described a release. Its one unshipped issue, #547, stays in the retitled milestone. Earlier correction, 2026-08-16: this said v1.99.1 was the prose batch.)*
 >
 > **v2.0.0's terminal gate is #545, not issue closure.** The major release is authorized when the maintainer has personally consumed the harness in another repo and it worked. Every other issue closing is necessary and not sufficient.
 >
-> ### Last save point — 2026-08-17, ~00:40
+> ### Last save point — 2026-08-17, release cut
 >
-> Written so a cold session resumes without reading a transcript. Shipped to `main` — issue numbers only, because the tracker owns PR state (#482): **milestone v1.99.2** is complete (**#579**, **#544**, **#499**), batched into one PR as ruled.
+> Written so a cold session resumes without reading a transcript. Issue numbers only, because the tracker owns PR state (#482): **milestone v1.99.2** is complete (**#579**, **#544**, **#499**) and closed on GitHub.
+>
+> **This is the release cut for v1.99.2** — the version bump, the CHANGELOG entry, and the milestone restructure below. **Merging does not publish.** `release.yml` fires on a tag push, so `git tag v1.99.2 && git push origin v1.99.2` is a separate, deliberate step that has to happen afterwards or consumers stay on 1.98.0. Verify with `npm view agentic-sdlc-wizard version`, not by looking at `main`.
+>
+> **A directive is not a verdict — adopted 2026-08-17, and it has a live counter-example.** Never post a `CROSS-MODEL-CLEARANCE` payload under a reviewer's name without a fresh verdict from that reviewer on that exact tree. A recorded ruling from an earlier consult is not one. This was violated on the #662 clearance, in good faith, with the limitation disclosed in prose the gate does not read — and the gate counted it anyway, because it matches reviewer *strings*, not identities. Recorded as the third live instance on **#657**. When a seat cannot produce a fresh verdict, the honest evidence is one seat plus `--user-approved` naming the directive: weaker on paper, and true.
 >
 > **Next action: the first open, unblocked issue in #593 Rung 1 — read it there, per the rule above.** As of this writing that is **#521**, which the #504 forfeit released. Do not take the release milestones as the queue: they are the shipping order, not the work order, and #580 ruled that a sequence copied into this file goes stale. It did, twice.
 >
-> *Release milestones, as context only:* v1.99.0 (**#547**), v1.99.1 (**#616**, **#634**, **#537**), then the v2.0.0 items (**#657**, **#608**, **#516**, **#554**, **#456**, **#629**), and finally **#545** — the maintainer's own gate, which cannot be done for them.
+> *Release milestones, as context only:* the retired gate milestone (**#547**, its only unshipped issue), v1.99.3 (**#616**, **#634**, **#537**), then the v2.0.0 items (**#657**, **#608**, **#516**, **#554**, **#456**, **#629**), and finally **#545** — the maintainer's own gate, which cannot be done for them.
 >
 > **#504's experiment did NOT run, and will not be retried on this milestone.** v1.99.2 was to be the measured Fable-driven cycle; Fable's weekly quota was exhausted and the maintainer chose shipping over measuring. The forfeit is recorded on #504 as a dated decision. **Do not treat this as pending work.** Nobody has still ever measured a Fable-driven cycle, and v1.99.2 was chosen precisely because it was prose-only — nothing comparable remains in the queue, so any retry is a fresh decision on fresh facts, not a resumption.
 >
 > **Three deferrals it was holding are released** (all commented 2026-08-16): **#657**'s merge hold is dissolved and it sequences normally; **#521** is unblocked; **#593** Rung 1 is unblocked.
 >
-> **Still true about release order:** work merges to `main` before v1.99.0 and v1.99.1 are tagged, and that is safe — `release.yml` triggers on a tag push, so merging publishes nothing. It is not free at tag time: those versions are cut from a `main` that already carries later content, so whoever tags them states which content is present ahead of its milestone.
+> **Still true about release order:** work merges to `main` before a version is tagged, and that is safe — `release.yml` triggers on a tag push, so merging publishes nothing. It is not free at tag time: a version is cut from whatever `main` carries at that moment, so whoever tags it states which content is present ahead of its milestone. *(2026-08-17: this is no longer hypothetical. It is exactly how `v1.99.0` stopped being a coherent release — its issues merged across two tags — and why it was retired rather than renumbered.)*
 >
 > **Read before the next review cycle.** v1.99.2 shipped on **one blind reviewer plus one context-rich corroborator**, not two independent reviews — `advisor()` forwards the driver's full transcript, so the Fable seat saw the Sol seat's findings. That is the recorded limitation on **#657** and the standing lane until it lands. Two attempts to run a genuinely blind second seat headless both failed: the child inherits `advisorModel` and calls Fable, and neither the tool allowlist nor `--disallowedTools` blocks it, because `advisor` is a **server-side** tool. The second attempt died mid-advisor-call with no verdict at all. Evidence is on #657.
 >
@@ -54,7 +58,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **`v1.98.0 — PR-A: the review contract`** — #558, #557, #573, #574, #564, #556, plus #566 riding standalone. **Prose, zero new tests.** The round-eater is test surface, not prose: #557's exhibit had *seven blocking findings, all in the test, zero in the deliverable.* A batch that ships no guards removes that surface by construction.
 >
-> **`v1.99.0 — PR-B: the gate`** — membership and dependency order are on the [milestone](https://github.com/BaseInfinity/claude-sdlc-harness/milestones) and in the [#558 ruling](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558#issuecomment-5249401013). Normal TDD; these have writable REDs. Sequenced **after** PR-A so the gate edits are reviewed under the new contract. **[#540](https://github.com/BaseInfinity/claude-sdlc-harness/issues/540)'s design is ruled — read the ruling on the issue.** This blockquote's earlier version said the fix was re-verifying the artifact's sha against the merging sha; #540 later refuted that outright and ruled that staleness keys on certified content, never on SHA.
+> **`PR-B: the gate`** *(the milestone was titled `v1.99.0 — PR-B: the gate` until 2026-08-17; the version was dropped, not renumbered — see the ordering line near the top of this file)* — membership and dependency order are on the [milestone](https://github.com/BaseInfinity/claude-sdlc-harness/milestones) and in the [#558 ruling](https://github.com/BaseInfinity/claude-sdlc-harness/issues/558#issuecomment-5249401013). Normal TDD; these have writable REDs. Sequenced **after** PR-A so the gate edits are reviewed under the new contract. **[#540](https://github.com/BaseInfinity/claude-sdlc-harness/issues/540)'s design is ruled — read the ruling on the issue.** This blockquote's earlier version said the fix was re-verifying the artifact's sha against the merging sha; #540 later refuted that outright and ruled that staleness keys on certified content, never on SHA.
 >
 > **How PR-A is reviewed:** zero new guards; the only empirical check is executing every command the prose instructs and pasting the output; **per-item verdicts with a pre-registered ejection rule** (a P1 on item *k* ejects item *k*, the batch ships with the rest); one structured round; **no semantic regexes, no prose mutations, no root-cause archaeology — record known unknowns rather than chasing them.**
 >
@@ -69,13 +73,28 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 1. Every bullet under **Open PRs** must be written as ``- **PR #N** …``. A bullet in any other form fails the test, so a stale entry cannot be spelled around.
 2. `PR #N` anywhere in this section must name a PR that is **not yet merged**. Reference already-merged work in prose as a bare `#N`.
 
-**Milestone-boundary triage, 2026-08-08 — and this section is now a VIEW, not a store.** GitHub Issues is authoritative (#482, pulled ahead of the rest of v1.99.0). Where a row below and the issue it cites disagree, **the issue wins**. Do not add rows; file an issue.
+**Milestone-boundary triage, 2026-08-08 — and this section is now a VIEW, not a store.** GitHub Issues is authoritative (#482, pulled ahead of the rest of what was then the v1.99.0 milestone — retitled 2026-08-17). Where a row below and the issue it cites disagree, **the issue wins**. Do not add rows; file an issue.
 
 Triage: **31 open → 22, unmilestoned 12 → 0.** Closed with reasons on each issue: #429, #433, #434, #455, #478, #490, #492, #496, #512. v1.96.0 tightened to four so it ships this week — #481, #483, #510 moved out; #513 moved in and goes first. #480 promoted (see #517).
 
 Row 485 is **superseded by #511 and #517** — do not action it. Analysis lives on the issues, not here: #513 (the embedded install path), #482 (why this file stops being a store), #489 (byte ceiling).
 
-**Last release: v1.98.0, 2026-08-15** (`agentic-sdlc-wizard`). Deletes the Cowork
+**Last release: v1.99.2, 2026-08-17** (`agentic-sdlc-wizard`). Closes two gate holes that
+let a merge cite a review of something other than what was merged: certification now binds to
+a declared `candidate_tree` rather than to a SHA that is not guaranteed to be the reviewed one (#540), and
+ancestry binds with `base_sha`, because `base_tree` alone let a moved merge base carry content
+nobody reviewed (#636). Round 1 stops being penalised for being clean (#563). Makes SHAPE and
+TARGET required reviewer outputs and routes the driver on the answer (#617, #653), closing the
+hole where the design pass was skipped on the builder's unrecorded judgement. Adds
+`scripts/post-comment.sh`, because permission globs cannot forbid a trailing `--delete-last`
+against the very clearance comments the gate reads. Plus the consumer-truth docs batch (#579,
+#544, #499). **There is no v1.99.0 or v1.99.1 release, and there will not be.** `v1.99.1` had
+shipped nothing and was renumbered to **v1.99.3**, contents untouched. `v1.99.0` never described
+a release: half its issues shipped in v1.98.0 and half ship here, so it was **retired rather than
+renumbered**, keeping #547. No issue changed milestone. See `CHANGELOG.md`, which also records
+three known limitations rather than leaving them to be discovered.
+
+**Prior release: v1.98.0, 2026-08-15** (`agentic-sdlc-wizard`). Deletes the Cowork
 `UserPromptSubmit` prompt classifier, which denied the maintainer's own instructions twice — the
 second time after a repair that a passing test had pinned. Scopes TDD RED to where a RED mutation
 is writable, with the three-way call (EVAL it / plain-assert it / don't test it), after six guards
@@ -169,7 +188,7 @@ Living tracker of projects shipped using this wizard. **Rule:** only list projec
 
 | Project | Repo | Status |
 |---------|------|--------|
-| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.98.0 (living tracker — bump every release) |
+| SDLC Harness itself | BaseInfinity/claude-sdlc-harness | Dogfooded, v1.99.2 (living tracker — bump every release) |
 | Codex SDLC Adapter | BaseInfinity/codex-sdlc-wizard | v0.7.x, shipped with SDLC workflow |
 | GDLC Wizard (games sibling) | BaseInfinity/claude-gdlc-wizard | v0.2.x, persona-driven playtest cycles |
 | _(add as projects are marked)_ | | |
