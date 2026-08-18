@@ -1980,19 +1980,26 @@ test_setup_a_escalation_and_advisor_fallback_explicit() {
     # entirely, or link to the wrong file, while the guard stayed green.
     # Requiring both facts in the SAME paragraph is what makes the second one
     # say something about the first.
-    local ptr_para
-    ptr_para="$(awk 'BEGIN{RS=""} /how to read Setup A precisely/' "$REPO_ROOT/README.md")"
-    if [ -z "$ptr_para" ]; then
-        bad="$bad README.md:missing-pointer-to-setup-a-detail"
-    # Seat 1 round 2 (2026-08-17): the same-paragraph binding above was still
-    # vacuous, and for the same reason one scope narrower. That paragraph also
-    # carries a SECOND link, to the billing anchor, which satisfied the
-    # `AI_SETUP_LANES.md#` alternative on its own. Stripping the pointer's link
-    # or retargeting it to CHANGELOG.md both stayed green. So the target must
-    # now be the ANCHORLESS file link — the one only the pointer can supply,
-    # since every anchored link in this paragraph carries a `#`.
-    elif ! printf '%s' "$ptr_para" | grep -q '\](AI_SETUP_LANES\.md)\|\](\./AI_SETUP_LANES\.md)'; then
-        bad="$bad README.md:setup-a-pointer-carries-no-link-to-AI_SETUP_LANES.md"
+    # Seat 1 rounds 1-3 (2026-08-17) each killed a narrower version of the
+    # same defect, so the third fix changes the PRINCIPLE instead of the
+    # pattern. Every earlier attempt asserted "a link to AI_SETUP_LANES.md
+    # exists somewhere in a REGION" — first the file, then the paragraph, then
+    # the paragraph restricted to anchorless links. Any region wide enough to
+    # contain the pointer also contains its neighbours, so a sibling link
+    # always satisfied the check on the pointer's behalf.
+    #
+    # A markdown link binds phrase and destination in ONE construct. Checking
+    # the construct makes sibling links irrelevant by construction rather than
+    # by how today's prose happens to be written, which is why the region
+    # extraction is gone rather than tightened. The trailing paren is
+    # deliberately absent: an anchor is allowed, because the guard's job is to
+    # stop a dead reference to a file, not to police which section.
+    if ! grep -q '\[how to read Setup A precisely\](AI_SETUP_LANES\.md' "$REPO_ROOT/README.md"; then
+        if grep -q 'how to read Setup A precisely' "$REPO_ROOT/README.md"; then
+            bad="$bad README.md:setup-a-pointer-is-not-a-link-to-AI_SETUP_LANES.md"
+        else
+            bad="$bad README.md:missing-pointer-to-setup-a-detail"
+        fi
     fi
     # Negative half (Codex round-1 P1-3): positive assertions alone false-green
     # while the advisor-outage procedure still offers a "no advisor" path. The

@@ -194,8 +194,9 @@ Setup D's whole point: **the discipline of knowing when NOT to use discipline.**
 ### Going deeper
 
 [`AI_SETUP_LANES.md`](AI_SETUP_LANES.md) carries the rest, so this section stays
-short: the per-model effort table, how to read Setup A precisely, the evidence
-behind the 4.6 / 4.8 / Sonnet 5 positions, and
+short: the per-model effort table,
+[how to read Setup A precisely](AI_SETUP_LANES.md), the evidence behind the
+4.6 / 4.8 / Sonnet 5 positions, and
 [how billing works](AI_SETUP_LANES.md#how-billing-works--1m-context-max-plan-and-the-june-15-split)
 (1M context is GA at standard pricing; the June 15, 2026 split moved *headless*
 surfaces off Max, interactive Claude Code stays on it).
