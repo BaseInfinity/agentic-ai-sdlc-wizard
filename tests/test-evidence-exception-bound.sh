@@ -139,7 +139,7 @@
 # Forms C, D, E, G and H are kept permanently: a bypass fixed without a test is
 # a bypass that comes back.
 #
-# There are also TWO must-PASS fixtures, which are not mutations and are not
+# There are also THREE must-PASS fixtures, which are not mutations and are not
 # counted above. Both guard against a check being WRONG IN THE OTHER
 # DIRECTION, which no must-fail mutation can detect:
 #
@@ -148,6 +148,9 @@
 #      silently return; this fails the suite if it does.
 #   2. a properly CLOSED ```` block containing a literal ``` line must be
 #      ACCEPTED. The round-6 prefix counter rejected that valid document.
+#   3. a TAB-indented literal ``` line must be ACCEPTED — a tab is 4 columns,
+#      so that line is indented code, not a fence. The round-8 scanner measured
+#      indent in characters and rejected that valid document.
 #
 # Each mutation declares WHICH check must reject it, and run_mutation FAILS if a
 # different check does. Reporting the reason was not enough: seat 1 found in
@@ -284,8 +287,15 @@ open_char = None
 open_len = 0
 for ln in before.splitlines():
     stripped = ln.lstrip()
-    # An indent of 4+ spaces is an indented code block, not a fence.
-    if len(ln) - len(stripped) >= 4:
+    # An indent of 4+ COLUMNS is an indented code block, not a fence. Columns,
+    # not characters: a tab advances to the next 4-column tab stop, so a single
+    # leading tab is already 4 columns and its line is indented code. Seat 1
+    # found (round 8) that measuring characters here rejected a valid document
+    # whose literal ``` line was tab-indented.
+    indent = 0
+    for ich in ln[: len(ln) - len(stripped)]:
+        indent = indent + 4 - (indent % 4) if ich == "\t" else indent + 1
+    if indent >= 4:
         continue
     ch = stripped[:1]
     if ch not in ("`", "~"):
@@ -898,6 +908,36 @@ if ! reason=$(python3 "$CHECKER" "$m" 2>&1); then
     fail "false positive: a properly CLOSED \`\`\`\` block containing a literal \`\`\` line made the guard REJECT. The check is counting prefixes again instead of tracking fence state. Reason given: $reason"
 fi
 pass "no false positive: a closed \`\`\`\` block containing a literal \`\`\` line is accepted"
+
+# MUST-PASS fixture #3 — seat 1's round-8 P1. A TAB-indented literal ``` line
+# is indented code, not a fence, because a tab advances to the next 4-column
+# tab stop. Measuring indent in characters instead of columns rejected this
+# valid document. Locked in here rather than left to the fix, because indent
+# arithmetic is exactly the kind of thing a later edit re-simplifies.
+m="$WORK/mustpass-tab-indent.md"
+if ! python3 - "$DOC" "$m" <<'PYEOF'
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+OPEN_MARK = "<!-- CANONICAL:evidence-exception-bound -->"
+
+text = open(src, encoding="utf-8").read()
+out = text.replace("\n\n" + OPEN_MARK, "\n\n\t```\n\n" + OPEN_MARK, 1)
+if out == text:
+    sys.stderr.write("tab-indent fixture: replacement was a no-op\n")
+    sys.exit(2)
+if "\n\t```" not in out[: out.index(OPEN_MARK)]:
+    sys.stderr.write("tab-indent fixture: tab-indented line did not land before the block\n")
+    sys.exit(2)
+open(dst, "w", encoding="utf-8").write(out)
+PYEOF
+then
+    fail "mutation harness broken: could not build the tab-indent must-pass fixture"
+fi
+if ! reason=$(python3 "$CHECKER" "$m" 2>&1); then
+    fail "false positive: a TAB-indented literal \`\`\` line made the guard REJECT. Indent is being measured in characters again instead of columns. Reason given: $reason"
+fi
+pass "no false positive: a tab-indented literal \`\`\` line is indented code, not a fence"
 
 
 echo "All evidence-exception-bound checks passed."
