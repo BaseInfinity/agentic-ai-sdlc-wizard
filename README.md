@@ -147,7 +147,8 @@ Reviewer effort is `high` (changed from `xhigh` 2026-08-01, for cost and review-
 The wizard ships a **default recommendation**, not a mandate. Swap to any Claude
 model at any time — `/model` per session, or pin in `.claude/settings.json`.
 
-**Default: Opus 5 at `high` effort, `medium` for routine web/CRUD** (Setup A).
+**Default: Opus 5 at `high` effort for complex projects, `medium` for routine
+web/CRUD** (Setup A).
 **Sonnet 5 at `medium` effort** (Setup B) for simple or one-off work.
 
 **What has actually been exercised on this harness:** Setup A only — Opus 5
