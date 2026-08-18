@@ -4,6 +4,111 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+## [1.99.2] - 2026-08-17
+
+### Evidence now binds to what was reviewed, and the docs stopped claiming what nobody measured
+
+> **There is no 1.99.0 or 1.99.1 release, and there never will be.** Both were
+> planned milestone labels, and they failed in different ways, so they were resolved
+> differently. `v1.99.1 — review-leg supervision` had shipped nothing, so it was simply
+> renumbered to **v1.99.3** with its contents and order untouched. `v1.99.0 — PR-B:
+> the gate` never described a release at all: three of its issues (#533, #581, #588)
+> shipped inside v1.98.0 and three more (#540, #563, #636) ship here, so no version
+> label on it can be true. It has been **retired rather than renumbered**, keeping
+> #547, its one unshipped issue. No issue changed milestone.
+>
+> Version numbers here follow what shipped, not what was planned.
+
+> **What of this reaches your install.** Per `npm pack --dry-run` — the shipped
+> artifact, not the `files` field, which omits two paths npm adds on its own — the
+> package contains `cli/`, `skills/`, `hooks/`, `.claude-plugin/`,
+> `CLAUDE_CODE_SDLC_WIZARD.md`, `AI_SETUP_LANES.md`, `CHANGELOG.md`, plus `README.md`
+> and `package.json`.
+>
+> Every other path named below is **repo-local and arrives in no install**: `scripts/`,
+> `tests/`, `AGENTS.md`, `CODE_REVIEW_EXCEPTIONS.md`, `ROADMAP.md`, `SDLC.md`, and the
+> generated `.reviews/` artifacts. They are described here because this documents the
+> release, not only the shipped subset. Where a fix lands solely in a repo-local path
+> it is called out at its entry. The asymmetry is **#594** and it is open.
+
+Two gate holes in v1.98.0 let a merge cite a review of something other than what was
+merged. Both are closed. Separately, an audit of the shipped documentation found
+several claims that were asserted from a single uncontrolled observation, or that had
+gone stale — including one whose "revisit if" trigger had already fired the day after
+it was written.
+
+### Added
+
+- **A reviewer must now state the SHAPE and TARGET of its verdict** (#617), and the
+  driver must route on the answer (#653). Previously the design pass was skipped
+  whenever the builder judged a change small — and that judgement was the gate, with
+  nothing recording that it had been made. SHAPE is now a required output, and
+  `.reviews/merge-clearance-*.json` records it.
+
+- **`scripts/post-comment.sh`** — a fixed-argv wrapper for posting PR and issue
+  comments, plus allowlist entries for the read-only test suites. Permission patterns
+  are prefix shapes and dangerous flags *trail*, so allowing `gh pr comment` at all
+  would also authorize `--delete-last` — which erases the very clearance comments the
+  merge gate reads as evidence. A wrapper can forbid a suffix; a glob cannot.
+
+  **Repo-local, and NOT in the npm package.** `scripts/` is excluded from
+  `package.json`'s `files`, so this arrives in no consumer install. It is listed here
+  because this changelog documents the release, not only the shipped subset — the
+  asymmetry is #594, it is open, and it is disclosed rather than implied.
+
+### Fixed
+
+- **A certification bound to a SHA did not bind to the merged content** (#540). The
+  committed SHA is not guaranteed to be the reviewed SHA — a reviewed tree can be
+  amended, rebased, or extended before it merges, and nothing checked. Certification
+  now binds to **content**: a handoff must declare a
+  `candidate_tree`, and the gate refuses the commit when the index tree does not match
+  it. A handoff with no `candidate_tree` is refused outright rather than passed.
+
+- **A moved merge base could merge content nobody reviewed** (#636). `base_tree` alone
+  does not bind ancestry. The gate now binds with `base_sha`.
+
+- **The merge gate blocked the one case where the review was cleanest** (#563): a
+  round-1 review that found nothing was treated as insufficient evidence, while a
+  round-2 review that found and fixed problems passed. Round 1 is now exempt when it
+  is genuinely clean.
+
+  **#563 and #636 both land in `scripts/merge-pr.sh`, which is repo-local and NOT in
+  the npm package** (#594). Consumers do not receive this merge gate and are not
+  affected by either fix. #540 above is different — its enforcement is in
+  `hooks/codex-gate-check.sh`, which does ship.
+
+- **Documentation that asserted more than the evidence supported** (#579, #544, #499).
+  `AI_SETUP_LANES.md` said the advisor was disabled server-side; it works.
+  `CODE_REVIEW_EXCEPTIONS.md` carried a workflow-permissions exception whose revisit
+  trigger had already fired. `AGENTS.md` instructed reviewers to enforce a 20,000-byte
+  ceiling on `SKILL.md` that was deleted in #489 and had never been measured — the
+  file is 42,309 bytes. `README.md` gained the frontier-model banner.
+
+- **`ROADMAP.md` could not resume a cold session** — three defects, then a fourth: the
+  save point named an experiment that had been forfeited and will not be retried. The
+  file now defers to a standing rule for "what is next" instead of restating a
+  sequence, because a copied sequence goes stale (#580). It had, twice.
+
+### Known limitations, stated rather than discovered later
+
+- **This release was reviewed by one blind reviewer plus one context-rich
+  corroborator, not two independent reviews.** `advisor()` forwards the driver's full
+  transcript, so the second seat sees the first seat's findings. Tracked on **#657**.
+
+- **The merge gate is identity-blind.** It verifies that two distinct reviewer
+  *strings* returned a verdict bound to the head SHA. It cannot verify that the named
+  reviewer ever ran. Three live instances are recorded on **#657**, the third of them
+  produced by the driver in good faith while disclosing the weakness in prose the gate
+  does not read.
+
+- **Whether an exhausted quota meter blocks `advisor()` remains untested.** Exactly one
+  observation survives — 2026-08-16, the advisor answering while the meters read full.
+  It did not control for the weekly window rolling over. A second observation was
+  recorded on 2026-08-17 and **retracted the same day**, once a usage panel showed the
+  window had in fact rolled over before the call. `AI_SETUP_LANES.md` states this as
+  availability-only and does not claim which pool is billed.
+
 ## [1.98.0] - 2026-08-15
 
 ### The review loop can now end, and a review leg can no longer silently fail to happen
