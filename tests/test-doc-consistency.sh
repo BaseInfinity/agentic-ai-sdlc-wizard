@@ -1984,7 +1984,14 @@ test_setup_a_escalation_and_advisor_fallback_explicit() {
     ptr_para="$(awk 'BEGIN{RS=""} /how to read Setup A precisely/' "$REPO_ROOT/README.md")"
     if [ -z "$ptr_para" ]; then
         bad="$bad README.md:missing-pointer-to-setup-a-detail"
-    elif ! printf '%s' "$ptr_para" | grep -q '(AI_SETUP_LANES\.md)\|(\./AI_SETUP_LANES\.md)\|AI_SETUP_LANES\.md#'; then
+    # Seat 1 round 2 (2026-08-17): the same-paragraph binding above was still
+    # vacuous, and for the same reason one scope narrower. That paragraph also
+    # carries a SECOND link, to the billing anchor, which satisfied the
+    # `AI_SETUP_LANES.md#` alternative on its own. Stripping the pointer's link
+    # or retargeting it to CHANGELOG.md both stayed green. So the target must
+    # now be the ANCHORLESS file link — the one only the pointer can supply,
+    # since every anchored link in this paragraph carries a `#`.
+    elif ! printf '%s' "$ptr_para" | grep -q '\](AI_SETUP_LANES\.md)\|\](\./AI_SETUP_LANES\.md)'; then
         bad="$bad README.md:setup-a-pointer-carries-no-link-to-AI_SETUP_LANES.md"
     fi
     # Negative half (Codex round-1 P1-3): positive assertions alone false-green
