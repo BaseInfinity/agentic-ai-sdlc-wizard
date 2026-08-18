@@ -1721,7 +1721,7 @@ Feature branches still recommended for solo devs (keeps main clean, easy rollbac
 2. Based on your level: fixes criticals only, or all findings
 3. Iterates (push -> re-review) until no findings remain at your chosen level
 4. Only brings you in when everything is clean
-5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task. Counted per root task; re-freezing scope never resets it.
+5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task [bound: CANONICAL:evidence-exception-bound]. Counted per root task; re-freezing scope never resets it.
 
 **Check for new plugins periodically:**
 ```
@@ -2561,7 +2561,7 @@ CI passes -> Read review suggestions
    - **Opinion/style:** Different but equivalent formatting, subjective naming preference, "you could also..." without clear benefit → Skip it
 3. Implement the valid ones, run tests locally, push
 4. CI re-reviews — repeat until no substantive suggestions remain
-5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task. A reviewer that keeps finding *new surfaces* after the deliverable converged is the failure that rule exists to stop; re-freezing scope never resets the count.
+5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task [bound: CANONICAL:evidence-exception-bound]. A reviewer that keeps finding *new surfaces* after the deliverable converged is the failure that rule exists to stop; re-freezing scope never resets the count.
 
 **The goal:** User is only brought in at the very end, when both CI and reviewer are satisfied. The code should be polished before human review.
 
@@ -3876,12 +3876,25 @@ created*. That is the loop consuming its own output, and it reads exactly like
 convergence from the inside.
 
 **SCOPE RULE.** One review and one verify per frozen scope — and verify
-reads only the diff since the last verdict. **After those two passes, continue ONLY when the
+reads only the diff since the last verdict.
+
+<!-- CANONICAL:evidence-exception-bound -->
+**After those two passes, continue ONLY when the
 immediately preceding COMPLETED pass recorded either (a) an open P0/P1 showing a
 requested behavior is currently wrong, or (b) the FIRST verification-evidence
 invalidation in this root task.** An evidence-only finding authorizes exactly one
-additional pass per root task; a later evidence-only finding is filed. Otherwise
-STOP. Below-bar and out-of-scope findings are filed and authorize nothing. A fix to the deliverable creates a new SHA and must be verified;
+additional pass per root task; a later evidence-only finding is filed.
+Otherwise STOP.
+<!-- /CANONICAL:evidence-exception-bound -->
+
+This block is the single source of truth for the evidence-exception bound
+(#608). It is matched EXACTLY by `tests/test-evidence-exception-bound.sh` —
+nothing may be added inside the markers, because a contradiction added beside
+the rule would otherwise pass a containment check. State the bound here ONLY;
+every other mention of it in this document carries
+`[bound: CANONICAL:evidence-exception-bound]` so a reader can reach this block.
+
+Below-bar and out-of-scope findings are filed and authorize nothing. A fix to the deliverable creates a new SHA and must be verified;
 a pass that found such a defect is not clean, whoever introduced it — including
 the loop itself. And do not prompt a reviewer to "find the next route" or
 "defeat the new guard": asking for a fresh category biases review toward
@@ -4186,7 +4199,7 @@ codex exec \
 
 **Convergence:** the default is **one review and one verify per frozen scope, counted cumulatively per root task, then STOP** (see "When to stop" above for the two findings that authorize a further pass). **There is no fixed round cap.** This section previously carried a max-3-rechecks heuristic; it is deleted rather than subordinated, because a stated ceiling gets read as an allowance and #598 reached 22 attempts with one in place. If still NOT CERTIFIED after the budget, that is a **recorded continue/stop decision**, not an automatic escalation — see the Exception below for where the decision is written. A human is woken only when the two reviewers disagree, or a non-waivable gate has failed twice. Never ship uncertified; but running out of budget is not by itself a reason to interrupt the maintainer.
 
-**Exception — known-large migrations, and it costs a recorded decision.** The round-count heuristic is not the cap — the stop condition above is — but "every round is still finding something real" is precisely what a self-consuming loop reports about itself, so it is **not** a licence the builder may grant itself. Each round past the budget requires a continue/stop entry in `.reviews/handoff.json` `"scope_decisions"` **recorded before the round runs** (entry shape and the planner role: "Why four layers didn't catch it" above), carrying the cost line and a `git blame` of the last blocker against the frozen-scope SHA; a blocker in code the issue never asked for is not a reason to continue. With that decision on record, a migration may run long — but the authorization is per-round and comes from the stop condition, not from the migration label: each further round needs the immediately preceding COMPLETED pass to have recorded an open P0/P1 against a requested behavior. "Every round is still finding something real" is that same test stated loosely; state it exactly, because a loop consuming its own churn reports the loose version about itself. An evidence-only finding buys one extra pass per root task and no more. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
+**Exception — known-large migrations, and it costs a recorded decision.** The round-count heuristic is not the cap — the stop condition above is — but "every round is still finding something real" is precisely what a self-consuming loop reports about itself, so it is **not** a licence the builder may grant itself. Each round past the budget requires a continue/stop entry in `.reviews/handoff.json` `"scope_decisions"` **recorded before the round runs** (entry shape and the planner role: "Why four layers didn't catch it" above), carrying the cost line and a `git blame` of the last blocker against the frozen-scope SHA; a blocker in code the issue never asked for is not a reason to continue. With that decision on record, a migration may run long — but the authorization is per-round and comes from the stop condition, not from the migration label: each further round needs the immediately preceding COMPLETED pass to have recorded an open P0/P1 against a requested behavior. "Every round is still finding something real" is that same test stated loosely; state it exactly, because a loop consuming its own churn reports the loose version about itself. An evidence-only finding buys one extra pass per root task and no more [bound: CANONICAL:evidence-exception-bound]. (Source: v1.84.0 release review — a repo-wide model-recommendation migration ran 11 rounds, each finding something real; round 8 found a mandatory-reading claude-setup-wizard template whose tutorial hook code had silently drifted from the real shipped hook (broken, non-blocking), more consequential than anything in rounds 1-3. Escalating at round 4 per the default heuristic would have shipped that bug. 2026-07-04.)
 
 **CERTIFIED is not the finish line.** A CERTIFIED verdict and a green CI run are different verification layers that catch different bug classes — a CERTIFIED review does not substitute for actually pushing and watching CI. Confirmed on the same v1.84.0 release: after round-11 CERTIFIED and a full local test sweep, real CI still caught 3 more genuine bugs the review never touched — a content regression in an unrelated section silently dropped by an earlier edit (caught by a pre-existing local test that simply hadn't been re-run since), an environment-specific CLI output-format change invisible to any local run against an older tool version, and a new test file committed without the executable bit (passes every local `bash tests/foo.sh` invocation, only fails when CI runs it as `./tests/foo.sh`). Budget for at least one more fix-push-recheck cycle after CERTIFIED, and don't treat CERTIFIED as license to skip reading the actual CI logs — see the CI Feedback Loop section below.
 
@@ -4211,10 +4224,9 @@ Claude writes code → handoff.json (round 1)
     |                              All resolved? → YES → CERTIFIED (write commit_sha)
     |                                          |
     └────────── Fix rejected items ←───────────┘
-     (one review + one verify per frozen scope, per root task, then STOP unless the
-      LAST COMPLETED pass recorded an in-scope P0/P1, or the FIRST evidence
-      invalidation in this root task — one extra pass, then it is filed too;
-      past that, a recorded decision)
+     (one review + one verify per frozen scope, counted per root task, then STOP;
+      past that, a recorded decision. The SCOPE RULE above is the authority on
+      when a further pass is allowed — this caption does not restate it.)
 ```
 
 **Every CERTIFIED path above writes `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) treats a missing or mismatched SHA as a stale certification, so a bare `CERTIFIED` status string is never enough on its own.
@@ -4315,7 +4327,7 @@ No severity level says "this should not exist", so nobody says it. On #539 all s
 
 Tell both reviewers this in the prompt, and tell them explicitly: **do not manufacture findings to appear thorough — "I found nothing real" is a valid and useful answer.** Without that instruction a reviewer under pressure to produce will generate P3s indefinitely, and you will mistake its output for unfinished work.
 
-**Diminishing returns — how to actually tell.** Judge by the *maximum severity per round*, never by finding count: count rises when a reviewer looks somewhere new, which is the opposite of a stopping signal (the round that found the most here also found the most serious bugs). You are converged when the LAST COMPLETED pass produced nothing above P3 against a requested behavior, and no evidence-only exception remains unspent — the stop condition, not a second clean round. **A fresh reviewer that has not already cleared this code is a new pass, not a re-run of the last one:** its first look is the pass that has to come back clean, because one reviewer certified at high confidence here immediately before a fresh reviewer found six P1s in the same code. A single reviewer's own trend flattening means only that it has run out of defects *it* can see.
+**Diminishing returns — how to actually tell.** Judge by the *maximum severity per round*, never by finding count: count rises when a reviewer looks somewhere new, which is the opposite of a stopping signal (the round that found the most here also found the most serious bugs). You are converged when the LAST COMPLETED pass produced nothing above P3 against a requested behavior, and no evidence-only exception remains unspent [bound: CANONICAL:evidence-exception-bound] — the stop condition, not a second clean round. **A fresh reviewer that has not already cleared this code is a new pass, not a re-run of the last one:** its first look is the pass that has to come back clean, because one reviewer certified at high confidence here immediately before a fresh reviewer found six P1s in the same code. A single reviewer's own trend flattening means only that it has run out of defects *it* can see.
 
 **Merging findings.** Combine, do not intersect. Two independent reviewers agreeing is a strong signal, but a finding raised by only one is the *common* case and is usually the valuable one — that is the entire point of using two. Respond to each reviewer's findings separately, and run the recheck round with each still blind to the other. **Blindness governs finding-generation and recheck only.** Once every reviewer has returned a verdict, reconciliation is a distinct, final phase. Reconcile once, not per round.
 
@@ -4382,7 +4394,7 @@ implement  →  fix in-allowlist findings  →  re-review with the ITERATION mod
    **Prefer executing the real thing over asserting on its source text.** A test that greps a script for the *words* proves the words are present, not that the behaviour works — the failure mode that produced every ineffective test in this repo's history. Run the script against a stub and check the exit code.
 
 5. **Verdict disagreement is expected — take the lower one.** Two reviewers can both be right and score differently: one weights a single unfixed P1 as disqualifying, the other weights overall structure. Do not average them, do not pick the friendlier one, and do not treat the gap as a reason to dismiss either. Ship only when *both* clear your bar.
-6. **Two stop conditions, and they are not the same — do not collapse them.** You are **done** when a fresh blind round returns **zero unresolved findings against the requested behaviors** *and* no evidence-only exception remains unspent — the FIRST verification-evidence invalidation in this root task authorizes one more pass even from an otherwise clean round; a later one is filed. Zero unresolved findings is not merely "nothing new", because the same unfixed in-allowlist finding raised again is still an open finding, and it is not "zero defects anywhere", which is unsatisfiable. That is the only condition that permits shipping, and it is not reached on a schedule. You are **stuck** when rounds keep producing findings without converging; past the two-pass budget that is a non-convergence alarm, and it ends in a **recorded continue/stop decision** — never in shipping. It reaches a human only if the two reviewers disagree, or a non-waivable gate has failed twice. **Exception — a large migration may legitimately run past round 4** when each round is still surfacing real, previously-uninventoried surfaces (v1.84.0 ran 11 that way) — each of those rounds still has to be authorized by the preceding pass's open P0/P1 under the stop condition. Judge by whether the finding trend is genuinely converging, and state which of the two you are claiming. An agent that ships because it ran out of rounds has declared victory on a timer.
+6. **Two stop conditions, and they are not the same — do not collapse them.** You are **done** when a fresh blind round returns **zero unresolved findings against the requested behaviors** *and* no evidence-only exception remains unspent [bound: CANONICAL:evidence-exception-bound] — the FIRST verification-evidence invalidation in this root task authorizes one more pass even from an otherwise clean round; a later one is filed. Zero unresolved findings is not merely "nothing new", because the same unfixed in-allowlist finding raised again is still an open finding, and it is not "zero defects anywhere", which is unsatisfiable. That is the only condition that permits shipping, and it is not reached on a schedule. You are **stuck** when rounds keep producing findings without converging; past the two-pass budget that is a non-convergence alarm, and it ends in a **recorded continue/stop decision** — never in shipping. It reaches a human only if the two reviewers disagree, or a non-waivable gate has failed twice. **Exception — a large migration may legitimately run past round 4** when each round is still surfacing real, previously-uninventoried surfaces (v1.84.0 ran 11 that way) — each of those rounds still has to be authorized by the preceding pass's open P0/P1 under the stop condition. Judge by whether the finding trend is genuinely converging, and state which of the two you are claiming. An agent that ships because it ran out of rounds has declared victory on a timer.
 
 **Anti-pattern: asking the human to adjudicate each round.** The human sets the bar and decides scope; the models find defects and you fix them. An agent that surfaces every finding for approval has converted an automated gate back into manual review, which is the cost the gate existed to remove.
 
@@ -4398,7 +4410,7 @@ When multiple reviewers comment on a PR (Claude, Codex, human reviewers), addres
 2. **Respond per-reviewer** — each reviewer has different blind spots. Address each one's findings separately
 3. **Do not resolve conflicts yourself** — when two model reviewers disagree, cross-feed their positions verbatim and let them reconcile (see "Reconciliation: the reviewers reconcile with each other"). You relay; you never pick a winner. A human reviewer cannot be put in that loop, so a human-vs-model split goes to the human as one question, and the human decides
 4. **Iterate until all approve, bounded by the stop condition** — don't merge until every active reviewer is satisfied, and don't buy that agreement with passes the stop condition does not authorize
-5. **One review and one verify per reviewer per frozen scope, then STOP**, counted cumulatively per root task so a re-freeze does not reset it. Continue only when the **immediately preceding COMPLETED pass** recorded either an open P0/P1 showing a requested behavior is currently wrong, or the **FIRST** verification-evidence invalidation in this root task — that exception is worth exactly one additional pass per root task, and a later evidence-only finding is filed. Past that, a recorded continue/stop decision, not a user interrupt
+5. **One review and one verify per reviewer per frozen scope, then STOP**, counted cumulatively per root task so a re-freeze does not reset it. Continue only when the **immediately preceding COMPLETED pass** recorded either an open P0/P1 showing a requested behavior is currently wrong, or the **FIRST** verification-evidence invalidation in this root task — that exception is worth exactly one additional pass per root task, and a later evidence-only finding is filed [bound: CANONICAL:evidence-exception-bound]. Past that, a recorded continue/stop decision, not a user interrupt
 
 The value of multiple reviewers: different models/humans catch different issues. No single reviewer is sufficient for high-stakes changes.
 
