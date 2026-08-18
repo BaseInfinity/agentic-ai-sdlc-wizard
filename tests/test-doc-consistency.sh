@@ -1973,10 +1973,20 @@ test_setup_a_escalation_and_advisor_fallback_explicit() {
     # two prose assertions are made once, above, against the file that now
     # carries them. README keeps a POINTER, and the pointer is asserted here so
     # it cannot rot into a dead reference to prose that lives elsewhere.
-    grep -q 'how to read Setup A precisely' "$REPO_ROOT/README.md" \
-        || bad="$bad README.md:missing-pointer-to-setup-a-detail"
-    grep -q 'AI_SETUP_LANES.md' "$REPO_ROOT/README.md" \
-        || bad="$bad README.md:missing-lanes-link"
+    # The two checks must be BOUND TO EACH OTHER, not merely both true. Seat 1
+    # (2026-08-17) showed the earlier pair was satisfiable by accident: a bare
+    # `grep AI_SETUP_LANES.md README.md` is already true because of an
+    # unrelated link elsewhere in the file, so the pointer could lose its link
+    # entirely, or link to the wrong file, while the guard stayed green.
+    # Requiring both facts in the SAME paragraph is what makes the second one
+    # say something about the first.
+    local ptr_para
+    ptr_para="$(awk 'BEGIN{RS=""} /how to read Setup A precisely/' "$REPO_ROOT/README.md")"
+    if [ -z "$ptr_para" ]; then
+        bad="$bad README.md:missing-pointer-to-setup-a-detail"
+    elif ! printf '%s' "$ptr_para" | grep -q '(AI_SETUP_LANES\.md)\|(\./AI_SETUP_LANES\.md)\|AI_SETUP_LANES\.md#'; then
+        bad="$bad README.md:setup-a-pointer-carries-no-link-to-AI_SETUP_LANES.md"
+    fi
     # Negative half (Codex round-1 P1-3): positive assertions alone false-green
     # while the advisor-outage procedure still offers a "no advisor" path. The
     # outage section must route to the subagent fallback, never to skipping.

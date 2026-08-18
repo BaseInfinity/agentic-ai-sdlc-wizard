@@ -151,13 +151,21 @@ model at any time — `/model` per session, or pin in `.claude/settings.json`.
 web/CRUD** (Setup A).
 **Sonnet 5 at `medium` effort** (Setup B) for simple or one-off work.
 
-**What has actually been exercised on this harness:** Setup A only — Opus 5
-driving, Fable 5 advising, GPT-5.6 Sol gating. That is the lane every cycle in
-this repo has run on, and it is the only lane behind which there is cycle data
-from this repo. The other lanes and the `claude-opus-4-6` / `claude-opus-4-8`
-pins are supported and reachable, but **no one has run a cycle of this harness
-on them.** `AI_SETUP_LANES.md` labels them unverified for that reason. Treat
-their entries below as configuration that should work, not as measured results.
+**What has actually been exercised on this harness.** Current Setup A — Opus 5
+driving, Fable 5 advising, GPT-5.6 Sol gating — is what recent cycles run on,
+and it is the configuration behind the most recent evidence.
+
+It is not the only one this repo has ever used, and the honest version says so.
+This repo dates to January 2026, well before Opus 5 existed. **Opus 4.6 was the
+wizard's own recommended flagship default from v1.80.0 (June 2026)**, so real
+cycles ran on it — see `CHANGELOG.md`. What has *not* been exercised is 4.6 (or
+4.8) paired with the **current** review setup, where Fable is the design
+authority and Sol is the adversarial gate. Those pairings are supported and
+reachable, never measured.
+
+Treat the lane entries below as configuration that should work. Only current
+Setup A carries recent cycle data, and `AI_SETUP_LANES.md` labels the rest
+unverified for that reason.
 
 ### Switch any time
 
