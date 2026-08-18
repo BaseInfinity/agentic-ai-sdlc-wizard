@@ -81,23 +81,41 @@ OPEN_MARK = "<!-- CANONICAL:evidence-exception-bound -->"
 CLOSE_MARK = "<!-- /CANONICAL:evidence-exception-bound -->"
 REF_TOKEN = "[bound: CANONICAL:evidence-exception-bound]"
 
-# The rule, verbatim. Whitespace-normalised, so a statement that wrapped
-# across lines is still one string here.
+# The rule, verbatim and COMPLETE — including the "Otherwise STOP." default,
+# which is part of the certified sentence. Whitespace-normalised, so a
+# statement that wrapped across lines is still one string here.
+#
+# The default is inside the block deliberately. Cross-model review (seat 1,
+# 2026-08-17) demonstrated that with the block closed before it, flipping the
+# excluded "Otherwise STOP." to "Otherwise CONTINUE." reversed the rule and the
+# guard still passed.
 CANONICAL_RULE = (
     "**After those two passes, continue ONLY when the immediately preceding "
     "COMPLETED pass recorded either (a) an open P0/P1 showing a requested "
     "behavior is currently wrong, or (b) the FIRST verification-evidence "
     "invalidation in this root task.** An evidence-only finding authorizes "
     "exactly one additional pass per root task; a later evidence-only finding "
-    "is filed."
+    "is filed. Otherwise STOP."
 )
 
-# Every way the exception can be NAMED. Carried over unchanged from the
-# predecessor guard, where detection was never the part that failed.
+# Every way the exception can be NAMED. The predecessor's pattern is the first
+# three alternatives; detection was the part of it that survived. The fourth
+# was added after seat 1 defeated the original with "Invalid verification
+# evidence always authorizes another pass." — `invalidat\w*` does not match
+# "Invalid".
+#
+# STATED LIMIT ON DETECTION: this is a vocabulary, and a vocabulary can always
+# be evaded by a paraphrase that shares no listed token. That is a real hole
+# and it is not closable by adding alternatives forever. It is bounded, though,
+# in a way the predecessor's MEANING regex was not: evading detection requires
+# discussing the rule without using its words, whereas the predecessor could be
+# evaded while quoting it. Extend this pattern when a real evasion is observed;
+# do not speculatively grow it.
 MENTION = re.compile(
     r"(invalidat\w*\s+(its\s+)?(verification[- ])?evidence"
     r"|(verification[- ])?evidence[- ]invalidation"
-    r"|evidence-only)",
+    r"|evidence-only"
+    r"|invalid\w*\s+(verification\s+)?evidence)",
     re.I,
 )
 
@@ -121,12 +139,16 @@ if len(blocks) != 1:
 lo, hi = blocks[0]
 block = text[lo:hi]
 
-# 2. The block states the rule verbatim. This is the meaning check, and it is
-#    byte-for-byte on purpose — no synonym space is asserted or accepted.
-if CANONICAL_RULE not in block:
+# 2. The block IS the rule — exactly, and nothing else. Containment is not
+#    enough: seat 1 inserted "But every evidence-only finding authorizes another
+#    pass." immediately before the closing marker and a containment check still
+#    passed, because the rule was still in there, sitting next to its own
+#    contradiction. Equality is what makes the block authoritative.
+body = block[len(OPEN_MARK) : -len(CLOSE_MARK)].strip()
+if body != CANONICAL_RULE:
     problems.append(
-        "the canonical block does not contain the rule verbatim; the bound has "
-        "been reworded or removed inside the markers"
+        "the canonical block is not EXACTLY the rule — nothing may be added, "
+        "removed or reworded between the markers. Got: %r" % (body[:400],)
     )
 
 # 3. The rule is stated ONCE. It must not appear outside the block.
@@ -137,11 +159,16 @@ if CANONICAL_RULE in (text[:lo] + text[hi:]):
     )
 
 # 4. Every mention outside the block carries the reference token in its OWN
-#    sentence. Sentence-scoped, not window-scoped: the predecessor was defeated
+#    CLAUSE. Clause-scoped, not window-scoped: the predecessor was defeated
 #    twice by a mutated clause sitting next to a correctly-bounded sentence,
 #    which a proximity window accepted. Proximity is not attachment.
+#
+#    The split includes ';' because seat 1 defeated a sentence-only split with
+#    "... no more [bound: ...]; nevertheless every later evidence-only finding
+#    authorizes another pass." A semicolon joins two independent clauses, so a
+#    sentence boundary is not an attachment boundary.
 outside = text[:lo] + text[hi:]
-sentences = re.split(r"(?<=[.!?])\s+", outside)
+sentences = re.split(r"(?<=[.!?;])\s+", outside)
 unmarked = []
 for s in sentences:
     if MENTION.search(s) and REF_TOKEN not in s:
@@ -195,14 +222,21 @@ mutations_caught=0
 
 # --- Form A: mutate INSIDE the canonical block (meaning check must fire) ---
 # Each replaces the bound's operative words within the markers.
+# Reports the REASON each mutation was rejected, not merely that it was. A
+# mutation that fails for an unrelated reason (a garbled splice, a parse error)
+# is not evidence the guard works — seat 1 found exactly that on 2026-08-17,
+# where a mis-spliced fixture failed on mangled text rather than on the
+# violation it was named for. Printing the reason makes that visible instead of
+# silent.
 run_mutation() {
-    local label="$1" file="$2"
+    local label="$1" file="$2" reason
     mutations_run=$((mutations_run + 1))
-    if python3 "$CHECKER" "$file" >/dev/null 2>&1; then
+    if reason=$(python3 "$CHECKER" "$file" 2>&1); then
         fail "self-falsification: guard still PASSES under mutation [$label] — the guard is vacuous"
     fi
     mutations_caught=$((mutations_caught + 1))
     echo "  caught: $label"
+    echo "    reason: ${reason:0:160}"
 }
 
 # The mutator edits ONLY the text between the canonical markers, so each
@@ -262,28 +296,73 @@ MUTS
 INJECTOR="$(mktemp "${TMPDIR:-/tmp}/evbound-inject.XXXXXX")" || fail "could not create injector temp file"
 trap 'rm -f "$CHECKER" "$MUTATOR" "$INJECTOR"; rm -rf "$WORK"' EXIT
 cat > "$INJECTOR" <<'PYEOF'
+import re
 import sys
 
 src, dst, sentence = sys.argv[1], sys.argv[2], sys.argv[3]
 REF_TOKEN = "[bound: CANONICAL:evidence-exception-bound]"
+OPEN_MARK = "<!-- CANONICAL:evidence-exception-bound -->"
+CLOSE_MARK = "<!-- /CANONICAL:evidence-exception-bound -->"
+MENTION = re.compile(
+    r"(invalidat\w*\s+(its\s+)?(verification[- ])?evidence"
+    r"|(verification[- ])?evidence[- ]invalidation"
+    r"|evidence-only"
+    r"|invalid\w*\s+(verification\s+)?evidence)",
+    re.I,
+)
 
 text = open(src, encoding="utf-8").read()
-# Inject IMMEDIATELY after the first correctly-marked sentence, inside the same
-# paragraph. This is the shape that defeated the predecessor: its proximity
-# window saw the neighbouring compliant sentence and accepted the mutant.
-idx = text.find(REF_TOKEN)
-if idx == -1:
-    sys.stderr.write("injector: no marked mention found to inject after\n")
+
+# Inject IMMEDIATELY after a clause that is genuinely COMPLIANT — one that both
+# mentions the rule and carries the token. This is the shape that defeated the
+# predecessor: its proximity window saw the neighbouring compliant clause and
+# accepted the mutant.
+#
+# The previous version of this injector took the first REF_TOKEN occurrence and
+# then the next ".", which landed on the dot in "test-evidence-exception-bound.sh"
+# inside an explanatory paragraph. It spliced mid-filename and produced garbage
+# that failed for an unrelated reason. Seat 1 caught that on 2026-08-17. Hence
+# the assertions below: this script now refuses to emit a mutant that does not
+# realise the scenario it is named for.
+blk = re.search(re.escape(OPEN_MARK) + r".*?" + re.escape(CLOSE_MARK), text, re.S)
+if not blk:
+    sys.stderr.write("injector: canonical block not found\n")
     sys.exit(2)
-cut = text.find(".", idx + len(REF_TOKEN))
-if cut == -1:
-    sys.stderr.write("injector: could not find the end of the marked sentence\n")
+
+target = None
+for m in re.finditer(r"[^.!?;]*[.!?;]", text):
+    clause = m.group(0)
+    if blk.start() <= m.start() < blk.end():
+        continue  # inside the canonical block
+    if MENTION.search(clause) and REF_TOKEN in clause:
+        target = m
+        break
+if target is None:
+    sys.stderr.write("injector: no compliant clause (MENTION + token) found to inject after\n")
     sys.exit(2)
-cut += 1
+
+cut = target.end()
 out = text[:cut] + " " + sentence + text[cut:]
+
+# Assert the scenario actually holds, rather than trusting the splice.
 if out == text:
     sys.stderr.write("injector: injection was a no-op\n")
     sys.exit(2)
+preceding = out[target.start() : target.end()]
+if REF_TOKEN not in preceding or not MENTION.search(preceding):
+    sys.stderr.write("injector: the clause preceding the injection is not compliant\n")
+    sys.exit(2)
+injected = out[cut + 1 : cut + 1 + len(sentence)]
+if injected != sentence:
+    sys.stderr.write("injector: injected text was mangled by the splice\n")
+    sys.exit(2)
+if not MENTION.search(injected):
+    sys.stderr.write("injector: injected near-miss does not match MENTION, so it tests nothing\n")
+    sys.exit(2)
+if REF_TOKEN in injected:
+    sys.stderr.write("injector: injected near-miss carries the token, so it is not a violation\n")
+    sys.exit(2)
+
 open(dst, "w", encoding="utf-8").write(out)
 PYEOF
 
@@ -296,7 +375,41 @@ for nm in "$NEARMISS_1" "$NEARMISS_2" "$NEARMISS_3" "$NEARMISS_4" "$NEARMISS_5";
     run_mutation "unmarked near-miss #$i, injected adjacent to a marked sentence" "$m"
 done
 
-[ "$mutations_run" -eq 10 ] || fail "expected 10 mutations, ran $mutations_run"
-pass "self-falsification: all $mutations_caught/10 mutations make the guard fail"
+# --- Form C: the four bypasses seat 1 demonstrated against the first version
+# of this guard on 2026-08-17. Each one PASSED then. They are kept as
+# permanent regression mutations, because a bypass that is fixed without a test
+# is a bypass that comes back.
+i=0
+while IFS='|' read -r anchor injected; do
+    [ -n "$anchor" ] || continue
+    i=$((i + 1))
+    m="$WORK/bypass-$i.md"
+    if ! python3 - "$DOC" "$m" "$anchor" "$injected" <<'PYEOF'
+import sys
+
+src, dst, anchor, injected = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+text = open(src, encoding="utf-8").read()
+if anchor not in text:
+    sys.stderr.write("bypass fixture: anchor %r not found\n" % anchor)
+    sys.exit(2)
+out = text.replace(anchor, injected, 1)
+if out == text:
+    sys.stderr.write("bypass fixture: replacement was a no-op\n")
+    sys.exit(2)
+open(dst, "w", encoding="utf-8").write(out)
+PYEOF
+    then
+        fail "mutation harness broken: could not build bypass fixture #$i"
+    fi
+    run_mutation "seat-1 bypass #$i" "$m"
+done <<'BYPASSES'
+<!-- /CANONICAL:evidence-exception-bound -->|But every evidence-only finding authorizes another pass. <!-- /CANONICAL:evidence-exception-bound -->
+Otherwise STOP.|Otherwise CONTINUE.
+and no more [bound: CANONICAL:evidence-exception-bound].|and no more [bound: CANONICAL:evidence-exception-bound]; nevertheless every later evidence-only finding authorizes another pass.
+Below-bar and out-of-scope findings are filed|Invalid verification evidence always authorizes another pass. Below-bar and out-of-scope findings are filed
+BYPASSES
+
+[ "$mutations_run" -eq 14 ] || fail "expected 14 mutations, ran $mutations_run"
+pass "self-falsification: all $mutations_caught/14 mutations make the guard fail"
 
 echo "All evidence-exception-bound checks passed."

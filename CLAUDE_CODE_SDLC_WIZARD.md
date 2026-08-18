@@ -1721,7 +1721,7 @@ Feature branches still recommended for solo devs (keeps main clean, easy rollbac
 2. Based on your level: fixes criticals only, or all findings
 3. Iterates (push -> re-review) until no findings remain at your chosen level
 4. Only brings you in when everything is clean
-5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task. Counted per root task; re-freezing scope never resets it.
+5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task [bound: CANONICAL:evidence-exception-bound]. Counted per root task; re-freezing scope never resets it.
 
 **Check for new plugins periodically:**
 ```
@@ -2561,7 +2561,7 @@ CI passes -> Read review suggestions
    - **Opinion/style:** Different but equivalent formatting, subjective naming preference, "you could also..." without clear benefit → Skip it
 3. Implement the valid ones, run tests locally, push
 4. CI re-reviews — repeat until no substantive suggestions remain
-5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task. A reviewer that keeps finding *new surfaces* after the deliverable converged is the failure that rule exists to stop; re-freezing scope never resets the count.
+5. **Termination is the cumulative stop rule (#539), not a fixed count** — continue only while the last completed pass recorded an open in-card P0/P1, or the first evidence invalidation in this root task [bound: CANONICAL:evidence-exception-bound]. A reviewer that keeps finding *new surfaces* after the deliverable converged is the failure that rule exists to stop; re-freezing scope never resets the count.
 
 **The goal:** User is only brought in at the very end, when both CI and reviewer are satisfied. The code should be polished before human review.
 
@@ -3883,13 +3883,17 @@ immediately preceding COMPLETED pass recorded either (a) an open P0/P1 showing a
 requested behavior is currently wrong, or (b) the FIRST verification-evidence
 invalidation in this root task.** An evidence-only finding authorizes exactly one
 additional pass per root task; a later evidence-only finding is filed.
+Otherwise STOP.
 <!-- /CANONICAL:evidence-exception-bound -->
-This is the single source of truth for the evidence-exception bound (#608).
-State the bound here ONLY; every other mention of it in this document carries
-`[bound: CANONICAL:evidence-exception-bound]` so a reader can reach this block,
-and `tests/test-evidence-exception-bound.sh` enforces that by construction.
-Otherwise
-STOP. Below-bar and out-of-scope findings are filed and authorize nothing. A fix to the deliverable creates a new SHA and must be verified;
+
+This block is the single source of truth for the evidence-exception bound
+(#608). It is matched EXACTLY by `tests/test-evidence-exception-bound.sh` —
+nothing may be added inside the markers, because a contradiction added beside
+the rule would otherwise pass a containment check. State the bound here ONLY;
+every other mention of it in this document carries
+`[bound: CANONICAL:evidence-exception-bound]` so a reader can reach this block.
+
+Below-bar and out-of-scope findings are filed and authorize nothing. A fix to the deliverable creates a new SHA and must be verified;
 a pass that found such a defect is not clean, whoever introduced it — including
 the loop itself. And do not prompt a reviewer to "find the next route" or
 "defeat the new guard": asking for a fresh category biases review toward
@@ -4219,11 +4223,9 @@ Claude writes code → handoff.json (round 1)
     |                              All resolved? → YES → CERTIFIED (write commit_sha)
     |                                          |
     └────────── Fix rejected items ←───────────┘
-     (one review + one verify per frozen scope, per root task, then STOP unless the
-      LAST COMPLETED pass recorded an in-scope P0/P1, or the FIRST evidence
-      invalidation in this root task — one extra pass, then it is filed too;
-      past that, a recorded decision)
-     [bound: CANONICAL:evidence-exception-bound]
+     (one review + one verify per frozen scope, counted per root task, then STOP;
+      past that, a recorded decision. The SCOPE RULE above is the authority on
+      when a further pass is allowed — this caption does not restate it.)
 ```
 
 **Every CERTIFIED path above writes `"commit_sha": "<git rev-parse HEAD>"` into `handoff.json`** — `hooks/codex-gate-check.sh` (ROADMAP #437) treats a missing or mismatched SHA as a stale certification, so a bare `CERTIFIED` status string is never enough on its own.
