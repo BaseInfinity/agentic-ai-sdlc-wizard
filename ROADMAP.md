@@ -18,17 +18,25 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **v2.0.0's terminal gate is #545, not issue closure.** The major release is authorized when the maintainer has personally consumed the harness in another repo and it worked. Every other issue closing is necessary and not sufficient.
 >
-> ### Last save point — 2026-08-16, ~01:45
+> ### Last save point — 2026-08-17, ~00:40
 >
-> Written so a cold session resumes without reading a transcript. Shipped to `main` tonight, in order — issue numbers only, because the tracker owns PR state (#482): **#617** (SHAPE and TARGET as required reviewer outputs), the **permission-allowlist** work (`gh pr comment` replaced by the fixed-argv wrapper `scripts/post-comment.sh` — the pattern would have authorized `--delete-last` on the merge gate's own clearance comments), and **#653** (the SHAPE routing card in `skills/sdlc/SKILL.md`).
+> Written so a cold session resumes without reading a transcript. Shipped to `main` — issue numbers only, because the tracker owns PR state (#482): **milestone v1.99.2** is complete (**#579**, **#544**, **#499**), batched into one PR as ruled.
 >
-> **Next action: #504's experiment — Fable drives milestone v1.99.2** (#579, #544, #499), batched into ONE PR. Compare rounds, tokens and wall clock against the allowlist cycle's baseline: 4 rounds, 5 review legs, ~456k leg tokens, 43 minutes. *(Corrected 2026-08-16: this listed #537 too. #537 is a capability detector plus tests — code in a batch premised on prose, which both re-adds the test surface the batch removes and contaminates the measurement. Moved to v1.99.1; ruling on #504.)*
+> **Next action: the first open, unblocked issue in #593 Rung 1 — read it there, per the rule above.** As of this writing that is **#521**, which the #504 forfeit released. Do not take the release milestones as the queue: they are the shipping order, not the work order, and #580 ruled that a sequence copied into this file goes stale. It did, twice.
 >
-> **This work merges before v1.99.0 and v1.99.1, deliberately, and that is safe** — `release.yml` triggers on a tag push, so merging publishes nothing. **It is not free at tag time:** v1.99.0 and v1.99.1 are cut from a `main` that already carries this content, so whoever tags them states which content is present ahead of its milestone. Rung 1's item 3 (#521) stays open and is deliberately deferred — repairing the review surface mid-experiment would change what the experiment measures. Both rulings are on #593 and #504.
+> *Release milestones, as context only:* v1.99.0 (**#547**), v1.99.1 (**#616**, **#634**, **#537**), then the v2.0.0 items (**#657**, **#608**, **#516**, **#554**, **#456**, **#629**), and finally **#545** — the maintainer's own gate, which cannot be done for them.
+>
+> **#504's experiment did NOT run, and will not be retried on this milestone.** v1.99.2 was to be the measured Fable-driven cycle; Fable's weekly quota was exhausted and the maintainer chose shipping over measuring. The forfeit is recorded on #504 as a dated decision. **Do not treat this as pending work.** Nobody has still ever measured a Fable-driven cycle, and v1.99.2 was chosen precisely because it was prose-only — nothing comparable remains in the queue, so any retry is a fresh decision on fresh facts, not a resumption.
+>
+> **Three deferrals it was holding are released** (all commented 2026-08-16): **#657**'s merge hold is dissolved and it sequences normally; **#521** is unblocked; **#593** Rung 1 is unblocked.
+>
+> **Still true about release order:** work merges to `main` before v1.99.0 and v1.99.1 are tagged, and that is safe — `release.yml` triggers on a tag push, so merging publishes nothing. It is not free at tag time: those versions are cut from a `main` that already carries later content, so whoever tags them states which content is present ahead of its milestone.
+>
+> **Read before the next review cycle.** v1.99.2 shipped on **one blind reviewer plus one context-rich corroborator**, not two independent reviews — `advisor()` forwards the driver's full transcript, so the Fable seat saw the Sol seat's findings. That is the recorded limitation on **#657** and the standing lane until it lands. Two attempts to run a genuinely blind second seat headless both failed: the child inherits `advisorModel` and calls Fable, and neither the tool allowlist nor `--disallowedTools` blocks it, because `advisor` is a **server-side** tool. The second attempt died mid-advisor-call with no verdict at all. Evidence is on #657.
 >
 > **Open and unfinished:** `fix/585-operator-output-style` — 3 commits parked on a branch, never reviewed, #585 still open. **#622** — the post-mortem step has not run since v1.97.0; a 2.0 release with no end-of-release audit contradicts the harness's own rules, so it runs or the maintainer waives it explicitly.
 >
-> **Filed tonight:** #652 — `TESTING.md` reads as a suite registry but omits 54 of 80 CI suites.
+> **Filed and not fixed:** **#652** (`TESTING.md` reads as a suite registry but omits 54 of 80 CI suites), **#658** (which claude.ai product surfaces the harness actually ships to — Skills is the genuinely open one), **#659** (`test-doc-consistency` pins reviewer-model checks to line numbers; three false positives in one session, zero true ones), **#660** (SHA-pin the three write-scoped workflows, implementing the #499 split).
 >
 > **The retro both reviewers gave, which the next session should act on rather than repeat:** tonight was valuable and over-expensive. The allowlist cycle's rounds 1–3 were the loop working; round 4 was self-inflicted — the driver never ran `tests/test-workflow-triggers.sh` and `tests/test-doc-consistency.sh` before committing a diff that touched `ci.yml`, so CI became the test phase. That pair takes **13.3 seconds** and would have saved **at least 4m47s** plus a dialogue round and two full clearance rebinds.
 >
@@ -54,7 +62,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **Moved to backlog, premise changed:** #542's outside-repo consumption framing. The work is here, in this repo — not in sibling repos.
 >
-> *(Corrected 2026-08-16. This line also listed #545 and #504, and both are now live — it contradicted the terminal-gate paragraph four lines above it, which names #545 as the thing v2.0.0 waits on. **#545 is the v2.0.0 gate and is the maintainer's to run**, not backlog. **#504 was ruled on 2026-08-16**: do not swap the driver for the whole queue; instead Fable drives the single v1.99.2 milestone as a measured experiment, compared against the allowlist cycle's baseline of 4 rounds and ~15.5M session tokens. Ruling is on the issue.)*
+> *(Corrected 2026-08-16. This line also listed #545 and #504, and both are now live — it contradicted the terminal-gate paragraph four lines above it, which names #545 as the thing v2.0.0 waits on. **#545 is the v2.0.0 gate and is the maintainer's to run**, not backlog. **#504 was ruled on 2026-08-16** — do not swap the driver for the whole queue — **and its one measured experiment was then FORFEITED the same day**: Fable's weekly quota ran out and v1.99.2 shipped Opus-driven. No Fable-driven cycle has ever been measured, and this is not pending work. Forfeit and reasoning are on the issue.)*
 
 **Two rules, both enforced by [`tests/test-roadmap-integrity.sh`](tests/test-roadmap-integrity.sh)** — this section sat stale for two days in July 2026, so its freshness is now machine-checked rather than trusted:
 
