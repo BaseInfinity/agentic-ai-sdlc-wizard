@@ -35,6 +35,27 @@
 # REACHABLE from the one authoritative statement, so a human or reviewer can
 # check it in one hop. Do not grow this file toward semantic matching.
 #
+# SECOND STATED LIMIT — RENDER CAPTURE IS OUT OF SCOPE. This guard reads the
+# document's SOURCE TEXT. It does not render it, and it does not try to prove
+# what a markdown renderer will wrap the rule in. A raw HTML element opened
+# before the block — seat 1's canonical example is `<section hidden>`, which
+# renders the rule under html>body>section[hidden]>p>strong while every check
+# here passes — is NOT detected, by decision.
+#
+# The reason is a threat model, not an oversight. Anyone who can add
+# `<section hidden>` to this document already has commit access, and someone
+# with commit access can simply DELETE the rule. Review is the control for a
+# committer-adversary; this guard is not, and cannot be. What it is for is
+# catching ACCIDENTS — a stray fence, a dropped marker, a drifting restatement —
+# and keeping every honest edit reachable from one authoritative statement.
+#
+# This limit is recorded because three consecutive review rounds were spent
+# adding invariants to close render-capture, and each one was falsified by the
+# next render. Every remaining check in this file is falsifiable in render-space
+# by construction; that is a property of source-text checking a rendered format,
+# not a defect in any one check. A new render-capture finding is a finding
+# against this named non-goal.
+#
 # NAMED NON-GOAL, so it is not rediscovered as a defect. A reversal welded to
 # the token by an em dash, a parenthetical, a colon, a list-item line break or
 # an adjacent table cell passes. Seat 1 raised this as a P1 repair in round 2;
@@ -76,12 +97,18 @@
 #   Form E (1)  seat 1's round-3 reproduction: the rule captured by a
 #               strikethrough span, so it renders inside <del> — retracted —
 #               while the normalised body is byte-identical
-#   Form F (1)  seat 1's round-4 reproduction: the rule captured by a raw <s>
-#               element, which crosses blank lines and so defeated the
-#               blank-line invariant that Form E's fix relied on
+#   Form G (1)  seat 1's round-5 reproduction: the block swallowed by an
+#               unclosed `~~~` fence, which the fence check missed while it
+#               counted only backticks
 #
-# Forms C through F are kept permanently: a bypass fixed without a test is a
+# Forms C, D, E and G are kept permanently: a bypass fixed without a test is a
 # bypass that comes back.
+#
+# There is also ONE must-PASS fixture, which is not a mutation and is not
+# counted above: a harmless closed `<kbd>Ctrl</kbd>` before the block. A
+# deleted check leaves no trace, so its overbreadth can silently return; this
+# fixture fails the suite if it does. Seat 1's round-5 P2 was exactly that
+# false positive.
 #
 # Each mutation declares WHICH check must reject it, and run_mutation FAILS if a
 # different check does. Reporting the reason was not enough: seat 1 found in
@@ -186,21 +213,29 @@ if len(blocks) != 1:
     sys.exit(1)
 
 # 1b. The block must not be swallowed by an unclosed code fence. This is an
-#     accident, not an attack: one stray ``` earlier in the document turns
+#     accident, not an attack: one stray fence earlier in the document turns
 #     everything after it — including the rule — into a code sample that
-#     renders as an inert example rather than as governing text. Parity of
-#     line-leading fences before the marker is the whole check; this does NOT
-#     attempt general markdown-rendering semantics, and must not grow toward
-#     them.
+#     renders as an inert example rather than as governing text.
+#
+#     CommonMark defines exactly two fence characters, backtick and tilde, so
+#     both are checked and the set is CLOSED BY SPEC. This is the last
+#     extension this check will ever need; there is no third character to
+#     chase later.
+#
+#     The two are counted SEPARATELY and never summed. A ``` line inside an
+#     open ~~~ block is literal content, not a fence, and vice versa — a
+#     combined count would let one character's content corrupt the other's
+#     parity and produce a false verdict in either direction.
 before = raw[: raw.index(OPEN_MARK)]
-fences = len([ln for ln in before.splitlines() if ln.lstrip().startswith("```")])
-if fences % 2 != 0:
-    print(
-        "the canonical block sits inside an unclosed code fence (%d line-leading "
-        "fences precede it); the rule would render as a code sample, not as text"
-        % fences
-    )
-    sys.exit(1)
+for char, name in (("```", "backtick"), ("~~~", "tilde")):
+    n = len([ln for ln in before.splitlines() if ln.lstrip().startswith(char)])
+    if n % 2 != 0:
+        print(
+            "the canonical block sits inside an unclosed %s code fence (%d "
+            "line-leading %s fences precede it); the rule would render as a "
+            "code sample, not as text" % (name, n, name)
+        )
+        sys.exit(1)
 
 # 1c. Each marker owns its line, and the block is separated by blank lines.
 #     Seat 1 demonstrated (round 3, with a cmark-gfm render) that inlining the
@@ -209,12 +244,18 @@ if fences % 2 != 0:
 #     retracted — while the normalised body is byte-identical and the checker
 #     exits 0.
 #
-#     Chasing `~~` would be the treadmill again: the next inline construct
-#     (an unclosed `<span>`, a blockquote, an HTML comment) does the same job.
-#     The structural invariant closes the class instead. GFM inline spans
-#     cannot cross a blank line, so a block that is line-isolated and
-#     paragraph-separated cannot be captured by any inline construct opened
-#     outside it.
+#     Chasing `~~` alone would be the treadmill again: the next GFM inline
+#     construct does the same job. The structural invariant closes that class
+#     instead. GFM INLINE SPANS cannot cross a blank line, so a block that is
+#     line-isolated and paragraph-separated cannot be captured by an inline
+#     span opened outside it.
+#
+#     That claim is scoped to GFM inline spans and to nothing else. RAW HTML
+#     IS NOT AN INLINE SPAN, it does cross blank lines, and it is explicitly
+#     OUT OF SCOPE here — see the second STATED LIMIT in the header. An
+#     earlier revision of this file claimed 1c stopped "any inline construct";
+#     that was an overclaim, seat 1 falsified it with a render, and the
+#     wording is now bounded to what the check actually proves.
 lines = raw.splitlines()
 open_lines = [i for i, ln in enumerate(lines) if OPEN_MARK in ln]
 close_lines = [i for i, ln in enumerate(lines) if CLOSE_MARK in ln]
@@ -242,45 +283,18 @@ if "~~" in raw[raw.index(OPEN_MARK) : raw.index(CLOSE_MARK)]:
     print("the canonical block contains a strikethrough delimiter")
     sys.exit(1)
 
-# 1d. No raw HTML element may open before the canonical block.
-#
-#     The blank-line invariant in 1c was asserted from the GFM spec, not from a
-#     render, and seat 1 falsified it in round 4 with an actual cmark-gfm +
-#     HTML5 parse: a raw `<s>` opened before the blank line captured the block
-#     anyway, rendering the complete rule under html>body>s>p>strong while the
-#     checker exited 0. Raw HTML is not an inline span and does cross blank
-#     lines, so 1c is necessary but not sufficient.
-#
-#     Enumerating `<s>` would repeat the mistake — `<del>`, `<code>`, `<div
-#     hidden>`, `<script>` and `<template>` all retract or hide the rule the
-#     same way. The bounded invariant is that the shipped document opens NO
-#     HTML element before the rule. That was already true when this was
-#     written (the only tag-shaped strings in that region are prose
-#     placeholders like <branch> and <sha>, which are not HTML elements), so
-#     this constrains nothing that exists — it only stops the class from being
-#     introduced.
-HTML_ELEMENTS = {
-    "a", "abbr", "b", "big", "blockquote", "body", "br", "code", "del", "details",
-    "div", "em", "font", "head", "html", "i", "iframe", "ins", "kbd", "mark",
-    "nobr", "noscript", "object", "p", "pre", "q", "s", "samp", "script", "small",
-    "span", "strike", "strong", "sub", "summary", "sup", "template", "tt", "u",
-    "var", "table", "tbody", "td", "th", "thead", "tr", "ul", "ol", "li", "style",
-}
-region = raw[: raw.index(CLOSE_MARK)]
-found = sorted(
-    {
-        t.lower()
-        for t in re.findall(r"</?([A-Za-z][A-Za-z0-9]*)(?:\s[^>]*)?/?>", region)
-        if t.lower() in HTML_ELEMENTS
-    }
-)
-if found:
-    print(
-        "raw HTML element(s) %s open before the canonical block; a raw element "
-        "crosses blank lines and can render the rule struck through, hidden or "
-        "as a code sample while its text is byte-identical" % (", ".join(found),)
-    )
-    sys.exit(1)
+# 1d is DELETED. It banned every raw HTML element name before the block. Seat
+#     1 falsified it from both sides in one round: too narrow, because
+#     `<section hidden>` is not in any hand-written element list and a `~~~`
+#     fence captures the block using no element name at all; and too broad,
+#     because a harmless closed `<kbd>Ctrl</kbd>` — which can capture nothing —
+#     failed the suite. Three consecutive rounds each closed one render-capture
+#     hole and each opened another. That is the treadmill this file's header
+#     warns about, and the exit is a scope decision, not a fourth patch: see
+#     the second STATED LIMIT in the header. A render can falsify a claim about
+#     what a check catches; it cannot falsify a decision about what the check
+#     is for.
+
 lo, hi = blocks[0]
 block = text[lo:hi]
 
@@ -627,7 +641,7 @@ PYEOF
 then
     fail "mutation harness broken: could not build the unclosed-fence fixture"
 fi
-run_mutation "seat-1 round-2: canonical block inside an unclosed code fence" "$m" "unclosed code fence"
+run_mutation "seat-1 round-2: canonical block inside an unclosed code fence" "$m" "unclosed backtick code fence"
 
 # Seat 1's round-3 reproduction, verified by it with a cmark-gfm render: inline
 # the CLOSING marker into the following prose and open a strikethrough span
@@ -668,48 +682,79 @@ then
 fi
 run_mutation "seat-1 round-3: rule captured by a strikethrough span (renders as <del>)" "$m" "alone on its own line"
 
-# Seat 1's round-4 reproduction, verified with cmark-gfm --unsafe plus an HTML5
-# parse: a raw <s> opened before the blank line captured the block anyway,
-# rendering the rule under html>body>s>p>strong while the checker exited 0 with
-# markers isolated, blank lines intact and the body unchanged. Raw HTML is not
-# an inline span and does cross blank lines, which falsified the blank-line
-# invariant as a sufficient condition.
-m="$WORK/r4-rawhtml.md"
+# Form G. Seat 1's round-5 reproduction: an unclosed `~~~` fence swallows the
+# block and renders the rule under html>body>pre>code, while the fence check
+# saw nothing because it counted only backtick fences. CommonMark defines
+# exactly two fence characters, so closing this closes the class by spec.
+m="$WORK/r5-tilde-fence.md"
 if ! python3 - "$DOC" "$m" <<'PYEOF'
 import sys
 
 src, dst = sys.argv[1], sys.argv[2]
 OPEN_MARK = "<!-- CANONICAL:evidence-exception-bound -->"
-CLOSE_MARK = "<!-- /CANONICAL:evidence-exception-bound -->"
 
 text = open(src, encoding="utf-8").read()
-out = text.replace("\n\n" + OPEN_MARK, "<s>\n\n" + OPEN_MARK, 1)
-out = out.replace(CLOSE_MARK + "\n\n", CLOSE_MARK + "\n\n</s>", 1)
+# One stray opening tilde fence before the rule, closed by nothing.
+out = text.replace("\n\n" + OPEN_MARK, "\n\n~~~\n\n" + OPEN_MARK, 1)
 if out == text:
-    sys.stderr.write("raw-html fixture: replacement was a no-op\n")
+    sys.stderr.write("tilde-fence fixture: replacement was a no-op\n")
     sys.exit(2)
 
-# The attack only means anything while the block still looks pristine to the
-# structural checks — markers isolated, blank lines intact, body unchanged.
-lines = out.splitlines()
-o = next(i for i, ln in enumerate(lines) if ln.strip() == OPEN_MARK)
-c = next(i for i, ln in enumerate(lines) if ln.strip() == CLOSE_MARK)
-if lines[o - 1].strip() != "" or lines[c + 1].strip() != "":
-    sys.stderr.write("raw-html fixture: blank-line separation broken, fixture tests the wrong thing\n")
+before = out[: out.index(OPEN_MARK)]
+tildes = len([ln for ln in before.splitlines() if ln.lstrip().startswith("~~~")])
+if tildes % 2 == 0:
+    sys.stderr.write("tilde-fence fixture: parity is still even (%d), fixture is inert\n" % tildes)
     sys.exit(2)
-if " ".join(text[text.index(OPEN_MARK) : text.index(CLOSE_MARK)].split()) != " ".join(
-    out[out.index(OPEN_MARK) : out.index(CLOSE_MARK)].split()
-):
-    sys.stderr.write("raw-html fixture: body changed, fixture tests the wrong thing\n")
+# Backtick parity must stay untouched, or the fixture would be caught by the
+# wrong half of the check and prove nothing about tilde fences.
+ticks = len([ln for ln in before.splitlines() if ln.lstrip().startswith("```")])
+if ticks % 2 != 0:
+    sys.stderr.write("tilde-fence fixture: backtick parity is odd (%d), fixture tests the wrong thing\n" % ticks)
     sys.exit(2)
 open(dst, "w", encoding="utf-8").write(out)
 PYEOF
 then
-    fail "mutation harness broken: could not build the raw-HTML fixture"
+    fail "mutation harness broken: could not build the unclosed-tilde-fence fixture"
 fi
-run_mutation "seat-1 round-4: rule captured by a raw <s> element (renders under html>body>s)" "$m" "raw HTML element"
+run_mutation "seat-1 round-5: canonical block inside an unclosed ~~~ fence" "$m" "unclosed tilde code fence"
 
 [ "$mutations_run" -eq 19 ] || fail "expected 19 mutations, ran $mutations_run"
 pass "self-falsification: all $mutations_caught/19 mutations make the guard fail"
+
+# ---------------------------------------------------------------------------
+# MUST-PASS fixture (not a mutation, not counted above).
+#
+# Check 1d used to ban every raw HTML element name appearing before the block.
+# Seat 1 showed in round 5 that this failed the suite on `<kbd>Ctrl</kbd>` — a
+# closed element that captures nothing and threatens nothing. The check was
+# deleted, and render capture is now a STATED LIMIT (see the header). A deleted
+# check leaves no trace, so nothing would stop that overbreadth from being
+# reintroduced by a future round chasing the same hole. This fixture does: it
+# fails the suite if a harmless closed element ever makes the checker reject.
+m="$WORK/mustpass-kbd.md"
+if ! python3 - "$DOC" "$m" <<'PYEOF'
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+OPEN_MARK = "<!-- CANONICAL:evidence-exception-bound -->"
+
+text = open(src, encoding="utf-8").read()
+out = text.replace("\n\n" + OPEN_MARK, "\n\nPress <kbd>Ctrl</kbd> to continue.\n\n" + OPEN_MARK, 1)
+if out == text:
+    sys.stderr.write("kbd fixture: replacement was a no-op\n")
+    sys.exit(2)
+if "<kbd>" not in out[: out.index(OPEN_MARK)]:
+    sys.stderr.write("kbd fixture: element did not land before the block\n")
+    sys.exit(2)
+open(dst, "w", encoding="utf-8").write(out)
+PYEOF
+then
+    fail "mutation harness broken: could not build the kbd must-pass fixture"
+fi
+if ! reason=$(python3 "$CHECKER" "$m" 2>&1); then
+    fail "false positive: a harmless closed <kbd>Ctrl</kbd> before the block made the guard REJECT. The round-5 overbreadth has returned. Reason given: $reason"
+fi
+pass "no false positive: a harmless closed HTML element before the block is accepted"
+
 
 echo "All evidence-exception-bound checks passed."
