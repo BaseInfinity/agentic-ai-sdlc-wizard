@@ -19,7 +19,9 @@
 #
 #   regex    for DETECTION  — finding WHERE the rule is discussed is a
 #                             syntactic question, and the old guard's MENTION
-#                             pattern is the one part that was never defeated.
+#                             pattern is the one part no review round in
+#                             #588, #598 or #608 defeated. It is a
+#                             vocabulary, and its limit is stated below.
 #                             It is reused verbatim below.
 #   markers  for COMPLIANCE — every mention outside the canonical block must
 #                             carry the reference token in its OWN SENTENCE.
@@ -38,9 +40,10 @@
 # the reference token and ALSO misstates the rule passes this check. That is
 # deliberate. Judging whether prose means what it says is review's job, not a
 # validator's; #588/PR #598 spent 22 rounds proving what happens to a validator
-# that takes on that ambition. The guard's job is to make every restatement
-# REACHABLE from the one authoritative statement, so a human or reviewer can
-# check it in one hop. Do not grow this file toward semantic matching.
+# that takes on that ambition. The guard's job is to make each restatement it
+# DETECTS reachable from the one authoritative statement, so a human or
+# reviewer can check it in one hop. Do not grow this file toward semantic
+# matching.
 #
 # Read that limit together with the word REACHABLE above: this guard makes
 # every DETECTED restatement carry a pointer. It does not, and cannot, make
@@ -59,9 +62,15 @@
 # The reason is a threat model, not an oversight. Anyone who can add
 # `<section hidden>` to this document already has commit access, and someone
 # with commit access can simply DELETE the rule. Review is the control for a
-# committer-adversary; this guard is not, and cannot be. What it is for is
-# catching ACCIDENTS — a stray fence, a dropped marker, a drifting restatement —
-# and keeping every honest edit reachable from one authoritative statement.
+# committer-adversary; this guard is not. What it is for is catching ACCIDENTS
+# — a stray fence, a dropped marker, a drifting restatement — and binding the
+# restatements it detects to one authoritative statement.
+#
+# It does NOT keep every honest edit reachable, and an earlier draft of this
+# header said it did. Seat 1 falsified that in round 7 with an unbound
+# paraphrase ("Stale evidence buys another pass") that MENTION does not
+# match, so nothing flags it. That is stated limit #1 above working as
+# documented, not a defect — but the header may not promise past it.
 #
 # This limit is recorded because three consecutive review rounds were spent
 # adding invariants to close render-capture, and each one was falsified by the
@@ -69,6 +78,14 @@
 # by construction; that is a property of source-text checking a rendered format,
 # not a defect in any one check. A new render-capture finding is a finding
 # against this named non-goal.
+#
+# THIRD STATED LIMIT — NO CONTAINER-BLOCK MODELING. Check 1b requires every
+# fence opened before the rule to be EXPLICITLY CLOSED in the source. That is
+# stricter than CommonMark, which closes a container-nested fence at the end of
+# its container. A fence left unclosed inside a list item is rejected here even
+# though a renderer would not let it reach the rule. That is a decision, not an
+# oversight: the alternative is a container-block parser, and the alternative
+# to THAT is a full markdown implementation. See 1b for the reasoning.
 #
 # NAMED NON-GOAL, so it is not rediscovered as a defect. A reversal welded to
 # the token by an em dash, a parenthetical, a colon, a list-item line break or
@@ -234,23 +251,34 @@ if len(blocks) != 1:
     )
     sys.exit(1)
 
-# 1b. The block must not be swallowed by an unclosed code fence. This is an
-#     accident, not an attack: one stray fence earlier in the document turns
-#     everything after it — including the rule — into a code sample that
-#     renders as an inert example rather than as governing text.
+# 1b. Every code fence opened before the canonical block must be EXPLICITLY
+#     CLOSED in the source, before the block.
 #
-#     This TRACKS FENCE STATE per CommonMark; it does not count
-#     prefix-shaped lines. Seat 1 demonstrated (round 6) that counting was
-#     wrong in both directions: a valid CLOSED ```` block containing a literal
-#     ``` line was rejected, while the same block left UNCLOSED was accepted
-#     and captured the rule. Parity of look-alike prefixes is not fence state.
+#     Read that as written. It is a SOURCE-LEVEL rule, and it is deliberately
+#     STRICTER than CommonMark. CommonMark closes an unclosed fence at the end
+#     of its containing block, so a fence opened inside a list item is closed
+#     by the end of that list item and cannot reach the rule. This check does
+#     not model container blocks and does not know that; it requires the
+#     closing fence to be written. A fence left unclosed inside a list item is
+#     therefore REJECTED here, and that is the rule firing, not a false
+#     positive — it is a shape this document can simply not write.
 #
-#     The rules that matter here, from the spec: a closing fence must use the
-#     SAME character as the opening one and be AT LEAST as long, it carries no
-#     info string, and while a fence is open every other line — including a
-#     shorter or differently-charactered fence line — is literal content.
-#     CommonMark defines exactly two fence characters, backtick and tilde, so
-#     this is closed by spec and cannot need extending again.
+#     Why strict rather than accurate: the accurate version is a container-block
+#     parser, and the accurate version of the NEXT question is a full markdown
+#     implementation. Rounds 3 through 5 of this PR were spent proving that a
+#     source-text checker cannot win an argument about rendering. A claim about
+#     what the SOURCE contains is exact and settleable; a claim about what a
+#     renderer does with it is falsifiable forever. So this check makes the
+#     source claim, and the accident it exists for — a stray fence that runs on
+#     and swallows the rule — is caught by it either way.
+#
+#     What IS tracked, per CommonMark, is which fence lines pair with which: a
+#     closing fence must use the SAME character as its opener and be AT LEAST
+#     as long, it carries no info string, and while a fence is open every other
+#     line — including a shorter or differently-charactered fence line — is
+#     literal content. Seat 1 demonstrated in round 6 that counting look-alike
+#     prefixes instead gets this wrong in BOTH directions. CommonMark defines
+#     exactly two fence characters, so that part is closed by spec.
 before = raw[: raw.index(OPEN_MARK)]
 open_char = None
 open_len = 0
@@ -276,9 +304,11 @@ for ln in before.splitlines():
 
 if open_char is not None:
     print(
-        "the canonical block sits inside an unclosed %s code fence (opened with "
-        "%d %r and never closed); the rule would render as a code sample, not "
-        "as text" % ("tilde" if open_char == "~" else "backtick", open_len, open_char)
+        "a %s code fence opened before the canonical block (%d %r) is never "
+        "explicitly closed in the source. This guard requires explicit closure "
+        "and does not model container blocks, so it is stricter than CommonMark "
+        "here by design — write the closing fence"
+        % ("tilde" if open_char == "~" else "backtick", open_len, open_char)
     )
     sys.exit(1)
 
@@ -686,7 +716,7 @@ PYEOF
 then
     fail "mutation harness broken: could not build the unclosed-fence fixture"
 fi
-run_mutation "seat-1 round-2: canonical block inside an unclosed code fence" "$m" "unclosed backtick code fence"
+run_mutation "seat-1 round-2: canonical block inside an unclosed code fence" "$m" "backtick code fence opened before the canonical block"
 
 # Seat 1's round-3 reproduction, verified by it with a cmark-gfm render: inline
 # the CLOSING marker into the following prose and open a strikethrough span
@@ -761,7 +791,7 @@ PYEOF
 then
     fail "mutation harness broken: could not build the unclosed-tilde-fence fixture"
 fi
-run_mutation "seat-1 round-5: canonical block inside an unclosed ~~~ fence" "$m" "unclosed tilde code fence"
+run_mutation "seat-1 round-5: canonical block inside an unclosed ~~~ fence" "$m" "tilde code fence opened before the canonical block"
 
 # Form H. Seat 1's round-6 reproduction, the must-FAIL half: a four-backtick
 # block that is never closed, containing a literal ``` line. The predecessor
@@ -795,7 +825,7 @@ PYEOF
 then
     fail "mutation harness broken: could not build the unclosed-four-backtick fixture"
 fi
-run_mutation "seat-1 round-6: unclosed \`\`\`\` block whose inner \`\`\` does not close it" "$m" "unclosed backtick code fence"
+run_mutation "seat-1 round-6: unclosed \`\`\`\` block whose inner \`\`\` does not close it" "$m" "backtick code fence opened before the canonical block"
 
 [ "$mutations_run" -eq 20 ] || fail "expected 20 mutations, ran $mutations_run"
 pass "self-falsification: all $mutations_caught/20 mutations make the guard fail"
