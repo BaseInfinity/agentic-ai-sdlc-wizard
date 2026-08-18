@@ -1980,27 +1980,20 @@ test_setup_a_escalation_and_advisor_fallback_explicit() {
     # entirely, or link to the wrong file, while the guard stayed green.
     # Requiring both facts in the SAME paragraph is what makes the second one
     # say something about the first.
-    # Seat 1 rounds 1-3 (2026-08-17) each killed a narrower version of the
-    # same defect, so the third fix changes the PRINCIPLE instead of the
-    # pattern. Every earlier attempt asserted "a link to AI_SETUP_LANES.md
-    # exists somewhere in a REGION" — first the file, then the paragraph, then
-    # the paragraph restricted to anchorless links. Any region wide enough to
-    # contain the pointer also contains its neighbours, so a sibling link
-    # always satisfied the check on the pointer's behalf.
+    # The README pointer guard that lived here is DELETED, routed to #672
+    # under the #530 rule: a guard whose review cost exceeds what it guards
+    # goes to a follow-up rather than getting patched again. Four consecutive
+    # P1 rounds on one sentence. Rounds 1-3 were one defect at narrowing scope
+    # — assert a link exists in a REGION, which any sibling link satisfies on
+    # the pointer's behalf. Round 4 changed the principle to check the
+    # CONSTRUCT, closed that class, and opened a new one: the match ended
+    # before the file boundary, so AI_SETUP_LANES.md.bak passed 137/0.
     #
-    # A markdown link binds phrase and destination in ONE construct. Checking
-    # the construct makes sibling links irrelevant by construction rather than
-    # by how today's prose happens to be written, which is why the region
-    # extraction is gone rather than tightened. The trailing paren is
-    # deliberately absent: an anchor is allowed, because the guard's job is to
-    # stop a dead reference to a file, not to police which section.
-    if ! grep -q '\[how to read Setup A precisely\](AI_SETUP_LANES\.md' "$REPO_ROOT/README.md"; then
-        if grep -q 'how to read Setup A precisely' "$REPO_ROOT/README.md"; then
-            bad="$bad README.md:setup-a-pointer-is-not-a-link-to-AI_SETUP_LANES.md"
-        else
-            bad="$bad README.md:missing-pointer-to-setup-a-detail"
-        fi
-    fi
+    # The replacement is generic, not bespoke — assert every relative link
+    # target in shipped markdown resolves to a file that exists. That is what
+    # four rounds of one-sentence regex were reaching for. Deleted whole:
+    # a surviving half re-seeds the region concept.
+
     # Negative half (Codex round-1 P1-3): positive assertions alone false-green
     # while the advisor-outage procedure still offers a "no advisor" path. The
     # outage section must route to the subagent fallback, never to skipping.
