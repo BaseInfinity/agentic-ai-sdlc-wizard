@@ -144,32 +144,24 @@ Reviewer effort is `high` (changed from `xhigh` 2026-08-01, for cost and review-
 
 ## Choosing Your Model
 
-The wizard ships a **default recommendation**, not a mandate. You can swap to any Claude model — newer, older, or sibling tier — at any time. `/model` per session, or pin in `.claude/settings.json`.
+The wizard ships a **default recommendation**, not a mandate. Swap to any Claude
+model at any time — `/model` per session, or pin in `.claude/settings.json`.
 
-**Default: Opus 5 at `high` effort for complex projects, `medium` for routine web/CRUD** (Setup A in `AI_SETUP_LANES.md`; effort default changed 2026-08-02). Escalate to `xhigh` for genuinely hard or long-running agentic runs — Anthropic's own framing for that tier — but not as the standing default: their Opus 5 prompting guide advises using lower effort liberally wherever quality holds, and higher effort increases elaboration and self-directed scope. **Sonnet 5 at `medium` effort** (Setup B) remains the evidence-backed pick for simple/one-off work.
+**Default: Opus 5 at `high` effort for complex projects, `medium` for routine
+web/CRUD** (Setup A).
+**Sonnet 5 at `medium` effort** (Setup B) for simple or one-off work.
 
-### Why Opus 4.6 was the flagship, and why that changed
-
-Two weeks of in-the-wild data after Opus 4.8's launch (2026-05-28) showed a clear pattern that first made Opus 4.6 the wizard's flagship over Anthropic's own "latest" model:
-
-- **[Andon Labs Vending-Bench](https://andonlabs.com/blog/opus-4-8-vending-bench)** — 4.8 finished last vs 4.7 and GPT-5.5; documented "Max reasoning is not the best reasoning effort"; falls for scam suppliers 30× more frequently
-- **[AI Weekly: 900K cache tokens per turn](https://aiweekly.co/alerts/claude-opus-48-thinking-burns-900k-tokens-per-turn)** — 40-60× jump vs 4.7 at HIGH effort. Burns Max 5-hour limits 2-3× faster
-- **[Tech.yahoo review](https://tech.yahoo.com/ai/claude/articles/claude-opus-4-8-review-130106963.html)** — explicit: "Anthropic deliberately made Opus's new tokenizer less efficient"; "a single coding prompt drained our entire token quota"
-- **Active GitHub regressions** — false-greens ([#63861](https://github.com/anthropics/claude-code/issues/63861)), 2-3× token burn ([#64961](https://github.com/anthropics/claude-code/issues/64961)), 46K tokens for simple coding turn ([#64153](https://github.com/anthropics/claude-code/issues/64153)), dropped constraints during execution ([#65932](https://github.com/anthropics/claude-code/issues/65932)), fabricated identifiers in parallel tool batches
-- **[Paweł Huryn's 4.7 guide](https://www.productcompass.pm/p/claude-opus-4-7-guide)** — "most complaints about 4.7 feeling slow stem from people reflexively using max"
-- **[BSWEN effort decision guide](https://docs.bswen.com/blog/2026-04-19-claude-code-effort-level-decision-guide/)** — "Max on Opus causes overthinking on routine stuff. xHigh is the sweet spot for autonomous work"
-- **r/Claudeopus field reports** — one maintainer's literal A/B: "12 hours with 4.8 zero deliverables; plugged in 4.6, spec written + 133 tests green in one session." Top comment: "4.6 had the best overall balance at max"
-
-That research still stands as the reason **Sonnet 5 (not Opus 4.6, not Opus 4.8) is Setup B's driver** — Sonnet 5 doesn't have Opus 4.8's overthinking problem, and generally uses less quota for comparable-scope work. **Note what kind of evidence that is:** third-party field reports about model behavior in general, not a measurement of this harness running on Setup B. Setup A is the only lane behind which there is cycle data from this repo, and `AI_SETUP_LANES.md` labels Setup B unverified for exactly that reason. The two statements are consistent — the research picks Sonnet 5 *over other Setup B candidates*; it says nothing about Setup B versus Setup A. Opus 4.6/4.8 remain reachable as an explicit escalation/stability pin (see `AI_SETUP_LANES.md`) for anyone who's tuned a workflow to their specific behavior, but neither is a lane driver anymore.
-
-**Why Opus 5 became the default (2026-07-24), on top of that history.** Opus 5 launched today at the same price as Opus 4.8, positioned by Anthropic as "close to Fable 5 intelligence at half the price," with documented self-verification improvements. Every capability claim behind this is Anthropic's own launch-day material — zero field data exists yet, the exact evidence class the wizard's own process treats with skepticism (see `AI_SETUP_LANES.md`'s trial-flagged framing). The wizard maintainer chose to adopt it as default anyway, judging the risk acceptable since Codex still gates every task and reverting is one settings change. Sonnet 5 remains the wizard's evidence-backed pick for lower-stakes work — Setup B, not deprecated.
-
-4.6 remains Anthropic-supported until **≥ Feb 5, 2027** per the [official deprecation page](https://platform.claude.com/docs/en/about-claude/model-deprecations).
+**What has actually been exercised on this harness.** Current Setup A — Opus 5
+driving, Fable 5 advising, GPT-5.6 Sol gating — is what recent cycles run on.
+Earlier defaults existed (Opus 4.6, June 2026 — see `CHANGELOG.md`) but predate
+the current review setup, so none of that data transfers. The other lanes and
+the `claude-opus-4-6` / `claude-opus-4-8` pins are configuration that should
+work, not measured results.
 
 ### Switch any time
 
 ```bash
-/model opus               # wizard's default (Setup A) — Opus 5, requires CC v2.1.219+
+/model opus                # wizard's default (Setup A) — Opus 5, requires CC v2.1.219+
 /model sonnet              # Simple/one-off lane (Setup B) — native 1M context, lower cost
 /model opusplan            # Opus 5 plans (Shift+Tab), Sonnet executes — both Max-bundled (Setup C)
 /model claude-opus-4-8     # pin explicitly for Opus 4.8's field-proven behavior instead of Opus 5
@@ -182,7 +174,9 @@ Or pin in `.claude/settings.json`:
 { "model": "opus", "advisorModel": "fable", "effortLevel": "high" }
 ```
 
-**Effort is model-aware, not blanket `max`.** Opus 5: `high` default for Setup A, `medium` for routine web/CRUD (changed 2026-08-02); `xhigh` is an escalation trigger for difficult/long-running work, not the default — effort tiers are static per session, but Opus 5 has documented adaptive reasoning *within* a fixed tier. Sonnet 5: `medium` default (CodeRabbit-tested), escalate `/effort high` → `xhigh` for hard tasks. Opus 4.8: `xhigh` (its own `max` overthinks). Opus 4.6: `max` (its one `xhigh`-less sweet spot). Set per-session with `/effort`, not a shell-rc or settings env var — persisting effort that way silently overrides a later `/effort` change after you switch models (see `SDLC.md`'s Lessons Learned for a real incident this caused). Also check for a stale `ANTHROPIC_DEFAULT_OPUS_MODEL` env var in your shell rc files — it silently overrides `/model opus` picker choices. OpenAI/Codex reviewer: `high` default (2026-08-01; cost and review-noise, not capability) — escalate to `xhigh` for unusually risky PRs, `max`/Pro above that (see `AI_SETUP_LANES.md`'s Final Review Policy).
+Set effort per session with `/effort`, not a shell-rc or settings env var —
+persisting it that way silently overrides a later `/effort` change once you
+switch models.
 
 ### Four Setup Lanes
 
@@ -197,15 +191,15 @@ The wizard defines four AI coding setups in [`AI_SETUP_LANES.md`](AI_SETUP_LANES
 
 Setup D's whole point: **the discipline of knowing when NOT to use discipline.** When blast radius is low and you just need fast cheap hands, skip the SDLC overhead.
 
-### Reading Setup A precisely
+### Going deeper
 
-Clarified 2026-07-13, updated 2026-07-24 for the Opus 5 swap — these exact points kept getting re-confused; each rule states its why:
-
-- **Effort starts at `high`, not `xhigh`** (changed 2026-08-02). Opus 5's own documented default is `high` for general use. Anthropic recommends "extra" (`xhigh`) specifically for difficult and long-running asynchronous work — treat that as an escalation trigger, not the standing default, and drop to `medium` for routine web/CRUD.
-- **Model escalation swaps the driver, not the tier.** After 2 failed attempts, LOW confidence, or on high-stakes changes with Setup A already exhausted, a pinned Opus 4.8 (`claude-opus-4-8`) takes over as driver for a genuinely independent second pass — Opus-5-driver plus an Opus-5 advisor fallback would otherwise be a same-family self-check. Why a swap and not more effort: the lane's policy treats repeated failure as a sign the *approach* needs different eyes, not deeper reasoning on the same track.
-- **Advisor failure has a fallback, not a shrug.** Fable 5 advises via `advisorModel: "fable"` — disabled by an Anthropic rollout on 2026-07-24, observed working again on 2026-08-16. Availability is a dated observation, so establish it by calling the tool. On a real failure, spawn a Fable subagent at `high` as the fallback reviewer immediately, exactly as the `/sdlc` skill prescribes. Why: the advisor's job is catching wrong approaches *before* they're built, so a transport failure changes how the advice is obtained — not whether the check happens.
-
-**A note on `[1m]` and billing.** Sonnet 5 always runs at its native 1M context — no `[1m]` suffix needed, no separate billing tier. For Opus, the `[1m]` suffix is the 1M-context alias; as of [March 2026](https://claude.com/blog/1m-context-ga), 1M context is GA at standard pricing — **no long-context surcharge, no premium tier, no API-only restriction.** Interactive Claude Code sessions on Max / Team / Enterprise plans include 1M context automatically. (Pro users need "Enable usage credits" turned on once.) The [June 15, 2026 billing split](https://codersera.com/blog/anthropic-june-2026-billing-change-claude-code/) moved *headless* surfaces — `claude -p`, Agent SDK, GitHub Actions, third-party apps — off the Max subscription onto a separate metered credit pool. Interactive Claude Code in your terminal stays on Max. Full details in [`AI_SETUP_LANES.md` § How Billing Works](AI_SETUP_LANES.md#how-billing-works--1m-context-max-plan-and-the-june-15-split).
+[`AI_SETUP_LANES.md`](AI_SETUP_LANES.md) carries the rest, so this section stays
+short: the per-model effort table,
+[how to read Setup A precisely](AI_SETUP_LANES.md), the evidence behind the
+4.6 / 4.8 / Sonnet 5 positions, and
+[how billing works](AI_SETUP_LANES.md#how-billing-works--1m-context-max-plan-and-the-june-15-split)
+(1M context is GA at standard pricing; the June 15, 2026 split moved *headless*
+surfaces off Max, interactive Claude Code stays on it).
 
 ## How It Works
 

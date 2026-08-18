@@ -1215,7 +1215,7 @@ Set effort per-session with `/effort` (planner `xhigh`, driver `medium`, escalat
 
 ### Latest tier — Opus 4.8 (pinned escalation model, #395)
 
-The wizard's default is **Opus 5** (Setup A, trial as of 2026-07-24 — see "Choosing Your Model" in [README.md](../README.md) for the full evidence, including the accepted-risk framing). **Opus 4.8**, pinned explicitly (`claude-opus-4-8`), is the same-family-check escalation model: reach for it when the default driver stalls on architecture, a stuck bug, or anything needing a genuinely independent second pass — not as a daily driver. It ships SWE-Bench Pro / Terminal-Bench 2.1 gains, dynamic-workflows, and parallel-subagent-swarm features 4.6 doesn't have.
+The wizard's default is **Opus 5** (Setup A, trial as of 2026-07-24 — see "Model Selection — The Evidence" in [AI_SETUP_LANES.md](../AI_SETUP_LANES.md) for the full evidence, including the accepted-risk framing). **Opus 4.8**, pinned explicitly (`claude-opus-4-8`), is the same-family-check escalation model: reach for it when the default driver stalls on architecture, a stuck bug, or anything needing a genuinely independent second pass — not as a daily driver. It ships SWE-Bench Pro / Terminal-Bench 2.1 gains, dynamic-workflows, and parallel-subagent-swarm features 4.6 doesn't have.
 
 **When Opus 4.8 is the right call:**
 - The driver is stuck (2+ failed attempts) and you want a fresh, deeper-reasoning pass
