@@ -2024,10 +2024,14 @@ test_wrapper_merges_when_all_conditions_met() {
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED: pr merge 123 --squash --match-head-commit $fixture_sha"; then
-        pass "wrapper merges with the exact expected command when all conditions are met"
+    # The -R pin is asserted, not tolerated (#607). Repository selection was
+    # ambient: with GIT_DIR redirected, the merge targeted another repository
+    # while every check reported success against the wrong target. An unpinned
+    # merge call must fail this row rather than pass it.
+    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED: pr merge -R github.com/BaseInfinity/claude-sdlc-harness 123 --squash --match-head-commit $fixture_sha"; then
+        pass "wrapper merges with the exact expected command, repository pinned, when all conditions are met"
     else
-        fail "wrapper should invoke 'gh pr merge 123 --squash --match-head-commit <fixture sha>', got exit=$exit_code out=$out"
+        fail "wrapper should invoke 'gh pr merge -R <this repo> 123 --squash --match-head-commit <fixture sha>', got exit=$exit_code out=$out"
     fi
 }
 
@@ -2120,6 +2124,32 @@ test_wrapper_blocks_stale_clearance
 test_wrapper_blocks_wrong_candidate_tree
 test_wrapper_blocks_moved_base
 test_wrapper_blocks_moved_server_base_with_stale_tracking_ref
+
+# Test: every gh invocation in the gate pins the repository.
+#
+# #607 round 3. Repository selection was AMBIENT: gh honours GH_REPO/GH_HOST
+# and git honours GIT_DIR/GIT_WORK_TREE, and `cd` binds neither. The reviewer
+# demonstrated it by running it — with GIT_DIR pointed elsewhere, every check
+# reported success while the request resolved to an unrelated repository.
+#
+# Source-level rather than behavioural because the defect is a MISSING call
+# site: a behavioural test can only cover the calls someone remembered to
+# write a fixture for, and the next unpinned call added to this file is
+# exactly the one no fixture exists for.
+test_every_gh_call_in_the_gate_is_pinned() {
+    local unpinned
+    unpinned=$(grep -n '\$(gh \|! gh \|^MERGE_OUTPUT=\$(gh ' "$WRAPPER" \
+        | grep -v '^[0-9]*:\s*#' \
+        | grep -v -- '-R ' || true)
+    if [ -z "$unpinned" ]; then
+        pass "every gh invocation in the gate pins the repository"
+    else
+        fail "unpinned gh call(s) in the gate: $(echo "$unpinned" | tr '\n' ' ' | cut -c1-200)"
+    fi
+}
+
+
+test_every_gh_call_in_the_gate_is_pinned
 test_wrapper_blocks_unreadable_base_object
 test_wrapper_blocks_clearance_without_trees
 test_wrapper_blocks_empty_review_artifact

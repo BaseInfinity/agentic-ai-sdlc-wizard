@@ -136,7 +136,7 @@ verify_cross_model_clearance() {
     fi
     local comments records who conf sha author reviewers="" count=0
     CLEARED_BY=""
-    if ! comments=$(gh api --paginate "repos/:owner/:repo/issues/$PR_NUM/comments" 2>&1); then
+    if ! comments=$(gh api -R github.com/BaseInfinity/claude-sdlc-harness --paginate "repos/:owner/:repo/issues/$PR_NUM/comments" 2>&1); then
         echo "FAILED CLOSED: could not fetch PR comments for #$PR_NUM: $comments" >&2
         return 1
     fi
@@ -454,7 +454,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if ! PR_JSON=$(gh pr view "$PR_NUM" --json headRefOid,number,state,baseRefName 2>&1); then
+if ! PR_JSON=$(gh pr view -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --json headRefOid,number,state,baseRefName 2>&1); then
     echo "FAILED CLOSED: could not fetch PR #$PR_NUM (gh error): $PR_JSON" >&2
     exit 1
 fi
@@ -492,7 +492,7 @@ fi
 # `baseRefOid` is therefore deliberately NOT in the `pr view --json` list above:
 # a trap field left parsed is a regression waiting to be reintroduced. The ref
 # endpoint below is the branch tip itself.
-if ! BASE_REF_JSON=$(gh api "repos/{owner}/{repo}/git/ref/heads/$BASE_BRANCH" 2>&1); then
+if ! BASE_REF_JSON=$(gh api -R github.com/BaseInfinity/claude-sdlc-harness "repos/{owner}/{repo}/git/ref/heads/$BASE_BRANCH" 2>&1); then
     echo "FAILED CLOSED: could not read the current tip of $BASE_BRANCH (gh error): $BASE_REF_JSON" >&2
     exit 1
 fi
@@ -514,14 +514,14 @@ fi
     # invalid `gh pr diff -- <path>` call (gh pr diff has no per-path
     # filter flag; that call errors with stderr suppressed, so the check
     # silently no-opped — Codex round-1 finding). ---
-    if ! PR_FILES=$(gh api --paginate "repos/:owner/:repo/pulls/$PR_NUM/files" 2>&1); then
+    if ! PR_FILES=$(gh api -R github.com/BaseInfinity/claude-sdlc-harness --paginate "repos/:owner/:repo/pulls/$PR_NUM/files" 2>&1); then
         echo "FAILED CLOSED: could not fetch file statuses for PR #$PR_NUM: $PR_FILES" >&2
         exit 1
     fi
 
     # --- Denylist / release-policy-adjacency check (checked first so the
     # self-referential case fails loud and immediately) ---
-    if ! DIFF_FILES=$(gh pr diff "$PR_NUM" --name-only 2>&1); then
+    if ! DIFF_FILES=$(gh pr diff -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --name-only 2>&1); then
         echo "FAILED CLOSED: could not fetch diff for PR #$PR_NUM: $DIFF_FILES" >&2
         exit 1
     fi
@@ -554,7 +554,7 @@ fi
     # Codex round-3: `|| echo ""` turned an API/CLI failure into "skip the
     # check" — precisely the condition that must fail closed. A HARD file past
     # the files-API ceiling was invisible whenever this second query failed.
-    if ! CHANGED_COUNT=$(gh pr view "$PR_NUM" --json changedFiles --jq '.changedFiles' 2>/dev/null); then
+    if ! CHANGED_COUNT=$(gh pr view -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --json changedFiles --jq '.changedFiles' 2>/dev/null); then
         echo "FAILED CLOSED: could not read changedFiles for PR #$PR_NUM — cannot prove the classified path set is complete." >&2
         exit 1
     fi
@@ -694,7 +694,7 @@ fi
     # validate" meant "every run on page one" and a red duplicate on page two was
     # invisible (Codex round 1). Same defect the files endpoint already carries a
     # comment about.
-    if ! CHECK_RUNS=$(gh api --paginate "repos/:owner/:repo/commits/$HEAD_SHA/check-runs" 2>&1); then
+    if ! CHECK_RUNS=$(gh api -R github.com/BaseInfinity/claude-sdlc-harness --paginate "repos/:owner/:repo/commits/$HEAD_SHA/check-runs" 2>&1); then
         echo "FAILED CLOSED: could not fetch check-runs for $HEAD_SHA: $CHECK_RUNS" >&2
         exit 1
     fi
@@ -1218,7 +1218,7 @@ if [ -n "$USER_APPROVED_REASON" ]; then
         "$USER_APPROVED_REASON" \
         "$(printf '%s\n' "$WAIVED_PATHS" | sed '/^$/d' | sed 's/^/- `/; s/$/`/')" \
         "$HEAD_SHA")
-    if ! gh pr comment "$PR_NUM" --body "$OVERRIDE_BODY" >/dev/null 2>&1; then
+    if ! gh pr comment -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --body "$OVERRIDE_BODY" >/dev/null 2>&1; then
         echo "BLOCKED: could not post the override record to PR #$PR_NUM. Refusing to merge — an unrecorded override is precisely what --user-approved exists to prevent." >&2
         exit 1
     fi
@@ -1237,7 +1237,7 @@ if [ -n "$DUAL_PATHS" ]; then
         "$CLEARED_BY" \
         "$HEAD_SHA" \
         "$(printf '%s' "$DUAL_PATHS" | sed '/^$/d' | sed 's/^/- `/; s/$/`/')")
-    if ! gh pr comment "$PR_NUM" --body "$DUAL_BODY" >/dev/null 2>&1; then
+    if ! gh pr comment -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --body "$DUAL_BODY" >/dev/null 2>&1; then
         echo "BLOCKED: could not post the dual-certification record to PR #$PR_NUM. Refusing to merge — a merge-evidence path cleared without a durable record is the exact gap #511 exists to close." >&2
         exit 1
     fi
@@ -1247,7 +1247,7 @@ fi
 # --- Execute: always squash, no passthrough flags, atomically bound to the
 # checked SHA. Only the PR number is accepted as input, closing the
 # flag-smuggling surface entirely. ---
-MERGE_OUTPUT=$(gh pr merge "$PR_NUM" --squash --match-head-commit "$HEAD_SHA" 2>&1)
+MERGE_OUTPUT=$(gh pr merge -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --squash --match-head-commit "$HEAD_SHA" 2>&1)
 MERGE_EXIT=$?
 if [ "$MERGE_EXIT" -ne 0 ]; then
     echo "FAILED: gh pr merge did not succeed (possibly a race — head moved after checks passed): $MERGE_OUTPUT" >&2
