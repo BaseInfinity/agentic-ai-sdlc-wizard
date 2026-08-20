@@ -153,11 +153,31 @@ Key concepts:
 
 ## Git Workflow
 
-- **Never commit directly to `main`** — branch protection requires PRs
+- **Never commit directly to `main`** — this is a working agreement, not
+  something the forge enforces for an admin. See the live settings below.
 - Create a feature branch, commit there, and open a PR
-- PRs require 1 approving review and passing CI (`validate`)
 - E2E signal is advisory-only now, via `tests/e2e/local-shepherd.sh` run locally on maintainer's Max subscription (ROADMAP #212 Option 1)
-- Admin enforcement is on — no bypassing, even for repo owners
+
+**What `main` actually enforces**, verified 2026-08-20 against the API. This
+block previously claimed 1 approving review and admin enforcement. Both were
+false, and a false protection claim is worse than none — it is relied on:
+
+| Setting | Live value |
+|---|---|
+| Required status checks | `validate`, strict |
+| Required approving reviews | **none** |
+| `enforce_admins` | **false** |
+| Rulesets | **none** |
+
+So the only thing standing between a change and `main` is `validate`, and an
+admin bypasses even that. The real enforcement lives in `scripts/merge-pr.sh`,
+which is repo-local and voluntary — it is not a forge gate and cannot stop a
+direct push. #679 tracks moving that authority to the forge; do not describe
+this repo as protected until it lands.
+
+Note also that `validate` is defined in `.github/workflows/`, which a candidate
+branch can modify. The merge gate blocks that via `HARD_DENY`; branch
+protection does not.
 - **Fable is the primary reviewer/advisor** (via `advisor()` or Fable subagent fallback when advisor is down). Codex (GPT-5.6 Sol) `high` is the **cross-model safety check** — default to running before committing and pushing. Skip only with logged justification (e.g., single-line typo fix). Incident 2026-06-09: 4 PRs shipped without cross-model check, all had issues
 
 ## Special Notes

@@ -4096,6 +4096,29 @@ test_issue_templates_carry_a_scope_card() {
     pass "#538: all three issue templates carry a scope card with every textually-checkable field"
 }
 
+# #679: CLAUDE.md must not claim protections main does not have.
+#
+# It claimed "PRs require 1 approving review" and "Admin enforcement is on —
+# no bypassing, even for repo owners". Verified against the API on 2026-08-20:
+# no required reviews, enforce_admins false, no rulesets. A false protection
+# claim is worse than no claim, because it gets relied on.
+#
+# Text-level, and that is the honest limit: this catches the sentences coming
+# back, not the settings drifting. Drift the other way — protections added and
+# the doc left stale — is invisible to it, and is what #679 has to close.
+test_claude_md_does_not_claim_absent_protections() {
+    local bad=""
+    grep -qi 'Admin enforcement is on' CLAUDE.md && bad="$bad admin-enforcement-claim"
+    grep -qi 'require[sd]* 1 approving review' CLAUDE.md && bad="$bad approving-review-claim"
+    if [ -n "$bad" ]; then
+        fail "#679: CLAUDE.md re-asserts a protection main does not have:$bad — check the live settings before restoring it"
+        return
+    fi
+    pass "#679: CLAUDE.md claims no branch protection that main does not actually enforce"
+}
+
+
+test_claude_md_does_not_claim_absent_protections
 test_sdlc_skill_planning_requires_a_scope_card
 test_scope_card_breaker_conditions_are_named
 test_issue_templates_carry_a_scope_card
