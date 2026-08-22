@@ -20,6 +20,57 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > ### Last save point — 2026-08-22, session handoff
 >
+> **START HERE — do these in order. Everything below this list is the WHY.**
+>
+> **0. Do not commit anything yet.** `.reviews/handoff.json` is bound to branch
+> `docs/correct-branch-protection-claims`. The codex gate refuses a commit on any
+> other branch until its `branch` field is retargeted. That is the gate working;
+> retarget it, never bypass it.
+>
+> **1. Review leg on `fix/pin-gh-repo-in-merge-gate` (`13a132a`).**
+> ```
+> git checkout fix/pin-gh-repo-in-merge-gate
+> # retarget .reviews/handoff.json: branch -> fix/pin-gh-repo-in-merge-gate
+> ./scripts/run-review-leg.sh <out-file> "<prompt naming HEAD and the handoff>"
+> ```
+> Diff is `scripts/merge-pr.sh` (`-R` pinned on all 10 `gh` calls) plus two rows in
+> `tests/test-merge-gate.sh`. Re-verify with `./tests/test-merge-gate.sh` (expect
+> 125/0). Ask the reviewer specifically whether the source-level pin check can be
+> walked past by a `gh` call written in a form its grep does not match — that limit
+> is stated in the test and is the likeliest real finding.
+>
+> **2. Review leg on `docs/correct-branch-protection-claims` (`6efe4c3`, `d854adc`).**
+> Diff is `CLAUDE.md`, this ROADMAP block, and one guard in
+> `tests/test-doc-consistency.sh`. Re-verify with `./tests/test-doc-consistency.sh`
+> (expect 138/0). The guard is text-level by design and cannot see settings drifting
+> the other way; that limit is written into the test and should be confirmed, not
+> re-discovered.
+>
+> **3. Post clearances on the exact SHAs, then merge. THE TWO BRANCHES TAKE
+> DIFFERENT ROUTES — verified against `HARD_DENY` in `scripts/merge-pr.sh`, do not
+> assume they match.**
+>
+> | Branch | Files | Route |
+> |---|---|---|
+> | `fix/pin-gh-repo-in-merge-gate` | `scripts/merge-pr.sh`, `tests/test-merge-gate.sh` | **`--dual-certified`**, and because the gate itself is in the diff, it must run from a clean `main` checkout |
+> | `docs/correct-branch-protection-claims` | `CLAUDE.md`, `ROADMAP.md`, `tests/test-doc-consistency.sh` | `--cross-model-cleared` — no `HARD_DENY` or `ACKABLE_DENY` path |
+>
+> `^scripts/merge-pr\.sh$` is a `HARD_DENY` row, so the pin branch is merge-evidence
+> and needs two SHA-bound reviewer YES comments at confidence >=95, not one. Use
+> `./scripts/post-comment.sh`, not raw `gh pr comment` — the latter is classifier-
+> blocked. Fable's ratification of the #607 *direction* is **not** clearance for
+> either branch: the gate matches reviewer strings, not identities (#657).
+>
+> **4. Push, as one release action.** Both branches are unpushed on purpose. The
+> afterhours hook blocks Mon–Fri 08:00–17:00; `AFTERHOURS_SKIP=1` overrides it.
+> Merging publishes nothing — npm needs a tag push.
+>
+> **5. Then pick up #679, #585, or #615** — see below. #679 is blocked on owner
+> clicks, so it cannot be finished by an agent alone.
+>
+> **Do not delete branch `chore/allowlist-merge-script`.** It is preserved design
+> evidence for a ruling, not stale work.
+>
 > **Read this before committing anything.** `.reviews/handoff.json` is currently bound to branch `docs/correct-branch-protection-claims`. The codex gate refuses any commit on a different branch until that file's `branch` field is retargeted. This is the gate working, not a bug — retarget it, do not bypass it.
 >
 > **Two branches are finished, tested, and unpushed. Neither has had a review leg.** Push is a release-time action and was deliberately not taken.
@@ -58,7 +109,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **2. A review leg can be killed by a content filter, and that is a THIRD state.** Round 4's leg was terminated by OpenAI's cybersecurity filter because the prompt asked the reviewer to attack the wrapper and find bypasses. A bare `{"verdict":"CERTIFIED","findings":[]}` appeared at the top of that transcript, emitted **before** the model read the handoff or ran anything — it was not a verdict and was not used. #671 frames this as verdict-present versus transport-failure; this is neither. **Reframing the same request as defensive verification rather than adversarial probing got a full, more useful ruling.** Note the framing changes what the reviewer will do, so it is not a free workaround: an attack prompt and a verification prompt are different reviews.
 >
-> ### Last save point — 2026-08-18, session handoff
+> ### Prior save point — 2026-08-18 (superseded; kept for the process facts, not for state)
 >
 > Written so a cold session resumes without reading a transcript. Issue numbers only, because the tracker owns PR state (#482): **milestone v1.99.2** is complete (**#579**, **#544**, **#499**) and closed on GitHub.
 >
