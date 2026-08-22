@@ -2125,179 +2125,124 @@ test_wrapper_blocks_wrong_candidate_tree
 test_wrapper_blocks_moved_base
 test_wrapper_blocks_moved_server_base_with_stale_tracking_ref
 
-# Test: every gh invocation in the gate pins BOTH the repository and the host.
+# ---------------------------------------------------------------------------
+# THE GATE'S REPOSITORY AND HOST ARE PINNED BY CONSTRUCTION, AND THESE ROWS
+# CHECK THAT — THEY DO NOT PARSE SHELL.
 #
 # #607 round 3. Repository selection was AMBIENT: gh honours GH_REPO/GH_HOST
 # and git honours GIT_DIR/GIT_WORK_TREE, and `cd` binds neither. The reviewer
 # demonstrated it by running it — with GIT_DIR pointed elsewhere, every check
 # reported success while the request resolved to an unrelated repository.
 #
-# Source-level rather than behavioural because the defect is a MISSING call
-# site: a behavioural test can only cover the calls someone remembered to
-# write a fixture for, and the next unpinned call added to this file is
-# exactly the one no fixture exists for.
+# TWO ROUNDS OF REVIEW WERE SPENT ON THE WRONG SHAPE OF GUARD, and the second
+# round's defect was created by the first round's fix. That is worth recording
+# because it is the same signature that got #607's wrapper ruled WRONG_SHAPE.
 #
-# ---------------------------------------------------------------------------
-# THE TWO SUBCOMMAND FAMILIES PIN DIFFERENTLY, AND THE FIRST VERSION OF THIS
-# CHECK DID NOT KNOW THAT.
+#   Round 1 guarded by grepping for three fixed call prefixes and treating the
+#   substring `-R ` anywhere on the line as proof of a pin. It passed an
+#   unpinned call whose only `-R` sat in a trailing comment, and it could not
+#   see pipeline, backtick, direct or wrapped invocations at all.
 #
-# `gh pr` accepts `-R [HOST/]OWNER/REPO`, which pins host and repository
-# together. `gh api` DOES NOT ACCEPT `-R` AT ALL — gh 2.92.0 exits 1 with
-# "unknown shorthand flag: 'R'". Round 1 of this branch's review found four
-# `gh api` sites carrying `-R`, which would have made the gate abort before
-# reaching a single check. The suite was green over it because the fixture's
-# `gh` stub accepts any argv; the flag was never parsed by real gh.
+#   Round 2 replaced that with a preprocessor: blank single-quoted strings,
+#   then double-quoted strings, then comments, and treat whatever `gh` survived
+#   as a real invocation. Round 2's review falsified it by execution. The line
+#   `X="$(gh pr list --state open)"` — an ordinary form — is erased ENTIRELY,
+#   because the command substitution sits inside the double quotes that get
+#   blanked. The call becomes invisible, and the count row added to catch
+#   exactly that cannot: an erased addition does not change the count.
 #
-# `gh api` is pinned by two things instead, and it needs both:
-#   * a LITERAL owner/repo in the path. `repos/:owner/:repo` and
-#     `repos/{owner}/{repo}` are placeholders gh resolves from the current
-#     directory or GH_REPO — which is the ambient channel being closed.
-#   * `--hostname github.com`. Verified by execution: with a literal path but
-#     GH_HOST=example.invalid, the request went to `Host: example.invalid`.
-#     A literal path alone pins the repository and leaves the HOST ambient.
+# Both failures are the same failure. A text heuristic that errs toward
+# false-PASS is not a guard, it is a report that nothing was examined. So the
+# per-call-site policing is gone, and the property is held by construction
+# instead:
 #
-# ---------------------------------------------------------------------------
-# WHY THIS STRIPS STRINGS AND COMMENTS INSTEAD OF GREPPING FOR CALL PREFIXES.
+#     export GH_HOST=github.com
+#     export GH_REPO=BaseInfinity/claude-sdlc-harness
 #
-# The first version matched three fixed prefixes — `$(gh `, `! gh ` and
-# `^MERGE_OUTPUT=$(gh `. Review enumerated what that misses: direct calls,
-# positive-condition calls, pipelines, backticks, env- and command-wrapped
-# calls, multiline continuations, and alternate whitespace. Every one of those
-# is an ordinary form a future maintainer would write, and each would be added
-# with a green suite.
+# The script's own exports beat the caller's environment, so EVERY gh call —
+# present, future, and in whatever syntactic form a scanner could not parse —
+# resolves to this repository on this host. Verified by execution under a
+# hostile outer environment, real gh 2.92.0, real network: with
+# GH_HOST=example.invalid GH_REPO=example.invalid/evil/wrong GIT_DIR=/tmp/nope.git
+# in the parent, the request still went to `Host: api.github.com` and returned
+# this repository's real ref.
 #
-# Worse, it decided "pinned" by looking for the SUBSTRING `-R ` anywhere on
-# the line, so an unpinned call passed whenever a trailing comment happened to
-# mention `-R`, and a call pinned at the WRONG repository passed unconditioned.
+# BOTH EXPORTS ARE LOAD-BEARING and that is not obvious. GH_REPO accepts a
+# HOST/OWNER/REPO form, so it looks like it should pin the host too. It does
+# not: with GH_REPO set correctly and a hostile GH_HOST, the request went to
+# `Host: example.invalid` on the `/api/v3/` enterprise path. GH_HOST wins.
 #
-# So the file is preprocessed instead: single-quoted strings, double-quoted
-# strings and comments are blanked, and whatever `gh` survives is a real
-# invocation. That is what removes the prose mentions — "could not fetch PR
-# (gh error)", "gh pr merge did not succeed", "posted by the same gh token" —
-# without an allowlist that would have to grow with every new message. The
-# pin is then required ADJACENT to the subcommand rather than anywhere on the
-# line, which is what closes the trailing-comment hole: a comment cannot sit
-# between `gh pr merge` and its own flag.
+# The per-call `-R` and `--hostname` flags stay in place as defense in depth.
+# Each layer covers a refactor that deletes the other.
 #
-# STATED LIMIT: the preprocessor is line-oriented, so a double-quoted string
-# spanning multiple lines leaves an unbalanced quote and the lines after it
-# are stripped on the wrong boundaries. The gate has no such string today and
-# the row below proves the scanner still finds all ten real calls, so a change
-# that introduced one would show up here as a count mismatch, not as silence.
-GATE_PIN='-R github.com/BaseInfinity/claude-sdlc-harness'
+# What remains below checks only things that can be read literally: two export
+# lines, a banned set of placeholder tokens, and a required literal path. Each
+# errs toward false-FAIL — a stray `:owner` in a trailing comment trips row 2,
+# which is a loud nuisance rather than a silent pass.
 GATE_REPO_PATH='repos/BaseInfinity/claude-sdlc-harness/'
 
-# Blank out quoted strings and comments so only real invocations remain.
-gh_invocations_in_the_gate() {
-    sed -e "s/'[^']*'/''/g" -e 's/"[^"]*"/""/g' -e 's/#.*$//' "$WRAPPER" \
-        | grep -nE '(^|[^[:alnum:]_./-])gh[[:space:]]' || true
-}
-
-test_every_gh_call_in_the_gate_is_pinned() {
-    local calls bad="" line
-    calls=$(gh_invocations_in_the_gate)
-    while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        case "$line" in
-            *"gh api"*)
-                # -R is not merely unnecessary here, it is fatal: real gh
-                # exits 1 before performing the request.
-                case "$line" in
-                    *"-R "*) bad="$bad
-gh api cannot take -R: $line" ;;
-                    *"gh api --hostname github.com "*) : ;;
-                    *) bad="$bad
-gh api not host-pinned: $line" ;;
-                esac
-                ;;
-            *"gh "*)
-                case "$line" in
-                    *"$GATE_PIN "*) : ;;
-                    *) bad="$bad
-gh call not repo-pinned: $line" ;;
-                esac
-                ;;
-        esac
-    done <<EOF
-$calls
-EOF
-    if [ -z "$bad" ]; then
-        pass "every gh invocation in the gate pins both the repository and the host"
+# Row 1: the gate exports both pins, before it uses gh.
+#
+# Raw grep on the file, deliberately. Anything cleverer is the mistake rounds
+# 1 and 2 already made twice.
+test_gate_exports_both_pins_before_using_gh() {
+    local host_line repo_line first_gh
+    host_line=$(grep -n '^export GH_HOST=github\.com$' "$WRAPPER" | head -1 | cut -d: -f1)
+    repo_line=$(grep -n '^export GH_REPO=BaseInfinity/claude-sdlc-harness$' "$WRAPPER" | head -1 | cut -d: -f1)
+    first_gh=$(grep -nE '(^|[^[:alnum:]_./-])gh[[:space:]]' "$WRAPPER" \
+        | grep -vE '^[0-9]+:[[:space:]]*#' | head -1 | cut -d: -f1)
+    if [ -z "$host_line" ]; then
+        fail "the gate does not export GH_HOST=github.com — the host is ambient and GH_HOST beats GH_REPO's host prefix"
+    elif [ -z "$repo_line" ]; then
+        fail "the gate does not export GH_REPO=BaseInfinity/claude-sdlc-harness — the repository is ambient"
+    elif [ -z "$first_gh" ]; then
+        fail "no gh invocation found in the gate at all — this row's premise is broken, not satisfied"
+    elif [ "$host_line" -lt "$first_gh" ] && [ "$repo_line" -lt "$first_gh" ]; then
+        pass "the gate exports GH_HOST and GH_REPO before its first gh invocation"
     else
-        fail "unpinned gh call(s) in the gate:$(echo "$bad" | tr '\n' ' ' | cut -c1-300)"
+        fail "the gate's pin exports (GH_HOST line $host_line, GH_REPO line $repo_line) do not both precede its first gh use (line $first_gh)"
     fi
 }
 
-# Test: the pin is adjacent to the subcommand, not merely present on the line.
+# Row 2: no ambient owner/repo placeholder token survives anywhere.
 #
-# Round 1 of review: the old check accepted a line whose only `-R ` was in a
-# trailing comment. Requiring adjacency is what makes that impossible — a
-# comment cannot appear between `gh pr merge` and its own flag.
-test_gh_pin_is_adjacent_to_the_subcommand() {
-    local calls bad="" line
-    calls=$(gh_invocations_in_the_gate)
-    while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        case "$line" in
-            *"gh api"*) continue ;;
-        esac
-        case "$line" in
-            *"gh "*)
-                # gh pr <subcommand> -R <pin>, with nothing in between.
-                if echo "$line" | grep -qE "gh pr [a-z]+ -R github\.com/BaseInfinity/claude-sdlc-harness "; then
-                    :
-                else
-                    bad="$bad
-pin not adjacent to subcommand: $line"
-                fi
-                ;;
-        esac
-    done <<EOF
-$calls
-EOF
-    if [ -z "$bad" ]; then
-        pass "each gh pr pin sits immediately after its subcommand, not elsewhere on the line"
-    else
-        fail "pin not adjacent:$(echo "$bad" | tr '\n' ' ' | cut -c1-300)"
-    fi
-}
-
-# Test: no ambient repository placeholder survives in any gh api path.
-#
-# `:owner/:repo` and `{owner}/{repo}` are resolved by gh from the current
-# directory or GH_REPO. Leaving one in place keeps open the exact channel this
-# branch exists to close, and it cannot be seen by the pin check above because
-# a placeholder path is still a syntactically pinned-looking call.
+# `:owner`, `:repo`, `{owner}` and `{repo}` are resolved by gh from the current
+# directory or GH_REPO. Round 2's review found the previous version enumerated
+# only the two matched PAIRS, so the mixed form `repos/{owner}/:repo` was
+# invisible — and gh resolves that form perfectly well, verified by running it.
+# Banning the TOKENS rather than the pairs is what removes the combinatorics.
 test_no_ambient_repo_placeholder_in_the_gate() {
     local placeholders
-    placeholders=$(grep -nE 'repos/(:owner/:repo|\{owner\}/\{repo\})' "$WRAPPER" || true)
+    placeholders=$(grep -nE ':owner|:repo|\{owner\}|\{repo\}' "$WRAPPER" \
+        | grep -vE '^[0-9]+:[[:space:]]*#' || true)
     if [ -z "$placeholders" ]; then
-        pass "no ambient owner/repo placeholder remains in any gate API path"
+        pass "no ambient owner/repo placeholder token remains anywhere in the gate"
     else
-        fail "ambient placeholder(s) in the gate: $(echo "$placeholders" | tr '\n' ' ' | cut -c1-300)"
+        fail "ambient placeholder token(s) in the gate: $(echo "$placeholders" | tr '\n' ' ' | cut -c1-300)"
     fi
 }
 
-# Test: the scanner itself still sees every real call.
+# Row 3: every API path names THIS repository literally.
 #
-# The preprocessor is the load-bearing part of the two checks above, and a
-# preprocessor that silently stops matching turns them both into checks that
-# pass because they examined nothing. This row pins the count, so a stripping
-# change or a new call form is a FAILURE rather than a quiet loss of coverage.
-test_gh_invocation_scanner_sees_every_call() {
-    local count
-    count=$(gh_invocations_in_the_gate | grep -c . | tr -d ' ')
-    if [ "$count" = "10" ]; then
-        pass "the gh invocation scanner finds all 10 real calls in the gate"
+# The exports do not close this one. A literal path beats the environment, so
+# a call written against another literal repository would be pinned — at the
+# wrong target. Round 2's review found the previous version defined a constant
+# for this and then never used it.
+test_every_api_path_names_this_repository() {
+    local wrong
+    wrong=$(grep -n 'repos/' "$WRAPPER" \
+        | grep -vE '^[0-9]+:[[:space:]]*#' \
+        | grep -v "$GATE_REPO_PATH" || true)
+    if [ -z "$wrong" ]; then
+        pass "every API path in the gate names this repository literally"
     else
-        fail "the gh invocation scanner found $count calls, expected 10 — the preprocessor or the call set changed"
+        fail "API path(s) not naming this repository: $(echo "$wrong" | tr '\n' ' ' | cut -c1-300)"
     fi
 }
 
-test_every_gh_call_in_the_gate_is_pinned
-test_gh_pin_is_adjacent_to_the_subcommand
+test_gate_exports_both_pins_before_using_gh
 test_no_ambient_repo_placeholder_in_the_gate
-test_gh_invocation_scanner_sees_every_call
+test_every_api_path_names_this_repository
 test_wrapper_blocks_unreadable_base_object
 test_wrapper_blocks_clearance_without_trees
 test_wrapper_blocks_empty_review_artifact

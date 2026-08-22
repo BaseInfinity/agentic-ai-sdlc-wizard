@@ -47,6 +47,39 @@
 
 set -u
 
+# --- THE REPOSITORY AND HOST THIS GATE ACTS ON ARE PINNED HERE, ONCE ---
+#
+# #607 round 3: repository selection in this script was AMBIENT. gh honours
+# GH_REPO and GH_HOST, git honours GIT_DIR and GIT_WORK_TREE, and `cd` binds
+# neither. The reviewer demonstrated it by running it — with GIT_DIR pointed
+# elsewhere, every check below reported success while the requests resolved to
+# an unrelated repository. A gate that can be aimed at another repository is
+# not a gate.
+#
+# These exports override whatever the caller set, so every gh invocation in
+# this file resolves here — including any added later, in whatever form.
+# Two rounds of review were spent instead trying to PROVE that property by
+# scanning this file's text for per-call flags, and the scanner was wrong both
+# times, the second time in a way the first fix created. Holding the property
+# by construction is what ended that.
+#
+# BOTH LINES ARE LOAD-BEARING. GH_REPO takes a HOST/OWNER/REPO form, so it
+# looks like it pins the host as well. It does not: with GH_REPO set correctly
+# and a hostile GH_HOST, the request went to `Host: example.invalid` on the
+# `/api/v3/` enterprise path. GH_HOST wins, and it must be pinned separately.
+#
+# The per-call `-R` and `--hostname github.com` flags below are kept as well.
+# They are redundant with these exports on purpose: each layer survives a
+# refactor that removes the other.
+#
+# NOT CLOSED BY THIS, and it is the other half of the same round-3 finding:
+# GIT_DIR/GIT_WORK_TREE still redirect this script's own `git` calls. That is
+# a separate channel from gh's, and it is tracked separately — do not read
+# these two lines as closing it.
+export GH_HOST=github.com
+export GH_REPO=BaseInfinity/claude-sdlc-harness
+
+
 # --- Two tiers (ROADMAP #479). Codex xhigh (96%) and Fable xhigh (85%),
 # consulted independently and blind to each other, both recommended this split.
 #
