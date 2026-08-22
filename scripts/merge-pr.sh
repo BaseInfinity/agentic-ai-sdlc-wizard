@@ -136,7 +136,7 @@ verify_cross_model_clearance() {
     fi
     local comments records who conf sha author reviewers="" count=0
     CLEARED_BY=""
-    if ! comments=$(gh api -R github.com/BaseInfinity/claude-sdlc-harness --paginate "repos/:owner/:repo/issues/$PR_NUM/comments" 2>&1); then
+    if ! comments=$(gh api --hostname github.com --paginate "repos/BaseInfinity/claude-sdlc-harness/issues/$PR_NUM/comments" 2>&1); then
         echo "FAILED CLOSED: could not fetch PR comments for #$PR_NUM: $comments" >&2
         return 1
     fi
@@ -492,7 +492,7 @@ fi
 # `baseRefOid` is therefore deliberately NOT in the `pr view --json` list above:
 # a trap field left parsed is a regression waiting to be reintroduced. The ref
 # endpoint below is the branch tip itself.
-if ! BASE_REF_JSON=$(gh api -R github.com/BaseInfinity/claude-sdlc-harness "repos/{owner}/{repo}/git/ref/heads/$BASE_BRANCH" 2>&1); then
+if ! BASE_REF_JSON=$(gh api --hostname github.com "repos/BaseInfinity/claude-sdlc-harness/git/ref/heads/$BASE_BRANCH" 2>&1); then
     echo "FAILED CLOSED: could not read the current tip of $BASE_BRANCH (gh error): $BASE_REF_JSON" >&2
     exit 1
 fi
@@ -514,7 +514,7 @@ fi
     # invalid `gh pr diff -- <path>` call (gh pr diff has no per-path
     # filter flag; that call errors with stderr suppressed, so the check
     # silently no-opped — Codex round-1 finding). ---
-    if ! PR_FILES=$(gh api -R github.com/BaseInfinity/claude-sdlc-harness --paginate "repos/:owner/:repo/pulls/$PR_NUM/files" 2>&1); then
+    if ! PR_FILES=$(gh api --hostname github.com --paginate "repos/BaseInfinity/claude-sdlc-harness/pulls/$PR_NUM/files" 2>&1); then
         echo "FAILED CLOSED: could not fetch file statuses for PR #$PR_NUM: $PR_FILES" >&2
         exit 1
     fi
@@ -694,7 +694,7 @@ fi
     # validate" meant "every run on page one" and a red duplicate on page two was
     # invisible (Codex round 1). Same defect the files endpoint already carries a
     # comment about.
-    if ! CHECK_RUNS=$(gh api -R github.com/BaseInfinity/claude-sdlc-harness --paginate "repos/:owner/:repo/commits/$HEAD_SHA/check-runs" 2>&1); then
+    if ! CHECK_RUNS=$(gh api --hostname github.com --paginate "repos/BaseInfinity/claude-sdlc-harness/commits/$HEAD_SHA/check-runs" 2>&1); then
         echo "FAILED CLOSED: could not fetch check-runs for $HEAD_SHA: $CHECK_RUNS" >&2
         exit 1
     fi

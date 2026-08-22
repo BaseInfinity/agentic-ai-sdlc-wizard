@@ -2125,7 +2125,7 @@ test_wrapper_blocks_wrong_candidate_tree
 test_wrapper_blocks_moved_base
 test_wrapper_blocks_moved_server_base_with_stale_tracking_ref
 
-# Test: every gh invocation in the gate pins the repository.
+# Test: every gh invocation in the gate pins BOTH the repository and the host.
 #
 # #607 round 3. Repository selection was AMBIENT: gh honours GH_REPO/GH_HOST
 # and git honours GIT_DIR/GIT_WORK_TREE, and `cd` binds neither. The reviewer
@@ -2136,20 +2136,168 @@ test_wrapper_blocks_moved_server_base_with_stale_tracking_ref
 # site: a behavioural test can only cover the calls someone remembered to
 # write a fixture for, and the next unpinned call added to this file is
 # exactly the one no fixture exists for.
+#
+# ---------------------------------------------------------------------------
+# THE TWO SUBCOMMAND FAMILIES PIN DIFFERENTLY, AND THE FIRST VERSION OF THIS
+# CHECK DID NOT KNOW THAT.
+#
+# `gh pr` accepts `-R [HOST/]OWNER/REPO`, which pins host and repository
+# together. `gh api` DOES NOT ACCEPT `-R` AT ALL — gh 2.92.0 exits 1 with
+# "unknown shorthand flag: 'R'". Round 1 of this branch's review found four
+# `gh api` sites carrying `-R`, which would have made the gate abort before
+# reaching a single check. The suite was green over it because the fixture's
+# `gh` stub accepts any argv; the flag was never parsed by real gh.
+#
+# `gh api` is pinned by two things instead, and it needs both:
+#   * a LITERAL owner/repo in the path. `repos/:owner/:repo` and
+#     `repos/{owner}/{repo}` are placeholders gh resolves from the current
+#     directory or GH_REPO — which is the ambient channel being closed.
+#   * `--hostname github.com`. Verified by execution: with a literal path but
+#     GH_HOST=example.invalid, the request went to `Host: example.invalid`.
+#     A literal path alone pins the repository and leaves the HOST ambient.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS STRIPS STRINGS AND COMMENTS INSTEAD OF GREPPING FOR CALL PREFIXES.
+#
+# The first version matched three fixed prefixes — `$(gh `, `! gh ` and
+# `^MERGE_OUTPUT=$(gh `. Review enumerated what that misses: direct calls,
+# positive-condition calls, pipelines, backticks, env- and command-wrapped
+# calls, multiline continuations, and alternate whitespace. Every one of those
+# is an ordinary form a future maintainer would write, and each would be added
+# with a green suite.
+#
+# Worse, it decided "pinned" by looking for the SUBSTRING `-R ` anywhere on
+# the line, so an unpinned call passed whenever a trailing comment happened to
+# mention `-R`, and a call pinned at the WRONG repository passed unconditioned.
+#
+# So the file is preprocessed instead: single-quoted strings, double-quoted
+# strings and comments are blanked, and whatever `gh` survives is a real
+# invocation. That is what removes the prose mentions — "could not fetch PR
+# (gh error)", "gh pr merge did not succeed", "posted by the same gh token" —
+# without an allowlist that would have to grow with every new message. The
+# pin is then required ADJACENT to the subcommand rather than anywhere on the
+# line, which is what closes the trailing-comment hole: a comment cannot sit
+# between `gh pr merge` and its own flag.
+#
+# STATED LIMIT: the preprocessor is line-oriented, so a double-quoted string
+# spanning multiple lines leaves an unbalanced quote and the lines after it
+# are stripped on the wrong boundaries. The gate has no such string today and
+# the row below proves the scanner still finds all ten real calls, so a change
+# that introduced one would show up here as a count mismatch, not as silence.
+GATE_PIN='-R github.com/BaseInfinity/claude-sdlc-harness'
+GATE_REPO_PATH='repos/BaseInfinity/claude-sdlc-harness/'
+
+# Blank out quoted strings and comments so only real invocations remain.
+gh_invocations_in_the_gate() {
+    sed -e "s/'[^']*'/''/g" -e 's/"[^"]*"/""/g' -e 's/#.*$//' "$WRAPPER" \
+        | grep -nE '(^|[^[:alnum:]_./-])gh[[:space:]]' || true
+}
+
 test_every_gh_call_in_the_gate_is_pinned() {
-    local unpinned
-    unpinned=$(grep -n '\$(gh \|! gh \|^MERGE_OUTPUT=\$(gh ' "$WRAPPER" \
-        | grep -v '^[0-9]*:\s*#' \
-        | grep -v -- '-R ' || true)
-    if [ -z "$unpinned" ]; then
-        pass "every gh invocation in the gate pins the repository"
+    local calls bad="" line
+    calls=$(gh_invocations_in_the_gate)
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        case "$line" in
+            *"gh api"*)
+                # -R is not merely unnecessary here, it is fatal: real gh
+                # exits 1 before performing the request.
+                case "$line" in
+                    *"-R "*) bad="$bad
+gh api cannot take -R: $line" ;;
+                    *"gh api --hostname github.com "*) : ;;
+                    *) bad="$bad
+gh api not host-pinned: $line" ;;
+                esac
+                ;;
+            *"gh "*)
+                case "$line" in
+                    *"$GATE_PIN "*) : ;;
+                    *) bad="$bad
+gh call not repo-pinned: $line" ;;
+                esac
+                ;;
+        esac
+    done <<EOF
+$calls
+EOF
+    if [ -z "$bad" ]; then
+        pass "every gh invocation in the gate pins both the repository and the host"
     else
-        fail "unpinned gh call(s) in the gate: $(echo "$unpinned" | tr '\n' ' ' | cut -c1-200)"
+        fail "unpinned gh call(s) in the gate:$(echo "$bad" | tr '\n' ' ' | cut -c1-300)"
     fi
 }
 
+# Test: the pin is adjacent to the subcommand, not merely present on the line.
+#
+# Round 1 of review: the old check accepted a line whose only `-R ` was in a
+# trailing comment. Requiring adjacency is what makes that impossible — a
+# comment cannot appear between `gh pr merge` and its own flag.
+test_gh_pin_is_adjacent_to_the_subcommand() {
+    local calls bad="" line
+    calls=$(gh_invocations_in_the_gate)
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        case "$line" in
+            *"gh api"*) continue ;;
+        esac
+        case "$line" in
+            *"gh "*)
+                # gh pr <subcommand> -R <pin>, with nothing in between.
+                if echo "$line" | grep -qE "gh pr [a-z]+ -R github\.com/BaseInfinity/claude-sdlc-harness "; then
+                    :
+                else
+                    bad="$bad
+pin not adjacent to subcommand: $line"
+                fi
+                ;;
+        esac
+    done <<EOF
+$calls
+EOF
+    if [ -z "$bad" ]; then
+        pass "each gh pr pin sits immediately after its subcommand, not elsewhere on the line"
+    else
+        fail "pin not adjacent:$(echo "$bad" | tr '\n' ' ' | cut -c1-300)"
+    fi
+}
+
+# Test: no ambient repository placeholder survives in any gh api path.
+#
+# `:owner/:repo` and `{owner}/{repo}` are resolved by gh from the current
+# directory or GH_REPO. Leaving one in place keeps open the exact channel this
+# branch exists to close, and it cannot be seen by the pin check above because
+# a placeholder path is still a syntactically pinned-looking call.
+test_no_ambient_repo_placeholder_in_the_gate() {
+    local placeholders
+    placeholders=$(grep -nE 'repos/(:owner/:repo|\{owner\}/\{repo\})' "$WRAPPER" || true)
+    if [ -z "$placeholders" ]; then
+        pass "no ambient owner/repo placeholder remains in any gate API path"
+    else
+        fail "ambient placeholder(s) in the gate: $(echo "$placeholders" | tr '\n' ' ' | cut -c1-300)"
+    fi
+}
+
+# Test: the scanner itself still sees every real call.
+#
+# The preprocessor is the load-bearing part of the two checks above, and a
+# preprocessor that silently stops matching turns them both into checks that
+# pass because they examined nothing. This row pins the count, so a stripping
+# change or a new call form is a FAILURE rather than a quiet loss of coverage.
+test_gh_invocation_scanner_sees_every_call() {
+    local count
+    count=$(gh_invocations_in_the_gate | grep -c . | tr -d ' ')
+    if [ "$count" = "10" ]; then
+        pass "the gh invocation scanner finds all 10 real calls in the gate"
+    else
+        fail "the gh invocation scanner found $count calls, expected 10 — the preprocessor or the call set changed"
+    fi
+}
 
 test_every_gh_call_in_the_gate_is_pinned
+test_gh_pin_is_adjacent_to_the_subcommand
+test_no_ambient_repo_placeholder_in_the_gate
+test_gh_invocation_scanner_sees_every_call
 test_wrapper_blocks_unreadable_base_object
 test_wrapper_blocks_clearance_without_trees
 test_wrapper_blocks_empty_review_artifact
