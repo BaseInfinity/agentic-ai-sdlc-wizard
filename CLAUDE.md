@@ -183,8 +183,13 @@ because `enforce_admins` is false.
 
 The real enforcement lives in `scripts/merge-pr.sh`, which is repo-local and
 voluntary — it is not a forge gate and cannot stop a direct push. #679 tracks
-moving that authority to the forge; do not describe this repo as protected
-until it lands.
+moving that authority to the forge.
+
+`main` IS a protected branch — the API reports it as one, and the table above
+is what that protection contains. So do not say the repo is unprotected
+either; that is the same error a third time, in the other direction. Say the
+specific thing: **the protection on `main` requires no review of any kind, and
+an admin bypasses all of it.**
 
 Note also that `validate` is defined in `.github/workflows/`, which a candidate
 branch can modify. The merge gate blocks that via `HARD_DENY`; branch

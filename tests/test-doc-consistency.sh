@@ -4127,9 +4127,24 @@ test_issue_templates_carry_a_scope_card() {
 # broadened to fit its claim. What actually holds the general property is the
 # live-values table in CLAUDE.md and review — not this row.
 test_claude_md_does_not_claim_absent_protections() {
-    local bad=""
-    grep -qi 'Admin enforcement is on' CLAUDE.md && bad="$bad admin-enforcement-claim"
-    grep -qi 'require[sd]* 1 approving review' CLAUDE.md && bad="$bad approving-review-claim"
+    local bad="" target="$REPO_ROOT/CLAUDE.md"
+    # Round 5 P1: this read a BARE `CLAUDE.md`, so it resolved against the
+    # caller's working directory. Run the suite from anywhere but the repo root
+    # and both greps hit file-not-found, both fall through, and the row passed
+    # while having inspected nothing. That is the false-PASS shape, and it is
+    # the one failure mode a tombstone cannot survive. The path is anchored to
+    # REPO_ROOT now, and a missing file FAILS rather than passing quietly.
+    if [ ! -f "$target" ]; then
+        fail "#679: CLAUDE.md not found at $target — the tombstone inspected nothing"
+        return
+    fi
+    # Round 5 P1: the second pattern was `require[sd]* 1 approving review`,
+    # which also matches the TRUTHFUL sentence "main does not require 1
+    # approving review". A tombstone that rejects the correct wording pushes an
+    # author toward vaguer language. Both patterns are now the legacy sentences
+    # as they were actually written on main, which no negation of them contains.
+    grep -qi 'Admin enforcement is on' "$target" && bad="$bad admin-enforcement-claim"
+    grep -qi 'PRs require 1 approving review' "$target" && bad="$bad approving-review-claim"
     if [ -n "$bad" ]; then
         fail "#679: CLAUDE.md re-asserts a protection main does not have:$bad — check the live settings before restoring it"
         return
