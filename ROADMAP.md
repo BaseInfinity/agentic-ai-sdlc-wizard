@@ -27,7 +27,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 > other branch until its `branch` field is retargeted. That is the gate working;
 > retarget it, never bypass it.
 >
-> **1. Both review legs are DONE. Do not re-run them.**
+> **1. `fix/pin-gh-repo-in-merge-gate` is reviewed and done. Do not re-run its leg.**
 > `fix/pin-gh-repo-in-merge-gate` is **CERTIFIED, shape SOUND, confidence 99** at
 > `c63b8e4`, after SEVEN rounds and two `WRONG_SHAPE` rulings. Do not read the
 > earlier description of that branch anywhere in this file as current: the
@@ -36,16 +36,24 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 > per-call `-R` and `--hostname github.com` flags, and one placeholder-token guard.
 > Re-verify with `./tests/test-merge-gate.sh`, expect 125/0.
 >
-> **2. `docs/correct-branch-protection-claims` is in round 2.** Round 1 returned
+> **2. `docs/correct-branch-protection-claims` needs one more leg — on its own
+> tip, whatever that tip is when you read this.** Each round's fix is a commit,
+> and the commit moves the SHA, so a clearance can never be inherited from the
+> round that produced the tree it cleared. Rounds so far: round 1 returned
 > shape CONCERN with four P1s: this ROADMAP block broke `validate`, it pointed at
 > stale SHAs, the CLAUDE.md guard false-passed rewordings, and the replacement text
 > underclaimed `main` by saying `validate` was the only protection when force pushes
 > and branch deletion are also blocked. All four are fixed. Re-verify with
 > `./tests/test-doc-consistency.sh` (138/0) and `./tests/test-roadmap-integrity.sh`
-> (5/0). Round 2 then returned one P1 at confidence 99: this block carried a
-> stale copy of the previous save point, so it said both legs were done AND that
-> neither branch had had a review leg. The stale copy is deleted. Round 2 also
-> re-ran the whole `ci.yml` list independently and reproduced 81/0.
+> (5/0). Round 2 returned one P1 at confidence 99: this block carried a stale copy
+> of the previous save point, so it said both legs were done AND that neither
+> branch had had a review leg. Deleted. Round 2 also re-ran the whole `ci.yml`
+> list independently and reproduced 81/0. Round 3 ruled shape **SOUND** with one
+> P1: step 1 claimed both legs were finished while this step said round 2 was
+> still open. Which is the same defect as round 2's, one level up — a state
+> sentence that was true when written and was not re-read after the state moved.
+> Hence the header above: this step no longer records a round number as current
+> state, it records the standing rule that the tip needs its own leg.
 >
 > **RUN THE WHOLE `ci.yml` SUITE LIST BEFORE POSTING ANY CLEARANCE.** This is the
 > round's real lesson and it is #613 word for word. The pin branch was certified on
