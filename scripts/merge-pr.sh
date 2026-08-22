@@ -57,7 +57,13 @@ set -u
 # not a gate.
 #
 # These exports override whatever the caller set, so every gh invocation in
-# this file resolves here — including any added later, in whatever form.
+# this file ISSUES ITS REQUEST here — including any added later, in whatever
+# form. Read that precisely: it is the INITIAL request URL that is pinned.
+# `--paginate` follows the absolute URL the server returns in its Link header
+# and uses it directly, so a server that returned a cross-host Link would send
+# the follow-up request there regardless of GH_HOST or --hostname. Round 3's
+# review found the earlier wording here claimed every request stays pinned,
+# which is more than is true.
 # Two rounds of review were spent instead trying to PROVE that property by
 # scanning this file's text for per-call flags, and the scanner was wrong both
 # times, the second time in a way the first fix created. Holding the property
@@ -73,9 +79,11 @@ set -u
 # refactor that removes the other.
 #
 # NOT CLOSED BY THIS, and it is the other half of the same round-3 finding:
-# GIT_DIR/GIT_WORK_TREE still redirect this script's own `git` calls. That is
-# a separate channel from gh's, and it is tracked separately — do not read
-# these two lines as closing it.
+# GIT_DIR still redirects this script's own `git` calls — optionally paired
+# with GIT_WORK_TREE, though GIT_WORK_TREE ALONE does not, since it leaves
+# this repository's own .git and its origin/main resolution intact. That is a
+# separate channel from gh's, tracked in #681 — do not read these two lines as
+# closing it.
 export GH_HOST=github.com
 export GH_REPO=BaseInfinity/claude-sdlc-harness
 

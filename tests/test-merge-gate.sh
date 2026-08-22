@@ -381,6 +381,15 @@ CONFIG="$(dirname "$0")/../.gh-stub-config"
 # shellcheck disable=SC1090
 [ -f "$CONFIG" ] && source "$CONFIG"
 
+# Record the pin environment THIS invocation actually saw, before doing
+# anything else. Round 3's review ruled the source-level pin guards
+# WRONG_SHAPE; this log is what replaces them, because it observes the
+# runtime property the exports claim rather than the text that sets them.
+# `-` stands in for unset so an absent variable is distinguishable from an
+# empty one.
+printf '%s\n' "GH_PIN_ENV: host=${GH_HOST:--} repo=${GH_REPO:--} argv=$*" \
+    >> "$(dirname "$0")/../.gh-pin-env"
+
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
     # The wrapper now asks for changedFiles separately to prove the classified
     # path set is complete; answer with the fixture's real count.
@@ -2179,38 +2188,19 @@ test_wrapper_blocks_moved_server_base_with_stale_tracking_ref
 # lines, a banned set of placeholder tokens, and a required literal path. Each
 # errs toward false-FAIL — a stray `:owner` in a trailing comment trips row 2,
 # which is a loud nuisance rather than a silent pass.
-GATE_REPO_PATH='repos/BaseInfinity/claude-sdlc-harness/'
-
-# Row 1: the gate exports both pins, before it uses gh.
-#
-# Raw grep on the file, deliberately. Anything cleverer is the mistake rounds
-# 1 and 2 already made twice.
-test_gate_exports_both_pins_before_using_gh() {
-    local host_line repo_line first_gh
-    host_line=$(grep -n '^export GH_HOST=github\.com$' "$WRAPPER" | head -1 | cut -d: -f1)
-    repo_line=$(grep -n '^export GH_REPO=BaseInfinity/claude-sdlc-harness$' "$WRAPPER" | head -1 | cut -d: -f1)
-    first_gh=$(grep -nE '(^|[^[:alnum:]_./-])gh[[:space:]]' "$WRAPPER" \
-        | grep -vE '^[0-9]+:[[:space:]]*#' | head -1 | cut -d: -f1)
-    if [ -z "$host_line" ]; then
-        fail "the gate does not export GH_HOST=github.com — the host is ambient and GH_HOST beats GH_REPO's host prefix"
-    elif [ -z "$repo_line" ]; then
-        fail "the gate does not export GH_REPO=BaseInfinity/claude-sdlc-harness — the repository is ambient"
-    elif [ -z "$first_gh" ]; then
-        fail "no gh invocation found in the gate at all — this row's premise is broken, not satisfied"
-    elif [ "$host_line" -lt "$first_gh" ] && [ "$repo_line" -lt "$first_gh" ]; then
-        pass "the gate exports GH_HOST and GH_REPO before its first gh invocation"
-    else
-        fail "the gate's pin exports (GH_HOST line $host_line, GH_REPO line $repo_line) do not both precede its first gh use (line $first_gh)"
-    fi
-}
-
-# Row 2: no ambient owner/repo placeholder token survives anywhere.
+# Row 1: no ambient owner/repo placeholder token survives anywhere.
 #
 # `:owner`, `:repo`, `{owner}` and `{repo}` are resolved by gh from the current
-# directory or GH_REPO. Round 2's review found the previous version enumerated
+# directory or GH_REPO. Round 2's review found an earlier version enumerated
 # only the two matched PAIRS, so the mixed form `repos/{owner}/:repo` was
 # invisible — and gh resolves that form perfectly well, verified by running it.
 # Banning the TOKENS rather than the pairs is what removes the combinatorics.
+#
+# THIS IS THE ONE SOURCE-LEVEL ROW THAT SURVIVED ROUND 3, and the reason it did
+# is the reason the others did not: it errs toward false-FAIL. A stray `:repo`
+# in a trailing comment fails this row loudly. That is a nuisance. Every row
+# deleted below erred the other way, and a guard that errs toward false-PASS is
+# not a guard, it is a report that nothing was examined.
 test_no_ambient_repo_placeholder_in_the_gate() {
     local placeholders
     placeholders=$(grep -nE ':owner|:repo|\{owner\}|\{repo\}' "$WRAPPER" \
@@ -2222,27 +2212,73 @@ test_no_ambient_repo_placeholder_in_the_gate() {
     fi
 }
 
-# Row 3: every API path names THIS repository literally.
+# Row 2: BEHAVIOURAL. Every gh invocation the gate actually makes sees the pin.
 #
-# The exports do not close this one. A literal path beats the environment, so
-# a call written against another literal repository would be pinned — at the
-# wrong target. Round 2's review found the previous version defined a constant
-# for this and then never used it.
-test_every_api_path_names_this_repository() {
-    local wrong
-    wrong=$(grep -n 'repos/' "$WRAPPER" \
-        | grep -vE '^[0-9]+:[[:space:]]*#' \
-        | grep -v "$GATE_REPO_PATH" || true)
-    if [ -z "$wrong" ]; then
-        pass "every API path in the gate names this repository literally"
+# ---------------------------------------------------------------------------
+# THREE SOURCE-LEVEL GUARDS WERE WRITTEN FOR THIS PROPERTY AND ALL THREE WERE
+# WRONG. Round 3's review ruled the genre WRONG_SHAPE at confidence 99.
+#
+#   Round 1 grepped for three fixed call prefixes and took the substring `-R `
+#   anywhere on the line as proof of a pin. A trailing comment satisfied it.
+#
+#   Round 2 blanked quoted strings and comments first, then checked whatever
+#   `gh` survived. It ERASED real calls: `X="$(gh pr list)"` disappears with
+#   the quotes around it, and the count row added to catch that cannot, since
+#   an erased addition leaves the count unchanged.
+#
+#   Round 3 checked that the exports appear before the first gh use, and that
+#   every `repos/` line names this repository. Both still passed on inputs
+#   that break the property: a later `unset GH_REPO`, a per-command
+#   `GH_REPO=evil gh …` override, a path-qualified `/usr/bin/gh`, and a wrong
+#   literal target whose line happens to also mention the right one.
+#
+# Each rewrite reproduced the previous one's failure mode in new clothes,
+# because the thing being checked — "what repository will this call reach" —
+# is a RUNTIME property, and shell source text does not determine it. So this
+# row stops reading the file and runs the gate instead.
+#
+# The stub records `GH_HOST` and `GH_REPO` as each invocation actually saw
+# them. The fixture is then run with a HOSTILE environment exported around the
+# wrapper, which is the condition the exports exist for. Every recorded
+# invocation must have seen the pinned values, or the property is broken —
+# however the source happens to be written.
+#
+# This catches what the source-level rows could not: an export deleted, an
+# export unset later in the file, and a per-command override on a single call.
+#
+# STATED LIMIT, and it is shared with every other row in this suite: the stub
+# is reached through PATH, so an invocation written as `/usr/bin/gh` bypasses
+# it and this row cannot see that call at all. Nothing in this file can. It is
+# a limit of stub-based testing, not of this row's design.
+test_every_gh_invocation_sees_the_pin_at_runtime() {
+    local tmpdir out exit_code seen bad
+    tmpdir=$(setup_wrapper_fixture)
+    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
+    echo "content" > "$tmpdir/.reviews/some-review.md"
+    rm -f "$tmpdir/.gh-pin-env"
+
+    # The hostile environment is the whole point of the row. If the gate's own
+    # exports are missing or overridden, these are the values gh would see.
+    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" \
+        GH_HOST=example.invalid \
+        GH_REPO=example.invalid/evil/wrong \
+        "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
+
+    seen=$(cat "$tmpdir/.gh-pin-env" 2>/dev/null || true)
+    bad=$(printf '%s\n' "$seen" | grep -v 'host=github\.com repo=BaseInfinity/claude-sdlc-harness ' || true)
+    rm -rf "$tmpdir"
+
+    if [ -z "$seen" ]; then
+        fail "no gh invocation was recorded at all — this row proved nothing (wrapper exit=$exit_code)"
+    elif [ -n "$bad" ]; then
+        fail "gh invocation(s) ran without the pin despite the gate's exports: $(echo "$bad" | tr '\n' ' ' | cut -c1-300)"
     else
-        fail "API path(s) not naming this repository: $(echo "$wrong" | tr '\n' ' ' | cut -c1-300)"
+        pass "every gh invocation the gate makes sees the pinned host and repository, even under a hostile environment"
     fi
 }
 
-test_gate_exports_both_pins_before_using_gh
 test_no_ambient_repo_placeholder_in_the_gate
-test_every_api_path_names_this_repository
+test_every_gh_invocation_sees_the_pin_at_runtime
 test_wrapper_blocks_unreadable_base_object
 test_wrapper_blocks_clearance_without_trees
 test_wrapper_blocks_empty_review_artifact
