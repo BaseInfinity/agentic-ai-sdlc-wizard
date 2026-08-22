@@ -18,103 +18,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **v2.0.0's terminal gate is #545, not issue closure.** The major release is authorized when the maintainer has personally consumed the harness in another repo and it worked. Every other issue closing is necessary and not sufficient.
 >
-> ### Last save point — 2026-08-22, session handoff
->
-> **START HERE — do these in order. Everything below this list is the WHY.**
->
-> **0. Do not commit anything yet.** `.reviews/handoff.json` is bound to branch
-> `docs/correct-branch-protection-claims`. The codex gate refuses a commit on any
-> other branch until its `branch` field is retargeted. That is the gate working;
-> retarget it, never bypass it.
->
-> **1. `fix/pin-gh-repo-in-merge-gate` is reviewed and done. Do not re-run its leg.**
-> `fix/pin-gh-repo-in-merge-gate` is **CERTIFIED, shape SOUND, confidence 99** at
-> `c63b8e4`, after SEVEN rounds and two `WRONG_SHAPE` rulings. Do not read the
-> earlier description of that branch anywhere in this file as current: the
-> source-level pin guard it described is DELETED, along with three more like it.
-> What ships is `export GH_HOST` / `export GH_REPO` in `scripts/merge-pr.sh`, the
-> per-call `-R` and `--hostname github.com` flags, and one placeholder-token guard.
-> Re-verify with `./tests/test-merge-gate.sh`, expect 125/0.
->
-> **2. `docs/correct-branch-protection-claims` needs one more leg — on its own
-> tip, whatever that tip is when you read this.** Each round's fix is a commit,
-> and the commit moves the SHA, so a clearance can never be inherited from the
-> round that produced the tree it cleared. Rounds so far: round 1 returned
-> shape CONCERN with four P1s: this ROADMAP block broke `validate`, it pointed at
-> stale SHAs, the CLAUDE.md guard false-passed rewordings, and the replacement text
-> underclaimed `main` by saying `validate` was the only protection when force pushes
-> and branch deletion are also blocked. All four are fixed. Re-verify with
-> `./tests/test-doc-consistency.sh` (138/0) and `./tests/test-roadmap-integrity.sh`
-> (5/0). Round 2 returned one P1 at confidence 99: this block carried a stale copy
-> of the previous save point, so it said both legs were done AND that neither
-> branch had had a review leg. Deleted. Round 2 also re-ran the whole `ci.yml`
-> list independently and reproduced 81/0. Round 3 ruled shape **SOUND** with one
-> P1: step 1 claimed both legs were finished while this step said round 2 was
-> still open. Which is the same defect as round 2's, one level up — a state
-> sentence that was true when written and was not re-read after the state moved.
-> Hence the header above: this step no longer records a round number as current
-> state, it records the standing rule that the tip needs its own leg.
->
-> **RUN THE WHOLE `ci.yml` SUITE LIST BEFORE POSTING ANY CLEARANCE.** This is the
-> round's real lesson and it is #613 word for word. The pin branch was certified on
-> `test-merge-gate.sh` alone; the docs branch broke `test-roadmap-integrity.sh`, a
-> suite nobody had run. The review leg's CI preflight reports UNKNOWN when no PR is
-> open, so it verifies nothing here. `.github/workflows/ci.yml` is the authority on
-> what must pass, not the table in `CLAUDE.md`.
->
-> **3. Post clearances on the exact SHAs, then merge. THE TWO BRANCHES TAKE
-> DIFFERENT ROUTES — verified against `HARD_DENY` in `scripts/merge-pr.sh`, do not
-> assume they match.**
->
-> | Branch | Files | Route |
-> |---|---|---|
-> | `fix/pin-gh-repo-in-merge-gate` | `scripts/merge-pr.sh`, `tests/test-merge-gate.sh` | **`--dual-certified`**, and because the gate itself is in the diff, it must run from a clean `main` checkout |
-> | `docs/correct-branch-protection-claims` | `CLAUDE.md`, `ROADMAP.md`, `tests/test-doc-consistency.sh` | `--cross-model-cleared` — no `HARD_DENY` or `ACKABLE_DENY` path |
->
-> `^scripts/merge-pr\.sh$` is a `HARD_DENY` row, so the pin branch is merge-evidence
-> and needs two SHA-bound reviewer YES comments at confidence >=95, not one. Use
-> `./scripts/post-comment.sh`, not raw `gh pr comment` — the latter is classifier-
-> blocked. Fable's ratification of the #607 *direction* is **not** clearance for
-> either branch: the gate matches reviewer strings, not identities (#657).
->
-> **4. Push, as one release action.** Both branches are unpushed on purpose. The
-> afterhours hook blocks Mon–Fri 08:00–17:00; `AFTERHOURS_SKIP=1` overrides it.
-> Merging publishes nothing — npm needs a tag push.
->
-> **5. Then pick up #679, #585, or #615** — see below. #679 is blocked on owner
-> clicks, so it cannot be finished by an agent alone.
->
-> **Do not delete branch `chore/allowlist-merge-script`.** It is preserved design
-> evidence for a ruling, not stale work.
->
-> **#607 was ruled `WRONG_SHAPE` at confidence 98 and closed, after four review rounds.** Four P1s in four different seams of one wrapper, and round 4's defect was created by round 3's fix. The design put merge authority in a mutable, allowlisted, environment-sensitive local script, which then had to authenticate itself, its repository, git's work tree, git's object database, the forge target, and its own future edits — all to do the narrow job of restricting argv. Sol ruled STOP AND REDESIGN; Fable ratified it on 2026-08-22. The branch `chore/allowlist-merge-script` is preserved as design evidence and must not be deleted. **The `-R` repository pinning was split out** because it is independently correct and does not depend on the outcome. It then took seven rounds of its own: `gh api` rejects `-R` outright, and four successive attempts to GUARD the pin each reported a property they did not check. Filed along the way: #680, #681, #682.
->
-> **A correction that was load-bearing: bare branch protection cannot express what the gate does, but a REQUIRED CUSTOM CHECK can.** That belief was checked against `scripts/merge-pr.sh` rather than accepted, and came back half wrong. GitHub already binds a check result to a specific commit, which the local pre-merge snapshot only approximates. The real migration cost is that `.reviews/` is gitignored — its evidence has to become forge-visible before any of this can move.
->
-> **#679 is the replacement design and it is BLOCKED ON THREE OWNER CLICKS.** Verified against the API on 2026-08-20, `main` enforces far less than the docs claimed:
->
-> | Setting | Live value |
-> |---|---|
-> | Required status checks | `validate`, strict |
-> | Required approving reviews | **none** |
-> | `enforce_admins` | **false** |
-> | Rulesets | **none** |
->
-> `CLAUDE.md` claimed 1 approving review and admin enforcement. **Both sentences were false**, and are corrected on `docs/correct-branch-protection-claims` with a mutation-verified guard against their return. Worse, `validate` is defined in `.github/workflows/`, which a candidate branch can modify — the merge gate blocks that via `HARD_DENY`, branch protection does not, so #679 cannot rest on `validate` as it stands. The owner actions are: create the automation identity, enable `enforce_admins`, add rulesets. **Sol's soundness condition, which decides whether #679 is worth doing at all: if the automation token retains admin or bypass power, the simplification is unsound and the seams merely move into credentials.**
->
-> **#678 closed as superseded by #679** — its subject was the wrapper the ruling killed.
->
-> **#585's scope card is now posted on the issue** (it existed only in a session and would have vanished). The blocking finding: `cli/init.js` copies an explicit file enumeration with no `output-styles` entry, so `skills/sdlc/output-styles/operator.md` is shipped in the tarball and **never installed**. Being in the tarball is not being installed. Fix the install surface — CLI *and* plugin, they are separate — before opening the PR.
->
-> **#615 is settled as CLOSE and needs only the click.** The missing `docs/snippets/evidence-exception-bound.md` is a superseded design, not missing content: `main` uses CANONICAL comment markers (named `CANONICAL:evidence-exception-bound`, written as an HTML comment — not quoted literally here, because a literal one in this section hides entries from `tests/test-roadmap-integrity.sh`) in the shipped doc because `docs/snippets/` never reaches consumers. Credit comment is posted; the close click is classifier-blocked on an outside contributor's PR and belongs to the maintainer.
->
-> **Two process facts from this session.**
->
-> **1. A stopping rule only works if you actually invoke it.** The rule was stated to the reviewer in advance — "if you find a NEW P1 in yet another seam, tell me whether to run a fifth round or step back to the design question". When the fourth seam appeared, the design question got asked instead of a fifth patch, and the answer was that three of the four rounds had been shape evidence all along. `skills/sdlc/SKILL.md:170` routes the FIRST `WRONG_SHAPE` to the design authority; rounds 2 through 4 are what following it late costs. Same lesson #670 taught, paid for again.
->
-> **2. A review leg can be killed by a content filter, and that is a THIRD state.** Round 4's leg was terminated by OpenAI's cybersecurity filter because the prompt asked the reviewer to attack the wrapper and find bypasses. A bare `{"verdict":"CERTIFIED","findings":[]}` appeared at the top of that transcript, emitted **before** the model read the handoff or ran anything — it was not a verdict and was not used. #671 frames this as verdict-present versus transport-failure; this is neither. **Reframing the same request as defensive verification rather than adversarial probing got a full, more useful ruling.** Note the framing changes what the reviewer will do, so it is not a free workaround: an attack prompt and a verification prompt are different reviews.
->
-> ### Prior save point — 2026-08-18 (superseded; kept for the process facts, not for state)
+> ### Last save point — 2026-08-18, session handoff
 >
 > Written so a cold session resumes without reading a transcript. Issue numbers only, because the tracker owns PR state (#482): **milestone v1.99.2** is complete (**#579**, **#544**, **#499**) and closed on GitHub.
 >
@@ -140,7 +44,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **3. Every gate rejection on #670 was legitimate.** Five of them: verdict token, short SHA instead of the full 40 chars, a clearance file still describing the pre-rebase base, a branch one commit behind `main`, and pending CI. None was the gate being wrong, and each was fixed by satisfying it. **A rebase kills a clearance, and that is correct** — the fix is a fresh confirm leg asking the one question a byte-identical patch can hide (does the new base interact with the change?), not a carried-over verdict.
 >
-> **#607 is CLOSED as of 2026-08-20 — but not for the reason this paragraph gave.** The 2026-08-18 falsification above was itself wrong: it generalised one successful trial into "does not reproduce", and both seats agreed that was n=1 reasoning. #607 reopened on fresh evidence, ran four review rounds, and was then closed on a **design ruling**, not on a falsified premise. See the save point below.
+> **#607 is open and should be closed.** Its premise was falsified during this session: `merge-pr.sh` runs fine from a clean `main` worktree with the entry absent, so "PROVEN NEEDED" was false. The falsification is posted on the issue. Closing it is the maintainer's call.
 >
 > **v2.0.0 is a delivery vehicle now, not a pile of issues (restructured 2026-08-18).** No new milestone was created — **v2.0.0 — Consumer Safety Repairs** already existed and a second major-release milestone would have forked the queue. What it lacked was the release itself: every issue on it changed the harness, none of them shipped one. **#673** now covers the cut — version bump, CHANGELOG, `git tag v2.0.0 && git push origin v2.0.0`, `npm view` verification from outside, and the plugin-surface checks `CLAUDE.md` requires. **Merging publishes nothing**; `release.yml` fires on the tag push. **#638** (Homebrew 3 months stale, gh extension 4 — a 2.0 shipping to one channel is a 2.0 most consumers never see) and **#622** (the post-mortem runs or is explicitly waived) are attached for the same reason.
 >
