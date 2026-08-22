@@ -42,7 +42,10 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 > underclaimed `main` by saying `validate` was the only protection when force pushes
 > and branch deletion are also blocked. All four are fixed. Re-verify with
 > `./tests/test-doc-consistency.sh` (138/0) and `./tests/test-roadmap-integrity.sh`
-> (5/0).
+> (5/0). Round 2 then returned one P1 at confidence 99: this block carried a
+> stale copy of the previous save point, so it said both legs were done AND that
+> neither branch had had a review leg. The stale copy is deleted. Round 2 also
+> re-ran the whole `ci.yml` list independently and reproduced 81/0.
 >
 > **RUN THE WHOLE `ci.yml` SUITE LIST BEFORE POSTING ANY CLEARANCE.** This is the
 > round's real lesson and it is #613 word for word. The pin branch was certified on
@@ -75,17 +78,6 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **Do not delete branch `chore/allowlist-merge-script`.** It is preserved design
 > evidence for a ruling, not stale work.
->
-> **Read this before committing anything.** `.reviews/handoff.json` is currently bound to branch `docs/correct-branch-protection-claims`. The codex gate refuses any commit on a different branch until that file's `branch` field is retargeted. This is the gate working, not a bug — retarget it, do not bypass it.
->
-> **Two branches are finished, tested, and unpushed. Neither has had a review leg.** Push is a release-time action and was deliberately not taken.
->
-> | Branch | Commit | Evidence |
-> |---|---|---|
-> | `fix/pin-gh-repo-in-merge-gate` | `c63b8e4` | CERTIFIED round 7, merge-gate 125/0. Seven rounds, two `WRONG_SHAPE` rulings, four guards written and deleted |
-> | `docs/correct-branch-protection-claims` | see branch tip | round 2 after four P1s; doc-consistency 138/0 and roadmap-integrity 5/0 |
->
-> Next session's first act is a review leg on each, then posted clearances **on those exact SHAs**. Fable's concurrence on the *direction* is not merge clearance and must not become a YES string anywhere — the gate matches reviewer strings, not identities (#657).
 >
 > **#607 was ruled `WRONG_SHAPE` at confidence 98 and closed, after four review rounds.** Four P1s in four different seams of one wrapper, and round 4's defect was created by round 3's fix. The design put merge authority in a mutable, allowlisted, environment-sensitive local script, which then had to authenticate itself, its repository, git's work tree, git's object database, the forge target, and its own future edits — all to do the narrow job of restricting argv. Sol ruled STOP AND REDESIGN; Fable ratified it on 2026-08-22. The branch `chore/allowlist-merge-script` is preserved as design evidence and must not be deleted. **The `-R` repository pinning was split out** because it is independently correct and does not depend on the outcome. It then took seven rounds of its own: `gh api` rejects `-R` outright, and four successive attempts to GUARD the pin each reported a property they did not check. Filed along the way: #680, #681, #682.
 >
