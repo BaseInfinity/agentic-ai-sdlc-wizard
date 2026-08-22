@@ -2126,60 +2126,6 @@ test_wrapper_blocks_moved_base
 test_wrapper_blocks_moved_server_base_with_stale_tracking_ref
 
 # ---------------------------------------------------------------------------
-# THE GATE'S REPOSITORY AND HOST ARE PINNED BY CONSTRUCTION, AND THESE ROWS
-# CHECK THAT — THEY DO NOT PARSE SHELL.
-#
-# #607 round 3. Repository selection was AMBIENT: gh honours GH_REPO/GH_HOST
-# and git honours GIT_DIR/GIT_WORK_TREE, and `cd` binds neither. The reviewer
-# demonstrated it by running it — with GIT_DIR pointed elsewhere, every check
-# reported success while the request resolved to an unrelated repository.
-#
-# TWO ROUNDS OF REVIEW WERE SPENT ON THE WRONG SHAPE OF GUARD, and the second
-# round's defect was created by the first round's fix. That is worth recording
-# because it is the same signature that got #607's wrapper ruled WRONG_SHAPE.
-#
-#   Round 1 guarded by grepping for three fixed call prefixes and treating the
-#   substring `-R ` anywhere on the line as proof of a pin. It passed an
-#   unpinned call whose only `-R` sat in a trailing comment, and it could not
-#   see pipeline, backtick, direct or wrapped invocations at all.
-#
-#   Round 2 replaced that with a preprocessor: blank single-quoted strings,
-#   then double-quoted strings, then comments, and treat whatever `gh` survived
-#   as a real invocation. Round 2's review falsified it by execution. The line
-#   `X="$(gh pr list --state open)"` — an ordinary form — is erased ENTIRELY,
-#   because the command substitution sits inside the double quotes that get
-#   blanked. The call becomes invisible, and the count row added to catch
-#   exactly that cannot: an erased addition does not change the count.
-#
-# Both failures are the same failure. A text heuristic that errs toward
-# false-PASS is not a guard, it is a report that nothing was examined. So the
-# per-call-site policing is gone, and the property is held by construction
-# instead:
-#
-#     export GH_HOST=github.com
-#     export GH_REPO=BaseInfinity/claude-sdlc-harness
-#
-# The script's own exports beat the caller's environment, so EVERY gh call —
-# present, future, and in whatever syntactic form a scanner could not parse —
-# resolves to this repository on this host. Verified by execution under a
-# hostile outer environment, real gh 2.92.0, real network: with
-# GH_HOST=example.invalid GH_REPO=example.invalid/evil/wrong GIT_DIR=/tmp/nope.git
-# in the parent, the request still went to `Host: api.github.com` and returned
-# this repository's real ref.
-#
-# BOTH EXPORTS ARE LOAD-BEARING and that is not obvious. GH_REPO accepts a
-# HOST/OWNER/REPO form, so it looks like it should pin the host too. It does
-# not: with GH_REPO set correctly and a hostile GH_HOST, the request went to
-# `Host: example.invalid` on the `/api/v3/` enterprise path. GH_HOST wins.
-#
-# The per-call `-R` and `--hostname` flags stay in place as defense in depth.
-# Each layer covers a refactor that deletes the other.
-#
-# What remains below checks only things that can be read literally: two export
-# lines, a banned set of placeholder tokens, and a required literal path. Each
-# errs toward false-FAIL — a stray `:owner` in a trailing comment trips row 2,
-# which is a loud nuisance rather than a silent pass.
-# ---------------------------------------------------------------------------
 # FOUR GUARDS WERE WRITTEN FOR THE PIN AND ALL FOUR WERE DELETED. ONE ROW
 # SURVIVES, AND IT IS NOT THE ONE THAT PROVES THE PIN.
 #
