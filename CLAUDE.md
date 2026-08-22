@@ -189,7 +189,17 @@ moving that authority to the forge.
 is what that protection contains. So do not say the repo is unprotected
 either; that is the same error a third time, in the other direction. Say the
 specific thing: **the protection on `main` requires no review of any kind, and
-an admin bypasses all of it.**
+because `enforce_admins` is false, none of it binds an admin.**
+
+That last clause was challenged, so here is its source. GitHub's own
+"About protected branches" page: *"By default, the restrictions of a branch
+protection rule don't apply to people with admin permissions to the
+repository."* The force-push and deletion rows are restrictions of the rule
+like every other row, so they are covered by that sentence. A live probe —
+apply these exact settings to a throwaway branch and try both as an admin —
+would have settled it empirically; it was not run, because writing branch
+protection through the API is blocked here by a permission guardrail. So this
+clause rests on the documentation, not on an observation of this repository.
 
 Note also that `validate` is defined in `.github/workflows/`, which a candidate
 branch can modify. The merge gate blocks that via `HARD_DENY`; branch
