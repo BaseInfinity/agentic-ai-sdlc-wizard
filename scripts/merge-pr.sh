@@ -47,7 +47,7 @@
 
 set -u
 
-# --- THE REPOSITORY AND HOST THIS GATE ACTS ON ARE PINNED HERE, ONCE ---
+# --- THE REPOSITORY AND HOST THIS GATE ACTS ON ARE PINNED HERE ---
 #
 # #607 round 3: repository selection in this script was AMBIENT. gh honours
 # GH_REPO and GH_HOST, git honours GIT_DIR and GIT_WORK_TREE, and `cd` binds
@@ -56,34 +56,44 @@ set -u
 # an unrelated repository. A gate that can be aimed at another repository is
 # not a gate.
 #
-# These exports override whatever the caller set, so every gh invocation in
-# this file ISSUES ITS REQUEST here — including any added later, in whatever
-# form. Read that precisely: it is the INITIAL request URL that is pinned.
-# `--paginate` follows the absolute URL the server returns in its Link header
-# and uses it directly, so a server that returned a cross-host Link would send
-# the follow-up request there regardless of GH_HOST or --hostname. Round 3's
-# review found the earlier wording here claimed every request stays pinned,
-# which is more than is true.
-# Two rounds of review were spent instead trying to PROVE that property by
-# scanning this file's text for per-call flags, and the scanner was wrong both
-# times, the second time in a way the first fix created. Holding the property
-# by construction is what ended that.
+# These exports override whatever the CALLER set. Verified by execution
+# against real gh 2.92.0 and real github.com: with GH_HOST=example.invalid,
+# GH_REPO=example.invalid/evil/wrong and GIT_DIR=/tmp/nope.git in the parent
+# environment, requests still reached Host: api.github.com and this
+# repository, including from a call carrying no per-call flags at all.
 #
-# BOTH LINES ARE LOAD-BEARING. GH_REPO takes a HOST/OWNER/REPO form, so it
-# looks like it pins the host as well. It does not: with GH_REPO set correctly
-# and a hostile GH_HOST, the request went to `Host: example.invalid` on the
-# `/api/v3/` enterprise path. GH_HOST wins, and it must be pinned separately.
+# WHAT THAT DOES AND DOES NOT ESTABLISH — this comment claimed more than was
+# true for two rounds, so it is now written narrowly on purpose:
 #
-# The per-call `-R` and `--hostname github.com` flags below are kept as well.
-# They are redundant with these exports on purpose: each layer survives a
-# refactor that removes the other.
+#   * It pins calls that do not override it. It is NOT a guarantee about
+#     "every present and future invocation". An inline `GH_REPO=x gh …`, a
+#     per-call `-R` or `--hostname`, or a literal owner/repo in an API path
+#     all take precedence over these lines. Each of those was demonstrated.
+#   * It pins the INITIAL request URL. `--paginate` follows the absolute URL
+#     a server returns in its Link header and uses it directly, so a server
+#     returning a cross-host Link would send the follow-up request there
+#     regardless of GH_HOST or --hostname.
+#   * BOTH LINES ARE LOAD-BEARING. GH_REPO takes a HOST/OWNER/REPO form and
+#     looks like it pins the host too. It does not: with GH_REPO set correctly
+#     and a hostile GH_HOST, the request went to Host: example.invalid on the
+#     /api/v3/ enterprise path. GH_HOST wins and must be pinned separately.
 #
-# NOT CLOSED BY THIS, and it is the other half of the same round-3 finding:
-# GIT_DIR still redirects this script's own `git` calls — optionally paired
-# with GIT_WORK_TREE, though GIT_WORK_TREE ALONE does not, since it leaves
-# this repository's own .git and its origin/main resolution intact. That is a
-# separate channel from gh's, tracked in #681 — do not read these two lines as
-# closing it.
+# The per-call `-R` and `--hostname github.com` flags below are kept as a
+# second layer. NOT VERIFIED, and previously asserted here as though it were:
+# that either layer independently survives deletion of the other at all ten
+# call sites. Only the merge call has its exact argv asserted by the suite,
+# and the exports were only ever observed as environment values. Treat the two
+# layers as belt and braces, not as two independently proven guarantees.
+#
+# NOT CLOSED BY THIS: GIT_DIR still redirects this script's own `git` calls —
+# optionally paired with GIT_WORK_TREE, though GIT_WORK_TREE ALONE does not,
+# since it leaves this repository's .git and its origin/main resolution
+# intact. Those calls are load-bearing for the self-integrity byte-match and
+# for clearance tree binding. Separate channel from gh's, tracked in #681.
+#
+# There is no test in this repo that proves the pin holds for a call added
+# later. Four were written and all four were deleted for reporting a property
+# they did not check — see the long note in tests/test-merge-gate.sh.
 export GH_HOST=github.com
 export GH_REPO=BaseInfinity/claude-sdlc-harness
 

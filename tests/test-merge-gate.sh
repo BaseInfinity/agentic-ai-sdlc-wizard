@@ -381,15 +381,6 @@ CONFIG="$(dirname "$0")/../.gh-stub-config"
 # shellcheck disable=SC1090
 [ -f "$CONFIG" ] && source "$CONFIG"
 
-# Record the pin environment THIS invocation actually saw, before doing
-# anything else. Round 3's review ruled the source-level pin guards
-# WRONG_SHAPE; this log is what replaces them, because it observes the
-# runtime property the exports claim rather than the text that sets them.
-# `-` stands in for unset so an absent variable is distinguishable from an
-# empty one.
-printf '%s\n' "GH_PIN_ENV: host=${GH_HOST:--} repo=${GH_REPO:--} argv=$*" \
-    >> "$(dirname "$0")/../.gh-pin-env"
-
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
     # The wrapper now asks for changedFiles separately to prove the classified
     # path set is complete; answer with the fixture's real count.
@@ -2188,19 +2179,68 @@ test_wrapper_blocks_moved_server_base_with_stale_tracking_ref
 # lines, a banned set of placeholder tokens, and a required literal path. Each
 # errs toward false-FAIL — a stray `:owner` in a trailing comment trips row 2,
 # which is a loud nuisance rather than a silent pass.
-# Row 1: no ambient owner/repo placeholder token survives anywhere.
+# ---------------------------------------------------------------------------
+# FOUR GUARDS WERE WRITTEN FOR THE PIN AND ALL FOUR WERE DELETED. ONE ROW
+# SURVIVES, AND IT IS NOT THE ONE THAT PROVES THE PIN.
+#
+# The gate pins its forge target in `scripts/merge-pr.sh` itself, by exporting
+# GH_HOST and GH_REPO and by passing `-R` / `--hostname github.com` per call.
+# That is the fix, and it is verified by execution against real gh — see the
+# handoff. What kept failing review was every attempt to PROVE the property
+# from this file.
+#
+#   Round 1 took the substring `-R ` anywhere on a line as proof of a pin, so
+#   a trailing comment satisfied it, and it saw only three call prefixes.
+#
+#   Round 2 blanked quotes and comments first, then checked the surviving
+#   `gh` tokens. It ERASED real calls — `X="$(gh pr list)"` disappears with the
+#   quotes around it — and the count row added to catch that could not, since
+#   an erased addition leaves the count unchanged.
+#
+#   Round 3 checked that the exports precede the first call and that every
+#   `repos/` line names this repository. Ruled WRONG_SHAPE at confidence 99.
+#   Both rows passed a later `unset`, a per-command override, and a wrong
+#   literal target on a line that also mentioned the right one.
+#
+#   Round 4 replaced them with a BEHAVIOURAL row: the stub logged the pin
+#   environment each call saw, and the gate ran under a hostile environment.
+#   Ruled WRONG_SHAPE too. It passed vacuously when the gate exited after one
+#   correctly pinned call, and its unanchored grep accepted a wrong record
+#   whenever the expected substring appeared later in the argv it also logged.
+#
+# Four rewrites, four false-PASS failures, in four different mechanisms. The
+# stopping rule was written down before round 4 ran and is honoured here: the
+# guard is optional, the fix is not. A row that reports a property it does not
+# check is worse than no row, because the suite then certifies the absence of
+# evidence.
+#
+# WHAT IS ACTUALLY GUARDED, AND WHAT IS NOT:
+#
+#   Guarded here — no ambient placeholder token, below.
+#   Guarded elsewhere — `test_wrapper_merges_when_all_conditions_met` asserts
+#     the exact argv of the merge call, including its `-R`. That is one call
+#     site of ten, and it is an assertion about the merge command rather than
+#     about the pin as a property.
+#   NOT guarded — that a call added later carries the pin. Nothing in this
+#     file establishes that, and four attempts to make something establish it
+#     were each wrong in a way that read as green. It rests on the exports in
+#     `scripts/merge-pr.sh`, which apply to any call that does not override
+#     them, and on review.
+#
+# Do not add a fifth guard without a way to make it fail first on a real
+# defect. That is what all four lacked.
+
+# The one surviving row: no ambient owner/repo placeholder token.
 #
 # `:owner`, `:repo`, `{owner}` and `{repo}` are resolved by gh from the current
 # directory or GH_REPO. Round 2's review found an earlier version enumerated
 # only the two matched PAIRS, so the mixed form `repos/{owner}/:repo` was
 # invisible — and gh resolves that form perfectly well, verified by running it.
-# Banning the TOKENS rather than the pairs is what removes the combinatorics.
+# Banning the TOKENS rather than the pairs removes the combinatorics.
 #
-# THIS IS THE ONE SOURCE-LEVEL ROW THAT SURVIVED ROUND 3, and the reason it did
-# is the reason the others did not: it errs toward false-FAIL. A stray `:repo`
-# in a trailing comment fails this row loudly. That is a nuisance. Every row
-# deleted below erred the other way, and a guard that errs toward false-PASS is
-# not a guard, it is a report that nothing was examined.
+# THIS ROW SURVIVED BECAUSE IT ERRS TOWARD FALSE-FAIL. A stray `:repo` in a
+# trailing comment fails it loudly. That is a nuisance. All four deleted rows
+# erred the other way.
 test_no_ambient_repo_placeholder_in_the_gate() {
     local placeholders
     placeholders=$(grep -nE ':owner|:repo|\{owner\}|\{repo\}' "$WRAPPER" \
@@ -2212,73 +2252,7 @@ test_no_ambient_repo_placeholder_in_the_gate() {
     fi
 }
 
-# Row 2: BEHAVIOURAL. Every gh invocation the gate actually makes sees the pin.
-#
-# ---------------------------------------------------------------------------
-# THREE SOURCE-LEVEL GUARDS WERE WRITTEN FOR THIS PROPERTY AND ALL THREE WERE
-# WRONG. Round 3's review ruled the genre WRONG_SHAPE at confidence 99.
-#
-#   Round 1 grepped for three fixed call prefixes and took the substring `-R `
-#   anywhere on the line as proof of a pin. A trailing comment satisfied it.
-#
-#   Round 2 blanked quoted strings and comments first, then checked whatever
-#   `gh` survived. It ERASED real calls: `X="$(gh pr list)"` disappears with
-#   the quotes around it, and the count row added to catch that cannot, since
-#   an erased addition leaves the count unchanged.
-#
-#   Round 3 checked that the exports appear before the first gh use, and that
-#   every `repos/` line names this repository. Both still passed on inputs
-#   that break the property: a later `unset GH_REPO`, a per-command
-#   `GH_REPO=evil gh …` override, a path-qualified `/usr/bin/gh`, and a wrong
-#   literal target whose line happens to also mention the right one.
-#
-# Each rewrite reproduced the previous one's failure mode in new clothes,
-# because the thing being checked — "what repository will this call reach" —
-# is a RUNTIME property, and shell source text does not determine it. So this
-# row stops reading the file and runs the gate instead.
-#
-# The stub records `GH_HOST` and `GH_REPO` as each invocation actually saw
-# them. The fixture is then run with a HOSTILE environment exported around the
-# wrapper, which is the condition the exports exist for. Every recorded
-# invocation must have seen the pinned values, or the property is broken —
-# however the source happens to be written.
-#
-# This catches what the source-level rows could not: an export deleted, an
-# export unset later in the file, and a per-command override on a single call.
-#
-# STATED LIMIT, and it is shared with every other row in this suite: the stub
-# is reached through PATH, so an invocation written as `/usr/bin/gh` bypasses
-# it and this row cannot see that call at all. Nothing in this file can. It is
-# a limit of stub-based testing, not of this row's design.
-test_every_gh_invocation_sees_the_pin_at_runtime() {
-    local tmpdir out exit_code seen bad
-    tmpdir=$(setup_wrapper_fixture)
-    write_clearance "$tmpdir" 123 "CERTIFIED" 2 "$(cat "$tmpdir/.fixture-sha")" ".reviews/some-review.md"
-    echo "content" > "$tmpdir/.reviews/some-review.md"
-    rm -f "$tmpdir/.gh-pin-env"
-
-    # The hostile environment is the whole point of the row. If the gate's own
-    # exports are missing or overridden, these are the values gh would see.
-    out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" \
-        GH_HOST=example.invalid \
-        GH_REPO=example.invalid/evil/wrong \
-        "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
-
-    seen=$(cat "$tmpdir/.gh-pin-env" 2>/dev/null || true)
-    bad=$(printf '%s\n' "$seen" | grep -v 'host=github\.com repo=BaseInfinity/claude-sdlc-harness ' || true)
-    rm -rf "$tmpdir"
-
-    if [ -z "$seen" ]; then
-        fail "no gh invocation was recorded at all — this row proved nothing (wrapper exit=$exit_code)"
-    elif [ -n "$bad" ]; then
-        fail "gh invocation(s) ran without the pin despite the gate's exports: $(echo "$bad" | tr '\n' ' ' | cut -c1-300)"
-    else
-        pass "every gh invocation the gate makes sees the pinned host and repository, even under a hostile environment"
-    fi
-}
-
 test_no_ambient_repo_placeholder_in_the_gate
-test_every_gh_invocation_sees_the_pin_at_runtime
 test_wrapper_blocks_unreadable_base_object
 test_wrapper_blocks_clearance_without_trees
 test_wrapper_blocks_empty_review_artifact
