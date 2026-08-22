@@ -4096,16 +4096,36 @@ test_issue_templates_carry_a_scope_card() {
     pass "#538: all three issue templates carry a scope card with every textually-checkable field"
 }
 
-# #679: CLAUDE.md must not claim protections main does not have.
+# #679: A TOMBSTONE for two specific false sentences. It is not a check that
+# CLAUDE.md's protection claims are true, and it must not be read as one.
 #
-# It claimed "PRs require 1 approving review" and "Admin enforcement is on —
-# no bypassing, even for repo owners". Verified against the API on 2026-08-20:
-# no required reviews, enforce_admins false, no rulesets. A false protection
-# claim is worse than no claim, because it gets relied on.
+# CLAUDE.md claimed "PRs require 1 approving review" and "Admin enforcement is
+# on — no bypassing, even for repo owners". Verified against the API: no
+# required reviews, enforce_admins false, no rulesets. A false protection claim
+# is worse than no claim, because it gets relied on. This row exists so those
+# two exact sentences cannot come back unnoticed.
 #
-# Text-level, and that is the honest limit: this catches the sentences coming
-# back, not the settings drifting. Drift the other way — protections added and
-# the doc left stale — is invisible to it, and is what #679 has to close.
+# TWO LIMITS, BOTH LOAD-BEARING, and the second was found by review after the
+# first had been written down as though it were the only one:
+#
+#   1. It cannot see the SETTINGS drifting. Protections genuinely added and the
+#      doc left stale reads as passing. That direction is #679's to close.
+#
+#   2. It matches EXACT PHRASES. A reworded but equally false claim — "admin
+#      enforcement is enabled", "PRs need one approving review" — passes. The
+#      reviewer demonstrated it: a reworded mutation returned 138/0 while the
+#      exact legacy phrases returned 137/1.
+#
+# The obvious repair is to broaden the patterns until they catch rewordings.
+# That is NOT done here, deliberately. A concept-level pattern trips on the
+# CORRECT text too, since the live-values table legitimately contains both
+# "approving reviews" and "enforce_admins"; and chasing English meaning with
+# regex is what took PR #598 to twenty-two rounds. The comment on the review
+# leg launcher says so in as many words.
+#
+# So the row's CLAIM is narrowed to what it checks, rather than its patterns
+# broadened to fit its claim. What actually holds the general property is the
+# live-values table in CLAUDE.md and review — not this row.
 test_claude_md_does_not_claim_absent_protections() {
     local bad=""
     grep -qi 'Admin enforcement is on' CLAUDE.md && bad="$bad admin-enforcement-claim"
@@ -4114,7 +4134,7 @@ test_claude_md_does_not_claim_absent_protections() {
         fail "#679: CLAUDE.md re-asserts a protection main does not have:$bad — check the live settings before restoring it"
         return
     fi
-    pass "#679: CLAUDE.md claims no branch protection that main does not actually enforce"
+    pass "#679: the two legacy false protection sentences have not returned (exact-phrase tombstone — it does not check CLAUDE.md's claims generally)"
 }
 
 

@@ -27,24 +27,29 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 > other branch until its `branch` field is retargeted. That is the gate working;
 > retarget it, never bypass it.
 >
-> **1. Review leg on `fix/pin-gh-repo-in-merge-gate` (`13a132a`).**
-> ```
-> git checkout fix/pin-gh-repo-in-merge-gate
-> # retarget .reviews/handoff.json: branch -> fix/pin-gh-repo-in-merge-gate
-> ./scripts/run-review-leg.sh <out-file> "<prompt naming HEAD and the handoff>"
-> ```
-> Diff is `scripts/merge-pr.sh` (`-R` pinned on all 10 `gh` calls) plus two rows in
-> `tests/test-merge-gate.sh`. Re-verify with `./tests/test-merge-gate.sh` (expect
-> 125/0). Ask the reviewer specifically whether the source-level pin check can be
-> walked past by a `gh` call written in a form its grep does not match — that limit
-> is stated in the test and is the likeliest real finding.
+> **1. Both review legs are DONE. Do not re-run them.**
+> `fix/pin-gh-repo-in-merge-gate` is **CERTIFIED, shape SOUND, confidence 99** at
+> `c63b8e4`, after SEVEN rounds and two `WRONG_SHAPE` rulings. Do not read the
+> earlier description of that branch anywhere in this file as current: the
+> source-level pin guard it described is DELETED, along with three more like it.
+> What ships is `export GH_HOST` / `export GH_REPO` in `scripts/merge-pr.sh`, the
+> per-call `-R` and `--hostname github.com` flags, and one placeholder-token guard.
+> Re-verify with `./tests/test-merge-gate.sh`, expect 125/0.
 >
-> **2. Review leg on `docs/correct-branch-protection-claims` (`6efe4c3`, `d854adc`).**
-> Diff is `CLAUDE.md`, this ROADMAP block, and one guard in
-> `tests/test-doc-consistency.sh`. Re-verify with `./tests/test-doc-consistency.sh`
-> (expect 138/0). The guard is text-level by design and cannot see settings drifting
-> the other way; that limit is written into the test and should be confirmed, not
-> re-discovered.
+> **2. `docs/correct-branch-protection-claims` is in round 2.** Round 1 returned
+> shape CONCERN with four P1s: this ROADMAP block broke `validate`, it pointed at
+> stale SHAs, the CLAUDE.md guard false-passed rewordings, and the replacement text
+> underclaimed `main` by saying `validate` was the only protection when force pushes
+> and branch deletion are also blocked. All four are fixed. Re-verify with
+> `./tests/test-doc-consistency.sh` (138/0) and `./tests/test-roadmap-integrity.sh`
+> (5/0).
+>
+> **RUN THE WHOLE `ci.yml` SUITE LIST BEFORE POSTING ANY CLEARANCE.** This is the
+> round's real lesson and it is #613 word for word. The pin branch was certified on
+> `test-merge-gate.sh` alone; the docs branch broke `test-roadmap-integrity.sh`, a
+> suite nobody had run. The review leg's CI preflight reports UNKNOWN when no PR is
+> open, so it verifies nothing here. `.github/workflows/ci.yml` is the authority on
+> what must pass, not the table in `CLAUDE.md`.
 >
 > **3. Post clearances on the exact SHAs, then merge. THE TWO BRANCHES TAKE
 > DIFFERENT ROUTES — verified against `HARD_DENY` in `scripts/merge-pr.sh`, do not
@@ -77,12 +82,12 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > | Branch | Commit | Evidence |
 > |---|---|---|
-> | `fix/pin-gh-repo-in-merge-gate` | `13a132a` | merge-gate 125/0, RED observed first at 123/1, pin check mutation-verified |
-> | `docs/correct-branch-protection-claims` | `6efe4c3` | doc-consistency 138/0, guard mutation-verified |
+> | `fix/pin-gh-repo-in-merge-gate` | `c63b8e4` | CERTIFIED round 7, merge-gate 125/0. Seven rounds, two `WRONG_SHAPE` rulings, four guards written and deleted |
+> | `docs/correct-branch-protection-claims` | see branch tip | round 2 after four P1s; doc-consistency 138/0 and roadmap-integrity 5/0 |
 >
 > Next session's first act is a review leg on each, then posted clearances **on those exact SHAs**. Fable's concurrence on the *direction* is not merge clearance and must not become a YES string anywhere — the gate matches reviewer strings, not identities (#657).
 >
-> **#607 was ruled `WRONG_SHAPE` at confidence 98 and closed, after four review rounds.** Four P1s in four different seams of one wrapper, and round 4's defect was created by round 3's fix. The design put merge authority in a mutable, allowlisted, environment-sensitive local script, which then had to authenticate itself, its repository, git's work tree, git's object database, the forge target, and its own future edits — all to do the narrow job of restricting argv. Sol ruled STOP AND REDESIGN; Fable ratified it on 2026-08-22. The branch `chore/allowlist-merge-script` is preserved as design evidence and must not be deleted. **The `-R` repository pinning was split out** because it is independently correct and does not depend on the outcome.
+> **#607 was ruled `WRONG_SHAPE` at confidence 98 and closed, after four review rounds.** Four P1s in four different seams of one wrapper, and round 4's defect was created by round 3's fix. The design put merge authority in a mutable, allowlisted, environment-sensitive local script, which then had to authenticate itself, its repository, git's work tree, git's object database, the forge target, and its own future edits — all to do the narrow job of restricting argv. Sol ruled STOP AND REDESIGN; Fable ratified it on 2026-08-22. The branch `chore/allowlist-merge-script` is preserved as design evidence and must not be deleted. **The `-R` repository pinning was split out** because it is independently correct and does not depend on the outcome. It then took seven rounds of its own: `gh api` rejects `-R` outright, and four successive attempts to GUARD the pin each reported a property they did not check. Filed along the way: #680, #681, #682.
 >
 > **A correction that was load-bearing: bare branch protection cannot express what the gate does, but a REQUIRED CUSTOM CHECK can.** That belief was checked against `scripts/merge-pr.sh` rather than accepted, and came back half wrong. GitHub already binds a check result to a specific commit, which the local pre-merge snapshot only approximates. The real migration cost is that `.reviews/` is gitignored — its evidence has to become forge-visible before any of this can move.
 >
@@ -101,7 +106,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **#585's scope card is now posted on the issue** (it existed only in a session and would have vanished). The blocking finding: `cli/init.js` copies an explicit file enumeration with no `output-styles` entry, so `skills/sdlc/output-styles/operator.md` is shipped in the tarball and **never installed**. Being in the tarball is not being installed. Fix the install surface — CLI *and* plugin, they are separate — before opening the PR.
 >
-> **#615 is settled as CLOSE and needs only the click.** The missing `docs/snippets/evidence-exception-bound.md` is a superseded design, not missing content: `main` uses `<!-- CANONICAL:evidence-exception-bound -->` markers in the shipped doc because `docs/snippets/` never reaches consumers. Credit comment is posted; the close click is classifier-blocked on an outside contributor's PR and belongs to the maintainer.
+> **#615 is settled as CLOSE and needs only the click.** The missing `docs/snippets/evidence-exception-bound.md` is a superseded design, not missing content: `main` uses CANONICAL comment markers (named `CANONICAL:evidence-exception-bound`, written as an HTML comment — not quoted literally here, because a literal one in this section hides entries from `tests/test-roadmap-integrity.sh`) in the shipped doc because `docs/snippets/` never reaches consumers. Credit comment is posted; the close click is classifier-blocked on an outside contributor's PR and belongs to the maintainer.
 >
 > **Two process facts from this session.**
 >

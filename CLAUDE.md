@@ -167,13 +167,24 @@ false, and a false protection claim is worse than none — it is relied on:
 | Required status checks | `validate`, strict |
 | Required approving reviews | **none** |
 | `enforce_admins` | **false** |
+| `allow_force_pushes` | false — force pushes are blocked |
+| `allow_deletions` | false — the branch cannot be deleted |
+| `required_signatures` | false |
+| `required_linear_history` | false |
 | Rulesets | **none** |
 
-So the only thing standing between a change and `main` is `validate`, and an
-admin bypasses even that. The real enforcement lives in `scripts/merge-pr.sh`,
-which is repo-local and voluntary — it is not a forge gate and cannot stop a
-direct push. #679 tracks moving that authority to the forge; do not describe
-this repo as protected until it lands.
+Read the whole table, not the first row. Force pushes and branch deletion ARE
+blocked, so `validate` is not literally the only protection — an earlier draft
+of this block said it was, which understated `main` in the course of
+correcting an overstatement. What is true is narrower and still the point:
+**no human or machine review is required to merge, and `validate` is the only
+gate on the CONTENT of a change.** Every row above is bypassable by an admin,
+because `enforce_admins` is false.
+
+The real enforcement lives in `scripts/merge-pr.sh`, which is repo-local and
+voluntary — it is not a forge gate and cannot stop a direct push. #679 tracks
+moving that authority to the forge; do not describe this repo as protected
+until it lands.
 
 Note also that `validate` is defined in `.github/workflows/`, which a candidate
 branch can modify. The merge gate blocks that via `HARD_DENY`; branch
