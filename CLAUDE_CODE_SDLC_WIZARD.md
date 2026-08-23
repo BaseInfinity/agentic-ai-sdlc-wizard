@@ -1460,9 +1460,10 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 
 > **Do this in order, whichever method you use below.** A required status check
 > that has never reported blocks every merge — GitHub shows it as *Expected —
-> waiting for status* — and *Include administrators* removes the override that
-> would let you merge anyway. Protect a repo that has no CI yet and you lock
-> yourself out of your own `main`.
+> waiting for status* — and *Do not allow bypassing the above settings*
+> (`enforce_admins` in the API) removes the override that would let you merge
+> anyway. Protect a repo that has no CI yet and you lock yourself out of your
+> own `main`.
 >
 > 1. Add the workflow that produces `validate` and push it on a branch.
 > 2. Open a PR and watch `validate` go green at least once, so you know the
@@ -1482,7 +1483,7 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 | Require approvals | **0 (none)** | No one else to approve — CI is your gate |
 | Require status checks to pass | ✓ Enabled | CI must be green |
 | Require branches to be up to date | ✓ Enabled | No stale merges |
-| Include administrators | **✓ Enabled** | Safe at 0 approvals — but set CI up first, see below |
+| Do not allow bypassing the above settings | **✓ Enabled** | Safe at 0 approvals — but set CI up first, see below |
 
 **Team Settings (2+ developers):**
 
@@ -1492,7 +1493,7 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 | Require approvals | 1+ (your choice) | Human must approve before merge |
 | Require status checks to pass | ✓ Enabled | CI must be green |
 | Require branches to be up to date | ✓ Enabled | No stale merges |
-| Include administrators | ✓ Enabled | No one bypasses the rules |
+| Do not allow bypassing the above settings | ✓ Enabled | No one bypasses the rules |
 
 **How to enable (UI):**
 1. Go to: `Settings > Branches > Add rule`
