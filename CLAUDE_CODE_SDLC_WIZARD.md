@@ -1492,6 +1492,17 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 
 > **Note (ROADMAP #212 Option 1, April 2026):** We no longer require `e2e-quick-check` as a blocking check. It burned Anthropic API credits on every PR, and branch protection pinned to GitHub Actions made local-maintainer check-run satisfaction impossible. E2E now runs advisory-only via `tests/e2e/local-shepherd.sh` on the maintainer's Max subscription. See `ROADMAP.md` #212 for the full rationale.
 
+**Order matters. Do not run this first.** A required status check that has
+never reported blocks every merge — GitHub shows it as *Expected — waiting for
+status* — and `enforce_admins: true` removes the override that would let you
+merge anyway. Apply protection to a repo with no CI yet and you lock yourself
+out of your own `main`.
+
+1. Add the workflow that produces `validate` and push it on a branch.
+2. Open a PR and watch `validate` go green at least once, so the check name
+   exists and you know it reports.
+3. Then run the recipe below.
+
 **How to enable (CLI — solo dev):**
 ```bash
 gh api repos/OWNER/REPO/branches/main/protection --method PUT --input - << 'EOF'
@@ -1510,12 +1521,12 @@ EOF
 ```
 
 **Why `enforce_admins: true` for a solo dev.** The usual reason to leave it off
-is that it locks the only admin out. That is true when a review is required —
-GitHub refuses self-approval, so an admin with `required_approving_review_count:
-1` and nobody else around cannot merge anything. With **0** approvals there is
-nothing to be locked out of: you owe a green `validate` and an up-to-date
-branch, which you were waiting for anyway. This repo turned `enforce_admins` on
-in August 2026 with approvals at 0 and nothing locked up.
+is that it locks the only admin out. That reason is about *approvals*: GitHub
+refuses self-approval, so an admin with `required_approving_review_count: 1` and
+nobody else around cannot merge anything. At **0** approvals that particular
+trap is gone — what remains is a green `validate` and an up-to-date branch,
+which you were waiting for anyway. It is still a real lock if the check cannot
+report, which is what the ordering above is for.
 
 **Why `required_approving_review_count: 0` and not `null`.** `null` does not
 mean "a PR with no approvals" — it means **no pull request is required at
@@ -1530,6 +1541,12 @@ direct push to `main`. A commit that already carries a green `validate` lands �
 push a branch, let CI run, then push that same SHA to `main`. Check runs attach
 to commits rather than branches. Only a *fresh* commit is rejected. Requiring
 the pull request is what closes that, not `enforce_admins`.
+
+**And a green `validate` is not a trustworthy signal on its own.** The check is
+produced by a workflow file that lives in the repository, so a branch under
+review can change what `validate` does — including making it pass. Branch
+protection enforces that the check *reported success*; it cannot enforce what
+the check measured. Treat protection as a floor, not as review.
 
 **Changing one field later:** `PUT .../protection` **replaces the entire
 protection object**, so re-running one of these recipes to adjust a single
