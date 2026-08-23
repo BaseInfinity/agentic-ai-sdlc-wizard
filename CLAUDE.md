@@ -153,20 +153,25 @@ Key concepts:
 
 ## Git Workflow
 
-- **Never commit directly to `main`** — this is a working agreement, not
-  something the forge enforces for an admin. See the live settings below.
+- **Never commit directly to `main`** — still a working agreement. Since
+  2026-08-22 the forge makes it *hard* for everyone, admins included: a direct
+  push needs `validate` already green on that exact commit. It does not make it
+  impossible, because no pull request is required. See the live settings below.
 - Create a feature branch, commit there, and open a PR
 - E2E signal is advisory-only now, via `tests/e2e/local-shepherd.sh` run locally on maintainer's Max subscription (ROADMAP #212 Option 1)
 
-**What `main` actually enforces**, read from the API on 2026-08-22. This block
-previously claimed 1 approving review and admin enforcement. Both were false,
-and a false protection claim is worse than none — it is relied on:
+**What `main` actually enforces**, read from the API on 2026-08-22, after the
+owner turned on admin enforcement that same day. This block once claimed 1
+approving review and admin enforcement when neither was on; the review claim is
+still false and the admin one is now true because it was **changed**, not
+because the old text was right. A false protection claim is worse than none —
+it is relied on:
 
 | Setting | Live value |
 |---|---|
 | Required status checks | `validate`, strict, pinned to app_id 15368 (GitHub Actions) |
 | Required approving reviews | **none** |
-| `enforce_admins` | **false** |
+| `enforce_admins` | **true** — flipped 2026-08-22, see #679 |
 | `allow_force_pushes` | false — force pushes are blocked |
 | `allow_deletions` | false — the branch cannot be deleted |
 | `required_signatures` | false |
@@ -183,23 +188,43 @@ and not a selection from it. The status-check row folds in one subfield:
 GitHub Actions, so another app cannot satisfy the check by reporting a context
 of the same name.
 
-**`main` IS a protected branch, and the protection is real but narrow.** Two
-rows bind everyone: GitHub groups `allow_force_pushes` and `allow_deletions`
-under a section titled *"Rules applied to everyone including administrators"*,
-and says force push applies "including those with admin permissions". So the
-branch cannot be force-pushed or deleted, by anyone.
+**`main` IS a protected branch, and the rules it actually sets now bind
+everyone.** Four rows above impose something: the required status check, the
+force-push and deletion bans, and `enforce_admins` itself, which is what
+extends the check to administrators. The rest are `false`, and a disabled
+setting requires nothing of anyone — admin enforcement does not change that.
 
-Everything else is bypassable by an admin, because `enforce_admins` is false —
-including `validate`, the only gate on the CONTENT of a change. And no review
-of any kind is required to merge.
+Force push and deletion bound everyone already, independent of
+`enforce_admins`: GitHub groups them under a section titled *"Rules applied to
+everyone including administrators"*, and says force push applies "including
+those with admin permissions". What changed on 2026-08-22 is the check:
+`validate` and the strict up-to-date requirement now bind admins too.
+
+**But no pull request is required, so `validate` is the only thing standing
+between a commit and `main`.** A direct push lands if that exact commit already
+has a green `validate` — which is reachable by pushing a branch, letting CI
+run, then pushing the same SHA to `main`. The protection makes that awkward. It
+does not forbid it.
+
+**What is still not enforced is a reviewer.** Required approving reviews are
+`none`, so a merge needs a green check and nothing else. That is a real choice
+on a solo-maintainer repo: GitHub refuses self-approval, so requiring one
+review would block every PR the maintainer authors — which is nearly all of
+them. It would not block a PR authored by someone else or by a bot, and those
+the maintainer could approve.
 
 If you edit this block, read the live API first, and check the claim in both
 directions — this section has been wrong by overclaiming and by underclaiming,
 in roughly equal measure.
 
-The real enforcement lives in `scripts/merge-pr.sh`, which is repo-local and
-voluntary — it is not a forge gate and cannot stop a direct push. #679 tracks
-moving that authority to the forge.
+Everything above is what the forge enforces. Everything the SDLC process
+requires beyond it — the review rounds, the two SHA-bound clearances, the path
+tiers, the test-deletion check — lives in `scripts/merge-pr.sh`, which is
+repo-local and voluntary. The forge neither requires nor verifies any of it, so
+a direct push of an already-green commit satisfies the forge whether or not the
+change was reviewed. #679 tracks moving
+that authority to the forge, and the `enforce_admins` flip was one of its
+preconditions, not the redesign.
 
 Note also that `validate` is defined in `.github/workflows/`, which a candidate
 branch can modify. The merge gate blocks that via `HARD_DENY`; branch
