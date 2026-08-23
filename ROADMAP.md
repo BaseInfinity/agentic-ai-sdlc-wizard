@@ -20,33 +20,39 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > ### Last save point — 2026-08-22
 >
-> **Nothing is in flight. `main` is clean and both branches from 2026-08-22 are
-> merged.** #683 pinned the repository the merge gate talks to; #684 replaced
-> `CLAUDE.md`'s false branch-protection claims with the live settings.
+> **Shipped 2026-08-22:** #683 pinned the repository the merge gate talks to,
+> and #684 replaced `CLAUDE.md`'s false branch-protection claims with the live
+> settings. For what is open or in flight, read the tracker — this file does not
+> restate PR state (#482), and any count written here is wrong by the next merge.
 >
-> **START HERE — in this order, because steps 1 to 3 are prerequisites of the
-> work in step 4, not follow-ups to it.**
+> **START HERE.** This is the order the work actually happens in; each step
+> depends on the one before it.
 >
-> **1. Retarget `.reviews/handoff.json` before your first commit.** It is
-> gitignored and branch-bound, and the codex gate refuses a commit when its
+> **1. Take the first open, unblocked issue in #593 Rung 1.** The DO THIS NOW
+> block at the top of this file is the queue and owns the order — read it there.
+> Implement only that issue's acceptance criteria; anything else you notice
+> becomes a new issue.
+>
+> **2. Branch, then retarget `.reviews/handoff.json` before your first commit.**
+> It is gitignored and branch-bound, and the codex gate refuses a commit when its
 > `branch` field names a branch you are not on. Retarget it; never bypass it.
 >
-> **2. Know which suite list you owe before you owe it.**
-> `.github/workflows/ci.yml` is the authority on what must pass — not the table
-> in `CLAUDE.md` — and it names 82 test steps. Run the whole list before posting
-> any clearance. `tests/e2e/run-simulation.sh` is the one to exclude locally: it
-> shells out to `claude --print` and burns live quota, while CI runs it without a
-> claude binary in fixture-validation mode. So 81 locally, 82 in CI.
+> **3. Run the whole `ci.yml` suite list before posting any clearance.**
+> `.github/workflows/ci.yml` is the authority on what must pass, not the table in
+> `CLAUDE.md`, and it names 82 test steps. `tests/e2e/run-simulation.sh` is the
+> one to exclude locally: it shells out to `claude --print` and burns live quota,
+> while CI runs it without a claude binary in fixture-validation mode. So 81
+> locally, 82 in CI.
 >
-> **3. Do not delete two branches.** `chore/allowlist-merge-script` is preserved
-> design evidence for the #607 ruling. `docs/correct-branch-protection-claims` is
-> preserved for a different reason: it merged as a squash, so a block of ROADMAP
-> text written on it and then deliberately reverted exists only in its own
-> commits. Delete it once nothing needs that history.
+> **4. Push, open the PR, post clearances bound to the head SHA, then merge** —
+> in that order. A clearance names a commit, so it has to exist on the remote
+> first, and a rebase kills it.
 >
-> **4. Then take the first open, unblocked issue in #593 Rung 1**, per the DO
-> THIS NOW block at the top of this file. That block is the queue and it runs
-> through to a merged PR; this one is the standing context that block assumes.
+> **Standing, not a step: do not delete two branches.**
+> `chore/allowlist-merge-script` is preserved design evidence for the #607
+> ruling. `docs/correct-branch-protection-claims` merged as a squash, so a block
+> of ROADMAP text written on it and then deliberately reverted exists only in its
+> own commits. Delete it once nothing needs that history.
 >
 > **Rules this file must obey, learned by breaking them on 2026-08-22.**
 >
