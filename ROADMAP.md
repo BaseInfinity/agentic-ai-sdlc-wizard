@@ -24,27 +24,29 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 > merged.** #683 pinned the repository the merge gate talks to; #684 replaced
 > `CLAUDE.md`'s false branch-protection claims with the live settings.
 >
-> **START HERE**
+> **START HERE — in this order, because steps 1 to 3 are prerequisites of the
+> work in step 4, not follow-ups to it.**
 >
-> **1. Take the first open, unblocked issue in #593 Rung 1**, per the DO THIS NOW
-> block at the top of this file. That block is the queue; this one is context.
+> **1. Retarget `.reviews/handoff.json` before your first commit.** It is
+> gitignored and branch-bound, and the codex gate refuses a commit when its
+> `branch` field names a branch you are not on. Retarget it; never bypass it.
 >
-> **2. Do not delete these two branches.** `chore/allowlist-merge-script` is
-> preserved design evidence for the #607 ruling.
-> `docs/correct-branch-protection-claims` is preserved for a different reason:
-> both merges were squashes, so a block of ROADMAP text written on it and then
-> deliberately reverted exists only in its commits. Delete it once nothing needs
-> that history.
+> **2. Know which suite list you owe before you owe it.**
+> `.github/workflows/ci.yml` is the authority on what must pass — not the table
+> in `CLAUDE.md` — and it names 82 test steps. Run the whole list before posting
+> any clearance. `tests/e2e/run-simulation.sh` is the one to exclude locally: it
+> shells out to `claude --print` and burns live quota, while CI runs it without a
+> claude binary in fixture-validation mode. So 81 locally, 82 in CI.
 >
-> **3. `.reviews/handoff.json` is gitignored and branch-bound.** The codex gate
-> refuses a commit when its `branch` field names a different branch. Retarget it;
-> never bypass it.
+> **3. Do not delete two branches.** `chore/allowlist-merge-script` is preserved
+> design evidence for the #607 ruling. `docs/correct-branch-protection-claims` is
+> preserved for a different reason: it merged as a squash, so a block of ROADMAP
+> text written on it and then deliberately reverted exists only in its own
+> commits. Delete it once nothing needs that history.
 >
-> **4. Run the whole `ci.yml` suite list before posting any clearance.** Not the
-> table in `CLAUDE.md` — `.github/workflows/ci.yml` is the authority, and it names
-> 82 test steps. `tests/e2e/run-simulation.sh` is the one to exclude when running
-> locally: it shells out to `claude --print` and burns live quota, while CI runs it
-> without a claude binary in fixture-validation mode. So 81 locally.
+> **4. Then take the first open, unblocked issue in #593 Rung 1**, per the DO
+> THIS NOW block at the top of this file. That block is the queue and it runs
+> through to a merged PR; this one is the standing context that block assumes.
 >
 > **Rules this file must obey, learned by breaking them on 2026-08-22.**
 >
@@ -57,12 +59,6 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 > **A save point's steps must be executable in the order written.** The previous
 > version told the reader to post clearances and merge at step 3 and to push at
 > step 4, when nothing was pushed yet. Push, then PR, then clearances, then merge.
->
-> **Carried forward, both from #684's round 8 and both still open:** `CLAUDE.md`'s
-> status-check row omits `required_status_checks.checks[0].app_id`, and the
-> four-version history in that section reads as session narration rather than
-> guidance. Both are fixed on this branch — if you are reading this on `main`,
-> they are done.
 >
 > ### Prior save point — 2026-08-18, session handoff
 >
@@ -90,7 +86,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **3. Every gate rejection on #670 was legitimate.** Five of them: verdict token, short SHA instead of the full 40 chars, a clearance file still describing the pre-rebase base, a branch one commit behind `main`, and pending CI. None was the gate being wrong, and each was fixed by satisfying it. **A rebase kills a clearance, and that is correct** — the fix is a fresh confirm leg asking the one question a byte-identical patch can hide (does the new base interact with the change?), not a carried-over verdict.
 >
-> **#607 is CLOSED as of 2026-08-20, and not for the reason the line above this one used to give.** The 2026-08-18 falsification was itself wrong — it generalised one successful trial into "does not reproduce", and both seats agreed that was n=1 reasoning. #607 reopened on fresh evidence, ran four review rounds, and closed on a **design ruling**: merge authority in a mutable, allowlisted, environment-sensitive local script would have had to authenticate itself, its repository, git's work tree, git's object database, the forge target, and its own future edits, all to do the narrow job of restricting argv. Sol ruled STOP AND REDESIGN and Fable ratified it. The branch `chore/allowlist-merge-script` is preserved as design evidence and **must not be deleted**. The `-R` repository pinning was split out because it is independently correct, and it shipped separately in #683.
+> **#607 is CLOSED as of 2026-08-20, and not for the reason this file gave until now.** The 2026-08-18 falsification was itself wrong — it generalised one successful trial into "does not reproduce", and both seats agreed that was n=1 reasoning. #607 reopened on fresh evidence, ran four review rounds, and closed on a **design ruling**: merge authority in a mutable, allowlisted, environment-sensitive local script would have had to authenticate itself, its repository, git's work tree, git's object database, the forge target, and its own future edits, all to do the narrow job of restricting argv. Sol ruled STOP AND REDESIGN and Fable ratified it. The branch `chore/allowlist-merge-script` is preserved as design evidence and **must not be deleted**. The `-R` repository pinning was split out because it is independently correct, and it shipped separately in #683.
 >
 > **v2.0.0 is a delivery vehicle now, not a pile of issues (restructured 2026-08-18).** No new milestone was created — **v2.0.0 — Consumer Safety Repairs** already existed and a second major-release milestone would have forked the queue. What it lacked was the release itself: every issue on it changed the harness, none of them shipped one. **#673** now covers the cut — version bump, CHANGELOG, `git tag v2.0.0 && git push origin v2.0.0`, `npm view` verification from outside, and the plugin-surface checks `CLAUDE.md` requires. **Merging publishes nothing**; `release.yml` fires on the tag push. **#638** (Homebrew 3 months stale, gh extension 4 — a 2.0 shipping to one channel is a 2.0 most consumers never see) and **#622** (the post-mortem runs or is explicitly waived) are attached for the same reason.
 >
