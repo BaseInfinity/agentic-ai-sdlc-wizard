@@ -47,6 +47,57 @@
 
 set -u
 
+# --- THE REPOSITORY AND HOST THIS GATE ACTS ON ARE PINNED HERE ---
+#
+# #607 round 3: repository selection in this script was AMBIENT. gh honours
+# GH_REPO and GH_HOST, git honours GIT_DIR and GIT_WORK_TREE, and `cd` binds
+# neither. The reviewer demonstrated it by running it — with GIT_DIR pointed
+# elsewhere, every check below reported success while the requests resolved to
+# an unrelated repository. A gate that can be aimed at another repository is
+# not a gate.
+#
+# These exports override whatever the CALLER set. Verified by execution
+# against real gh 2.92.0 and real github.com: with GH_HOST=example.invalid,
+# GH_REPO=example.invalid/evil/wrong and GIT_DIR=/tmp/nope.git in the parent
+# environment, requests still reached Host: api.github.com and this
+# repository, including from a call carrying no per-call flags at all.
+#
+# WHAT THAT DOES AND DOES NOT ESTABLISH — this comment claimed more than was
+# true for two rounds, so it is now written narrowly on purpose:
+#
+#   * It pins calls that do not override it. It is NOT a guarantee about
+#     "every present and future invocation". An inline `GH_REPO=x gh …`, a
+#     per-call `-R` or `--hostname`, or a literal owner/repo in an API path
+#     all take precedence over these lines. Each of those was demonstrated.
+#   * It pins the INITIAL request URL. `--paginate` follows the absolute URL
+#     a server returns in its Link header and uses it directly, so a server
+#     returning a cross-host Link would send the follow-up request there
+#     regardless of GH_HOST or --hostname.
+#   * BOTH LINES ARE LOAD-BEARING. GH_REPO takes a HOST/OWNER/REPO form and
+#     looks like it pins the host too. It does not: with GH_REPO set correctly
+#     and a hostile GH_HOST, the request went to Host: example.invalid on the
+#     /api/v3/ enterprise path. GH_HOST wins and must be pinned separately.
+#
+# The per-call `-R` and `--hostname github.com` flags below are kept as a
+# second layer. NOT VERIFIED, and previously asserted here as though it were:
+# that either layer independently survives deletion of the other at all ten
+# call sites. Only the merge call has its exact argv asserted by the suite,
+# and the exports were only ever observed as environment values. Treat the two
+# layers as belt and braces, not as two independently proven guarantees.
+#
+# NOT CLOSED BY THIS: GIT_DIR still redirects this script's own `git` calls —
+# optionally paired with GIT_WORK_TREE, though GIT_WORK_TREE ALONE does not,
+# since it leaves this repository's .git and its origin/main resolution
+# intact. Those calls are load-bearing for the self-integrity byte-match and
+# for clearance tree binding. Separate channel from gh's, tracked in #681.
+#
+# There is no test in this repo that proves the pin holds for a call added
+# later. Four were written and all four were deleted for reporting a property
+# they did not check — see the long note in tests/test-merge-gate.sh.
+export GH_HOST=github.com
+export GH_REPO=BaseInfinity/claude-sdlc-harness
+
+
 # --- Two tiers (ROADMAP #479). Codex xhigh (96%) and Fable xhigh (85%),
 # consulted independently and blind to each other, both recommended this split.
 #
@@ -136,7 +187,7 @@ verify_cross_model_clearance() {
     fi
     local comments records who conf sha author reviewers="" count=0
     CLEARED_BY=""
-    if ! comments=$(gh api --paginate "repos/:owner/:repo/issues/$PR_NUM/comments" 2>&1); then
+    if ! comments=$(gh api --hostname github.com --paginate "repos/BaseInfinity/claude-sdlc-harness/issues/$PR_NUM/comments" 2>&1); then
         echo "FAILED CLOSED: could not fetch PR comments for #$PR_NUM: $comments" >&2
         return 1
     fi
@@ -454,7 +505,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if ! PR_JSON=$(gh pr view "$PR_NUM" --json headRefOid,number,state,baseRefName 2>&1); then
+if ! PR_JSON=$(gh pr view -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --json headRefOid,number,state,baseRefName 2>&1); then
     echo "FAILED CLOSED: could not fetch PR #$PR_NUM (gh error): $PR_JSON" >&2
     exit 1
 fi
@@ -492,7 +543,7 @@ fi
 # `baseRefOid` is therefore deliberately NOT in the `pr view --json` list above:
 # a trap field left parsed is a regression waiting to be reintroduced. The ref
 # endpoint below is the branch tip itself.
-if ! BASE_REF_JSON=$(gh api "repos/{owner}/{repo}/git/ref/heads/$BASE_BRANCH" 2>&1); then
+if ! BASE_REF_JSON=$(gh api --hostname github.com "repos/BaseInfinity/claude-sdlc-harness/git/ref/heads/$BASE_BRANCH" 2>&1); then
     echo "FAILED CLOSED: could not read the current tip of $BASE_BRANCH (gh error): $BASE_REF_JSON" >&2
     exit 1
 fi
@@ -514,14 +565,14 @@ fi
     # invalid `gh pr diff -- <path>` call (gh pr diff has no per-path
     # filter flag; that call errors with stderr suppressed, so the check
     # silently no-opped — Codex round-1 finding). ---
-    if ! PR_FILES=$(gh api --paginate "repos/:owner/:repo/pulls/$PR_NUM/files" 2>&1); then
+    if ! PR_FILES=$(gh api --hostname github.com --paginate "repos/BaseInfinity/claude-sdlc-harness/pulls/$PR_NUM/files" 2>&1); then
         echo "FAILED CLOSED: could not fetch file statuses for PR #$PR_NUM: $PR_FILES" >&2
         exit 1
     fi
 
     # --- Denylist / release-policy-adjacency check (checked first so the
     # self-referential case fails loud and immediately) ---
-    if ! DIFF_FILES=$(gh pr diff "$PR_NUM" --name-only 2>&1); then
+    if ! DIFF_FILES=$(gh pr diff -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --name-only 2>&1); then
         echo "FAILED CLOSED: could not fetch diff for PR #$PR_NUM: $DIFF_FILES" >&2
         exit 1
     fi
@@ -554,7 +605,7 @@ fi
     # Codex round-3: `|| echo ""` turned an API/CLI failure into "skip the
     # check" — precisely the condition that must fail closed. A HARD file past
     # the files-API ceiling was invisible whenever this second query failed.
-    if ! CHANGED_COUNT=$(gh pr view "$PR_NUM" --json changedFiles --jq '.changedFiles' 2>/dev/null); then
+    if ! CHANGED_COUNT=$(gh pr view -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --json changedFiles --jq '.changedFiles' 2>/dev/null); then
         echo "FAILED CLOSED: could not read changedFiles for PR #$PR_NUM — cannot prove the classified path set is complete." >&2
         exit 1
     fi
@@ -694,7 +745,7 @@ fi
     # validate" meant "every run on page one" and a red duplicate on page two was
     # invisible (Codex round 1). Same defect the files endpoint already carries a
     # comment about.
-    if ! CHECK_RUNS=$(gh api --paginate "repos/:owner/:repo/commits/$HEAD_SHA/check-runs" 2>&1); then
+    if ! CHECK_RUNS=$(gh api --hostname github.com --paginate "repos/BaseInfinity/claude-sdlc-harness/commits/$HEAD_SHA/check-runs" 2>&1); then
         echo "FAILED CLOSED: could not fetch check-runs for $HEAD_SHA: $CHECK_RUNS" >&2
         exit 1
     fi
@@ -1218,7 +1269,7 @@ if [ -n "$USER_APPROVED_REASON" ]; then
         "$USER_APPROVED_REASON" \
         "$(printf '%s\n' "$WAIVED_PATHS" | sed '/^$/d' | sed 's/^/- `/; s/$/`/')" \
         "$HEAD_SHA")
-    if ! gh pr comment "$PR_NUM" --body "$OVERRIDE_BODY" >/dev/null 2>&1; then
+    if ! gh pr comment -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --body "$OVERRIDE_BODY" >/dev/null 2>&1; then
         echo "BLOCKED: could not post the override record to PR #$PR_NUM. Refusing to merge — an unrecorded override is precisely what --user-approved exists to prevent." >&2
         exit 1
     fi
@@ -1237,7 +1288,7 @@ if [ -n "$DUAL_PATHS" ]; then
         "$CLEARED_BY" \
         "$HEAD_SHA" \
         "$(printf '%s' "$DUAL_PATHS" | sed '/^$/d' | sed 's/^/- `/; s/$/`/')")
-    if ! gh pr comment "$PR_NUM" --body "$DUAL_BODY" >/dev/null 2>&1; then
+    if ! gh pr comment -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --body "$DUAL_BODY" >/dev/null 2>&1; then
         echo "BLOCKED: could not post the dual-certification record to PR #$PR_NUM. Refusing to merge — a merge-evidence path cleared without a durable record is the exact gap #511 exists to close." >&2
         exit 1
     fi
@@ -1247,7 +1298,7 @@ fi
 # --- Execute: always squash, no passthrough flags, atomically bound to the
 # checked SHA. Only the PR number is accepted as input, closing the
 # flag-smuggling surface entirely. ---
-MERGE_OUTPUT=$(gh pr merge "$PR_NUM" --squash --match-head-commit "$HEAD_SHA" 2>&1)
+MERGE_OUTPUT=$(gh pr merge -R github.com/BaseInfinity/claude-sdlc-harness "$PR_NUM" --squash --match-head-commit "$HEAD_SHA" 2>&1)
 MERGE_EXIT=$?
 if [ "$MERGE_EXIT" -ne 0 ]; then
     echo "FAILED: gh pr merge did not succeed (possibly a race — head moved after checks passed): $MERGE_OUTPUT" >&2

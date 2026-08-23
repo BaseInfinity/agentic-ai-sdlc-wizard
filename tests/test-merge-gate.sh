@@ -2024,10 +2024,14 @@ test_wrapper_merges_when_all_conditions_met() {
     echo "content" > "$tmpdir/.reviews/some-review.md"
     out=$(cd "$tmpdir" && PATH="$tmpdir/bin:$PATH" "$WRAPPER" 123 2>&1) && exit_code=0 || exit_code=$?
     rm -rf "$tmpdir"
-    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED: pr merge 123 --squash --match-head-commit $fixture_sha"; then
-        pass "wrapper merges with the exact expected command when all conditions are met"
+    # The -R pin is asserted, not tolerated (#607). Repository selection was
+    # ambient: with GIT_DIR redirected, the merge targeted another repository
+    # while every check reported success against the wrong target. An unpinned
+    # merge call must fail this row rather than pass it.
+    if [ "$exit_code" -eq 0 ] && echo "$out" | grep -q "GH_MERGE_INVOKED: pr merge -R github.com/BaseInfinity/claude-sdlc-harness 123 --squash --match-head-commit $fixture_sha"; then
+        pass "wrapper merges with the exact expected command, repository pinned, when all conditions are met"
     else
-        fail "wrapper should invoke 'gh pr merge 123 --squash --match-head-commit <fixture sha>', got exit=$exit_code out=$out"
+        fail "wrapper should invoke 'gh pr merge -R <this repo> 123 --squash --match-head-commit <fixture sha>', got exit=$exit_code out=$out"
     fi
 }
 
@@ -2120,6 +2124,81 @@ test_wrapper_blocks_stale_clearance
 test_wrapper_blocks_wrong_candidate_tree
 test_wrapper_blocks_moved_base
 test_wrapper_blocks_moved_server_base_with_stale_tracking_ref
+
+# ---------------------------------------------------------------------------
+# FOUR GUARDS WERE WRITTEN FOR THE PIN AND ALL FOUR WERE DELETED. ONE ROW
+# SURVIVES, AND IT IS NOT THE ONE THAT PROVES THE PIN.
+#
+# The gate pins its forge target in `scripts/merge-pr.sh` itself, by exporting
+# GH_HOST and GH_REPO and by passing `-R` / `--hostname github.com` per call.
+# That is the fix, and it is verified by execution against real gh — see the
+# handoff. What kept failing review was every attempt to PROVE the property
+# from this file.
+#
+#   Round 1 took the substring `-R ` anywhere on a line as proof of a pin, so
+#   a trailing comment satisfied it, and it saw only three call prefixes.
+#
+#   Round 2 blanked quotes and comments first, then checked the surviving
+#   `gh` tokens. It ERASED real calls — `X="$(gh pr list)"` disappears with the
+#   quotes around it — and the count row added to catch that could not, since
+#   an erased addition leaves the count unchanged.
+#
+#   Round 3 checked that the exports precede the first call and that every
+#   `repos/` line names this repository. Ruled WRONG_SHAPE at confidence 99.
+#   Both rows passed a later `unset`, a per-command override, and a wrong
+#   literal target on a line that also mentioned the right one.
+#
+#   Round 4 replaced them with a BEHAVIOURAL row: the stub logged the pin
+#   environment each call saw, and the gate ran under a hostile environment.
+#   Ruled WRONG_SHAPE too. It passed vacuously when the gate exited after one
+#   correctly pinned call, and its unanchored grep accepted a wrong record
+#   whenever the expected substring appeared later in the argv it also logged.
+#
+# Four rewrites, four false-PASS failures, in four different mechanisms. The
+# stopping rule was written down before round 4 ran and is honoured here: the
+# guard is optional, the fix is not. A row that reports a property it does not
+# check is worse than no row, because the suite then certifies the absence of
+# evidence.
+#
+# WHAT IS ACTUALLY GUARDED, AND WHAT IS NOT:
+#
+#   Guarded here — no ambient placeholder token, below.
+#   Guarded elsewhere — `test_wrapper_merges_when_all_conditions_met` asserts
+#     the exact argv of the merge call, including its `-R`. That is one call
+#     site of ten, and it is an assertion about the merge command rather than
+#     about the pin as a property.
+#   NOT guarded — that a call added later carries the pin. Nothing in this
+#     file establishes that, and four attempts to make something establish it
+#     were each wrong in a way that read as green. It rests on the exports in
+#     `scripts/merge-pr.sh`, which apply to any call that does not override
+#     them, and on review.
+#
+# Do not add a fifth guard without a way to make it fail first on a real
+# defect. That is what all four lacked.
+
+# The one surviving row: no ambient owner/repo placeholder token.
+#
+# `:owner`, `:repo`, `{owner}` and `{repo}` are resolved by gh from the current
+# directory or GH_REPO. Round 2's review found an earlier version enumerated
+# only the two matched PAIRS, so the mixed form `repos/{owner}/:repo` was
+# invisible — and gh resolves that form perfectly well, verified by running it.
+# Banning the TOKENS rather than the pairs removes the combinatorics.
+#
+# THIS ROW SURVIVED BECAUSE IT ERRS TOWARD FALSE-FAIL. A stray `:repo` in a
+# trailing comment fails it loudly. That is a nuisance. All four deleted rows
+# erred the other way.
+test_no_ambient_repo_placeholder_in_the_gate() {
+    local placeholders
+    placeholders=$(grep -nE ':owner|:repo|\{owner\}|\{repo\}' "$WRAPPER" \
+        | grep -vE '^[0-9]+:[[:space:]]*#' || true)
+    if [ -z "$placeholders" ]; then
+        pass "no ambient owner/repo placeholder token remains anywhere in the gate"
+    else
+        fail "ambient placeholder token(s) in the gate: $(echo "$placeholders" | tr '\n' ' ' | cut -c1-300)"
+    fi
+}
+
+test_no_ambient_repo_placeholder_in_the_gate
 test_wrapper_blocks_unreadable_base_object
 test_wrapper_blocks_clearance_without_trees
 test_wrapper_blocks_empty_review_artifact
