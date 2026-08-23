@@ -153,11 +153,56 @@ Key concepts:
 
 ## Git Workflow
 
-- **Never commit directly to `main`** — branch protection requires PRs
+- **Never commit directly to `main`** — this is a working agreement, not
+  something the forge enforces for an admin. See the live settings below.
 - Create a feature branch, commit there, and open a PR
-- PRs require 1 approving review and passing CI (`validate`)
 - E2E signal is advisory-only now, via `tests/e2e/local-shepherd.sh` run locally on maintainer's Max subscription (ROADMAP #212 Option 1)
-- Admin enforcement is on — no bypassing, even for repo owners
+
+**What `main` actually enforces**, read from the API on 2026-08-22. This block
+previously claimed 1 approving review and admin enforcement. Both were false,
+and a false protection claim is worse than none — it is relied on:
+
+| Setting | Live value |
+|---|---|
+| Required status checks | `validate`, strict |
+| Required approving reviews | **none** |
+| `enforce_admins` | **false** |
+| `allow_force_pushes` | false — force pushes are blocked |
+| `allow_deletions` | false — the branch cannot be deleted |
+| `required_signatures` | false |
+| `required_linear_history` | false |
+| `required_conversation_resolution` | false |
+| `block_creations` | false |
+| `lock_branch` | false |
+| `allow_fork_syncing` | false |
+| Rulesets | **none** |
+
+That is every field the protection endpoint returns, so the rows above are the
+whole rule and not a selection from it.
+
+**`main` IS a protected branch, and the protection is real but narrow.** Two
+rows bind everyone: GitHub groups `allow_force_pushes` and `allow_deletions`
+under a section titled *"Rules applied to everyone including administrators"*,
+and says force push applies "including those with admin permissions". So the
+branch cannot be force-pushed or deleted, by anyone.
+
+Everything else is bypassable by an admin, because `enforce_admins` is false —
+including `validate`, the only gate on the CONTENT of a change. And no review
+of any kind is required to merge.
+
+Getting this right took four wrong versions in one branch: it overclaimed,
+then the correction underclaimed by calling `validate` the only protection,
+then a draft called the repo unprotected, then one said an admin bypasses all
+of it. If you edit this block, read the live API first and check the claim in
+both directions.
+
+The real enforcement lives in `scripts/merge-pr.sh`, which is repo-local and
+voluntary — it is not a forge gate and cannot stop a direct push. #679 tracks
+moving that authority to the forge.
+
+Note also that `validate` is defined in `.github/workflows/`, which a candidate
+branch can modify. The merge gate blocks that via `HARD_DENY`; branch
+protection does not.
 - **Fable is the primary reviewer/advisor** (via `advisor()` or Fable subagent fallback when advisor is down). Codex (GPT-5.6 Sol) `high` is the **cross-model safety check** — default to running before committing and pushing. Skip only with logged justification (e.g., single-line typo fix). Incident 2026-06-09: 4 PRs shipped without cross-model check, all had issues
 
 ## Special Notes
