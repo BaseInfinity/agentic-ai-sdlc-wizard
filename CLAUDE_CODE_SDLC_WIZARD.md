@@ -1471,7 +1471,7 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 | Require approvals | **0 (none)** | No one else to approve — CI is your gate |
 | Require status checks to pass | ✓ Enabled | CI must be green |
 | Require branches to be up to date | ✓ Enabled | No stale merges |
-| Include administrators | **✓ Enabled** | With 0 approvals it cannot lock you out — see below |
+| Include administrators | **✓ Enabled** | Safe at 0 approvals — but set CI up first, see below |
 
 **Team Settings (2+ developers):**
 
