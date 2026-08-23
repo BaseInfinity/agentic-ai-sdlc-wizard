@@ -164,7 +164,7 @@ and a false protection claim is worse than none — it is relied on:
 
 | Setting | Live value |
 |---|---|
-| Required status checks | `validate`, strict |
+| Required status checks | `validate`, strict, pinned to app_id 15368 (GitHub Actions) |
 | Required approving reviews | **none** |
 | `enforce_admins` | **false** |
 | `allow_force_pushes` | false — force pushes are blocked |
@@ -177,8 +177,11 @@ and a false protection claim is worse than none — it is relied on:
 | `allow_fork_syncing` | false |
 | Rulesets | **none** |
 
-That is every field the protection endpoint returns, so the rows above are the
-whole rule and not a selection from it.
+Those are the protection endpoint's own fields, so the rows are the whole rule
+and not a selection from it. The status-check row folds in one subfield:
+`required_status_checks.checks[0].app_id` is 15368, which pins `validate` to
+GitHub Actions, so another app cannot satisfy the check by reporting a context
+of the same name.
 
 **`main` IS a protected branch, and the protection is real but narrow.** Two
 rows bind everyone: GitHub groups `allow_force_pushes` and `allow_deletions`
@@ -190,11 +193,9 @@ Everything else is bypassable by an admin, because `enforce_admins` is false —
 including `validate`, the only gate on the CONTENT of a change. And no review
 of any kind is required to merge.
 
-Getting this right took four wrong versions in one branch: it overclaimed,
-then the correction underclaimed by calling `validate` the only protection,
-then a draft called the repo unprotected, then one said an admin bypasses all
-of it. If you edit this block, read the live API first and check the claim in
-both directions.
+If you edit this block, read the live API first, and check the claim in both
+directions — this section has been wrong by overclaiming and by underclaiming,
+in roughly equal measure.
 
 The real enforcement lives in `scripts/merge-pr.sh`, which is repo-local and
 voluntary — it is not a forge gate and cannot stop a direct push. #679 tracks
