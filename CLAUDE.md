@@ -188,9 +188,10 @@ and not a selection from it. The status-check row folds in one subfield:
 GitHub Actions, so another app cannot satisfy the check by reporting a context
 of the same name.
 
-**`main` IS a protected branch, and the two rules it actually sets now bind
-everyone.** Only three rows above impose anything: the required status check,
-and the force-push and deletion bans. The rest are `false`, and a disabled
+**`main` IS a protected branch, and the rules it actually sets now bind
+everyone.** Four rows above impose something: the required status check, the
+force-push and deletion bans, and `enforce_admins` itself, which is what
+extends the check to administrators. The rest are `false`, and a disabled
 setting requires nothing of anyone — admin enforcement does not change that.
 
 Force push and deletion bound everyone already, independent of
@@ -212,10 +213,6 @@ review would block every PR the maintainer authors — which is nearly all of
 them. It would not block a PR authored by someone else or by a bot, and those
 the maintainer could approve.
 
-**And admin enforcement does not make `validate` trustworthy.** It stops an
-admin skipping the check; it does nothing about the check being definable by
-the branch under review. See the note below.
-
 If you edit this block, read the live API first, and check the claim in both
 directions — this section has been wrong by overclaiming and by underclaiming,
 in roughly equal measure.
@@ -223,9 +220,9 @@ in roughly equal measure.
 Everything above is what the forge enforces. Everything the SDLC process
 requires beyond it — the review rounds, the two SHA-bound clearances, the path
 tiers, the test-deletion check — lives in `scripts/merge-pr.sh`, which is
-repo-local and voluntary. The forge cannot tell a reviewed change from an
-unreviewed one, and a direct push of an already-green commit meets none of
-those requirements. #679 tracks moving
+repo-local and voluntary. The forge neither requires nor verifies any of it, so
+a direct push of an already-green commit satisfies the forge whether or not the
+change was reviewed. #679 tracks moving
 that authority to the forge, and the `enforce_admins` flip was one of its
 preconditions, not the redesign.
 
