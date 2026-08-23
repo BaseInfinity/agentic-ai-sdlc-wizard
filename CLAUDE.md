@@ -158,9 +158,9 @@ Key concepts:
 - Create a feature branch, commit there, and open a PR
 - E2E signal is advisory-only now, via `tests/e2e/local-shepherd.sh` run locally on maintainer's Max subscription (ROADMAP #212 Option 1)
 
-**What `main` actually enforces**, verified 2026-08-20 against the API. This
-block previously claimed 1 approving review and admin enforcement. Both were
-false, and a false protection claim is worse than none — it is relied on:
+**What `main` actually enforces**, read from the API on 2026-08-22. This block
+previously claimed 1 approving review and admin enforcement. Both were false,
+and a false protection claim is worse than none — it is relied on:
 
 | Setting | Live value |
 |---|---|
@@ -171,35 +171,34 @@ false, and a false protection claim is worse than none — it is relied on:
 | `allow_deletions` | false — the branch cannot be deleted |
 | `required_signatures` | false |
 | `required_linear_history` | false |
+| `required_conversation_resolution` | false |
+| `block_creations` | false |
+| `lock_branch` | false |
+| `allow_fork_syncing` | false |
 | Rulesets | **none** |
 
-Read the whole table, not the first row. Force pushes and branch deletion ARE
-blocked, so `validate` is not literally the only protection — an earlier draft
-of this block said it was, which understated `main` in the course of
-correcting an overstatement. What is true is narrower and still the point:
-**no human or machine review is required to merge, and `validate` is the only
-gate on the CONTENT of a change.** Every row above is bypassable by an admin,
-because `enforce_admins` is false.
+That is every field the protection endpoint returns, so the rows above are the
+whole rule and not a selection from it.
+
+**`main` IS a protected branch, and the protection is real but narrow.** Two
+rows bind everyone: GitHub groups `allow_force_pushes` and `allow_deletions`
+under a section titled *"Rules applied to everyone including administrators"*,
+and says force push applies "including those with admin permissions". So the
+branch cannot be force-pushed or deleted, by anyone.
+
+Everything else is bypassable by an admin, because `enforce_admins` is false —
+including `validate`, the only gate on the CONTENT of a change. And no review
+of any kind is required to merge.
+
+Getting this right took four wrong versions in one branch: it overclaimed,
+then the correction underclaimed by calling `validate` the only protection,
+then a draft called the repo unprotected, then one said an admin bypasses all
+of it. If you edit this block, read the live API first and check the claim in
+both directions.
 
 The real enforcement lives in `scripts/merge-pr.sh`, which is repo-local and
 voluntary — it is not a forge gate and cannot stop a direct push. #679 tracks
 moving that authority to the forge.
-
-`main` IS a protected branch — the API reports it as one, and the table above
-is what that protection contains. So do not say the repo is unprotected
-either; that is the same error a third time, in the other direction. Say the
-specific thing: **the protection on `main` requires no review of any kind, and
-because `enforce_admins` is false, none of it binds an admin.**
-
-That last clause was challenged, so here is its source. GitHub's own
-"About protected branches" page: *"By default, the restrictions of a branch
-protection rule don't apply to people with admin permissions to the
-repository."* The force-push and deletion rows are restrictions of the rule
-like every other row, so they are covered by that sentence. A live probe —
-apply these exact settings to a throwaway branch and try both as an admin —
-would have settled it empirically; it was not run, because writing branch
-protection through the API is blocked here by a permission guardrail. So this
-clause rests on the documentation, not on an observation of this repository.
 
 Note also that `validate` is defined in `.github/workflows/`, which a candidate
 branch can modify. The merge gate blocks that via `HARD_DENY`; branch
