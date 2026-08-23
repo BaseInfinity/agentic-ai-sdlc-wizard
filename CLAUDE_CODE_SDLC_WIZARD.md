@@ -1471,7 +1471,7 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 | Require approvals | **0 (none)** | No one else to approve — CI is your gate |
 | Require status checks to pass | ✓ Enabled | CI must be green |
 | Require branches to be up to date | ✓ Enabled | No stale merges |
-| Include administrators | **✗ Disabled** | You're the only admin — this locks you out |
+| Include administrators | **✓ Enabled** | With 0 approvals it cannot lock you out — see below |
 
 **Team Settings (2+ developers):**
 
@@ -1500,11 +1500,45 @@ gh api repos/OWNER/REPO/branches/main/protection --method PUT --input - << 'EOF'
     "strict": true,
     "contexts": ["validate"]
   },
-  "enforce_admins": false,
-  "required_pull_request_reviews": null,
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 0
+  },
   "restrictions": null
 }
 EOF
+```
+
+**Why `enforce_admins: true` for a solo dev.** The usual reason to leave it off
+is that it locks the only admin out. That is true when a review is required —
+GitHub refuses self-approval, so an admin with `required_approving_review_count:
+1` and nobody else around cannot merge anything. With **0** approvals there is
+nothing to be locked out of: you owe a green `validate` and an up-to-date
+branch, which you were waiting for anyway. This repo turned `enforce_admins` on
+in August 2026 with approvals at 0 and nothing locked up.
+
+**Why `required_approving_review_count: 0` and not `null`.** `null` does not
+mean "a PR with no approvals" — it means **no pull request is required at
+all**, which is a different and much weaker setting. The `0` form requires the
+PR and asks nobody to approve it. This repo's own `main` still has `null`,
+which is why a direct push to it is possible today — see the next paragraph and
+#679.
+
+**What this does NOT do, and the ordering matters:** if you leave
+`required_pull_request_reviews` as `null`, admin enforcement does **not** stop a
+direct push to `main`. A commit that already carries a green `validate` lands —
+push a branch, let CI run, then push that same SHA to `main`. Check runs attach
+to commits rather than branches. Only a *fresh* commit is rejected. Requiring
+the pull request is what closes that, not `enforce_admins`.
+
+**Changing one field later:** `PUT .../protection` **replaces the entire
+protection object**, so re-running one of these recipes to adjust a single
+setting silently drops everything absent from your payload — including any
+`checks[].app_id` pin. To change one field, use its sub-endpoint:
+
+```bash
+gh api -X POST repos/OWNER/REPO/branches/main/protection/enforce_admins   # on
+gh api -X DELETE repos/OWNER/REPO/branches/main/protection/enforce_admins # off
 ```
 
 **How to enable (CLI — team):**
