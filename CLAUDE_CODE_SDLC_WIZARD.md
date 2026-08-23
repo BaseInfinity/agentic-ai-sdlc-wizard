@@ -1456,7 +1456,18 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 
 ### Step 0.0: Enable Branch Protection (CRITICAL)
 
-**Before setting up SDLC, protect your main branch.** This is non-negotiable for teams and highly recommended for solo developers.
+**Protect your main branch early — but not before CI can report.** This is non-negotiable for teams and highly recommended for solo developers.
+
+> **Do this in order, whichever method you use below.** A required status check
+> that has never reported blocks every merge — GitHub shows it as *Expected —
+> waiting for status* — and *Include administrators* removes the override that
+> would let you merge anyway. Protect a repo that has no CI yet and you lock
+> yourself out of your own `main`.
+>
+> 1. Add the workflow that produces `validate` and push it on a branch.
+> 2. Open a PR and watch `validate` go green at least once, so you know the
+>    check name exists and reports.
+> 3. **Then** apply protection — UI or CLI, both below.
 
 **Why this matters:**
 - SDLC enforcement is only as strong as your merge protection
@@ -1492,18 +1503,8 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 
 > **Note (ROADMAP #212 Option 1, April 2026):** We no longer require `e2e-quick-check` as a blocking check. It burned Anthropic API credits on every PR, and branch protection pinned to GitHub Actions made local-maintainer check-run satisfaction impossible. E2E now runs advisory-only via `tests/e2e/local-shepherd.sh` on the maintainer's Max subscription. See `ROADMAP.md` #212 for the full rationale.
 
-**Order matters. Do not run this first.** A required status check that has
-never reported blocks every merge — GitHub shows it as *Expected — waiting for
-status* — and `enforce_admins: true` removes the override that would let you
-merge anyway. Apply protection to a repo with no CI yet and you lock yourself
-out of your own `main`.
-
-1. Add the workflow that produces `validate` and push it on a branch.
-2. Open a PR and watch `validate` go green at least once, so the check name
-   exists and you know it reports.
-3. Then run the recipe below.
-
-**How to enable (CLI — solo dev):**
+**How to enable (CLI — solo dev):** *(the ordering rule at the top of Step 0.0
+applies — `validate` must have reported green once before you run this)*
 ```bash
 gh api repos/OWNER/REPO/branches/main/protection --method PUT --input - << 'EOF'
 {
