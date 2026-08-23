@@ -18,7 +18,19 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **v2.0.0's terminal gate is #545, not issue closure.** The major release is authorized when the maintainer has personally consumed the harness in another repo and it worked. Every other issue closing is necessary and not sufficient.
 >
-> ### Last save point — 2026-08-18, session handoff
+> ### Last save point — 2026-08-22
+>
+> **Shipped 2026-08-22:** #683 pinned the repository the merge gate talks to,
+> and #684 replaced `CLAUDE.md`'s false branch-protection claims with the live
+> settings. For what is open or in flight, read the tracker — this file does not
+> restate PR state (#482), and any count written here is wrong by the next merge.
+>
+> **Standing: do not delete `docs/correct-branch-protection-claims`.** It merged
+> as a squash, so a block of ROADMAP text written on it and then deliberately
+> reverted exists only in its own commits. Delete it once nothing needs that
+> history.
+>
+> ### Prior save point — 2026-08-18, session handoff
 >
 > Written so a cold session resumes without reading a transcript. Issue numbers only, because the tracker owns PR state (#482): **milestone v1.99.2** is complete (**#579**, **#544**, **#499**) and closed on GitHub.
 >
@@ -44,7 +56,7 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 >
 > **3. Every gate rejection on #670 was legitimate.** Five of them: verdict token, short SHA instead of the full 40 chars, a clearance file still describing the pre-rebase base, a branch one commit behind `main`, and pending CI. None was the gate being wrong, and each was fixed by satisfying it. **A rebase kills a clearance, and that is correct** — the fix is a fresh confirm leg asking the one question a byte-identical patch can hide (does the new base interact with the change?), not a carried-over verdict.
 >
-> **#607 is open and should be closed.** Its premise was falsified during this session: `merge-pr.sh` runs fine from a clean `main` worktree with the entry absent, so "PROVEN NEEDED" was false. The falsification is posted on the issue. Closing it is the maintainer's call.
+> **#607 is CLOSED as of 2026-08-20, and not for the reason this file gave until now.** The 2026-08-18 falsification was itself wrong — it generalised one successful trial into "does not reproduce", and both seats agreed that was n=1 reasoning. #607 reopened on fresh evidence, ran four review rounds, and closed on a **design ruling**: merge authority in a mutable, allowlisted, environment-sensitive local script would have had to authenticate itself, its repository, git's work tree, git's object database, the forge target, and its own future edits, all to do the narrow job of restricting argv. Sol ruled STOP AND REDESIGN and Fable ratified it. The branch `chore/allowlist-merge-script` is preserved as design evidence and **must not be deleted**. The `-R` repository pinning was split out because it is independently correct, and it shipped separately in #683.
 >
 > **v2.0.0 is a delivery vehicle now, not a pile of issues (restructured 2026-08-18).** No new milestone was created — **v2.0.0 — Consumer Safety Repairs** already existed and a second major-release milestone would have forked the queue. What it lacked was the release itself: every issue on it changed the harness, none of them shipped one. **#673** now covers the cut — version bump, CHANGELOG, `git tag v2.0.0 && git push origin v2.0.0`, `npm view` verification from outside, and the plugin-surface checks `CLAUDE.md` requires. **Merging publishes nothing**; `release.yml` fires on the tag push. **#638** (Homebrew 3 months stale, gh extension 4 — a 2.0 shipping to one channel is a 2.0 most consumers never see) and **#622** (the post-mortem runs or is explicitly waived) are attached for the same reason.
 >
