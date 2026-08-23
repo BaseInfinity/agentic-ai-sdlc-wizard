@@ -25,46 +25,10 @@ Cold-open pointer: if you're picking this repo back up and don't know where to l
 > settings. For what is open or in flight, read the tracker — this file does not
 > restate PR state (#482), and any count written here is wrong by the next merge.
 >
-> **START HERE.** This is the order the work actually happens in; each step
-> depends on the one before it.
->
-> **1. Take the first open, unblocked issue in #593 Rung 1.** The DO THIS NOW
-> block at the top of this file is the queue and owns the order — read it there.
-> Implement only that issue's acceptance criteria; anything else you notice
-> becomes a new issue.
->
-> **2. Branch, then retarget `.reviews/handoff.json` before your first commit.**
-> It is gitignored and branch-bound, and the codex gate refuses a commit when its
-> `branch` field names a branch you are not on. Retarget it; never bypass it.
->
-> **3. Run the whole `ci.yml` suite list before posting any clearance.**
-> `.github/workflows/ci.yml` is the authority on what must pass, not the table in
-> `CLAUDE.md`, and it names 82 test steps. `tests/e2e/run-simulation.sh` is the
-> one to exclude locally: it shells out to `claude --print` and burns live quota,
-> while CI runs it without a claude binary in fixture-validation mode. So 81
-> locally, 82 in CI.
->
-> **4. Push, open the PR, post clearances bound to the head SHA, then merge** —
-> in that order. A clearance names a commit, so it has to exist on the remote
-> first, and a rebase kills it.
->
-> **Standing, not a step: do not delete two branches.**
-> `chore/allowlist-merge-script` is preserved design evidence for the #607
-> ruling. `docs/correct-branch-protection-claims` merged as a squash, so a block
-> of ROADMAP text written on it and then deliberately reverted exists only in its
-> own commits. Delete it once nothing needs that history.
->
-> **Rules this file must obey, learned by breaking them on 2026-08-22.**
->
-> **A save point must not describe its own review state.** Three consecutive
-> review rounds died on that: the round that certifies the branch falsifies the
-> sentence, so it needs re-editing after every round and twice was not. Round
-> state lives in `.reviews/handoff.json`, which is where it can be true. This
-> block records the standing plan and nothing about how it was reviewed.
->
-> **A save point's steps must be executable in the order written.** The previous
-> version told the reader to post clearances and merge at step 3 and to push at
-> step 4, when nothing was pushed yet. Push, then PR, then clearances, then merge.
+> **Standing: do not delete `docs/correct-branch-protection-claims`.** It merged
+> as a squash, so a block of ROADMAP text written on it and then deliberately
+> reverted exists only in its own commits. Delete it once nothing needs that
+> history.
 >
 > ### Prior save point — 2026-08-18, session handoff
 >
