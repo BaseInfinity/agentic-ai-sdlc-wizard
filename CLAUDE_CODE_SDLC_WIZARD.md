@@ -1479,20 +1479,20 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 
 | Setting | Value | Why |
 |---------|-------|-----|
-| Require pull request before merging | ✓ Enabled | All changes go through PR review |
+| Require a pull request before merging | ✓ Enabled | All changes go through PR review |
 | Require approvals | **0 (none)** | No one else to approve — CI is your gate |
-| Require status checks to pass | ✓ Enabled | CI must be green |
-| Require branches to be up to date | ✓ Enabled | No stale merges |
+| Require status checks to pass before merging | ✓ Enabled | CI must be green |
+| Require branches to be up to date before merging | ✓ Enabled | No stale merges |
 | Do not allow bypassing the above settings | **✓ Enabled** | Safe at 0 approvals — but set CI up first, see below |
 
 **Team Settings (2+ developers):**
 
 | Setting | Value | Why |
 |---------|-------|-----|
-| Require pull request before merging | ✓ Enabled | All changes go through PR review |
+| Require a pull request before merging | ✓ Enabled | All changes go through PR review |
 | Require approvals | 1+ (your choice) | Human must approve before merge |
-| Require status checks to pass | ✓ Enabled | CI must be green |
-| Require branches to be up to date | ✓ Enabled | No stale merges |
+| Require status checks to pass before merging | ✓ Enabled | CI must be green |
+| Require branches to be up to date before merging | ✓ Enabled | No stale merges |
 | Do not allow bypassing the above settings | ✓ Enabled | No one bypasses the rules |
 
 **How to enable (UI):**
@@ -1500,7 +1500,7 @@ For Claude to be effective at SDLC enforcement, your project should have these d
 2. Branch name pattern: `main` (or `master`)
 3. Enable the settings above (solo or team, as appropriate)
 4. Add required status checks: `validate` (E2E is advisory — see note below)
-5. Save changes
+5. Click **Create** (the `Add rule` flow ends in `Create`; `Save changes` is the edit flow)
 
 > **Note (ROADMAP #212 Option 1, April 2026):** We no longer require `e2e-quick-check` as a blocking check. It burned Anthropic API credits on every PR, and branch protection pinned to GitHub Actions made local-maintainer check-run satisfaction impossible. E2E now runs advisory-only via `tests/e2e/local-shepherd.sh` on the maintainer's Max subscription. See `ROADMAP.md` #212 for the full rationale.
 
@@ -1582,7 +1582,7 @@ EOF
 
 | Setting | Value | Why |
 |---------|-------|-----|
-| Require CODEOWNERS review | ✓ Enabled | Specific people must approve |
+| Require review from Code Owners | ✓ Enabled | Specific people must approve |
 
 **CODEOWNERS file (teams only):**
 Create `.github/CODEOWNERS`:
