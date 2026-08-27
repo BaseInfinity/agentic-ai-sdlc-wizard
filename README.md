@@ -4,11 +4,37 @@ A **self-evolving Software Development Life Cycle (SDLC) enforcement system for 
 
 **Built on 15+ years of software engineering and founding engineering experience** — battle-tested patterns from real production systems, baked into an AI agent that follows tried-and-true software quality practices so you don't have to enforce them manually.
 
-> **Built and validated on frontier models.** This harness is developed against **Opus 5** as the driver, **Fable 5** as the design authority, and **GPT-5.6 Sol** as the cross-model adversarial check. That is the only configuration behind which there is cycle data from real use.
+> **The experimental lane (v1.88.0+) is built and validated on frontier models.** It is developed against **Opus 5** as the driver, **Fable 5** as the design authority, and **GPT-5.6 Sol** as the cross-model adversarial check. That is the only configuration behind which the experimental lane has cycle data from real use. (The stable lane below has its own pairing.)
 >
-> **Behavior on earlier or smaller drivers is unmeasured.** Not "degraded," not "should still work" — nobody has run it and measured. The harness leans on the driver to hold a long plan, refuse its own shortcuts, and escalate when uncertain; how much of that survives on a weaker model is exactly the thing no one here has data on. If you run it elsewhere and measure something, that result is worth more than this paragraph.
+> **Experimental-lane behavior on earlier or smaller drivers is unmeasured.** Not "degraded," not "should still work" — nobody has run it and measured. The harness leans on the driver to hold a long plan, refuse its own shortcuts, and escalate when uncertain; how much of that survives on a weaker model is exactly the thing no one here has data on. If you run it elsewhere and measure something, that result is worth more than this paragraph.
 
 > **Built for Claude Code.** Using OpenAI's Codex CLI instead? Check out [`codex-sdlc-wizard`](https://github.com/BaseInfinity/codex-sdlc-wizard). Need privacy-first / any-backend (local Ollama, Azure OpenAI, hosted OSS)? See [`opencode-sdlc-wizard`](https://github.com/BaseInfinity/opencode-sdlc-wizard). ([Full ecosystem](#xdlc-ecosystem-sibling-projects).)
+
+> **Stability lanes.** The **most stable line is `opus-4.6`** — v1.87.0, the last
+> release before Opus 5 entered this repo, from the era the maintainer drove it
+> daily on Opus 4.6 (that known-goodness is recollection, being converted to
+> verified in [#689](https://github.com/BaseInfinity/claude-sdlc-harness/issues/689)).
+> The stable lane pairs v1.87.0 with the **Opus 4.6 driver it was built for**
+> (`/model claude-opus-4-6`, `/effort max`) — sessions on this pin have been
+> observed at a **200k context window**; a verified 1M launch path for 4.6 is an
+> open item in [#689](https://github.com/BaseInfinity/claude-sdlc-harness/issues/689).
+> Everything after it — v1.88.0+, the Opus 5 era, **including `@latest`** — is
+> **experimental**: reworked and validated in the open. Follow the validation lane:
+> [#689](https://github.com/BaseInfinity/claude-sdlc-harness/issues/689),
+> [#694](https://github.com/BaseInfinity/claude-sdlc-harness/issues/694),
+> [#697](https://github.com/BaseInfinity/claude-sdlc-harness/issues/697) and the
+> findings filed from #697
+> ([#698](https://github.com/BaseInfinity/claude-sdlc-harness/issues/698)–[#702](https://github.com/BaseInfinity/claude-sdlc-harness/issues/702)).
+> Stable-lane install — pinned end-to-end, never `@latest` (see
+> [#699](https://github.com/BaseInfinity/claude-sdlc-harness/issues/699)):
+> ```bash
+> npm install -g agentic-sdlc-wizard@opus-4.6
+> npx -y agentic-sdlc-wizard@opus-4.6 init
+> ```
+> Known defect on **both** lanes: setup does not auto-invoke on a brand-new
+> project ([#698](https://github.com/BaseInfinity/claude-sdlc-harness/issues/698))
+> — run it manually on first launch: type `/` plus the skill name, which is
+> `setup-wizard` on the stable lane and `claude-setup-wizard` on latest.
 
 ## Install
 
@@ -18,8 +44,8 @@ Run from your terminal or from inside Claude Code (`!` prefix):
 ```bash
 npx -y agentic-sdlc-wizard@latest init
 ```
-The `@latest` pin forces npm to fetch the newest version. Without it, `npx` may serve a stale CLI from your local cache (#358); `init` also nudges if it detects a gap.
-Then start (or restart) Claude Code — type `/exit` then `claude` to reload hooks. Setup auto-invokes on first prompt — Claude reads the wizard doc, scans your project, and generates bespoke CLAUDE.md, SDLC.md, TESTING.md, and ARCHITECTURE.md. No manual commands needed.
+This is the **experimental lane** — the Opus-5-era latest (see *Stability lanes* above; the stable-lane commands are there). The `@latest` pin forces npm to fetch the newest version. Without it, `npx` may serve a stale CLI from your local cache (#358); `init` also nudges if it detects a gap.
+Then start (or restart) Claude Code — type `/exit` then `claude` to reload hooks. Setup is meant to auto-invoke on first prompt — Claude reads the wizard doc, scans your project, and generates bespoke CLAUDE.md, SDLC.md, TESTING.md, and ARCHITECTURE.md. **Known defect:** on a brand-new project the auto-invoke does not fire ([#698](https://github.com/BaseInfinity/claude-sdlc-harness/issues/698)) — run the setup skill manually as described in *Stability lanes* above.
 
 <details>
 <summary>Alternative install methods</summary>
@@ -52,7 +78,7 @@ npm install -g agentic-sdlc-wizard
 sdlc-wizard init
 ```
 
-**Pinned fallback — the last pre-Opus-5 release:**
+**Stable lane — the last pre-Opus-5 release:**
 ```bash
 npm install -g agentic-sdlc-wizard@opus-4.6
 ```

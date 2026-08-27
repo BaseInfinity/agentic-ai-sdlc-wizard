@@ -1703,12 +1703,13 @@ test_readme_reviewer_is_gpt56() {
     local F="$REPO_ROOT/README.md"
     if [ ! -f "$F" ]; then fail "README.md not found"; return; fi
     local bad=""
-    # L148 is the fallback-chain line: must name "5\.6" AND BOTH Sol and Terra.
-    # (Re-pinned 2026-08-16 by #544's frontier-model banner, then again
-    # 2026-08-26 by the opus-4.6 dist-tag install block — twice in one PR,
-    # once per review round that grew the block. Position pins again, not
-    # content — see #659, which this PR is fresh evidence for.)
-    bad="$bad$(_check_line_has_and_lacks "$F" 148 "5\.6,Sol,Terra" "5\.5" "5\.4")"
+    # L174 is the fallback-chain line: must name "5\.6" AND BOTH Sol and Terra.
+    # (Re-pinned 2026-08-16 by #544's frontier-model banner, twice on
+    # 2026-08-26 by the opus-4.6 dist-tag install block, and twice more
+    # the same day by the stability-lanes banner and its review repairs —
+    # a position pin, not content — see #659, which keeps accumulating
+    # evidence.)
+    bad="$bad$(_check_line_has_and_lacks "$F" 174 "5\.6,Sol,Terra" "5\.5" "5\.4")"
     # Every OTHER line naming a GPT-5.x reviewer must name 5.6, by CONTENT.
     # This replaced position pins on lines 193-195 when the model-selection
     # research moved to AI_SETUP_LANES.md (#659 asked for exactly this: the
