@@ -4,6 +4,19 @@ All notable changes to the SDLC Wizard.
 
 > **Note:** This changelog is for humans to read. Don't manually apply these changes - just run the wizard ("Check for SDLC wizard updates") and it handles everything automatically.
 
+> **Registry note, 2026-08-26 — `opus-4.6` dist-tag (not a release).** The npm
+> tag `opus-4.6` now points at **v1.87.0**, the last release published before
+> Opus 5 entered this repo (Opus 5 became the Setup A default in v1.88.0).
+> As of this note, `npm install agentic-sdlc-wizard@opus-4.6` resolves to that
+> release; v1.87.0's published contents are immutable, while the tag itself is
+> a mutable pointer — pin `@1.87.0` to guarantee the version.
+> Its known-goodness is **recollection, not a recorded test** — the
+> lifecycle canary that would upgrade that claim is tracked in
+> [#689](https://github.com/BaseInfinity/claude-sdlc-harness/issues/689). No
+> package contents changed; this entry documents registry state only.
+> Observed at tagging time: `npm view agentic-sdlc-wizard dist-tags` →
+> `{ latest: '1.99.2', 'opus-4.6': '1.87.0' }`.
+
 ## [1.99.2] - 2026-08-17
 
 ### Evidence now binds to what was reviewed, and the docs stopped claiming what nobody measured

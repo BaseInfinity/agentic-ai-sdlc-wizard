@@ -52,6 +52,24 @@ npm install -g agentic-sdlc-wizard
 sdlc-wizard init
 ```
 
+**Pinned fallback — the last pre-Opus-5 release:**
+```bash
+npm install -g agentic-sdlc-wizard@opus-4.6
+```
+The `opus-4.6` dist-tag currently points at **v1.87.0** (2026-07-14), the
+last release cut before Opus 5 entered this repo, from the era when the
+recommended lanes were built around Opus 4.6 / Sonnet 5. The published
+v1.87.0 package contents are immutable; the dist-tag itself is a mutable
+registry pointer, so to guarantee that exact version regardless of where the
+tag may later point, pin it directly: `agentic-sdlc-wizard@1.87.0`.
+**Honest label:** its
+known-goodness is the maintainer's recollection of daily use, not a recorded
+end-to-end test — a lifecycle canary is tracked in
+[#689](https://github.com/BaseInfinity/claude-sdlc-harness/issues/689), and
+this label upgrades to "verified" only when that canary's verdict is recorded
+there. Verified on 2026-08-26: `npm install agentic-sdlc-wizard@opus-4.6`
+resolves and installs 1.87.0.
+
 **Manual (advanced — partial, not an escape hatch):** Download `CLAUDE_CODE_SDLC_WIZARD.md` to your project and tell Claude `Run the SDLC wizard setup`. This skips the live-session auto-invoke and generates your bespoke `CLAUDE.md`, `SDLC.md`, `TESTING.md` and `ARCHITECTURE.md`. **It does not give you a working install.** The document no longer contains the SDLC skill — Step 6 installs it by running the CLI (GH #513) — and only 2 of the 8 hooks have hand-typed templates here. So this path still needs `npx`; there is no npx-free route to a complete install. The default human path is `npx init` → restart CC → first-prompt auto-setup.
 </details>
 
